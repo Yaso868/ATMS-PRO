@@ -227,7 +227,112 @@
     return matrix;
   }
 
+
+
+  function isImageFile(file) {
+    return /^image\//i.test(file.type || '') || /\.(jpe?g|png|webp)$/i.test(file.name || '');
+  }
+
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht geöffnet werden.')); };
+      img.src = url;
+    });
+  }
+
+  async function preprocessImage(file) {
+    const img = await loadImage(file);
+    const maxWidth = 3200;
+    const scale = Math.min(3, Math.max(1.6, maxWidth / img.naturalWidth));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = image.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.65 + 128));
+      const value = contrast > 205 ? 255 : contrast < 75 ? 0 : contrast;
+      d[i] = d[i + 1] = d[i + 2] = value;
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  const IMAGE_HEADERS = ['Preis','Uhrzeit','Von','Nach','Name','Firma','Uhrzeit','Flug ang.','Flug ausg.','Wg','Pers','Uhrzeit','Ort','Wg'];
+  const IMAGE_COLUMN_RATIOS = [0,0.06,0.12,0.255,0.385,0.475,0.53,0.585,0.645,0.705,0.755,0.795,0.84,0.925,1.001];
+
+  function imageWordsToMatrix(words, width) {
+    const usable = (words || []).filter(w => {
+      const text = cellText(w.text);
+      const conf = Number(w.confidence ?? w.conf ?? 0);
+      return text && conf >= 28 && w.bbox;
+    }).map(w => ({
+      text: cellText(w.text),
+      x0: w.bbox.x0, x1: w.bbox.x1,
+      y0: w.bbox.y0, y1: w.bbox.y1,
+      cy: (w.bbox.y0 + w.bbox.y1) / 2
+    })).sort((a,b) => a.cy - b.cy || a.x0 - b.x0);
+
+    const heights = usable.map(w => Math.max(1, w.y1 - w.y0)).sort((a,b)=>a-b);
+    const medianH = heights.length ? heights[Math.floor(heights.length/2)] : 20;
+    const tolerance = Math.max(10, medianH * 0.75);
+    const lines = [];
+    usable.forEach(word => {
+      let line = lines.find(l => Math.abs(l.cy - word.cy) <= tolerance);
+      if (!line) { line = { cy: word.cy, words: [] }; lines.push(line); }
+      line.words.push(word);
+      line.cy = line.words.reduce((sum,w)=>sum+w.cy,0) / line.words.length;
+    });
+    lines.sort((a,b)=>a.cy-b.cy);
+
+    const rows = [];
+    lines.forEach(line => {
+      const cells = Array(14).fill('').map(()=>[]);
+      line.words.sort((a,b)=>a.x0-b.x0).forEach(word => {
+        const cx = (word.x0 + word.x1) / 2 / width;
+        let col = IMAGE_COLUMN_RATIOS.findIndex((r,i)=>i<IMAGE_COLUMN_RATIOS.length-1 && cx >= r && cx < IMAGE_COLUMN_RATIOS[i+1]);
+        if (col < 0) col = 13;
+        cells[col].push(word.text);
+      });
+      const row = cells.map(parts => parts.join(' ').replace(/\s+/g,' ').trim());
+      const time = normalizeTime(row[1]);
+      const hasRoute = row[2] || row[3];
+      if ((/^\d{1,2}:\d{2}$/.test(time) || /^\d{3,4}$/.test(row[1].replace(/\D/g,''))) && hasRoute) {
+        row[1] = time;
+        rows.push(row);
+      }
+    });
+    return [IMAGE_HEADERS, ...rows];
+  }
+
+  async function readImagePlan(file) {
+    if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
+    const canvas = await preprocessImage(file);
+    const status = $('importStatus');
+    const result = await Tesseract.recognize(canvas, 'eng', {
+      logger: message => {
+        if (!status) return;
+        if (message.status === 'recognizing text') {
+          status.textContent = `Bild wird gelesen … ${Math.round((message.progress || 0) * 100)} %`;
+        } else if (message.status) {
+          status.textContent = `Bildanalyse: ${message.status}`;
+        }
+      }
+    });
+    const words = result?.data?.words || [];
+    const matrix = imageWordsToMatrix(words, canvas.width);
+    if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
+    return { kind: 'matrix', matrix, sheetName: 'Bild / WhatsApp', imageOcr: true };
+  }
+
   async function readFile(file) {
+    if (isImageFile(file)) return readImagePlan(file);
     const extension = file.name.toLowerCase().split('.').pop();
     if (extension === 'json') {
       const object = JSON.parse(await file.text());
@@ -250,7 +355,7 @@
       const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: true, blankrows: false });
       return { kind: 'matrix', matrix, sheetName };
     }
-    throw new Error('Dateiformat nicht unterstützt. Bitte Excel, CSV, TSV oder JSON verwenden.');
+    throw new Error('Dateiformat nicht unterstützt. Bitte Bild, Excel, CSV, TSV oder JSON verwenden.');
   }
 
   function renderMapping(headers, mappingInfo) {
@@ -301,7 +406,7 @@
   async function analyze() {
     if (!state.file) return;
     try {
-      $('importStatus').textContent = 'Planliste wird analysiert …';
+      $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
       const result = await readFile(state.file);
       if (result.kind === 'json') {
         state.rides = result.rows.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
@@ -336,7 +441,8 @@
       state.matrix = matrix;
       state.rides = rides;
       state.mapping = mappingInfo.mapping;
-      state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
+      state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: result.imageOcr ? 'ATMS Bildimport Alpha' : mappingInfo.profile };
+      if (result.imageOcr) mappingInfo = { ...mappingInfo, profile: 'ATMS Bildimport Alpha' };
       state.issues = validate(rides);
       localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);

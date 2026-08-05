@@ -42,8 +42,8 @@
 </main></section>
 <section id="importView" class="hidden"><main class="import"><div class="cockHead"><button id="importBack" class="icon">←</button><h1>Planliste importieren</h1></div>
 <div class="card plan-import-card">
-  <div class="import-title-row"><div><h2>Planliste direkt hochladen</h2><p class="sub">Excel, CSV oder bestehendes ATMS-JSON – automatische Erkennung der ATMS-Planliste.</p></div><span class="import-badge">NEU</span></div>
-  <label class="file file-large">📄 Planliste auswählen<input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,.json,application/json,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
+  <div class="import-title-row"><div><h2>Planliste direkt hochladen</h2><p class="sub">Bild/WhatsApp, Excel, CSV oder ATMS-JSON – automatische Erkennung der ATMS-Planliste.</p></div><span class="import-badge">NEU</span></div>
+  <label class="file file-large">📷 Bild oder Planliste auswählen<input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,.xlsx,.xls,.csv,.tsv,.json,application/json,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
   <div id="planImportDrop" class="plan-drop">Datei hier ablegen oder oben auswählen</div>
   <div id="planAnalysis" class="plan-analysis hidden">
     <div id="planProfileInfo" class="plan-profile-info"><b>Importprofil wird erkannt …</b></div>
@@ -109,6 +109,7 @@
 </div><nav class="bottom"><button class="nav active" data-nav="rides"><span>🚘</span>Fahrten</button><button class="nav" data-nav="all"><span>☷</span>Alle Fahrten</button><button id="plusBtn" class="nav nav-plus" type="button" aria-label="Fahrten importieren"><span>＋</span><small>Import</small></button><button class="nav" data-nav="messages"><span>💬</span>Nachrichten</button><button class="nav nav-live" data-nav="live"><span>📡</span>Live-Dispo</button><button class="nav" data-nav="settings"><span>⚙</span>Einstellungen</button></nav>
 <div id="driverDialog" class="overlay hidden" role="dialog" aria-modal="true"><div class="sheet" id="driverSheet"><div class="row"><h2>Fahrten anzeigen</h2><button id="closeDrivers" class="icon x" type="button">×</button></div><div id="driverChoices"></div></div></div>
 <div id="atmsToast" class="atms-toast" role="status" aria-live="polite"></div><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="./js/plan-import.js" defer></script>
 <script src="./js/app.js" defer></script>
 <script src="./js/pwa.js" defer></script>
