@@ -1,0 +1,13 @@
+ATMS PRO PWA DEV 14.5.6
+Zeitstempel: 05.08.2026 – 19:15 Uhr (MESZ)
+
+Änderungen:
+- Bisherige PWA 14.5.5 als Basis übernommen.
+- Große index.html technisch aufgeteilt.
+- Gesamtes Design nach css/main.css ausgelagert.
+- Hauptlogik nach js/app.js ausgelagert.
+- PWA-Installations- und Offline-Logik nach js/pwa.js ausgelagert.
+- Service Worker auf Cache-Version 14.5.6 aktualisiert.
+- Neue CSS- und JavaScript-Dateien in den Offline-App-Shell-Cache aufgenommen.
+- Bestehende Funktionen und LocalStorage-Schlüssel bleiben erhalten.
+- Noch keine Google-Routen-API und keine Fahrer-PIN eingebaut.
