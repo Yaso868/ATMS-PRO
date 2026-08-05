@@ -40,7 +40,21 @@
     </div>
   </div>
 </main></section>
-<section id="importView" class="hidden"><main class="import"><div class="cockHead"><button id="importBack" class="icon">←</button><h1>Einstellungen</h1></div><div class="card"><h2>Neue Fahrten importieren</h2><label class="file">JSON auswählen<input id="fileInput" type="file" accept=".json,application/json,text/plain"></label><textarea id="jsonInput" placeholder="Gemini-JSON hier einfügen …"></textarea><div class="actions2"><button id="loadBtn" class="act green">Fahrten laden</button><button id="clearBtn" class="act dark">Leeren</button></div><p id="importStatus" class="sub">Noch keine neue Liste geladen.</p></div>
+<section id="importView" class="hidden"><main class="import"><div class="cockHead"><button id="importBack" class="icon">←</button><h1>Planliste importieren</h1></div>
+<div class="card plan-import-card">
+  <div class="import-title-row"><div><h2>Planliste direkt hochladen</h2><p class="sub">Excel, CSV oder bestehendes ATMS-JSON – automatische Erkennung der ATMS-Planliste.</p></div><span class="import-badge">NEU</span></div>
+  <label class="file file-large">📄 Planliste auswählen<input id="fileInput" type="file" accept=".xlsx,.xls,.csv,.tsv,.json,application/json,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
+  <div id="planImportDrop" class="plan-drop">Datei hier ablegen oder oben auswählen</div>
+  <div id="planAnalysis" class="plan-analysis hidden">
+    <div id="planProfileInfo" class="plan-profile-info"><b>Importprofil wird erkannt …</b></div>
+    <div class="plan-stats plan-stats-extended"><div><b id="planRideCount">0</b><span>Fahrten</span></div><div><b id="planDriverCount">0</b><span>Fahrer</span></div><div><b id="planFlightCount">0</b><span>Flüge</span></div><div><b id="planWarningCount">0</b><span>Hinweise</span></div><div><b id="planErrorCount">0</b><span>Fehler</span></div><div><b id="planSheetName">–</b><span>Tabellenblatt</span></div></div>
+    <div id="planIssues" class="plan-issues"></div>
+    <div class="plan-preview-wrap"><table class="plan-preview"><thead><tr><th>Zeit</th><th>Fahrer</th><th>Abholung</th><th>Ziel</th><th>Flug</th><th>Flugort</th><th>Typ</th><th>Preis</th><th>Status</th></tr></thead><tbody id="planPreviewBody"></tbody></table></div>
+  </div>
+  <div class="actions2"><button id="analyzePlanBtn" class="act blue" disabled>Planliste analysieren</button><button id="importPlanBtn" class="act green" disabled>Geprüfte Fahrten übernehmen</button></div>
+  <p id="importStatus" class="sub">Noch keine Planliste ausgewählt.</p>
+</div>
+<div class="card legacy-json"><details><summary>Erweiterter JSON-Import</summary><textarea id="jsonInput" placeholder="ATMS-JSON hier einfügen …"></textarea><div class="actions2"><button id="loadBtn" class="act green">JSON laden</button><button id="clearBtn" class="act dark">Leeren</button></div></details></div>
 <div class="card"><h2>👤 Disponenten</h2><p class="setting-note">Name und Telefonnummer werden lokal gespeichert. Im Cockpit wählst du den aktuellen Disponenten. WhatsApp-Texte werden automatisch aus der Fahrt erzeugt.</p><div class="settings-grid">
 <div><label class="setting-label" for="dispatcherName">Disponent anlegen (max. 20)</label><input id="dispatcherName" class="setting-input" placeholder="z. B. Ewa"></div>
 <div><label class="setting-label" for="dispatcherPhone">Telefon-/WhatsApp-Nummer</label><input id="dispatcherPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"></div>
@@ -94,6 +108,8 @@
 </div></main></section>
 </div><nav class="bottom"><button class="nav active" data-nav="rides"><span>🚘</span>Fahrten</button><button class="nav" data-nav="all"><span>☷</span>Alle Fahrten</button><button id="plusBtn" class="nav nav-plus" type="button" aria-label="Fahrten importieren"><span>＋</span><small>Import</small></button><button class="nav" data-nav="messages"><span>💬</span>Nachrichten</button><button class="nav nav-live" data-nav="live"><span>📡</span>Live-Dispo</button><button class="nav" data-nav="settings"><span>⚙</span>Einstellungen</button></nav>
 <div id="driverDialog" class="overlay hidden" role="dialog" aria-modal="true"><div class="sheet" id="driverSheet"><div class="row"><h2>Fahrten anzeigen</h2><button id="closeDrivers" class="icon x" type="button">×</button></div><div id="driverChoices"></div></div></div>
-<div id="atmsToast" class="atms-toast" role="status" aria-live="polite"></div><script src="./js/app.js" defer></script>
+<div id="atmsToast" class="atms-toast" role="status" aria-live="polite"></div><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="./js/plan-import.js" defer></script>
+<script src="./js/app.js" defer></script>
 <script src="./js/pwa.js" defer></script>
 </body></html>

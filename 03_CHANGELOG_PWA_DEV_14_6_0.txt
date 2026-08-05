@@ -1,0 +1,24 @@
+ATMS PRO PWA DEV 14.6.0 ALPHA – SMART IMPORT ENGINE
+Zeitstempel: 05.08.2026
+
+NEU
+- Spezielles Importprofil „ATMS Standard-Planliste“ für die gezeigten Dispositionslisten.
+- Erkennt die tatsächliche Überschriftenzeile auch dann, wenn davor Titel- oder Leerzeilen stehen.
+- Verarbeitet doppelte Überschriften korrekt:
+  - erste „Uhrzeit“ = Abholzeit
+  - zweite „Uhrzeit“ = Flugzeit
+  - erstes „Wg“ = Fahrzeug
+  - zweites „Wg“ = Fahrer
+- Unterscheidet „Flug ang.“ und „Flug ausg.“ und erzeugt daraus eine einheitliche Flugnummer.
+- Erkennt Fahrttypen: Ankunft, Abflug, Hotel und Transfer.
+- Erkennt automatisch das passende Tabellenblatt einer Excel-Datei.
+- Zeigt Importprofil, Erkennungsquote, Tabellenblatt, Fahrten, Fahrer und Flüge.
+- Erweiterte Vorschau mit Flugort und Fahrttyp.
+- Prüfung auf fehlende Pflichtfelder, fehlende Fahrer, ungültige Flugnummern und mögliche Doppelungen.
+- Speichert das erkannte Importprofil lokal für die spätere Weiterentwicklung.
+
+WICHTIG
+- Aktuelle Flugorte und Live-Flugstatus werden in dieser Alpha-Version noch nicht online abgefragt.
+- Bereits in der Planliste vorhandene Flugorte werden übernommen.
+- Excel benötigt beim ersten Start weiterhin das externe SheetJS-Modul und damit eine Internetverbindung.
+- Für die exakte Endabstimmung wird weiterhin eine originale .xlsx-Testdatei benötigt.

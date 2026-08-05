@@ -1,0 +1,19 @@
+ATMS PRO PWA DEV 14.5.8 – PLANIMPORT OHNE GEMINI
+Zeitstempel: 05.08.2026 – 19:44 Uhr (MESZ)
+
+NEU
+- Direkter Planlistenimport innerhalb von ATMS PRO.
+- Unterstützte Formate: XLSX, XLS, CSV, TSV und ATMS-JSON.
+- Automatische Erkennung typischer Spaltennamen für Fahrer, Zeit, Abholort, Ziel, Flugnummer, Flugort, Preis, Personen, Fahrzeug und Hinweise.
+- Automatische Umwandlung in die bestehende ATMS-PRO-Fahrtenstruktur.
+- Importvorschau mit Fahrtenanzahl, Fahreranzahl, Warnungen und Fehlern.
+- Zeilenbezogene Validierung vor der Übernahme.
+- Import wird bei kritischen Fehlern gesperrt.
+- Bestehende Auswahl „Planliste ersetzen oder zusammenführen“ bleibt erhalten.
+- Gemini wird für standardisierte Excel-/CSV-Planlisten nicht mehr benötigt.
+
+WICHTIG
+- Excel-Dateien werden über das eingebundene SheetJS-Modul gelesen. Beim ersten Laden der App ist eine Internetverbindung erforderlich, damit dieses Modul geladen wird.
+- CSV/TSV und JSON funktionieren ohne dieses Excel-Modul.
+- PDFs, Fotos und Screenshots werden in dieser Version noch nicht automatisch ausgewertet.
+- Unklare Angaben werden nicht erfunden, sondern als Hinweis oder Fehler angezeigt.

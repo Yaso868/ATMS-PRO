@@ -1,10 +1,11 @@
-const CACHE_NAME = "atms-pro-pwa-14-5-7-v1";
+const CACHE_NAME = "atms-pro-pwa-14-6-0-smart-import-v1";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./css/main.css",
   "./js/app.js",
+  "./js/plan-import.js",
   "./js/pwa.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
