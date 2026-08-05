@@ -1,0 +1,18 @@
+ATMS PRO PWA DEV 14.5.5
+Zeitstempel: 05.08.2026 – 18:02 Uhr (MESZ)
+
+Basis: DEV 14.5.4
+
+Neu:
+- PWA-Manifest integriert
+- Service Worker und Offline-App-Shell
+- App-Icons 192x192 und 512x512
+- Installationsdialog vorbereitet
+- Standalone-Anzeige auf Android
+- Offline-Hinweis
+- GPS- und Live-Dispo-Logik aus DEV 14.5.4 beibehalten
+- Noch ohne Fahrer-PIN
+
+Wichtig:
+- Bereitstellung über HTTPS ist weiterhin erforderlich.
+- Standortabfrage funktioniert nicht direkt aus einer lokalen Download-Datei.
