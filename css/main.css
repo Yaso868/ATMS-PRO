@@ -1,0 +1,257 @@
+:root{--bg:#00121d;--panel:#062331;--panel2:#092a39;--line:#174255;--text:#f7fbff;--muted:#91a8b7;--blue:#00a8ff;--green:#54e20f;--cyan:#19d8df;--yellow:#ffbd17;--red:#ff3155}*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}button,input,select,textarea{font:inherit}.hidden{display:none!important}.app{min-height:100vh;padding-bottom:86px}.top{position:sticky;top:0;z-index:20;background:#001520f2;border-bottom:1px solid var(--line);padding:14px 16px 12px}.row{display:flex;align-items:center;gap:12px}.icon{width:56px;height:56px;border:1px solid var(--line);border-radius:18px;background:#04202d;color:#fff;font-size:31px}.title{font-weight:800;font-size:27px}.grow{flex:1}.search{margin-top:14px;width:100%;background:#062433;border:1px solid var(--line);border-radius:18px;padding:15px 16px;color:#fff;font-size:16px}.sub{color:var(--muted);font-size:16px;margin-top:12px}.list{padding:9px 10px 18px;max-width:760px;margin:auto}.ride{position:relative;display:grid;grid-template-columns:82px 1fr;background:linear-gradient(180deg,#082736,#06212f);border:1px solid var(--line);border-radius:14px;margin-bottom:7px;overflow:hidden;min-height:88px;cursor:pointer}.stripe{position:absolute;left:0;top:0;bottom:0;width:7px;background:var(--green)}.ride.cyan .stripe{background:var(--cyan)}.ride.yellow .stripe{background:var(--yellow)}.ride.red .stripe{background:var(--red)}.left{padding:12px 7px 9px 15px;border-right:1px solid #183b4c}.price,.time{font-size:19px;font-weight:800;line-height:1.22;color:var(--green)}.cyan .price,.cyan .time{color:var(--cyan)}.yellow .price,.yellow .time{color:var(--yellow)}.red .price,.red .time{color:var(--red)}.driver-left{margin-top:5px;font-size:15px;font-weight:800;line-height:1.15;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cyan .driver-left{color:var(--cyan)}.yellow .driver-left{color:var(--yellow)}.red .driver-left{color:var(--red)}.mid{padding:10px 8px}.route{font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.partner{font-size:12px;color:var(--muted);margin-top:4px}.meta{font-size:13px;margin-top:6px;color:#d8e5ed;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.flightloc{color:var(--blue);margin-top:4px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ride.bundle .stripe{background:#b45cff}.bundle-badge{margin-top:4px;font-size:10px;font-weight:900;letter-spacing:.35px;color:#d38cff;white-space:nowrap}.bundle-stops{color:#d6b8ff;margin-top:5px;font-size:11px;line-height:1.35}.bundle-stop-row{display:flex;align-items:center;gap:5px;padding-top:3px;border-top:1px solid rgba(180,92,255,.22)}.bundle-stop-row:first-child{border-top:0}.bundle-stop-dot{width:8px;height:8px;border-radius:50%;background:#b45cff;flex:0 0 8px}.bundle-stop-pax{color:#aebfca;font-size:10px}.bundle-cockpit{color:#d38cff;font-size:10px;font-weight:900;letter-spacing:.4px;margin-top:3px}.right{padding:10px 10px 8px 3px;text-align:right}.driver{font-size:14px;font-weight:800;color:var(--green)}.cyan .driver{color:var(--cyan)}.yellow .driver{color:var(--yellow)}.red .driver{color:var(--red)}.chev{position:absolute;right:10px;bottom:8px;color:#9db3c0;font-size:21px}.donebar{background:#062b38;border:1px solid var(--line);border-left:7px solid #00c86b;border-radius:13px;padding:0;margin-bottom:8px;overflow:hidden}.donehead{display:flex;gap:9px;align-items:center;min-height:46px;padding:9px 10px}.donehead b{color:#00d579;font-size:15px}.donehead span{font-size:13px;color:var(--muted)}.doneToggle{margin-left:auto;width:36px;height:32px;border:0;background:#0b3a4c;color:#fff;border-radius:10px;font-size:20px}.donewrap{padding:0 7px 5px}.donewrap .ride{margin-bottom:5px;opacity:.88}.done-empty{padding:0 12px 11px;color:var(--muted);font-size:13px}.bottom{position:fixed;bottom:0;left:0;right:0;z-index:40;background:#001521f5;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);padding:8px 4px calc(8px + env(safe-area-inset-bottom))}.nav{border:0;background:none;color:#a1b4c0;font-size:13px}.nav span{display:block;font-size:29px;line-height:1.1}.nav.active{color:var(--blue)}.nav-plus{position:relative;color:#001521;align-self:center}.nav-plus span{width:48px;height:48px;margin:-18px auto 1px;display:grid!important;place-items:center;border-radius:50%;background:var(--yellow);color:#09141b;font-size:34px!important;font-weight:400;line-height:1;box-shadow:0 7px 20px rgba(0,0,0,.38);border:3px solid #001521}.nav-plus small{display:block;color:#d3dee5;font-size:10px;line-height:1}.overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;padding-top:env(safe-area-inset-top)}.overlay.hidden{display:none!important}.sheet{width:min(100%,760px);height:auto;max-height:calc(100dvh - 6px);background:#022332;border:1px solid #1a5267;border-radius:24px 24px 0 0;padding:12px 14px calc(12px + env(safe-area-inset-bottom));overflow:hidden;display:flex;flex-direction:column}.sheet>.row{min-height:48px;gap:8px;flex:0 0 auto}.sheet h2{font-size:23px;line-height:1.1;margin:4px 0 8px}.sheet .icon{width:46px;height:46px;border-radius:15px}.choice{width:100%;min-height:58px;display:flex;align-items:center;gap:11px;background:#072c3b;color:#fff;border:1px solid #1a5164;border-radius:15px;padding:12px 14px;margin:0;font-size:16px;font-weight:700;line-height:1.1}.choice.selected{border:2px solid var(--blue)}.dot{width:18px;height:18px;flex:0 0 18px;border-radius:50%;background:var(--blue)}.x{margin-left:auto;font-size:25px}#driverChoices{display:grid;grid-template-columns:1fr;gap:7px;min-height:0}#driverChoices.dense{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}#driverChoices.dense .choice{min-height:52px;padding:9px 10px;font-size:14px}#driverChoices.ultra{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}#driverChoices.ultra .choice{min-height:44px;padding:7px 8px;font-size:13px;border-radius:12px}#driverChoices.ultra .dot{width:14px;height:14px;flex-basis:14px}.cockpit{padding:18px 16px 100px;max-width:760px;margin:auto}.cockHead{display:flex;align-items:center;gap:18px;margin-bottom:18px}.cockHead h1{font-size:34px;margin:0}.badge{margin-left:auto;border:1px solid #14753b;color:#00d05e;border-radius:18px;padding:15px 18px;font-weight:800;font-size:20px}.card{background:linear-gradient(180deg,#082736,#05202d);border:1px solid var(--line);border-radius:28px;padding:25px;margin-bottom:18px}.times{display:grid;grid-template-columns:1fr 55px 1fr}.lbl{color:var(--muted);font-size:18px}.big{font-size:42px;font-weight:800;margin-top:4px}.blue{color:var(--blue)}.overdue{color:#ff4967;font-size:26px;font-weight:800;margin-top:28px}.flightgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.flightnum{font-size:38px;font-weight:800}.edit{margin-top:20px;border:1px solid var(--blue);color:#42b9ff;background:none;border-radius:18px;padding:14px 18px;font-weight:800}.routebox{display:grid;grid-template-columns:62px 1fr;gap:18px}.timeline{display:flex;flex-direction:column;align-items:center}.circle{width:42px;height:42px;border:6px solid var(--red);border-radius:50%}.circle.bluec{border-color:var(--blue)}.dash{height:68px;border-left:4px dotted #7fa1b1}.place{font-size:24px;font-weight:800}.small{font-size:17px;color:var(--muted);margin-bottom:40px}.stats{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);padding-top:20px;text-align:center}.statv{font-size:26px;font-weight:800}.actions2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}.act{border:0;border-radius:16px;padding:16px;font-weight:800}.green{background:#0d6b3b;color:#fff}.dark{background:#123247;color:#fff}.import{padding:20px 16px 105px;max-width:760px;margin:auto}.import .card{border-radius:22px}textarea{width:100%;height:230px;background:#031d29;color:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}.file{display:block;background:#0b75c9;color:#fff;padding:15px;text-align:center;border-radius:14px;font-weight:800}.file input{display:none}.empty{text-align:center;color:var(--muted);padding:50px 10px}.sectiontitle{display:flex;align-items:center;margin:18px 2px 10px;font-size:18px;font-weight:800}.sectiontitle button{margin-left:auto;background:#0b3345;border:1px solid var(--line);color:#fff;border-radius:12px;padding:8px 12px}@media(max-width:520px){.ride{grid-template-columns:76px 1fr;min-height:82px}.left{padding-left:14px}.price,.time{font-size:18px}.route{font-size:14px}.driver{font-size:13px}.driver-left{font-size:14px}.cockHead h1{font-size:29px}.badge{font-size:16px;padding:13px}.big{font-size:36px}.card{padding:20px}}
+@media(max-height:720px){.sheet{padding-top:8px}.sheet h2{font-size:20px;margin:2px 0 5px}.sheet .icon{width:40px;height:40px}.choice{min-height:48px;padding:8px 11px;font-size:14px}#driverChoices{gap:5px}}@media(max-height:620px){.sheet h2{font-size:18px}.sheet>.row{min-height:40px}.choice{min-height:42px;padding:6px 9px;font-size:13px}.dot{width:14px;height:14px;flex-basis:14px}#driverChoices{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}}
+/* ATMS PRO Beta 14.2.5 – Bündelfahrt Yannik – S24 Ultra Display-Fit */
+@media (max-width:760px){
+  .app{min-height:100dvh;padding-bottom:64px}
+  .bottom{padding:4px 2px calc(4px + env(safe-area-inset-bottom))}
+  .nav{font-size:10px}.nav span{font-size:22px}.nav-plus span{width:44px;height:44px;margin-top:-17px;font-size:31px!important}.nav-plus small{font-size:9px}
+  .cockpit{height:calc(100dvh - 62px - env(safe-area-inset-bottom));overflow:hidden;padding:8px 10px 4px;display:flex;flex-direction:column;gap:6px}
+  .cockHead{margin:0;min-height:42px;gap:10px;flex:0 0 auto}
+  .cockHead .icon{width:42px;height:42px;border-radius:13px;font-size:24px}
+  .cockHead h1{font-size:24px;line-height:1;margin:0}
+  .badge{font-size:12px;padding:8px 10px;border-radius:12px}
+  .cockpit>.card{margin:0;border-radius:16px;padding:10px 12px;flex:0 0 auto}
+  .times{grid-template-columns:1fr 28px 1fr;align-items:center}
+  .lbl{font-size:11px;line-height:1.1}.big{font-size:28px;line-height:1;margin-top:2px}
+  .times>div:nth-child(2){font-size:25px!important}
+  #driverA,#driverB{font-size:13px!important;line-height:1.1;margin-top:3px}
+  .overdue{font-size:14px;margin-top:5px;line-height:1.1}
+  .flightgrid{gap:8px}.flightnum{font-size:24px;line-height:1.1}
+  #flightLoc,#company{font-size:14px!important;line-height:1.15}.place{font-size:16px;line-height:1.15}
+  .edit{margin-top:7px;border-radius:11px;padding:7px 10px;font-size:12px}
+  .routebox{grid-template-columns:32px 1fr;gap:8px}.circle{width:22px;height:22px;border-width:4px}.dash{height:31px;border-left-width:3px}
+  .small{font-size:11px;margin:2px 0 7px;line-height:1.1}
+  .stats{padding-top:7px}.statv{font-size:16px}.actions2{margin-top:7px;gap:7px}.act{padding:9px;border-radius:11px;font-size:13px}
+}
+@media (max-height:760px) and (max-width:760px){
+  .cockpit{gap:4px;padding-top:5px}.cockHead{min-height:36px}.cockHead .icon{width:36px;height:36px;font-size:21px}.cockHead h1{font-size:21px}
+  .cockpit>.card{padding:8px 10px}.big{font-size:25px}.flightnum{font-size:21px}.routebox{grid-template-columns:28px 1fr}.circle{width:19px;height:19px}.dash{height:24px}.small{margin-bottom:4px}.act{padding:7px}
+}
+/* Fahrer-Auswahl vollständig im sichtbaren Display */
+#driverChoices{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:5px!important}
+#driverChoices .choice{min-height:40px!important;padding:6px 8px!important;font-size:12px!important;border-radius:11px!important}
+#driverChoices .dot{width:13px!important;height:13px!important;flex-basis:13px!important}
+.sheet{max-height:calc(100dvh - 2px)!important;padding:8px 9px calc(8px + env(safe-area-inset-bottom))!important}
+.sheet>.row{min-height:36px!important}.sheet h2{font-size:18px!important;margin:0 0 4px!important}.sheet .icon{width:36px!important;height:36px!important;font-size:21px!important}
+
+/* Beta 14.0.2 – Planzeit und aktuelle/verspätete Abholzeit in der Fahrtenliste */
+.time-stack{margin-top:2px;display:flex;flex-direction:column;align-items:flex-start;line-height:1}
+.time-stack .plan-small{font-size:12px;font-weight:700;color:#91a8b7;text-decoration:line-through;text-decoration-thickness:1px;margin-bottom:2px}
+.time-stack .current-large{font-size:20px;font-weight:900;line-height:1.05;color:var(--green)}
+.cyan .time-stack .current-large{color:var(--cyan)}
+.yellow .time-stack .current-large{color:var(--yellow)}
+.red .time-stack .current-large{color:var(--red)}
+.time-single{margin-top:2px;font-size:19px;font-weight:800;line-height:1.22;color:var(--green)}
+.cyan .time-single{color:var(--cyan)}.yellow .time-single{color:var(--yellow)}.red .time-single{color:var(--red)}
+@media(max-width:520px){.time-stack .plan-small{font-size:11px}.time-stack .current-large{font-size:19px}.time-single{font-size:18px}}
+
+/* ATMS PRO Beta 14.2.2 – Bündelfahrt – Cockpit vollständig im Handy-Display */
+@media (max-width:760px){
+  #cockpitView{height:calc(100dvh - 58px - env(safe-area-inset-bottom));overflow:hidden}
+  #cockpitView .cockpit{height:100%;min-height:0;overflow:hidden;padding:5px 8px 3px;gap:4px;display:grid;grid-template-rows:38px auto auto minmax(0,1fr)}
+  #cockpitView .cockHead{height:38px;min-height:38px;margin:0;gap:8px}
+  #cockpitView .cockHead .icon{width:36px;height:36px;border-radius:11px;font-size:20px}
+  #cockpitView .cockHead h1{font-size:20px;line-height:1}
+  #cockpitView .badge{font-size:10px;padding:6px 8px;border-radius:10px;white-space:nowrap}
+  #cockpitView .card{min-height:0;margin:0;border-radius:13px;padding:7px 9px;overflow:hidden}
+  #cockpitView .times{grid-template-columns:1fr 22px 1fr}
+  #cockpitView .lbl{font-size:9px;letter-spacing:.2px}
+  #cockpitView .big{font-size:23px;line-height:.98;margin-top:1px}
+  #cockpitView .times>div:nth-child(2){font-size:20px!important}
+  #cockpitView #driverA,#cockpitView #driverB{font-size:11px!important;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #cockpitView .overdue{font-size:11px;margin-top:2px;min-height:0}
+  #cockpitView .flightgrid{grid-template-columns:1fr 1fr;gap:6px}
+  #cockpitView .flightnum{font-size:20px;line-height:1}
+  #cockpitView #flightLoc,#cockpitView #company{font-size:12px!important;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #cockpitView .place{font-size:13px;line-height:1.08;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #cockpitView .edit{margin-top:4px;padding:5px 8px;border-radius:9px;font-size:10px;line-height:1}
+  #cockpitView .routebox{grid-template-columns:25px 1fr;gap:6px}
+  #cockpitView .circle{width:17px;height:17px;border-width:3px}
+  #cockpitView .dash{height:18px;border-left-width:2px}
+  #cockpitView .small{font-size:9px;margin:1px 0 3px;line-height:1}
+  #cockpitView .stats{padding-top:4px;margin-top:2px}
+  #cockpitView .statv{font-size:13px;line-height:1.05}
+  #cockpitView .actions2{margin-top:4px;gap:5px}
+  #cockpitView .act{padding:6px 5px;border-radius:9px;font-size:11px;line-height:1}
+}
+@media (max-width:760px) and (max-height:700px){
+  #cockpitView .cockpit{grid-template-rows:32px auto auto minmax(0,1fr);gap:3px;padding-top:3px}
+  #cockpitView .cockHead{height:32px;min-height:32px}
+  #cockpitView .cockHead .icon{width:30px;height:30px;font-size:18px}
+  #cockpitView .cockHead h1{font-size:18px}
+  #cockpitView .badge{font-size:9px;padding:4px 6px}
+  #cockpitView .card{padding:5px 7px}
+  #cockpitView .big{font-size:20px}
+  #cockpitView .flightnum{font-size:17px}
+  #cockpitView .edit{padding:4px 6px;margin-top:3px}
+  #cockpitView .circle{width:14px;height:14px}
+  #cockpitView .dash{height:13px}
+  #cockpitView .actions2{margin-top:3px}
+  #cockpitView .act{padding:5px}
+}
+
+/* Beta 14.3.9 – Automatische WhatsApp-Texte – geänderte Planzeit auch im Cockpit durchstreichen */
+#cockpitView #planTime.plan-replaced{
+  text-decoration-line:line-through;
+  text-decoration-thickness:2px;
+  text-decoration-color:currentColor;
+  color:#7f8f99;
+  opacity:.88;
+}
+
+.flight-status{display:inline-flex;align-items:center;margin-left:4px;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:800;vertical-align:middle;white-space:nowrap}.flight-status.on-time{background:#0d4c2f;color:#6dffad}.flight-status.delayed{background:#5a3d00;color:#ffd05a}.flight-status.landed{background:#083f59;color:#60d5ff}.flight-status.unknown{background:#233845;color:#aebfc9}.cock-flight-status{margin:4px 0 0 0;font-size:10px;padding:3px 7px}
+
+
+/* ATMS PRO Beta 14.2.0 – Cockpit leicht vergrößert, weiterhin Display-Fit */
+@media (max-width:760px){
+  #cockpitView .cockpit{
+    padding:6px 9px 4px;
+    gap:5px;
+    grid-template-rows:40px auto auto minmax(0,1fr);
+  }
+  #cockpitView .cockHead{height:40px;min-height:40px;gap:9px}
+  #cockpitView .cockHead .icon{width:38px;height:38px;font-size:22px}
+  #cockpitView .cockHead h1{font-size:22px}
+  #cockpitView .badge{font-size:11px;padding:7px 10px}
+  #cockpitView .card{padding:8px 10px;border-radius:15px}
+  #cockpitView .times{grid-template-columns:1fr 24px 1fr}
+  #cockpitView .lbl{font-size:10px;line-height:1.05}
+  #cockpitView .big{font-size:27px;line-height:1;margin-top:2px}
+  #cockpitView .times>div:nth-child(2){font-size:22px!important}
+  #cockpitView #driverA,#cockpitView #driverB{font-size:12px!important;margin-top:3px}
+  #cockpitView .flightnum{font-size:23px;line-height:1.05;color:#fff}
+  #cockpitView #flightLoc{
+    color:#fff!important;
+    font-size:15px!important;
+    line-height:1.12;
+    font-weight:750;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  #cockpitView #partner{color:#fff;font-size:15px;line-height:1.1}
+  #cockpitView #company{color:#a8bdc9!important;font-size:12px!important}
+  #cockpitView .edit{margin-top:5px;padding:6px 9px;font-size:11px}
+  #cockpitView .routebox{grid-template-columns:27px 1fr;gap:7px}
+  #cockpitView .circle{width:19px;height:19px;border-width:3px}
+  #cockpitView .dash{height:21px}
+  #cockpitView #pickup,#cockpitView #destination{
+    color:#fff!important;
+    font-size:15px;
+    line-height:1.12;
+    font-weight:800;
+  }
+  #cockpitView .small{font-size:10px;margin:2px 0 4px;line-height:1.05}
+  #cockpitView .stats{padding-top:5px;margin-top:3px}
+  #cockpitView .statv{font-size:15px}
+  #cockpitView .actions2{margin-top:5px;gap:6px}
+  #cockpitView .act{padding:7px 6px;font-size:12px}
+}
+@media (max-width:760px) and (max-height:700px){
+  #cockpitView .cockpit{grid-template-rows:34px auto auto minmax(0,1fr);gap:3px;padding:3px 7px 2px}
+  #cockpitView .cockHead{height:34px;min-height:34px}
+  #cockpitView .cockHead .icon{width:32px;height:32px;font-size:19px}
+  #cockpitView .cockHead h1{font-size:19px}
+  #cockpitView .badge{font-size:9px;padding:5px 7px}
+  #cockpitView .card{padding:6px 8px;border-radius:12px}
+  #cockpitView .lbl{font-size:9px}
+  #cockpitView .big{font-size:23px}
+  #cockpitView .flightnum{font-size:19px}
+  #cockpitView #flightLoc{font-size:13px!important}
+  #cockpitView #pickup,#cockpitView #destination{font-size:13px}
+  #cockpitView #partner{font-size:13px}
+  #cockpitView .edit{padding:4px 7px;margin-top:3px;font-size:9px}
+  #cockpitView .circle{width:15px;height:15px}
+  #cockpitView .dash{height:14px}
+  #cockpitView .small{font-size:8.5px;margin-bottom:2px}
+  #cockpitView .statv{font-size:13px}
+  #cockpitView .act{padding:5px;font-size:10px}
+}
+
+
+/* Beta 14.2.7 – Bündelfahrt im Cockpit mit allen Stopps */
+.bundle-route-list{display:flex;flex-direction:column;gap:7px;width:100%}
+.bundle-route-stop{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start}
+.bundle-route-marker{width:17px;height:17px;border:3px solid #b45cff;border-radius:50%;margin-top:1px;position:relative}
+.bundle-route-stop:not(:last-child) .bundle-route-marker:after{content:"";position:absolute;left:4px;top:16px;width:3px;height:28px;background:repeating-linear-gradient(to bottom,#839aa8 0 4px,transparent 4px 8px)}
+.bundle-route-stop.final .bundle-route-marker{border-color:#00a8ff}
+.bundle-route-name{font-size:15px;font-weight:900;color:#fff;line-height:1.1}
+.bundle-route-meta{font-size:11px;color:#aebfca;margin-top:2px}
+.bundle-route-title{font-size:10px;font-weight:900;letter-spacing:.5px;color:#d38cff;margin-bottom:5px}
+@media(max-width:760px){.bundle-route-list{gap:5px}.bundle-route-stop{grid-template-columns:19px 1fr;gap:6px}.bundle-route-marker{width:15px;height:15px;border-width:3px}.bundle-route-stop:not(:last-child) .bundle-route-marker:after{left:3px;top:14px;height:24px}.bundle-route-name{font-size:13px}.bundle-route-meta{font-size:10px}.bundle-route-title{font-size:9px;margin-bottom:3px}}
+
+/* Stable 14.4.9 – Automatische WhatsApp-Texte */
+.actions2.whatsapp-actions{grid-template-columns:1fr 1fr 1fr}
+.wa{background:#087b42;color:#fff;border:1px solid #22c96f}
+.settings-grid{display:grid;gap:10px}
+.setting-label{font-size:12px;color:var(--muted);font-weight:700;margin-bottom:5px;display:block}
+.setting-input{width:100%;background:#031d29;color:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+.setting-note{font-size:12px;color:var(--muted);line-height:1.4}
+.setting-ok{color:#42df87;font-weight:800}
+@media(max-width:520px){.actions2.whatsapp-actions{grid-template-columns:1fr 1fr 1fr}.actions2.whatsapp-actions .act{font-size:11px;padding:8px 4px}}
+
+/* Beta 14.3.2 – klickbare Telefonnummer */
+.phone-link{display:inline-flex;align-items:center;gap:7px;margin-top:8px;padding:9px 12px;border:1px solid #1a5164;border-radius:12px;background:#062c3b;color:#5fd3ff;text-decoration:none;font-weight:800;min-height:40px}
+.phone-link.hidden{display:none!important}
+.phone-help{font-size:11px;color:#91a8b7;margin-top:5px}
+
+.dispatcher-card{background:linear-gradient(180deg,#082736,#05202d);border:1px solid var(--line);border-radius:16px;padding:10px 12px;margin-top:8px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end}.dispatcher-card .setting-label{font-size:10px}.dispatcher-select{width:100%;background:#061f2c;color:#fff;border:1px solid #1a5267;border-radius:12px;padding:10px 12px;font-weight:800}.dispatcher-actions{display:flex;gap:7px}.dispatcher-mini-btn{border:1px solid #178854;background:#0b6b3c;color:#fff;border-radius:12px;padding:10px 12px;font-weight:800;white-space:nowrap;text-decoration:none}.dispatcher-mini-btn.call{background:#123247;border-color:#245a73}.dispatcher-info{grid-column:1/-1;color:var(--muted);font-size:11px}.dispatcher-list{display:grid;gap:8px;margin-top:12px}.dispatcher-item{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;background:#062433;border:1px solid var(--line);border-radius:13px;padding:10px}.dispatcher-item b{display:block}.dispatcher-item small{color:var(--muted)}.dispatcher-item-actions{display:flex;gap:6px}.mini{border:1px solid var(--line);background:#0b3345;color:#fff;border-radius:10px;padding:7px 9px}.mini.danger{color:#ff6a80}.current-chip{color:#00d579;font-size:11px;font-weight:800}.settings-grid .full{grid-column:1/-1}@media(max-width:520px){.dispatcher-card{grid-template-columns:1fr}.dispatcher-actions{display:grid;grid-template-columns:1fr 1fr}.dispatcher-mini-btn{text-align:center;padding:9px}.dispatcher-info{font-size:10px}}
+
+/* Stable 14.4.9 – Automatische WhatsApp-Texte */
+.template-section{grid-column:1/-1;border-top:1px solid var(--line);padding-top:12px;margin-top:4px}.template-title{font-size:15px;font-weight:900;margin-bottom:4px}.template-help{font-size:11px;color:var(--muted);margin-bottom:10px}.template-card{background:#062433;border:1px solid var(--line);border-radius:14px;padding:10px;margin-bottom:9px}.template-card label{display:block;font-size:11px;font-weight:900;color:#cfe8f4;margin-bottom:6px}.template-card textarea{width:100%;min-height:54px;resize:vertical;background:#041b27;color:#fff;border:1px solid #1a5267;border-radius:11px;padding:9px 10px;font:700 13px system-ui}.template-preview{margin-top:7px;background:#031720;border:1px solid #123d50;border-radius:10px;padding:8px 10px;color:#fff;font-size:13px}.template-preview small{display:block;color:var(--muted);font-size:9px;font-weight:800;margin-bottom:3px;text-transform:uppercase}.placeholder-row{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0}.placeholder-btn{border:1px solid #245a73;background:#0b3345;color:#dff7ff;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:800}.template-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.template-actions .full{grid-column:1/-1}.test-message-card{grid-column:1/-1;background:#05212e;border:1px dashed #2b647b;border-radius:13px;padding:10px}.test-message-output{margin-top:7px;background:#031720;border-radius:10px;padding:9px;color:#fff;font-weight:800;min-height:36px}.setting-ok{color:#00d579;font-weight:800}@media(max-width:520px){.template-actions{grid-template-columns:1fr}.template-actions .full{grid-column:auto}}
+
+/* Stable 14.4.9 – kompakter Fahrtenlisten-Kopf */
+.compact-top{padding:10px 16px 8px}.compact-search{margin-top:0}.summary-row{display:flex;align-items:center;gap:12px;margin-top:7px;min-height:44px}.summary-row .sub{margin-top:0;flex:1}.summary-plus{width:46px;height:42px;flex:0 0 46px;border:0;background:transparent;color:#fff;font-size:38px;line-height:1;border-radius:12px}.summary-plus:active{background:#0b3345}.info-card{margin-top:18px}.info-row{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid var(--line);color:var(--muted)}.info-row:first-of-type{border-top:0}.info-row b{color:#fff;text-align:right}@media(max-width:520px){.compact-top{padding:8px 12px 7px}.summary-plus{width:42px;height:38px;font-size:34px}}
+
+/* Stable 14.4.9 – Premium Info-Seite */
+.info-premium{margin-top:18px;padding:0;overflow:hidden;border-color:#665126;background:linear-gradient(180deg,#101215,#07090b);box-shadow:0 18px 50px rgba(0,0,0,.32)}
+.info-hero{position:relative;min-height:360px;padding:22px 18px 20px;text-align:center;background:radial-gradient(circle at 50% 24%,rgba(199,157,67,.15),transparent 42%),linear-gradient(180deg,#17191c,#080a0c);border-bottom:1px solid rgba(211,173,91,.35);overflow:hidden}
+.info-hero:before{content:"";position:absolute;inset:0;opacity:.18;background-image:radial-gradient(circle at 20% 20%,#fff 0 1px,transparent 1px),radial-gradient(circle at 75% 65%,#fff 0 1px,transparent 1px);background-size:42px 42px,55px 55px;pointer-events:none}
+.info-shield{position:relative;width:250px;height:178px;margin:0 auto 2px;display:flex;align-items:center;justify-content:center}
+.info-shield:before{content:"";position:absolute;inset:5px 30px 7px;border:4px solid #cda64d;border-bottom-width:7px;border-radius:48% 48% 55% 55%/22% 22% 72% 72%;clip-path:polygon(0 0,100% 0,100% 70%,50% 100%,0 70%);background:linear-gradient(145deg,rgba(216,177,88,.05),rgba(255,255,255,.01));box-shadow:0 0 22px rgba(210,166,74,.16)}
+.info-van{position:relative;z-index:2;width:235px;max-height:145px;object-fit:contain;filter:drop-shadow(0 12px 12px rgba(0,0,0,.8));transform:translateY(5px)}
+.info-over{position:relative;z-index:3;color:#e5bd62;font-size:16px;font-weight:800;margin-top:-6px}
+.info-brand{position:relative;z-index:3;margin:2px 0 0;font-size:43px;line-height:1;font-weight:950;letter-spacing:-1px;background:linear-gradient(90deg,#fff 0 48%,#e5b95c 58% 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.info-subtitle{position:relative;z-index:3;margin-top:9px;color:#d4d6d9;font-size:11px;font-weight:800;letter-spacing:3px;text-transform:uppercase}
+.info-slogan{position:relative;z-index:3;color:#ddb45b;font-size:15px;font-weight:700;margin-top:16px}
+.info-details{padding:0 16px;background:linear-gradient(180deg,#101316,#090b0d)}
+.info-detail{display:grid;grid-template-columns:48px 1fr;gap:12px;align-items:center;padding:13px 2px;border-bottom:1px solid rgba(255,255,255,.09)}
+.info-detail:last-child{border-bottom:0}
+.info-detail-icon{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;font-size:23px;background:#15191d;border:1px solid #39352c;color:#d9b458}
+.info-detail-label{font-size:12px;color:#9ba3aa;margin-bottom:2px}
+.info-detail-value{font-size:18px;color:#fff;font-weight:900}
+.info-detail-value.status{color:#43d776}.info-detail-value.warn{color:#dda62c}
+.info-footer{padding:17px 16px 20px;text-align:center;color:#8f969c;font-size:12px;background:#080a0b}
+.info-footer b{display:block;color:#c9cbd0;font-size:14px;margin-bottom:3px}
+@media(max-width:520px){.info-hero{min-height:330px;padding:16px 12px 18px}.info-shield{width:225px;height:160px}.info-van{width:215px;max-height:132px}.info-brand{font-size:38px}.info-subtitle{font-size:9px;letter-spacing:2px}.info-slogan{font-size:13px}.info-detail{padding:11px 0}.info-detail-icon{width:42px;height:42px}.info-detail-value{font-size:16px}}
+
+.backup-card{border-color:#315b6d;background:linear-gradient(180deg,#092a39,#061e2a)}
+.backup-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.backup-btn{border:1px solid #2d657a;background:#0b3547;color:#fff;border-radius:14px;padding:13px 12px;font-weight:900;font-size:14px;min-height:48px}
+.backup-btn.primary{background:#087a48;border-color:#10a765}.backup-btn.danger{background:#48202a;border-color:#7f3342;color:#ffd7de}.backup-btn:active{transform:scale(.985)}
+.backup-status{margin-top:12px;padding:11px 12px;border-radius:12px;background:#061a24;border:1px solid #1a4557;color:#b7c9d2;font-size:12px;line-height:1.45}
+.backup-status.ok{color:#72e5a6;border-color:#187a4b}.backup-status.warn{color:#f4c65f;border-color:#80651f}.backup-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.backup-stat{background:#061f2b;border:1px solid #184456;border-radius:12px;padding:9px}.backup-stat b{display:block;color:#fff;font-size:17px}.backup-stat span{font-size:10px;color:#90a7b2}
+@media(max-width:520px){.backup-grid{grid-template-columns:1fr}.backup-summary{grid-template-columns:1fr 1fr}.backup-btn{min-height:44px;padding:11px}}
+
+.atms-toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%) translateY(18px);z-index:9999;max-width:calc(100% - 28px);padding:11px 15px;border-radius:14px;background:#073449;border:1px solid #236078;color:#fff;font-weight:800;font-size:13px;box-shadow:0 12px 30px rgba(0,0,0,.38);opacity:0;pointer-events:none;transition:.2s ease}.atms-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.atms-toast.ok{border-color:#168253;background:#075034}.atms-toast.warn{border-color:#9a6a17;background:#5e430b}.atms-toast.error{border-color:#9f3146;background:#621e2d}
+
+/* Stable 14.4.9 – Kommunikationscenter */
+.communication-center{margin-top:8px;display:grid;gap:7px}
+.contact-card{background:linear-gradient(180deg,#082736,#05202d);border:1px solid var(--line);border-radius:15px;padding:9px 10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
+.contact-card .setting-label{font-size:9px;margin-bottom:3px}
+.contact-actions{display:flex;gap:6px}
+.contact-btn{border:1px solid #245a73;background:#123247;color:#fff;border-radius:11px;padding:9px 10px;font-weight:800;text-decoration:none;white-space:nowrap}
+.contact-btn.message{background:#087b42;border-color:#22c96f}
+.info-status-btn{width:100%;border:1px solid #d99f18;background:linear-gradient(180deg,#f5bd2a,#d99a09);color:#172028;border-radius:13px;padding:11px 12px;font-weight:950;font-size:14px}
+.contact-info{grid-column:1/-1;color:var(--muted);font-size:10px;margin-top:-2px}
+.driver-settings-card{border-color:#315b6d}
+@media(max-width:520px){.contact-card{grid-template-columns:1fr}.contact-actions{display:grid;grid-template-columns:1fr 1fr}.contact-btn{text-align:center;padding:8px 6px;font-size:11px}.communication-center{gap:5px}.info-status-btn{padding:9px;font-size:12px}}
+
+.driver-tools{display:grid;grid-template-columns:1fr auto;gap:8px;margin:10px 0}.driver-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.driver-check{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13px}.driver-check input{accent-color:var(--green)}.driver-item-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}.driver-chip{font-size:10px;border:1px solid var(--line);border-radius:999px;padding:3px 7px;color:#cfe0ea}.driver-chip.fav{color:#ffd35b;border-color:#8d6b16}.driver-chip.active{color:#59ef8b;border-color:#1d7a46}.driver-chip.inactive{color:#ff8ca1;border-color:#8b2e43}.driver-note{margin-top:5px;color:var(--muted);font-size:11px;white-space:pre-wrap}.driver-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.driver-edit-grid .full{grid-column:1/-1}@media(max-width:520px){.driver-edit-grid{grid-template-columns:1fr}.driver-edit-grid .full{grid-column:auto}.driver-tools{grid-template-columns:1fr}}
+
+/* DEV 14.5.4 – HTTPS/Content-URI Standortdiagnose */
+.live-mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:5px;background:#041923;border:1px solid var(--line);border-radius:13px;padding:4px;margin-bottom:10px}.live-mode-btn{border:0;border-radius:9px;background:transparent;color:#a9bdc9;padding:9px 8px;font-weight:900;font-size:11px}.live-mode-btn.active{background:#086bd8;color:#fff;box-shadow:0 5px 14px rgba(0,90,220,.28)}.route-check-card{border-color:#176a94;background:linear-gradient(180deg,#062e43,#051d29)}.route-chain{display:grid;gap:7px}.route-step{display:grid;grid-template-columns:28px 1fr auto;align-items:center;gap:8px;border:1px solid #214b60;background:#061923;border-radius:11px;padding:9px}.route-step .step-icon{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#12394b;font-weight:900}.route-step.ok .step-icon{background:#0b6b3d;color:#72f3a3}.route-step.pending .step-icon{background:#4b5660;color:#dce5ea}.route-step.warn .step-icon{background:#7c4010;color:#ffd075}.route-step b{font-size:11px}.route-step small{display:block;color:var(--muted);font-size:9px;margin-top:2px}.route-step em{font-style:normal;font-size:10px;color:#c7dae5}.geo-box{margin-top:8px;border:1px solid #24566c;border-radius:12px;background:#061923;padding:9px;font-size:10px;color:var(--muted)}.geo-box b{color:#fff}.route-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}.route-summary>div{border:1px solid #21485b;background:#061923;border-radius:10px;padding:8px;text-align:center}.route-summary small{display:block;color:var(--muted);font-size:8px}.route-summary b{display:block;margin-top:3px;font-size:14px}.route-note{font-size:9px;color:#8fb5c8;margin-top:8px;line-height:1.4}.route-hidden{display:none!important}
+/* DEV 14.5.2 – Live-Disposition */
+.live-disposition{padding:12px 12px 104px;max-width:980px;margin:auto}.live-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.live-head h1{margin:0;font-size:22px}.live-pill{border:1px solid #197a50;background:#083d2a;color:#58f09a;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900}.live-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:10px}.live-card{background:linear-gradient(180deg,#082736,#051d29);border:1px solid var(--line);border-radius:16px;padding:12px;box-shadow:0 10px 24px rgba(0,0,0,.15)}.live-card h2{font-size:14px;margin:0 0 9px}.live-driver-row{display:grid;grid-template-columns:1fr auto;gap:8px}.live-select,.live-input{width:100%;border:1px solid #28556c;background:#061b27;color:#fff;border-radius:11px;padding:10px;font:inherit}.tracking-box{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding:9px;border-radius:12px;background:#061923;border:1px solid #1d4255}.tracking-state{font-weight:900;font-size:12px}.tracking-state.active{color:#59ef8b}.tracking-state.wait{color:#ffc95a}.tracking-state.off{color:#ff7d91}.consent-label{display:flex;gap:7px;align-items:center;color:#c8d8e2;font-size:11px}.consent-label input{accent-color:#1ecb77}.live-meta{color:var(--muted);font-size:10px;margin-top:7px}.timeline-list{display:grid;gap:8px}.timeline-item{position:relative;border:1px solid #224b61;border-left:4px solid #708694;background:#061d29;border-radius:13px;padding:10px 10px 10px 12px}.timeline-item.good{border-left-color:#1ed174}.timeline-item.warn{border-left-color:#f2a91b}.timeline-item.bad{border-left-color:#ee4f67}.timeline-top{display:flex;justify-content:space-between;gap:8px}.timeline-time{font-size:22px;font-weight:950}.timeline-status{font-size:10px;font-weight:900;border-radius:999px;padding:4px 7px;background:#102d3c;height:max-content}.timeline-route{font-weight:800;margin-top:4px}.timeline-sub{font-size:10px;color:var(--muted);margin-top:3px}.delay-alert{border-color:#8b293b;background:linear-gradient(180deg,#421725,#25101a)}.delay-number{font-size:28px;color:#ff7189;font-weight:950}.solution-card{border-color:#176e47;background:linear-gradient(180deg,#083927,#05271c)}.solution-badge{display:inline-block;background:#17bb69;color:#031b11;border-radius:999px;padding:4px 7px;font-size:9px;font-weight:950}.solution-title{font-size:16px;font-weight:950;margin-top:7px}.solution-details{font-size:11px;color:#cce4d7;line-height:1.55;margin-top:5px}.live-action{width:100%;border:0;border-radius:12px;background:#19bf6b;color:#052114;padding:11px;font-weight:950;margin-top:9px}.live-action.secondary{background:#14384b;color:#fff;border:1px solid #2c6078}.live-action:disabled{opacity:.45}.map-placeholder{height:170px;border-radius:14px;border:1px solid #285369;background:radial-gradient(circle at 65% 40%,rgba(18,105,150,.35),transparent 35%),linear-gradient(135deg,#082638,#06151e);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#a8c1d0;padding:15px}.map-placeholder b{color:#fff}.live-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}.live-stat{border:1px solid #21485b;background:#061923;border-radius:12px;padding:9px}.live-stat small{display:block;color:var(--muted);font-size:9px}.live-stat b{display:block;margin-top:3px}.live-log{max-height:170px;overflow:auto;display:grid;gap:6px}.live-log-item{font-size:10px;border-left:3px solid #208ccb;background:#071c28;padding:7px 8px;border-radius:7px}.live-empty{color:var(--muted);font-size:11px;padding:10px;text-align:center}.nav-live span{font-size:19px}@media(max-width:760px){.live-grid{grid-template-columns:1fr}.live-disposition{padding:9px 9px 98px}.live-head h1{font-size:19px}.bottom{overflow-x:auto;justify-content:flex-start}.bottom .nav{min-width:68px}}
+
+.pwa-install{position:fixed;left:12px;right:12px;bottom:78px;z-index:90;max-width:720px;margin:auto;background:linear-gradient(180deg,#0a3142,#062330);border:1px solid #1b5d78;border-radius:18px;padding:12px;box-shadow:0 14px 36px rgba(0,0,0,.45);display:flex;align-items:center;gap:10px}.pwa-install.hidden{display:none!important}.pwa-install strong{display:block;font-size:15px}.pwa-install small{display:block;color:#9fb7c5;margin-top:3px}.pwa-install button{border:0;border-radius:12px;padding:10px 13px;font-weight:800}.pwa-install .install-now{background:#00a8ff;color:white}.pwa-install .install-later{background:#123647;color:#d7e5ec}.pwa-offline{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:120;background:#ffbd17;color:#14202a;border-radius:999px;padding:7px 12px;font-weight:800;font-size:12px;box-shadow:0 5px 18px rgba(0,0,0,.35)}

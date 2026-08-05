@@ -1,0 +1,371 @@
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1';const $=id=>document.getElementById(id);let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+
+let atmsToastTimer=0;
+function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
+function runStartupSelfCheck(){const required=['search','plusBtn','rideList','fileInput','loadBtn','exportBackupBtn','importBackupBtn','resetDataBtn'];const missing=required.filter(id=>!document.getElementById(id));if(missing.length){throw new Error('Fehlende App-Elemente: '+missing.join(', '));}return true;}
+function first(...v){for(const x of v)if(x!==undefined&&x!==null&&String(x).trim()!=='')return String(x).trim();return ''}function clean(t){return t.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')}function planTimeOf(r){return first(r.time,r.planTime,r.plan_abholzeit,r.planzeit,r.plan_zeit,r.abholzeit)}function dispoTimeOf(r){return first(r.dispoTime,r.dispo_time,r.dispoZeit,r.dispozeit,r.dispo_zeit,r.dispo_abholzeit,r.dispo_uhrzeit,r.uhrzeit2,r.uhrzeit_2,r.zweiteUhrzeit,r.secondColumnTime,r.flightScheduledTime,r.flug_uhrzeit,r.fluguhrzeit,r.dispositionTime,r.disposition_time,r.disponierte_abholzeit,r.zweite_uhrzeit,r.zweiteZeit,r.zweite_zeit,r.secondTime,r.second_time,r.secondPickupTime,r.pickupTimeDispo,r.pickup_time_dispo,r.flightTime)}function liveTimeOf(r){return first(r.liveTime,r.currentTime,r.current_time,r.aktuelle_abholzeit,r.aktuelleZeit,r.aktuelle_zeit,r.live_abholzeit,r.flightradar_abholzeit,r.verspaetete_abholzeit,r.verspätete_abholzeit,r.livePickupTime,r.live_pickup_time)}function normalizeStops(r){const raw=r.bundleStops||r.stops||r.destinations||r.ziele||r.bundle_ziele||[];if(!Array.isArray(raw))return[];return raw.map((s,i)=>{if(typeof s==='string')return{name:s,persons:0,order:i+1};return{name:first(s.name,s.destination,s.ziel,s.ort,s.hotel),persons:Number(s.persons||s.personen||0),order:Number(s.order||s.reihenfolge||i+1)}}).filter(s=>s.name)}
+function isBundleRide(r){return Boolean(r.bundle||r.isBundle||r.bundelfahrt||r.is_bundelfahrt||r.bundleRide||normalizeStops(r).length>1)}
+function norm(r,i){const plan=planTimeOf(r),dispo=dispoTimeOf(r),live=liveTimeOf(r);return{...r,id:first(r.id,'ride-'+(i+1)),date:first(r.date,r.datum),time:plan,planTime:plan,dispoTime:dispo,liveTime:live,driver:first(r.driver,r.fahrer),pickup:first(r.pickup,r.abholort,r.start),destination:first(r.destination,r.zielort,r.ziel),flightNumber:first(r.flightNumber,r.flugnummer).toUpperCase(),flightLocation:first(r.flightLocation,r.flugort,r.ort),iata:first(r.iata),airline:first(r.airline),partner:first(r.partner,r.airline),company:first(r.company,r.firma,'WT'),vehicle:first(r.vehicle,r.fahrzeug,'Pkw'),persons:Number(r.persons||r.personen||0),price:Number(r.price||r.preis||0),currency:first(r.currency,'EUR'),notes:first(r.notes,r.hinweis),flightStatus:first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status),delayMinutes:Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0),landed:Boolean(r.landed||r.gelandet),isBundle:isBundleRide(r),bundleStops:normalizeStops(r)}}
+function normKey(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
+function isAirport(v){const n=normKey(v);return n.includes('dus airport')||n==='dus' || n.includes('flughafen düsseldorf')||n.includes('duesseldorf airport')}
+function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return'airport_to_hotels';if(!isAirport(r.pickup)&&isAirport(r.destination))return'hotels_to_airport';return'normal'}
+function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),dir].join('|')}
+function sameBundleGroup(a,b){const ka=bundleGroupKey(a),kb=bundleGroupKey(b);return Boolean(ka&&ka===kb)}
+function hotelLabel(name){const n=String(name||'').trim();if(/nh\s*nord/i.test(n))return 'NH Nord DUS';if(/holiday\s*inn/i.test(n))return 'Holiday Inn DUS';return n}
+function knownBundleRepair(r){
+  const flight=normKey(r.flightNumber),driver=normKey(r.driver),time=planTimeOf(r),dir=directionOf(r);
+  if(driver==='yannik'&&dir==='hotels_to_airport'&&((flight==='ew9344'&&time==='17:05')||(flight==='ew9422'&&time==='16:05'))){
+    const total=Number(r.persons)||0;
+    const holiday=flight==='ew9344'?3:Math.max(1,total-2);
+    const nh=Math.max(1,total-holiday);
+    return [{name:'Holiday Inn DUS',persons:holiday,order:1,type:'pickup'},{name:'NH Nord DUS',persons:nh,order:2,type:'pickup'},{name:'DUS Airport',persons:total,order:3,type:'destination'}];
+  }
+  return null
+}
+function routeFromMembers(members,explicitStops){
+  const firstRide=members[0],dir=directionOf(firstRide),total=members.reduce((a,x)=>a+(Number(x.persons)||0),0);
+  const repaired=knownBundleRepair(firstRide);if(repaired)return repaired;
+  if(explicitStops&&firstRide.bundleStops.length){
+    const raw=[...firstRide.bundleStops].sort((a,b)=>a.order-b.order).map((s,i)=>({name:hotelLabel(s.name),persons:Number(s.persons)||0,order:i+1,type:s.type||''}));
+    if(dir==='hotels_to_airport'){
+      const hotels=raw.filter(s=>!isAirport(s.name));
+      return [...hotels.map((s,i)=>({...s,order:i+1,type:'pickup'})),{name:firstRide.destination||'DUS Airport',persons:total||Number(firstRide.persons)||0,order:hotels.length+1,type:'destination'}]
+    }
+    if(dir==='airport_to_hotels'){
+      const hotels=raw.filter(s=>!isAirport(s.name));
+      return [{name:firstRide.pickup||'DUS Airport',persons:total||Number(firstRide.persons)||0,order:1,type:'start'},...hotels.map((s,i)=>({...s,order:i+2,type:'destination'}))]
+    }
+  }
+  if(dir==='hotels_to_airport'){
+    const hotels=[];members.forEach(x=>{if(x.pickup&&!hotels.some(z=>normKey(z.name)===normKey(x.pickup)))hotels.push({name:hotelLabel(x.pickup),persons:Number(x.persons)||0})});
+    return [...hotels.map((s,i)=>({...s,order:i+1,type:'pickup'})),{name:firstRide.destination||'DUS Airport',persons:total,order:hotels.length+1,type:'destination'}]
+  }
+  if(dir==='airport_to_hotels'){
+    const hotels=[];members.forEach(x=>{if(x.destination&&!hotels.some(z=>normKey(z.name)===normKey(x.destination)))hotels.push({name:hotelLabel(x.destination),persons:Number(x.persons)||0})});
+    return [{name:firstRide.pickup||'DUS Airport',persons:total,order:1,type:'start'},...hotels.map((s,i)=>({...s,order:i+2,type:'destination'}))]
+  }
+  return []
+}
+function bundleBilling(members){
+  const seenFlights=new Set();
+  let totalPrice=0,invoiceCount=0;
+  for(const ride of members){
+    const flight=normKey(ride.flightNumber);
+    const price=Number(ride.price)||0;
+    if(flight){
+      if(seenFlights.has(flight))continue;
+      seenFlights.add(flight);
+    }
+    totalPrice+=price;
+    invoiceCount++;
+  }
+  return{price:totalPrice||Number(members[0]?.price)||0,invoiceCount:Math.max(1,invoiceCount)}
+}
+function visualRides(source){
+  const used=new Set(),out=[];
+  for(const r of source){
+    if(used.has(r.id))continue;
+    const key=bundleGroupKey(r);
+    const group=key?source.filter(x=>!used.has(x.id)&&sameBundleGroup(r,x)):[r];
+    const explicitStops=Array.isArray(r.bundleStops)&&r.bundleStops.length>1;
+    const repair=knownBundleRepair(r);
+    if(group.length>1||explicitStops||repair){
+      const members=group.length>1?group:[r];members.forEach(x=>used.add(x.id));
+      const routeStops=routeFromMembers(members,explicitStops);
+      const firstRide=members[0],dir=directionOf(firstRide),total=members.reduce((a,x)=>a+(Number(x.persons)||0),0)||Number(firstRide.persons)||0;
+      const hotelStops=routeStops.filter(s=>!isAirport(s.name));
+      const pickup=dir==='hotels_to_airport'?(hotelStops[0]?.name||firstRide.pickup):(routeStops[0]?.name||firstRide.pickup);
+      const destination=dir==='hotels_to_airport'?(routeStops.at(-1)?.name||firstRide.destination):(hotelStops.at(-1)?.name||firstRide.destination);
+      const billing=bundleBilling(members);
+      out.push({...firstRide,id:'bundle::'+members.map(x=>x.id).join('::'),isBundle:true,bundleDirection:dir,routeStops,bundleStops:hotelStops,_bundleMemberIds:members.map(x=>x.id),pickup,destination,persons:total,price:billing.price,invoiceCount:billing.invoiceCount});
+    }else{used.add(r.id);out.push({...r,routeStops:[]})}
+  }
+  return out
+}
+function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){localStorage.setItem(KEY,JSON.stringify(rides));localStorage.setItem(DONE,JSON.stringify([...done]))}function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
+function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time|scheduled/.test(raw))return{key:'on-time',label:'Pünktlich'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
+function timeMarkup(r){const plan=planTimeOf(r);const current=effectiveTime(r);if(current&&plan&&current!==plan)return `<div class="time-stack"><div class="plan-small">${esc(plan)}</div><div class="current-large">${esc(current)}</div></div>`;return `<div class="time-single">${esc(current||plan||'--:--')}</div>`}
+function rideCard(r,i){
+  const routeStops=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>a.order-b.order):[];
+  const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`DUS Airport → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → DUS Airport`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
+  const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc">${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</div>`;
+  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${money(r.price)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(r.partner||r.airline||'')} · ${esc(r.company||'')}</div><div class="meta">✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</div>${stopRows}</div><div class="chev">›</div></article>`
+}
+function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);const open=vr.filter(r=>!isDone(r)&&matches(r));const fin=vr.filter(r=>isDone(r)&&matches(r));$('summary').textContent=`${mode==='all'?open.length+fin.length:open.length} Fahrten · ${driverFilter||'Alle Fahrer'}`;let h=`<section class="donebar"><div class="donehead" id="doneHead"><b>✓ Erledigte Fahrten</b><span>${fin.length}</span><button id="toggleDone" class="doneToggle" aria-label="Erledigte Fahrten ein- oder ausklappen">${doneOpen?'⌃':'⌄'}</button></div><div id="doneWrap" class="donewrap ${doneOpen?'':'hidden'}">${fin.length?fin.map(rideCard).join(''):'<div class="done-empty">Noch keine erledigten Fahrten.</div>'}</div></section>`;if(mode==='all'){h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}else{h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}$('rideList').innerHTML=h;document.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>openCockpit(x.dataset.id));const t=$('toggleDone');if(t)t.onclick=e=>{e.stopPropagation();doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const dh=$('doneHead');if(dh)dh.onclick=e=>{if(e.target.closest('[data-id]'))return;if(e.target.id==='toggleDone')return;doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};}
+function showView(v){['listView','cockpitView','importView','liveDispositionView'].forEach(id=>$(id).classList.add('hidden'));if(v==='list')$('listView').classList.remove('hidden');if(v==='cockpit')$('cockpitView').classList.remove('hidden');if(v==='import')$('importView').classList.remove('hidden');if(v==='live')$('liveDispositionView').classList.remove('hidden')}
+function openDrivers(){
+  const names=[...new Set(rides.map(r=>String(r.driver||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
+  const choices=[{label:'Alle Fahrten',value:''},...names.map(n=>({label:n,value:n}))];
+  const box=$('driverChoices');
+  const dialog=$('driverDialog');
+  if(!box||!dialog){showAppError(new Error('Fahrerauswahl ist nicht verfügbar.'));return}
+  box.className=choices.length>10?'ultra':choices.length>6?'dense':'';
+  box.innerHTML=choices.map((c,i)=>`<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:${i===0?'#00a8ff':['#ffbd17','#54e20f','#ff3155','#19d8df'][(i-1)%4]}"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`).join('');
+  box.onclick=e=>{
+    const b=e.target.closest('[data-choice-index]');if(!b)return;
+    const c=choices[Number(b.dataset.choiceIndex)];if(!c)return;
+    driverFilter=c.value;mode='all';dialog.classList.add('hidden');
+    document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.nav==='all'));
+    render();
+  };
+  dialog.classList.remove('hidden');
+}
+
+function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitPlan=planTimeOf(active)||'--:--';const cockpitCurrent=effectiveTime(active)||'--:--';$('planTime').textContent=cockpitPlan;$('planTime').classList.toggle('plan-replaced',Boolean(cockpitPlan&&cockpitCurrent&&cockpitPlan!=='--:--'&&cockpitCurrent!==cockpitPlan));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=source==='live'?'LIVE-ABHOLZEIT':source==='dispo'?'DISPO-ABHOLZEIT':'AKTUELLE ABHOLZEIT';$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=money(active.price);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';$('statusBadge').textContent=activeDone?'ERLEDIGT':'PÜNKTLICH';renderDispatcherControls();renderDriverControls()}
+
+function shortMessagePlace(name){
+  let n=String(name||'').trim();
+  n=n.replace(/\s+DUS$/i,'').replace(/\s+Düsseldorf$/i,'').trim();
+  if(/marriott\s+seestern/i.test(n))return 'Marriott Seestern';
+  if(/holiday\s*inn/i.test(n))return 'Holiday Inn';
+  if(/nh\s*nord/i.test(n))return 'NH Nord';
+  return n;
+}
+function getWhatsappSettings(){return {}}
+function getDispatchers(){let d=[];try{d=JSON.parse(localStorage.getItem(DISP_SETTINGS)||'[]')}catch{}if(!Array.isArray(d))d=[];const legacy=(()=>{try{return JSON.parse(localStorage.getItem(WA_SETTINGS)||'{}')}catch{return{}}})();if(!d.length&&legacy.phone)d=[{id:'disp-1',name:legacy.name||'Ewa',phone:legacy.phone}];return d.filter(x=>x&&x.name)}
+function saveDispatchers(list,currentId){localStorage.setItem(DISP_SETTINGS,JSON.stringify(list));if(currentId!==undefined)localStorage.setItem(DISP_SETTINGS+'_current',currentId||'')}
+function currentDispatcherId(){return localStorage.getItem(DISP_SETTINGS+'_current')||''}
+function getCurrentDispatcher(){const list=getDispatchers();return list.find(x=>x.id===currentDispatcherId())||list[0]||null}
+function setCurrentDispatcher(id){saveDispatchers(getDispatchers(),id);renderDispatcherControls()}
+function saveWhatsappSettings(){}
+function addDispatcher(){const name=$('dispatcherName').value.trim(),phone=$('dispatcherPhone').value.trim();if(!name||!cleanPhone(phone)){alert('Bitte Name und Telefonnummer eingeben.');return}const list=getDispatchers();if(list.length>=20){alert('Es können maximal 20 Disponenten gespeichert werden.');return}const id='disp-'+Date.now();list.push({id,name,phone});saveDispatchers(list,currentDispatcherId()||id);$('dispatcherName').value='';$('dispatcherPhone').value='';renderDispatcherList();renderDispatcherControls();updateBackupUI()}
+function deleteDispatcher(id){let list=getDispatchers().filter(x=>x.id!==id);const next=currentDispatcherId()===id?(list[0]?.id||''):currentDispatcherId();saveDispatchers(list,next);renderDispatcherList();renderDispatcherControls();updateBackupUI()}
+function chooseDispatcher(id){setCurrentDispatcher(id);renderDispatcherList()}
+function renderDispatcherList(){const box=$('dispatcherList');if(!box)return;const list=getDispatchers(),current=currentDispatcherId()||(list[0]?.id||'');box.innerHTML=list.length?list.map(d=>`<div class="dispatcher-item"><div><b>${esc(d.name)}</b><small>${esc(d.phone)}</small>${d.id===current?'<div class="current-chip">✓ Aktueller Disponent</div>':''}</div><div class="dispatcher-item-actions"><button class="mini" type="button" onclick="chooseDispatcher('${d.id}')">Aktiv</button><a class="mini" href="tel:${cleanPhone(d.phone)}">📞</a><button class="mini danger" type="button" onclick="deleteDispatcher('${d.id}')">✕</button></div></div>`).join(''):'<div class="setting-note">Noch kein Disponent gespeichert.</div>'}
+function renderDispatcherControls(){const sel=$('cockpitDispatcherSelect'),list=getDispatchers();if(!sel)return;let current=currentDispatcherId();if(!current&&list[0]){current=list[0].id;saveDispatchers(list,current)}sel.innerHTML=list.length?list.map(d=>`<option value="${d.id}" ${d.id===current?'selected':''}>👤 ${esc(d.name)}</option>`).join(''):'<option value="">Kein Disponent</option>';const d=getCurrentDispatcher(),phone=d?cleanPhone(d.phone):'';$('cockpitDispatcherInfo').textContent=d?`${d.name} · ${d.phone}`:'Bitte zuerst in den Einstellungen einen Disponenten anlegen.';$('cockpitCallBtn').href=phone?'tel:'+phone:'#';$('cockpitCallBtn').classList.toggle('hidden',!phone);$('cockpitDispatcherMessageBtn').disabled=!phone}
+function loadWhatsappSettings(){renderDispatcherList();renderDispatcherControls();renderDriverContactList();renderDriverControls();updateBackupUI()}
+function cleanPhone(v){return String(v||'').replace(/[^0-9]/g,'')}
+function getDriverContacts(){let d=[];try{d=JSON.parse(localStorage.getItem(DRIVER_SETTINGS)||'[]')}catch{}if(!Array.isArray(d))d=[];return d.filter(x=>x&&x.name).map(x=>({id:x.id||('driver-'+Date.now()+Math.random()),name:String(x.name||'').trim(),phone:String(x.phone||''),vehicle:String(x.vehicle||''),note:String(x.note||''),favorite:!!x.favorite,active:x.active!==false}))}
+function saveDriverContacts(list){localStorage.setItem(DRIVER_SETTINGS,JSON.stringify(list))}
+function resetDriverForm(){['driverContactName','driverContactPhone','driverContactVehicle','driverContactNote','driverContactEditId'].forEach(id=>{const e=$(id);if(e)e.value=''});if($('driverContactFavorite'))$('driverContactFavorite').checked=false;if($('driverContactActive'))$('driverContactActive').checked=true;if($('addDriverContact'))$('addDriverContact').textContent='+ Fahrer speichern'}
+function addDriverContact(){const name=$('driverContactName').value.trim(),phone=$('driverContactPhone').value.trim(),vehicle=$('driverContactVehicle').value.trim(),note=$('driverContactNote').value.trim(),favorite=!!$('driverContactFavorite').checked,activeFlag=!!$('driverContactActive').checked,editId=$('driverContactEditId').value.trim();if(!name){alert('Bitte Fahrername eingeben.');return}if(phone&&!cleanPhone(phone)){alert('Bitte eine gültige Telefonnummer eingeben oder das Feld leer lassen.');return}const list=getDriverContacts();const duplicate=list.find(x=>normKey(x.name)===normKey(name)&&x.id!==editId);if(duplicate){alert('Dieser Fahrer ist bereits gespeichert.');return}if(editId){const d=list.find(x=>x.id===editId);if(d)Object.assign(d,{name,phone,vehicle,note,favorite,active:activeFlag})}else{list.push({id:'driver-'+Date.now(),name,phone,vehicle,note,favorite,active:activeFlag})}saveDriverContacts(list);resetDriverForm();renderDriverContactList();renderDriverControls();updateBackupUI();showToast(editId?'Fahrer aktualisiert':'Fahrer gespeichert','ok')}
+function editDriverContact(id){const d=getDriverContacts().find(x=>x.id===id);if(!d)return;$('driverContactName').value=d.name;$('driverContactPhone').value=d.phone||'';$('driverContactVehicle').value=d.vehicle||'';$('driverContactNote').value=d.note||'';$('driverContactFavorite').checked=!!d.favorite;$('driverContactActive').checked=d.active!==false;$('driverContactEditId').value=d.id;$('addDriverContact').textContent='Änderungen speichern';$('driverContactName').scrollIntoView({behavior:'smooth',block:'center'})}
+function deleteDriverContact(id){const d=getDriverContacts().find(x=>x.id===id);if(!d)return;if(rides.some(r=>normKey(r.driver)===normKey(d.name)&&!(r._bundleMemberIds||[r.id]).every(x=>done.has(x)))){alert(`Dieser Fahrer ist noch offenen Fahrten zugeordnet. Deaktiviere ihn stattdessen oder weise die Fahrten zuerst neu zu.`);return}if(!confirm(`Fahrer „${d.name}“ wirklich löschen?`))return;saveDriverContacts(getDriverContacts().filter(x=>x.id!==id));renderDriverContactList();renderDriverControls();updateBackupUI()}
+function toggleDriverFavorite(id){const list=getDriverContacts(),d=list.find(x=>x.id===id);if(!d)return;d.favorite=!d.favorite;saveDriverContacts(list);renderDriverContactList();renderDriverControls()}
+function toggleDriverActive(id){const list=getDriverContacts(),d=list.find(x=>x.id===id);if(!d)return;d.active=!d.active;saveDriverContacts(list);renderDriverContactList();renderDriverControls()}
+function renderDriverContactList(){const box=$('driverContactList');if(!box)return;const q=normKey(($('driverContactSearch')&&$('driverContactSearch').value)||''),showInactive=!!($('driverShowInactive')&&$('driverShowInactive').checked);let list=getDriverContacts().filter(d=>(showInactive||d.active!==false)&&(!q||[d.name,d.phone,d.vehicle,d.note].some(v=>normKey(v).includes(q))));list.sort((a,b)=>(Number(b.favorite)-Number(a.favorite))||(Number(b.active)-Number(a.active))||a.name.localeCompare(b.name,'de'));box.innerHTML=list.length?list.map(d=>`<div class="dispatcher-item"><div><b>${d.favorite?'⭐ ':''}${esc(d.name)}</b><small>${esc(d.phone||'Keine Telefonnummer')}</small><div class="driver-item-meta">${d.vehicle?`<span class="driver-chip">🚐 ${esc(d.vehicle)}</span>`:''}<span class="driver-chip ${d.active?'active':'inactive'}">${d.active?'🟢 Aktiv':'🔴 Inaktiv'}</span>${d.favorite?'<span class="driver-chip fav">Favorit</span>':''}</div>${d.note?`<div class="driver-note">${esc(d.note)}</div>`:''}</div><div class="dispatcher-item-actions"><button class="mini" type="button" onclick="toggleDriverFavorite('${d.id}')">${d.favorite?'★':'☆'}</button><button class="mini" type="button" onclick="editDriverContact('${d.id}')">✎</button><button class="mini" type="button" onclick="toggleDriverActive('${d.id}')">${d.active?'Pause':'Aktiv'}</button>${cleanPhone(d.phone)?`<a class="mini" href="tel:${cleanPhone(d.phone)}">📞</a>`:''}<button class="mini danger" type="button" onclick="deleteDriverContact('${d.id}')">✕</button></div></div>`).join(''):'<div class="setting-note">Keine passenden Fahrer gefunden.</div>'}
+function availableDrivers(){const byName=new Map();getDriverContacts().filter(d=>d.active!==false).forEach(d=>byName.set(normKey(d.name),{...d}));rides.forEach(r=>{const name=String(r.driver||'').trim();if(!name)return;const k=normKey(name);if(!byName.has(k))byName.set(k,{id:'ride-driver-'+k,name,phone:first(r.driverPhone,r.fahrerTelefon,r.fahrer_telefon,r.phone,r.telefon,r.tel),vehicle:r.vehicle||'',favorite:false,active:true})});return [...byName.values()].sort((a,b)=>(Number(b.favorite)-Number(a.favorite))||a.name.localeCompare(b.name,'de'))}
+function selectedDriverContact(){const sel=$('cockpitDriverSelect');const list=availableDrivers();return list.find(x=>x.id===(sel&&sel.value))||list.find(x=>active&&normKey(x.name)===normKey(active.driver))||list[0]||null}
+function renderDriverControls(){const sel=$('cockpitDriverSelect');if(!sel)return;const list=availableDrivers();const preferred=list.find(x=>active&&normKey(x.name)===normKey(active.driver));const current=(sel.value&&list.find(x=>x.id===sel.value))||preferred||list[0];sel.innerHTML=list.length?list.map(d=>`<option value="${d.id}" ${current&&d.id===current.id?'selected':''}>👤 ${esc(d.name)}</option>`).join(''):'<option value="">Kein Fahrer</option>';if(current)sel.value=current.id;const d=selectedDriverContact(),phone=cleanPhone(d&&d.phone);$('cockpitDriverInfo').textContent=d?[d.name,d.phone||'Telefonnummer fehlt',d.vehicle||'',d.note||''].filter(Boolean).join(' · '):'Bitte Fahrer in den Einstellungen anlegen.';$('cockpitDriverCallBtn').href=phone?'tel:'+phone:'#';$('cockpitDriverCallBtn').classList.toggle('hidden',!phone);$('cockpitDriverMessageBtn').disabled=!phone}
+function openPrivateWhatsapp(phone,label){const p=cleanPhone(phone);if(!p){alert(`Für ${label||'diesen Kontakt'} ist keine Telefonnummer gespeichert.`);return}window.location.href=`https://wa.me/${p}`}
+function openDispatcherMessage(){const d=getCurrentDispatcher();openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Disponenten')}
+function openDriverMessage(){const d=selectedDriverContact();openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Fahrer')}
+async function openInfoStatus(){if(!active)return;const text=whatsappMessage(active);if(!text){alert('Für diese Fahrt konnte kein Info-/Status-Text erstellt werden.');return}try{if(navigator.share){await navigator.share({text});return}}catch(e){if(e&&e.name==='AbortError')return}window.location.href=`whatsapp://send?text=${encodeURIComponent(text)}`}
+function whatsappMessage(r){
+  const rs=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0)):[];
+  const direction=r.bundleDirection||((isAirport(r.pickup)&&!isAirport(r.destination))?'airport_to_hotels':(!isAirport(r.pickup)&&isAirport(r.destination))?'hotels_to_airport':'');
+  if(direction==='airport_to_hotels'){
+    let loc=String(r.flightLocation||'').trim();
+    const iata=String(r.iata||'').trim().toUpperCase();
+    if(iata && !new RegExp('\\('+iata.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')+'\\)','i').test(loc)) loc+=(loc?' ':'')+'('+iata+')';
+    return loc;
+  }
+  if(r.isBundle&&direction==='hotels_to_airport'){
+    const hotels=[];
+    rs.filter(x=>!isAirport(x.name)).forEach(x=>{
+      const short=shortMessagePlace(x.name);
+      if(short && !hotels.some(h=>normKey(h)===normKey(short))) hotels.push(short);
+    });
+    return hotels.join(' & ');
+  }
+  return shortMessagePlace(r.pickup||'');
+}
+function openWhatsapp(){openInfoStatus()}
+function backupPayload(){
+  return {
+    format:'ATMS_BACKUP',
+    formatVersion:1,
+    app:'ATMS PRO',
+    appVersion:'Stable 14.4.9',
+    createdAt:new Date().toISOString(),
+    storage:atmsStorageSnapshot()
+  };
+}
+function downloadTextFile(text,name,type){
+  const blob=new Blob([text],{type:type||'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+function backupFileName(){
+  const d=new Date(),p=n=>String(n).padStart(2,'0');
+  return `ATMS_Backup_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}.atms`;
+}
+function setBackupStatus(message,type){
+  const el=$('backupStatus');if(el){el.textContent=message;el.className='backup-status '+(type||'');}
+}
+function updateBackupUI(){
+  const ds=getDispatchers().length;
+  let rc=0;try{rc=JSON.parse(localStorage.getItem(KEY)||'[]').length||0}catch{}
+  const dc=$('backupDispatcherCount'),rr=$('backupRideCount');if(dc)dc.textContent=ds;if(rr)rr.textContent=rc;
+  let meta={};try{meta=JSON.parse(localStorage.getItem(BACKUP_META)||'{}')}catch{}
+  const info=$('infoBackupStatus');
+  if(meta.createdAt){
+    const dt=new Date(meta.createdAt);const text='Letzte Sicherung: '+dt.toLocaleDateString('de-DE')+' · '+dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+    setBackupStatus(text,'ok');if(info){info.textContent=dt.toLocaleDateString('de-DE')+' · '+dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});info.classList.remove('warn');info.classList.add('status');}
+  }else{setBackupStatus('Noch keine Sicherung erstellt.','warn');if(info){info.textContent='Noch keine Sicherung';info.classList.add('warn');info.classList.remove('status');}}
+}
+function exportAtmsBackup(){
+  try{
+    const payload=backupPayload();
+    downloadTextFile(JSON.stringify(payload,null,2),backupFileName(),'application/octet-stream');
+    localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:payload.createdAt,appVersion:payload.appVersion}));
+    updateBackupUI();
+  }catch(e){setBackupStatus('Backup konnte nicht erstellt werden: '+e.message,'warn');}
+}
+function chooseBackupFile(){const input=$('backupFileInput');if(input){input.value='';input.click();}}
+async function importAtmsBackup(file){
+  try{
+    const obj=JSON.parse(await file.text());
+    if(!obj||obj.format!=='ATMS_BACKUP'||!obj.storage||typeof obj.storage!=='object') throw Error('Keine gültige ATMS-Backup-Datei.');
+    const keys=Object.keys(obj.storage);
+    if(!confirm(`Backup vom ${obj.createdAt?new Date(obj.createdAt).toLocaleString('de-DE'):'unbekannten Datum'} wiederherstellen?\n\n${keys.length} gespeicherte Bereiche werden übernommen.`))return;
+    keys.forEach(k=>{if(k.startsWith('atms_'))localStorage.setItem(k,String(obj.storage[k]??''));});
+    localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:new Date().toISOString(),restoredFrom:obj.createdAt||'',appVersion:obj.appVersion||''}));
+    alert('Backup wurde erfolgreich wiederhergestellt. ATMS wird neu geladen.');location.reload();
+  }catch(e){setBackupStatus('Wiederherstellung fehlgeschlagen: '+e.message,'warn');alert('Backup konnte nicht importiert werden.');}
+}
+function resetAtmsData(){
+  if(!confirm('Wirklich alle lokal gespeicherten ATMS-Daten löschen?\n\nDisponenten, Fahrten, Erledigt-Status und Einstellungen werden entfernt.'))return;
+  if(!confirm('Letzte Sicherheitsabfrage: Daten endgültig zurücksetzen?'))return;
+  const keys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('atms_'))keys.push(k)}keys.forEach(k=>localStorage.removeItem(k));
+  alert('ATMS-Daten wurden zurückgesetzt.');location.reload();
+}
+
+
+function importChoice(newRides){
+  if(!Array.isArray(newRides)||!newRides.length)throw Error('Keine Fahrten gefunden');
+  if(!rides.length)return 'replace';
+  const replace=confirm(`Neue Planliste mit ${newRides.length} Fahrten erkannt.
+
+OK = aktuelle Fahrten ERSETZEN (empfohlen)
+Abbrechen = weitere Auswahl`);
+  if(replace)return 'replace';
+  const merge=confirm(`Möchtest du die neue Planliste mit den vorhandenen ${rides.length} Fahrten ZUSAMMENFÜHREN?
+
+OK = zusammenführen
+Abbrechen = Import abbrechen`);
+  return merge?'merge':'cancel';
+}
+function mergeImportedRides(current,incoming){
+  const map=new Map();
+  current.forEach(r=>map.set(String(r.id),r));
+  incoming.forEach(r=>map.set(String(r.id),r));
+  return [...map.values()];
+}
+function applyImportedRides(newRides){
+  const choice=importChoice(newRides);
+  if(choice==='cancel')return {cancelled:true,count:rides.length};
+  try{localStorage.setItem('atms_import_previous_v1',JSON.stringify({savedAt:new Date().toISOString(),rides}))}catch(_){}
+  if(choice==='merge'){
+    rides=mergeImportedRides(rides,newRides);
+    done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
+    save();
+    return {cancelled:false,mode:'merge',count:rides.length};
+  }
+  rides=newRides;
+  done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
+  save();
+  return {cancelled:false,mode:'replace',count:rides.length};
+}
+
+
+
+/* DEV 14.5.2 – Live-Disposition Logik */
+let liveExpanded=false,liveSuggested=null;
+function getLiveSettings(){try{return Object.assign({driverId:'',consentByDriver:{},warnThreshold:7,mode:'standard',lastGeo:null},JSON.parse(localStorage.getItem(LIVE_SETTINGS)||'{}'))}catch{return{driverId:'',consentByDriver:{},warnThreshold:7,mode:'standard',lastGeo:null}}}
+function saveLiveSettings(s){localStorage.setItem(LIVE_SETTINGS,JSON.stringify(s))}
+function getLiveLog(){try{const x=JSON.parse(localStorage.getItem(LIVE_LOG)||'[]');return Array.isArray(x)?x:[]}catch{return[]}}
+function addLiveEvent(message,type='info'){const list=getLiveLog();list.unshift({at:new Date().toISOString(),message,type});localStorage.setItem(LIVE_LOG,JSON.stringify(list.slice(0,60)));renderLiveLog()}
+function renderLiveLog(){const box=$('liveEventLog');if(!box)return;const list=getLiveLog();box.innerHTML=list.length?list.map(x=>`<div class="live-log-item"><b>${new Date(x.at).toLocaleString('de-DE')}</b><br>${esc(x.message)}</div>`).join(''):'<div class="live-empty">Noch keine Ereignisse protokolliert.</div>'}
+function liveDriverList(){const contacts=getDriverContacts().filter(x=>x.active!==false);const names=[...new Set(rides.map(r=>r.driver).filter(Boolean))];names.forEach(name=>{if(!contacts.some(c=>normKey(c.name)===normKey(name)))contacts.push({id:'ride-'+normKey(name),name,phone:'',vehicle:'',active:true,fromRide:true})});return contacts}
+function minutesOf(t){const m=String(t||'').match(/(\d{1,2}):(\d{2})/);return m?(+m[1]*60 + +m[2]):99999}
+function ridesForLiveDriver(name){return visualRides(rides).filter(r=>normKey(r.driver)===normKey(name)&&!(r._bundleMemberIds||[r.id]).every(id=>done.has(id))).sort((a,b)=>minutesOf(effectiveTime(a))-minutesOf(effectiveTime(b)))}
+function delayForRide(r){return Math.max(0,Number(r.delayMinutes||0))}
+function liveStatusClass(d,threshold){return d>=threshold?'bad':d>0?'warn':'good'}
+function liveRouteMode(){return getLiveSettings().mode==='route'}
+function setLiveMode(mode){const s=getLiveSettings();s.mode=mode==='route'?'route':'standard';saveLiveSettings(s);renderLiveDisposition()}
+function routeStatusLabel(delay,threshold){if(delay>=threshold)return['Verspätet','bad'];if(delay>0)return['Gefährdet','warn'];return['Pünktlich','good']}
+function renderRouteCheck(driver,drides,threshold){const card=$('liveRouteCheckCard'),standard=$('liveModeStandard'),route=$('liveModeRoute');if(!card)return;const on=liveRouteMode();card.classList.toggle('route-hidden',!on);standard?.classList.toggle('active',!on);route?.classList.toggle('active',on);if(!on)return;const s=getLiveSettings(),geo=(s.lastGeo&&s.lastGeo.driverId===driver.id)?s.lastGeo:null;const notice=$('livePhoneDriverNotice');if(notice)notice.innerHTML=`<b>Zuordnung:</b> Die GPS-Position dieses Handys wird ausschließlich für die Fahrten von <b>${esc(driver.name)}</b> verwendet. Bitte stelle sicher, dass ${esc(driver.name)} dieses Gerät verwendet.`;const chain=[];chain.push(`<div class="route-step ${geo?'ok':'pending'}"><span class="step-icon">${geo?'✓':'1'}</span><div><b>Standort dieses Handys</b><small>${geo?`${Number(geo.lat).toFixed(5)}, ${Number(geo.lng).toFixed(5)} · Genauigkeit ${Math.round(geo.accuracy||0)} m`:'Tippe auf „Standort dieses Handys verwenden“'}</small></div><em>${geo?'ermittelt':'offen'}</em></div>`);drides.slice(0,6).forEach((r,i)=>{const delay=delayForRide(r),[label,cls]=routeStatusLabel(delay,threshold);const hasPrediction=delay!==0||Boolean(r.delay||r.delayMinutes||r.delayText);chain.push(`<div class="route-step ${hasPrediction?(cls==='bad'||cls==='warn'?'warn':'ok'):'pending'}"><span class="step-icon">${i+2}</span><div><b>${i===0?'Position → Abholort → Ziel':'Vorheriges Ziel → Abholort → Ziel'}</b><small>${esc(r.pickup||'Abholort fehlt')} → ${esc(r.destination||'Ziel fehlt')}</small></div><em>${hasPrediction?(delay?`+${delay} Min. · ${label}`:label):'Planprüfung'}</em></div>`)});$('liveRouteChain').innerHTML=chain.join('');const late=drides.filter(r=>delayForRide(r)>=threshold).length,risk=drides.filter(r=>delayForRide(r)>0&&delayForRide(r)<threshold).length,onTime=drides.filter(r=>delayForRide(r)<=0).length;$('liveRouteSummary').innerHTML=`<div><small>PÜNKTLICH</small><b style="color:#59ef8b">${onTime}</b></div><div><small>GEFÄHRDET</small><b style="color:#ffc95a">${risk}</b></div><div><small>VERSPÄTET</small><b style="color:#ff7189">${late}</b></div>`;$('liveGeoState').innerHTML=geo?`<b>Standort dieses Handys verwendet:</b> ${Number(geo.lat).toFixed(5)}, ${Number(geo.lng).toFixed(5)} · ${esc(driver.name)} zugeordnet · zuletzt ${new Date(geo.time).toLocaleTimeString('de-DE')}`:`<b>Standort dieses Handys:</b> noch nicht ermittelt. Tippe auf den Button und erlaube den Standortzugriff. Die Position wird danach ${esc(driver.name)} zugeordnet.`;drides.filter(r=>delayForRide(r)>=threshold).forEach(r=>ensureLiveDelayEvent(driver,r,threshold))}
+function ensureLiveDelayEvent(driver,ride,threshold){const key=`ATMS_LIVE_WARN_${driver.id}_${ride.id}`;const delay=delayForRide(ride);let prior=null;try{prior=JSON.parse(localStorage.getItem(key)||'null')}catch{}if(prior&&prior.delay===delay)return;addLiveEvent(`Automatische Verspätungswarnung: ${driver.name}, Fahrt ${ride.id}, ${ride.pickup||'Abholung'} → ${ride.destination||'Ziel'}, Prognose +${delay} Min., Warnschwelle ${threshold} Min. Nachricht für Info-Chat und Dispo erstellt.`,'warn');localStorage.setItem(key,JSON.stringify({delay,time:new Date().toISOString()}))}
+function requestLivePosition(){
+  const state=$('liveGeoState'),btn=$('liveGetPositionBtn');
+  const fail=(msg,detail='')=>{if(state)state.innerHTML=`<b>Standort konnte nicht verwendet werden.</b><br>${esc(msg)}${detail?`<br><small>${esc(detail)}</small>`:''}`;showToast(msg,'warn');if(btn){btn.disabled=false;btn.textContent='📍 Standortfreigabe erneut anfordern'}};
+  if(!navigator.geolocation){fail('Dieses Gerät oder dieser Browser unterstützt keine Standortermittlung.');return}
+  if(['file:','content:'].includes(location.protocol)){fail('Die App wurde direkt aus dem Download- oder Dateibereich geöffnet. In diesem Modus blockiert Chrome den GPS-Zugriff.','Aktuelle Adresse: '+location.protocol+'//…  · Öffne ATMS PRO über eine HTTPS-Adresse. Eine Änderung der Chrome-App-Berechtigung allein reicht hier nicht aus.');return}
+  if(!window.isSecureContext && location.hostname!=='localhost'){fail('Standortzugriff ist nur über eine sichere HTTPS-Verbindung möglich.');return}
+  const s0=getLiveSettings(),driver=liveDriverList().find(x=>x.id===s0.driverId);
+  if(!driver){fail('Bitte zuerst einen Fahrer auswählen.');return}
+  if(btn){btn.disabled=true;btn.textContent='Standortfreigabe wird angefordert …'}
+  if(state)state.innerHTML=`<b>Standortfreigabe wird angefordert.</b><br>Bitte bestätige die Standortabfrage von Android/iPhone für ${esc(driver.name)}.`;
+  const options={enableHighAccuracy:true,timeout:20000,maximumAge:0};
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const s=getLiveSettings();
+    s.lastGeo={driverId:driver.id,driverName:driver.name,lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,time:new Date().toISOString()};
+    saveLiveSettings(s);
+    addLiveEvent(`Standort dieses Handys wurde ${driver.name} für die Routenprüfung zugeordnet (Genauigkeit ca. ${Math.round(pos.coords.accuracy)} m).`,'ok');
+    if(btn){btn.disabled=false;btn.textContent='🔄 Standort dieses Handys aktualisieren'}
+    renderLiveDisposition();
+  },err=>{
+    let msg='Position konnte nicht ermittelt werden.';
+    let detail='Bitte GPS einschalten und erneut versuchen.';
+    if(err.code===1){msg='Chrome hat den Standortzugriff blockiert.';detail=location.protocol==='https:'?'Erlaube den Standort für diese Website über das Schloss-/Website-Symbol in Chrome und lade die Seite neu.':'ATMS PRO muss über HTTPS geöffnet werden; direkt geöffnete Download-Dateien (content:// oder file://) können keinen GPS-Zugriff erhalten.'}
+    else if(err.code===2){msg='Der Standort ist momentan nicht verfügbar.';detail='Aktiviere GPS/Standortdienste und prüfe die Internetverbindung.'}
+    else if(err.code===3){msg='Die Standortermittlung hat zu lange gedauert.';detail='Gehe möglichst ins Freie oder versuche es erneut.'}
+    fail(msg,detail);
+  },options)
+}
+function renderLiveDisposition(){showView('live');document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.nav==='live'));const s=getLiveSettings(),drivers=liveDriverList(),sel=$('liveDriverSelect');if(!drivers.length){sel.innerHTML='<option value="">Keine Fahrer vorhanden</option>';renderLiveEmpty();return}if(!s.driverId||!drivers.some(d=>d.id===s.driverId))s.driverId=drivers[0].id;sel.innerHTML=drivers.map(d=>`<option value="${esc(d.id)}" ${d.id===s.driverId?'selected':''}>${d.favorite?'⭐ ':''}${esc(d.name)}${d.vehicle?' · '+esc(d.vehicle):''}</option>`).join('');sel.value=s.driverId;saveLiveSettings(s);const d=drivers.find(x=>x.id===s.driverId),consent=!!s.consentByDriver?.[s.driverId];$('liveTrackingConsent').checked=consent;$('liveWarnThreshold').value=s.warnThreshold||7;$('liveTrackingState').textContent=consent?'Tracking freigegeben':'Zustimmung ausstehend';$('liveTrackingState').className='tracking-state '+(consent?'active':'wait');$('liveTrackingMeta').textContent=consent?'Zustimmung gespeichert. Die Position kann auf diesem Handy für die Routenprüfung ermittelt werden.':'Tracking wird erst nach eindeutiger Zustimmung aktiviert.';const tracked=drivers.filter(x=>s.consentByDriver?.[x.id]);$('liveSingleDriverNotice').textContent=tracked.length<=1?`Hinweis: Aktuell ist nur ${d.name} für Live-Disposition ausgewählt/verfügbar. Fahrerwechsel werden nur bei real vorhandenen Daten vorgeschlagen.`:`${tracked.length} Fahrer mit Freigabestatus verfügbar.`;const drides=ridesForLiveDriver(d.name),limit=liveExpanded?drides.length:4,threshold=Number(s.warnThreshold||7);$('liveTimeline').innerHTML=drides.length?drides.slice(0,limit).map((r,i)=>{const delay=delayForRide(r),cls=liveStatusClass(delay,threshold);return `<div class="timeline-item ${cls}"><div class="timeline-top"><div><div class="timeline-time">${esc(effectiveTime(r)||'–')}</div><div class="timeline-route">${esc(r.pickup||'Start nicht verfügbar')} → ${esc(r.destination||'Ziel nicht verfügbar')}</div></div><span class="timeline-status">${i===0?'AKTUELL':i===1?'NÄCHSTE':i===2?'ÜBERNÄCHSTE':'GEPLANT'}</span></div><div class="timeline-sub">${delay?`Prognose: +${delay} Min.`:'Pünktlich / keine Verspätung gemeldet'} · ${esc(r.flightNumber||r.id)}</div></div>`}).join(''):'<div class="live-empty">Keine offenen Fahrten für diesen Fahrer.</div>';$('liveMoreRidesBtn').style.display=drides.length>4?'block':'none';$('liveMoreRidesBtn').textContent=liveExpanded?'Weniger Fahrten anzeigen':'Weitere Fahrten anzeigen';const critical=drides.find(r=>delayForRide(r)>=threshold)||drides.find(r=>delayForRide(r)>0);renderLiveDelayAndSolution(d,critical,drivers,drides,threshold,consent);renderRouteCheck(d,drides,threshold);const routeRide=critical||drides[0];$('liveMap').innerHTML=routeRide?`<b>${esc(routeRide.pickup||'Start')}</b><span>↓ berechnete Route</span><b>${esc(routeRide.destination||'Ziel')}</b><small>${s.lastGeo&&s.lastGeo.driverId===d.id?'Standort dieses Handys → Abholort → Ziel':'Standort dieses Handys noch nicht ermittelt'} · Live-Verkehr noch nicht eingerichtet</small>`:'<span>Keine Route verfügbar</span>';$('liveOpenMapBtn').disabled=!routeRide;$('liveOpenMapBtn').dataset.rideId=routeRide?.id||'';$('liveLastUpdate').textContent=new Date().toLocaleTimeString('de-DE');$('liveSystemPill').textContent=consent?'● LIVE-BEREIT':'● ZUSTIMMUNG OFFEN';renderLiveLog()}
+function renderLiveEmpty(){$('liveTimeline').innerHTML='<div class="live-empty">Bitte zuerst Fahrer oder Fahrten anlegen.</div>';$('liveDelayContent').innerHTML='<div class="live-empty">Keine Prüfung möglich.</div>';$('liveSolutionContent').innerHTML='<div class="live-empty">Keine Lösung verfügbar.</div>';$('liveApplySolutionBtn').disabled=true;renderLiveLog()}
+function renderLiveDelayAndSolution(driver,critical,drivers,drides,threshold,consent){liveSuggested=null;if(!critical){$('liveDelayContent').innerHTML='<div class="tracking-state active">Keine Verspätung erkannt</div><div class="live-meta">Alle vorhandenen Fahrtdaten liegen unter der Warnschwelle.</div>';$('liveSolutionContent').innerHTML='<div class="live-empty">Aktuell ist keine Umplanung erforderlich.</div>';$('liveApplySolutionBtn').disabled=true;return}const delay=delayForRide(critical);$('liveDelayContent').innerHTML=`<div class="delay-number">+${delay} Minuten</div><b>${esc(critical.pickup)} → ${esc(critical.destination)}</b><div class="live-meta">Warnschwelle: ${threshold} Min. · Betroffene Fahrt: ${esc(critical.id)}</div>`;const alternatives=drivers.filter(x=>x.id!==driver.id&&x.active!==false&&getLiveSettings().consentByDriver?.[x.id]);if(!alternatives.length){$('liveSolutionContent').innerHTML='<div class="solution-title">Dispo manuell informieren</div><div class="solution-details">Kein weiterer Fahrer mit gültiger Freigabe und realen Daten verfügbar. Es wird kein Ersatzfahrer simuliert.</div>';$('liveApplySolutionBtn').disabled=true;return}const alt=alternatives[0];liveSuggested={rideId:critical.id,fromDriver:driver.name,toDriver:alt.name,toId:alt.id,delay};$('liveSolutionContent').innerHTML=`<span class="solution-badge">BESTE VERFÜGBARE LÖSUNG</span><div class="solution-title">Fahrt an ${esc(alt.name)} anfragen</div><div class="solution-details">Fahrt ${esc(critical.id)} kontrolliert zur Übernahme anbieten.<br>Vor Ausführung werden Verfügbarkeit, Bestätigung und aktuelle Daten erneut geprüft.</div>`;$('liveApplySolutionBtn').disabled=!consent}
+function applyLiveSolution(){if(!liveSuggested)return;const s=getLiveSettings(),drivers=liveDriverList(),target=drivers.find(x=>x.id===liveSuggested.toId);if(!target||target.active===false||!s.consentByDriver?.[target.id]){addLiveEvent('Übergabe abgebrochen: Ersatzfahrer nicht mehr verfügbar oder Trackingfreigabe fehlt.','warn');showToast('Übergabe nicht möglich','warn');renderLiveDisposition();return}if(!confirm(`Fahrt ${liveSuggested.rideId} an ${target.name} zur Übernahme zuweisen?`))return;const original=rides.find(r=>String(r.id)===String(liveSuggested.rideId));if(!original){showToast('Fahrt nicht gefunden','error');return}original.driver=target.name;save();addLiveEvent(`Übergabe erfolgreich: Fahrt ${liveSuggested.rideId} von ${liveSuggested.fromDriver} an ${target.name}. Prognostizierte Verspätung: +${liveSuggested.delay} Min.`,'ok');showToast('Fahrt neu zugeordnet','ok');renderLiveDisposition()}
+function initLiveDisposition(){bindClick('liveModeStandard',()=>setLiveMode('standard'));bindClick('liveModeRoute',()=>setLiveMode('route'));bindClick('liveGetPositionBtn',requestLivePosition);const sel=$('liveDriverSelect');if(sel)sel.addEventListener('change',e=>{const s=getLiveSettings();s.driverId=e.target.value;saveLiveSettings(s);const d=liveDriverList().find(x=>x.id===s.driverId);addLiveEvent(`Fahrer für die Routenprüfung ausgewählt: ${d?.name||'unbekannt'}. Standort dieses Handys muss für diesen Fahrer bestätigt werden.`);const btn=$('liveGetPositionBtn');if(btn)btn.textContent='📍 Standort dieses Handys verwenden';renderLiveDisposition()});const consent=$('liveTrackingConsent');if(consent)consent.addEventListener('change',e=>{const s=getLiveSettings();if(!s.consentByDriver)s.consentByDriver={};s.consentByDriver[s.driverId]=e.target.checked;saveLiveSettings(s);addLiveEvent(`${e.target.checked?'Trackingfreigabe erteilt':'Trackingfreigabe beendet'} für ${liveDriverList().find(x=>x.id===s.driverId)?.name||'Fahrer'}.`);renderLiveDisposition()});bindClick('liveRefreshBtn',renderLiveDisposition);bindClick('liveMoreRidesBtn',()=>{liveExpanded=!liveExpanded;renderLiveDisposition()});bindClick('liveApplySolutionBtn',applyLiveSolution);const th=$('liveWarnThreshold');if(th)th.addEventListener('change',e=>{const s=getLiveSettings();s.warnThreshold=Math.max(1,Math.min(60,Number(e.target.value)||7));saveLiveSettings(s);renderLiveDisposition()});bindClick('liveOpenMapBtn',()=>{const id=$('liveOpenMapBtn').dataset.rideId,r=visualRides(rides).find(x=>String(x.id)===String(id));if(r)window.open(`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickup||'')}&destination=${encodeURIComponent(r.destination||'')}`,'_blank')})}
+
+function safeEl(id){return document.getElementById(id)}
+function bindClick(id,handler){const el=safeEl(id);if(el)el.addEventListener('click',handler)}
+function showAppError(error){
+  console.error('ATMS Startfehler:',error);
+  const box=safeEl('appError');
+  if(box){box.hidden=false;box.textContent='ATMS-Fehler: '+(error&&error.message?error.message:String(error));}
+}
+function initApp(){
+  try{
+    bindClick('driverBtn',openDrivers);
+    bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
+    bindClick('cockpitDriverMessageBtn',openDriverMessage);
+    bindClick('infoStatusBtn',openInfoStatus);
+    bindClick('addDriverContact',addDriverContact);
+    const driverSearch=safeEl('driverContactSearch');if(driverSearch)driverSearch.addEventListener('input',renderDriverContactList);
+    const showInactive=safeEl('driverShowInactive');if(showInactive)showInactive.addEventListener('change',renderDriverContactList);
+    const dispatcherSelect=safeEl('cockpitDispatcherSelect');
+    if(dispatcherSelect)dispatcherSelect.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
+    bindClick('addDispatcher',addDispatcher);
+    bindClick('exportBackupBtn',exportAtmsBackup);
+    bindClick('importBackupBtn',chooseBackupFile);
+    bindClick('resetDataBtn',resetAtmsData);
+    const backupInput=safeEl('backupFileInput');if(backupInput)backupInput.addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f)importAtmsBackup(f)});
+    bindClick('closeDrivers',()=>safeEl('driverDialog')?.classList.add('hidden'));
+    const driverDialog=safeEl('driverDialog');
+    if(driverDialog)driverDialog.addEventListener('click',e=>{if(e.target===driverDialog)driverDialog.classList.add('hidden')});
+    const driverSheet=safeEl('driverSheet');if(driverSheet)driverSheet.addEventListener('click',e=>e.stopPropagation());
+    bindClick('backBtn',render);
+    bindClick('importBack',render);
+    bindClick('plusBtn',()=>showView('import'));
+    const search=safeEl('search');if(search)search.addEventListener('input',render);
+    bindClick('mapBtn',()=>{if(active){const rs=active.isBundle&&Array.isArray(active.routeStops)?active.routeStops:[];const origin=rs.length?rs[0].name:(active.pickup||'');const destination=rs.length?rs[rs.length-1].name:(active.destination||'');const waypoints=rs.length>2?rs.slice(1,-1).map(s=>s.name).join('|'):'';window.open(`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}${waypoints?'&waypoints='+encodeURIComponent(waypoints):''}`,'_blank')}});
+    bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));save();openCockpit(active.id)});
+    const fileInput=safeEl('fileInput');if(fileInput)fileInput.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;safeEl('jsonInput').value=await f.text();safeEl('importStatus').textContent='Datei geladen. Jetzt „Fahrten laden“ tippen.'});
+    bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
+    bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
+    document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));showView('import');safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
+    safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
+    try{loadWhatsappSettings();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){alert('Nachrichten sind für eine spätere Version vorbereitet.')}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
+
+    try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(e){rides=[]}
+    initLiveDisposition();
+    try{loadWhatsappSettings();updateBackupUI()}catch(e){console.warn('Einstellungen konnten nicht geladen werden',e)}
+    if(rides.length){const ji=safeEl('jsonInput');if(ji)ji.value=JSON.stringify({rides},null,2);render()}else{showView('import')}
+  }catch(error){showAppError(error);try{showView('import')}catch(_){} }
+}
+window.addEventListener('error',e=>showAppError(e.error||e.message));
+window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
