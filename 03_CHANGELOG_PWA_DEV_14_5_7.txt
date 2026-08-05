@@ -1,0 +1,16 @@
+ATMS PRO PWA DEV 14.5.7
+Zeitstempel: 05.08.2026 – 19:44 Uhr (MESZ)
+
+NEU
+- Fahrer-/Handy-Zuordnung ohne PIN
+- Schicht starten und beenden
+- Aktiver Fahrer bleibt bis Schichtende diesem Handy zugeordnet
+- Fahrerwechsel während aktiver Schicht gesperrt
+- GPS watchPosition während aktiver Schicht und geöffneter App
+- Anzeige von Schichtbeginn, GPS-Status und letzter Position
+
+WICHTIG
+- Standortzugriff nur nach Zustimmung
+- PWA muss über HTTPS geöffnet sein
+- Hintergrundtracking bei geschlossener App ist noch nicht Bestandteil
+- Google-Routenberechnung ist noch nicht angeschlossen
