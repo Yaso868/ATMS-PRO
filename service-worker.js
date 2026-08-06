@@ -1,4 +1,4 @@
-const CACHE_NAME = "atms-pro-pwa-14-6-7-live001b2";
+const CACHE_NAME = "atms-pro-pwa-14-6-8-cr0043";
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -1,0 +1,11 @@
+ATMS PRO – CR-004.3 – Version 14.6.8
+Datum: 06.08.2026
+
+Korrektur Kurznachrichten:
+- Aktueller Disponent erhält denselben kurzen Hotel-/Abholtext wie INFO / STATUS.
+- Keine vollständige Fahrtnachricht mehr an den Disponenten.
+- Normale Fahrt Beispiel: Marriott Seestern DUS
+- Bündelfahrt Beispiel: Holiday Inn DUS & NH Nord DUS
+- INFO / STATUS bleibt bei der bestehenden Kurznachrichtenlogik.
+- Fahrer-Einzelchat bleibt unverändert.
+- LIVE-001B.2 / ETA-Funktionen aus 14.6.7 bleiben erhalten.

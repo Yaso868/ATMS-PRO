@@ -278,7 +278,9 @@ function openPrivateWhatsapp(phone,label,text=''){
 }
 function openDispatcherMessage(){
   const d=getCurrentDispatcher();
-  openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Disponenten',privateRideMessage(active,d&&d.name||''));
+  const text=infoStatusMessage(active);
+  if(!text){alert('Für diese Fahrt konnte kein Dispo-Text erstellt werden.');return}
+  openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Disponenten',text);
 }
 function openDriverMessage(){
   const d=selectedDriverContact();
@@ -311,7 +313,7 @@ function backupPayload(){
     format:'ATMS_BACKUP',
     formatVersion:1,
     app:'ATMS PRO',
-    appVersion:'14.6.7 LIVE-001B.2',
+    appVersion:'14.6.8 CR-004.3',
     createdAt:new Date().toISOString(),
     storage:atmsStorageSnapshot()
   };
