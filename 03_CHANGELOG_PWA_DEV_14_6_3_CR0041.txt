@@ -1,0 +1,15 @@
+ATMS PRO – PC Sprint 1
+CR-004.1 – Nachrichtenlogik korrigiert
+Datum: 06.08.2026
+
+Änderungen:
+- Disponenten-Einzelchat erhält eine vollständige, vorbereitete Fahrtnachricht.
+- Nachricht enthält Zeit, Fahrer, Flugnummer, Flugort, Abholung, Ziel, Personen und Fahrzeug.
+- Vollständige Hotelbezeichnungen werden verwendet.
+- "Seestern DUS" wird als "Marriott Seestern DUS" ausgegeben.
+- Kombinierte Bezeichnungen wie "NH Nord-Holiday Inn" werden als "Holiday Inn DUS & NH Nord DUS" ausgegeben.
+- Bündelfahrten fassen mehrere Hotels ohne Dopplungen zusammen.
+- INFO / STATUS erzeugt automatisch den passenden Hoteltext und öffnet WhatsApp versandbereit.
+- Der gespeicherte Gruppenname bleibt im Button und in den Einstellungen sichtbar.
+- Hinweis: Eine WhatsApp-Gruppe kann von einer normalen Web-App nicht automatisch vorausgewählt werden. Die Gruppe wird in WhatsApp ausgewählt; der Text ist bereits vorbereitet.
+- Service-Worker-Cache auf 14.6.3 CR-004.1 erhöht.

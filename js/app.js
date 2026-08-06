@@ -145,8 +145,44 @@ function openDrivers(){
 function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitPlan=planTimeOf(active)||'--:--';const cockpitCurrent=effectiveTime(active)||'--:--';$('planTime').textContent=cockpitPlan;$('planTime').classList.toggle('plan-replaced',Boolean(cockpitPlan&&cockpitCurrent&&cockpitPlan!=='--:--'&&cockpitCurrent!==cockpitPlan));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=source==='live'?'LIVE-ABHOLZEIT':source==='dispo'?'DISPO-ABHOLZEIT':'AKTUELLE ABHOLZEIT';$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=money(active.price);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';$('statusBadge').textContent=activeDone?'ERLEDIGT':'PÜNKTLICH';renderDispatcherControls();renderDriverControls()}
 
 function fullMessagePlace(name){
-  return String(name||'').trim();
+  const raw=String(name||'').trim();
+  if(!raw)return'';
+  const n=normKey(raw);
+  const hasNh=/nh\s*nord/i.test(raw);
+  const hasHoliday=/holiday\s*inn/i.test(raw);
+  if(hasNh&&hasHoliday)return'Holiday Inn DUS & NH Nord DUS';
+  if(/marriott\s*seestern/i.test(raw)||n==='seestern dus'||n==='seestern düsseldorf'||n==='seestern duesseldorf')return'Marriott Seestern DUS';
+  if(hasHoliday)return'Holiday Inn DUS';
+  if(hasNh)return'NH Nord DUS';
+  return raw;
 }
+function uniqueMessagePlaces(values){
+  const out=[];
+  for(const value of values){
+    const normalized=fullMessagePlace(value);
+    if(!normalized)continue;
+    normalized.split(/\s*&\s*/).forEach(part=>{
+      const place=part.trim();
+      if(place&&!out.some(x=>normKey(x)===normKey(place)))out.push(place);
+    });
+  }
+  return out;
+}
+function rideMessagePlaces(r,kind){
+  if(!r)return[];
+  const rs=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0)):[];
+  const direction=r.bundleDirection||directionOf(r);
+  if(r.isBundle&&rs.length){
+    const wanted=kind==='pickup'
+      ? rs.filter(x=>x.type==='pickup'||(direction==='hotels_to_airport'&&!isAirport(x.name)))
+      : rs.filter(x=>x.type==='destination'||(direction==='airport_to_hotels'&&!isAirport(x.name)));
+    const places=uniqueMessagePlaces(wanted.map(x=>x.name));
+    if(places.length)return places;
+  }
+  return uniqueMessagePlaces([kind==='pickup'?r.pickup:r.destination]);
+}
+function ridePickupSummary(r){return rideMessagePlaces(r,'pickup').join(' & ')}
+function rideDestinationSummary(r){return rideMessagePlaces(r,'destination').join(' & ')}
 function getInfoChatSettings(){
   try{
     const saved=JSON.parse(localStorage.getItem(INFO_CHAT_SETTINGS)||'{}');
@@ -165,7 +201,7 @@ function renderInfoChatSettings(){
   const settings=getInfoChatSettings();
   const input=$('infoChatName'),status=$('infoChatStatus'),button=$('infoStatusBtn');
   if(input&&document.activeElement!==input)input.value=settings.name;
-  if(status)status.textContent=`Aktiver Gruppenchat: ${settings.name}`;
+  if(status)status.textContent=`Aktiver Gruppenchat: ${settings.name} · Auswahl erfolgt in WhatsApp`;
   if(button)button.textContent=`📢 ${settings.name}`;
 }
 function getWhatsappSettings(){return {infoChat:getInfoChatSettings()}}
@@ -199,12 +235,14 @@ function privateRideMessage(r,targetLabel){
   const lines=[];
   lines.push(`Hallo${targetLabel?', '+targetLabel:''},`);
   lines.push('');
-  lines.push(`Fahrt: ${effectiveTime(r)||'–'} Uhr`);
+  lines.push(`Zeit: ${effectiveTime(r)||'–'} Uhr`);
   if(r.driver)lines.push(`Fahrer: ${r.driver}`);
   if(r.flightNumber)lines.push(`Flug: ${r.flightNumber}`);
-  lines.push(`Abholung: ${fullMessagePlace(r.pickup)||'–'}`);
-  lines.push(`Ziel: ${fullMessagePlace(r.destination)||'–'}`);
+  if(r.flightLocation)lines.push(`Flugort: ${r.flightLocation}${r.iata?` (${r.iata})`:''}`);
+  lines.push(`Abholung: ${ridePickupSummary(r)||'–'}`);
+  lines.push(`Ziel: ${rideDestinationSummary(r)||'–'}`);
   if(r.persons)lines.push(`Personen: ${r.persons}`);
+  if(r.vehicle)lines.push(`Fahrzeug: ${r.vehicle}`);
   return lines.join('\n');
 }
 function openPrivateWhatsapp(phone,label,text=''){
@@ -222,22 +260,11 @@ function openDriverMessage(){
   openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Fahrer',privateRideMessage(active,d&&d.name||''));
 }
 function infoStatusMessage(r){
-  const rs=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0)):[];
-  const direction=r.bundleDirection||((isAirport(r.pickup)&&!isAirport(r.destination))?'airport_to_hotels':(!isAirport(r.pickup)&&isAirport(r.destination))?'hotels_to_airport':'');
-  if(direction==='airport_to_hotels'){
-    const destinations=rs.filter(x=>!isAirport(x.name)).map(x=>fullMessagePlace(x.name)).filter(Boolean);
-    if(destinations.length)return [...new Set(destinations)].join(' & ');
-    return fullMessagePlace(r.destination||r.flightLocation||'');
-  }
-  if(r.isBundle&&direction==='hotels_to_airport'){
-    const hotels=[];
-    rs.filter(x=>!isAirport(x.name)).forEach(x=>{
-      const full=fullMessagePlace(x.name);
-      if(full&&!hotels.some(h=>normKey(h)===normKey(full)))hotels.push(full);
-    });
-    return hotels.join(' & ');
-  }
-  return fullMessagePlace(r.pickup||'');
+  if(!r)return'';
+  const direction=r.bundleDirection||directionOf(r);
+  if(direction==='hotels_to_airport')return ridePickupSummary(r);
+  if(direction==='airport_to_hotels')return rideDestinationSummary(r);
+  return ridePickupSummary(r)||rideDestinationSummary(r);
 }
 function openInfoStatus(){
   if(!active)return;
