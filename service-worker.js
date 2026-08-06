@@ -1,4 +1,4 @@
-const CACHE_NAME = "atms-pro-pwa-14-6-1-bildimport-v1";
+const CACHE_NAME = "atms-pro-pwa-14-6-2-cr004-whatsapp-v1";
 const APP_SHELL = [
   "./",
   "./index.html",

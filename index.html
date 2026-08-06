@@ -1,4 +1,4 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ATMS PRO PWA DEV 14.5.6</title>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ATMS PRO PWA DEV 14.6.2 CR-004</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#00121d">
 <meta name="mobile-web-app-capable" content="yes">
@@ -55,6 +55,10 @@
   <p id="importStatus" class="sub">Noch keine Planliste ausgewählt.</p>
 </div>
 <div class="card legacy-json"><details><summary>Erweiterter JSON-Import</summary><textarea id="jsonInput" placeholder="ATMS-JSON hier einfügen …"></textarea><div class="actions2"><button id="loadBtn" class="act green">JSON laden</button><button id="clearBtn" class="act dark">Leeren</button></div></details></div>
+<div class="card"><h2>📢 Info / Status</h2><p class="setting-note">Der Info-/Status-Chat ist eine WhatsApp-Gruppe. ATMS bereitet den vollständigen Text vor und öffnet WhatsApp; dort wählst du die Gruppe aus und bestätigst nur noch den Versand.</p><div class="settings-grid">
+<div class="full"><label class="setting-label" for="infoChatName">Name des WhatsApp-Gruppenchats</label><input id="infoChatName" class="setting-input" value="INFO / STATUS" placeholder="z. B. INFO / STATUS"></div>
+<button id="saveInfoChatBtn" class="act dark full" type="button">Info-Chat speichern</button><div id="infoChatStatus" class="setting-note full">Aktiver Gruppenchat: INFO / STATUS</div>
+</div></div>
 <div class="card"><h2>👤 Disponenten</h2><p class="setting-note">Name und Telefonnummer werden lokal gespeichert. Im Cockpit wählst du den aktuellen Disponenten. WhatsApp-Texte werden automatisch aus der Fahrt erzeugt.</p><div class="settings-grid">
 <div><label class="setting-label" for="dispatcherName">Disponent anlegen (max. 20)</label><input id="dispatcherName" class="setting-input" placeholder="z. B. Ewa"></div>
 <div><label class="setting-label" for="dispatcherPhone">Telefon-/WhatsApp-Nummer</label><input id="dispatcherPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"></div>

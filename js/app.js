@@ -1,4 +1,4 @@
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -144,27 +144,43 @@ function openDrivers(){
 
 function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitPlan=planTimeOf(active)||'--:--';const cockpitCurrent=effectiveTime(active)||'--:--';$('planTime').textContent=cockpitPlan;$('planTime').classList.toggle('plan-replaced',Boolean(cockpitPlan&&cockpitCurrent&&cockpitPlan!=='--:--'&&cockpitCurrent!==cockpitPlan));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=source==='live'?'LIVE-ABHOLZEIT':source==='dispo'?'DISPO-ABHOLZEIT':'AKTUELLE ABHOLZEIT';$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=money(active.price);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';$('statusBadge').textContent=activeDone?'ERLEDIGT':'PÜNKTLICH';renderDispatcherControls();renderDriverControls()}
 
-function shortMessagePlace(name){
-  let n=String(name||'').trim();
-  n=n.replace(/\s+DUS$/i,'').replace(/\s+Düsseldorf$/i,'').trim();
-  if(/marriott\s+seestern/i.test(n))return 'Marriott Seestern';
-  if(/holiday\s*inn/i.test(n))return 'Holiday Inn';
-  if(/nh\s*nord/i.test(n))return 'NH Nord';
-  return n;
+function fullMessagePlace(name){
+  return String(name||'').trim();
 }
-function getWhatsappSettings(){return {}}
+function getInfoChatSettings(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(INFO_CHAT_SETTINGS)||'{}');
+    return {name:String(saved.name||'INFO / STATUS').trim()||'INFO / STATUS',type:'group'};
+  }catch{return{name:'INFO / STATUS',type:'group'}}
+}
+function saveInfoChatSettings(){
+  const input=$('infoChatName');
+  const name=String(input&&input.value||'').trim()||'INFO / STATUS';
+  localStorage.setItem(INFO_CHAT_SETTINGS,JSON.stringify({name,type:'group'}));
+  renderInfoChatSettings();
+  showToast('Info-Chat gespeichert','ok');
+  updateBackupUI();
+}
+function renderInfoChatSettings(){
+  const settings=getInfoChatSettings();
+  const input=$('infoChatName'),status=$('infoChatStatus'),button=$('infoStatusBtn');
+  if(input&&document.activeElement!==input)input.value=settings.name;
+  if(status)status.textContent=`Aktiver Gruppenchat: ${settings.name}`;
+  if(button)button.textContent=`📢 ${settings.name}`;
+}
+function getWhatsappSettings(){return {infoChat:getInfoChatSettings()}}
 function getDispatchers(){let d=[];try{d=JSON.parse(localStorage.getItem(DISP_SETTINGS)||'[]')}catch{}if(!Array.isArray(d))d=[];const legacy=(()=>{try{return JSON.parse(localStorage.getItem(WA_SETTINGS)||'{}')}catch{return{}}})();if(!d.length&&legacy.phone)d=[{id:'disp-1',name:legacy.name||'Ewa',phone:legacy.phone}];return d.filter(x=>x&&x.name)}
 function saveDispatchers(list,currentId){localStorage.setItem(DISP_SETTINGS,JSON.stringify(list));if(currentId!==undefined)localStorage.setItem(DISP_SETTINGS+'_current',currentId||'')}
 function currentDispatcherId(){return localStorage.getItem(DISP_SETTINGS+'_current')||''}
 function getCurrentDispatcher(){const list=getDispatchers();return list.find(x=>x.id===currentDispatcherId())||list[0]||null}
 function setCurrentDispatcher(id){saveDispatchers(getDispatchers(),id);renderDispatcherControls()}
-function saveWhatsappSettings(){}
+function saveWhatsappSettings(){saveInfoChatSettings()}
 function addDispatcher(){const name=$('dispatcherName').value.trim(),phone=$('dispatcherPhone').value.trim();if(!name||!cleanPhone(phone)){alert('Bitte Name und Telefonnummer eingeben.');return}const list=getDispatchers();if(list.length>=20){alert('Es können maximal 20 Disponenten gespeichert werden.');return}const id='disp-'+Date.now();list.push({id,name,phone});saveDispatchers(list,currentDispatcherId()||id);$('dispatcherName').value='';$('dispatcherPhone').value='';renderDispatcherList();renderDispatcherControls();updateBackupUI()}
 function deleteDispatcher(id){let list=getDispatchers().filter(x=>x.id!==id);const next=currentDispatcherId()===id?(list[0]?.id||''):currentDispatcherId();saveDispatchers(list,next);renderDispatcherList();renderDispatcherControls();updateBackupUI()}
 function chooseDispatcher(id){setCurrentDispatcher(id);renderDispatcherList()}
 function renderDispatcherList(){const box=$('dispatcherList');if(!box)return;const list=getDispatchers(),current=currentDispatcherId()||(list[0]?.id||'');box.innerHTML=list.length?list.map(d=>`<div class="dispatcher-item"><div><b>${esc(d.name)}</b><small>${esc(d.phone)}</small>${d.id===current?'<div class="current-chip">✓ Aktueller Disponent</div>':''}</div><div class="dispatcher-item-actions"><button class="mini" type="button" onclick="chooseDispatcher('${d.id}')">Aktiv</button><a class="mini" href="tel:${cleanPhone(d.phone)}">📞</a><button class="mini danger" type="button" onclick="deleteDispatcher('${d.id}')">✕</button></div></div>`).join(''):'<div class="setting-note">Noch kein Disponent gespeichert.</div>'}
 function renderDispatcherControls(){const sel=$('cockpitDispatcherSelect'),list=getDispatchers();if(!sel)return;let current=currentDispatcherId();if(!current&&list[0]){current=list[0].id;saveDispatchers(list,current)}sel.innerHTML=list.length?list.map(d=>`<option value="${d.id}" ${d.id===current?'selected':''}>👤 ${esc(d.name)}</option>`).join(''):'<option value="">Kein Disponent</option>';const d=getCurrentDispatcher(),phone=d?cleanPhone(d.phone):'';$('cockpitDispatcherInfo').textContent=d?`${d.name} · ${d.phone}`:'Bitte zuerst in den Einstellungen einen Disponenten anlegen.';$('cockpitCallBtn').href=phone?'tel:'+phone:'#';$('cockpitCallBtn').classList.toggle('hidden',!phone);$('cockpitDispatcherMessageBtn').disabled=!phone}
-function loadWhatsappSettings(){renderDispatcherList();renderDispatcherControls();renderDriverContactList();renderDriverControls();updateBackupUI()}
+function loadWhatsappSettings(){renderInfoChatSettings();renderDispatcherList();renderDispatcherControls();renderDriverContactList();renderDriverControls();updateBackupUI()}
 function cleanPhone(v){return String(v||'').replace(/[^0-9]/g,'')}
 function getDriverContacts(){let d=[];try{d=JSON.parse(localStorage.getItem(DRIVER_SETTINGS)||'[]')}catch{}if(!Array.isArray(d))d=[];return d.filter(x=>x&&x.name).map(x=>({id:x.id||('driver-'+Date.now()+Math.random()),name:String(x.name||'').trim(),phone:String(x.phone||''),vehicle:String(x.vehicle||''),note:String(x.note||''),favorite:!!x.favorite,active:x.active!==false}))}
 function saveDriverContacts(list){localStorage.setItem(DRIVER_SETTINGS,JSON.stringify(list))}
@@ -178,29 +194,60 @@ function renderDriverContactList(){const box=$('driverContactList');if(!box)retu
 function availableDrivers(){const byName=new Map();getDriverContacts().filter(d=>d.active!==false).forEach(d=>byName.set(normKey(d.name),{...d}));rides.forEach(r=>{const name=String(r.driver||'').trim();if(!name)return;const k=normKey(name);if(!byName.has(k))byName.set(k,{id:'ride-driver-'+k,name,phone:first(r.driverPhone,r.fahrerTelefon,r.fahrer_telefon,r.phone,r.telefon,r.tel),vehicle:r.vehicle||'',favorite:false,active:true})});return [...byName.values()].sort((a,b)=>(Number(b.favorite)-Number(a.favorite))||a.name.localeCompare(b.name,'de'))}
 function selectedDriverContact(){const sel=$('cockpitDriverSelect');const list=availableDrivers();return list.find(x=>x.id===(sel&&sel.value))||list.find(x=>active&&normKey(x.name)===normKey(active.driver))||list[0]||null}
 function renderDriverControls(){const sel=$('cockpitDriverSelect');if(!sel)return;const list=availableDrivers();const preferred=list.find(x=>active&&normKey(x.name)===normKey(active.driver));const current=(sel.value&&list.find(x=>x.id===sel.value))||preferred||list[0];sel.innerHTML=list.length?list.map(d=>`<option value="${d.id}" ${current&&d.id===current.id?'selected':''}>👤 ${esc(d.name)}</option>`).join(''):'<option value="">Kein Fahrer</option>';if(current)sel.value=current.id;const d=selectedDriverContact(),phone=cleanPhone(d&&d.phone);$('cockpitDriverInfo').textContent=d?[d.name,d.phone||'Telefonnummer fehlt',d.vehicle||'',d.note||''].filter(Boolean).join(' · '):'Bitte Fahrer in den Einstellungen anlegen.';$('cockpitDriverCallBtn').href=phone?'tel:'+phone:'#';$('cockpitDriverCallBtn').classList.toggle('hidden',!phone);$('cockpitDriverMessageBtn').disabled=!phone}
-function openPrivateWhatsapp(phone,label){const p=cleanPhone(phone);if(!p){alert(`Für ${label||'diesen Kontakt'} ist keine Telefonnummer gespeichert.`);return}window.location.href=`https://wa.me/${p}`}
-function openDispatcherMessage(){const d=getCurrentDispatcher();openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Disponenten')}
-function openDriverMessage(){const d=selectedDriverContact();openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Fahrer')}
-async function openInfoStatus(){if(!active)return;const text=whatsappMessage(active);if(!text){alert('Für diese Fahrt konnte kein Info-/Status-Text erstellt werden.');return}try{if(navigator.share){await navigator.share({text});return}}catch(e){if(e&&e.name==='AbortError')return}window.location.href=`whatsapp://send?text=${encodeURIComponent(text)}`}
-function whatsappMessage(r){
+function privateRideMessage(r,targetLabel){
+  if(!r)return'';
+  const lines=[];
+  lines.push(`Hallo${targetLabel?', '+targetLabel:''},`);
+  lines.push('');
+  lines.push(`Fahrt: ${effectiveTime(r)||'–'} Uhr`);
+  if(r.driver)lines.push(`Fahrer: ${r.driver}`);
+  if(r.flightNumber)lines.push(`Flug: ${r.flightNumber}`);
+  lines.push(`Abholung: ${fullMessagePlace(r.pickup)||'–'}`);
+  lines.push(`Ziel: ${fullMessagePlace(r.destination)||'–'}`);
+  if(r.persons)lines.push(`Personen: ${r.persons}`);
+  return lines.join('\n');
+}
+function openPrivateWhatsapp(phone,label,text=''){
+  const p=cleanPhone(phone);
+  if(!p){alert(`Für ${label||'diesen Kontakt'} ist keine Telefonnummer gespeichert.`);return}
+  const suffix=text?`?text=${encodeURIComponent(text)}`:'';
+  window.location.href=`https://wa.me/${p}${suffix}`;
+}
+function openDispatcherMessage(){
+  const d=getCurrentDispatcher();
+  openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Disponenten',privateRideMessage(active,d&&d.name||''));
+}
+function openDriverMessage(){
+  const d=selectedDriverContact();
+  openPrivateWhatsapp(d&&d.phone,d&&d.name||'den Fahrer',privateRideMessage(active,d&&d.name||''));
+}
+function infoStatusMessage(r){
   const rs=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0)):[];
   const direction=r.bundleDirection||((isAirport(r.pickup)&&!isAirport(r.destination))?'airport_to_hotels':(!isAirport(r.pickup)&&isAirport(r.destination))?'hotels_to_airport':'');
   if(direction==='airport_to_hotels'){
-    let loc=String(r.flightLocation||'').trim();
-    const iata=String(r.iata||'').trim().toUpperCase();
-    if(iata && !new RegExp('\\('+iata.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')+'\\)','i').test(loc)) loc+=(loc?' ':'')+'('+iata+')';
-    return loc;
+    const destinations=rs.filter(x=>!isAirport(x.name)).map(x=>fullMessagePlace(x.name)).filter(Boolean);
+    if(destinations.length)return [...new Set(destinations)].join(' & ');
+    return fullMessagePlace(r.destination||r.flightLocation||'');
   }
   if(r.isBundle&&direction==='hotels_to_airport'){
     const hotels=[];
     rs.filter(x=>!isAirport(x.name)).forEach(x=>{
-      const short=shortMessagePlace(x.name);
-      if(short && !hotels.some(h=>normKey(h)===normKey(short))) hotels.push(short);
+      const full=fullMessagePlace(x.name);
+      if(full&&!hotels.some(h=>normKey(h)===normKey(full)))hotels.push(full);
     });
     return hotels.join(' & ');
   }
-  return shortMessagePlace(r.pickup||'');
+  return fullMessagePlace(r.pickup||'');
 }
+function openInfoStatus(){
+  if(!active)return;
+  const text=infoStatusMessage(active);
+  if(!text){alert('Für diese Fahrt konnte kein Info-/Status-Text erstellt werden.');return}
+  const encoded=encodeURIComponent(text);
+  const mobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  window.location.href=mobile?`whatsapp://send?text=${encoded}`:`https://wa.me/?text=${encoded}`;
+}
+function whatsappMessage(r){return infoStatusMessage(r)}
 function openWhatsapp(){openInfoStatus()}
 function backupPayload(){
   return {
@@ -383,6 +430,7 @@ function initApp(){
     const showInactive=safeEl('driverShowInactive');if(showInactive)showInactive.addEventListener('change',renderDriverContactList);
     const dispatcherSelect=safeEl('cockpitDispatcherSelect');
     if(dispatcherSelect)dispatcherSelect.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
+    bindClick('saveInfoChatBtn',saveInfoChatSettings);
     bindClick('addDispatcher',addDispatcher);
     bindClick('exportBackupBtn',exportAtmsBackup);
     bindClick('importBackupBtn',chooseBackupFile);

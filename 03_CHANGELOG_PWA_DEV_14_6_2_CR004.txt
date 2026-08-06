@@ -1,0 +1,15 @@
+ATMS PRO – PC Sprint 1
+CR-004 – Kontakte & WhatsApp
+Datum: 06.08.2026
+
+Änderungen:
+- Info-/Status-Gruppenchat kann in den Einstellungen benannt werden.
+- Info-/Status-Button zeigt den gespeicherten Gruppennamen.
+- Vollständige Hotelnamen bleiben in Nachrichten erhalten (z. B. Marriott Seestern DUS).
+- WhatsApp wird mit vorbereitetem Info-/Status-Text geöffnet.
+- Disponenten- und Fahrer-Einzelchats öffnen mit bereits ausgefülltem Fahrtentext.
+- MIN-001 enthalten: reine Flugzeit wird nicht mehr als Dispozeit behandelt.
+- Service-Worker-Cache auf 14.6.2 CR-004 erhöht.
+
+Hinweis:
+Ein WhatsApp-Gruppenchat kann aus einer normalen Web-App nicht automatisch fest ausgewählt werden. ATMS öffnet WhatsApp mit fertigem Text; die Gruppe wird anschließend ausgewählt und der Versand bestätigt.
