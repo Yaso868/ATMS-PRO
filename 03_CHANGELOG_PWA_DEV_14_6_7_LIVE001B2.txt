@@ -1,0 +1,16 @@
+ATMS PRO – LIVE-001B.2 – Version 14.6.7
+
+Neu:
+- Mapbox Public Token kann lokal in Einstellungen > Navigation gespeichert werden.
+- Verbindungstest für Mapbox.
+- Echte Fahrzeit mit Profil driving-traffic.
+- GPS-Standort -> nächste Abholung -> alle Stopps -> Ziel.
+- ETA zur Abholung und voraussichtliches Fahrtende.
+- Ampelbewertung: MACHBAR / KNAPP / VERSPÄTUNG.
+- Prüfung von bis zu drei Folgefahrten.
+- Konfigurierbarer Puffer pro Abhol-/Zwischenstopp.
+- Google-Maps-Navigation bleibt unverändert verfügbar.
+- Kein Mapbox-Token im Quellcode oder GitHub.
+
+Hinweis:
+Die Qualität der ETA hängt von GPS, Geocoding und Mapbox-Verkehrsdaten ab. Der Disponent trifft weiterhin die Entscheidung.

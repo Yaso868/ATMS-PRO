@@ -311,7 +311,7 @@ function backupPayload(){
     format:'ATMS_BACKUP',
     formatVersion:1,
     app:'ATMS PRO',
-    appVersion:'Stable 14.4.9',
+    appVersion:'14.6.7 LIVE-001B.2',
     createdAt:new Date().toISOString(),
     storage:atmsStorageSnapshot()
   };
@@ -412,9 +412,33 @@ function applyImportedRides(newRides){
 
 
 /* DEV 14.5.2 – Live-Disposition Logik */
-let liveExpanded=false,liveSuggested=null;
-function getLiveSettings(){try{return Object.assign({driverId:'',consentByDriver:{},warnThreshold:7,mode:'standard',lastGeo:null},JSON.parse(localStorage.getItem(LIVE_SETTINGS)||'{}'))}catch{return{driverId:'',consentByDriver:{},warnThreshold:7,mode:'standard',lastGeo:null}}}
+let liveExpanded=false,liveSuggested=null,liveEtaRunId=0,liveEtaResults=new Map();
+function getLiveSettings(){try{return Object.assign({driverId:'',consentByDriver:{},warnThreshold:7,mode:'standard',lastGeo:null,mapboxToken:'',stopBufferMinutes:5},JSON.parse(localStorage.getItem(LIVE_SETTINGS)||'{}'))}catch{return{driverId:'',consentByDriver:{},warnThreshold:7,mode:'standard',lastGeo:null,mapboxToken:'',stopBufferMinutes:5}}}
 function saveLiveSettings(s){localStorage.setItem(LIVE_SETTINGS,JSON.stringify(s))}
+function renderNavigationSettings(){
+  const s=getLiveSettings(),token=$('mapboxToken'),buffer=$('liveStopBuffer'),status=$('navigationStatus'),api=$('liveApiStatus');
+  if(token&&document.activeElement!==token)token.value=s.mapboxToken||'';
+  if(buffer&&document.activeElement!==buffer)buffer.value=Number(s.stopBufferMinutes||5);
+  if(status)status.textContent=s.mapboxToken?'Mapbox-Token lokal gespeichert. Live-ETA kann getestet werden.':'Noch kein Mapbox-Token gespeichert.';
+  if(api)api.textContent=s.mapboxToken?'Mapbox bereit':'Lokal / keine API';
+}
+function saveNavigationSettings(){
+  const token=String($('mapboxToken')?.value||'').trim(),buffer=Math.max(0,Math.min(30,Number($('liveStopBuffer')?.value)||0));
+  const s=getLiveSettings();s.mapboxToken=token;s.stopBufferMinutes=buffer;saveLiveSettings(s);renderNavigationSettings();showToast(token?'Navigationseinstellungen gespeichert':'Token entfernt','ok');
+}
+async function testNavigationApi(){
+  const status=$('navigationStatus'),btn=$('testNavigationApiBtn');
+  const token=String($('mapboxToken')?.value||getLiveSettings().mapboxToken||'').trim();
+  if(!token){if(status)status.textContent='Bitte zuerst einen Mapbox-Token eintragen.';return}
+  if(btn){btn.disabled=true;btn.textContent='API wird getestet …'}
+  try{
+    const p=await mapboxGeocode('DUS Airport',token,null);
+    if(!p)throw new Error('DUS Airport konnte nicht gefunden werden.');
+    if(status)status.textContent='✓ Mapbox-Verbindung funktioniert. DUS Airport wurde erkannt.';
+    showToast('Mapbox-Verbindung funktioniert','ok');
+  }catch(e){if(status)status.textContent='Mapbox-Test fehlgeschlagen: '+e.message;showToast('Mapbox-Test fehlgeschlagen','warn')}
+  finally{if(btn){btn.disabled=false;btn.textContent='Verbindung testen'}}
+}
 function getDriverSession(){try{return Object.assign({active:false,driverId:'',driverName:'',startedAt:null,lastPositionAt:null},JSON.parse(localStorage.getItem(DRIVER_SESSION)||'{}'))}catch{return{active:false,driverId:'',driverName:'',startedAt:null,lastPositionAt:null}}}
 function saveDriverSession(s){localStorage.setItem(DRIVER_SESSION,JSON.stringify(s))}
 function stopLiveGeoWatch(){if(liveGeoWatchId!==null&&navigator.geolocation){navigator.geolocation.clearWatch(liveGeoWatchId);liveGeoWatchId=null}}
@@ -473,7 +497,118 @@ function googleMapsRouteUrl(r,geo){
   return `https://www.google.com/maps/dir/?${params.toString()}`;
 }
 function routeLabelForRide(r){const points=routePointsForRide(r);return points.length?points.join(' → '):'Keine Route verfügbar'}
-function renderRouteCheck(driver,drides,threshold){const card=$('liveRouteCheckCard'),standard=$('liveModeStandard'),route=$('liveModeRoute');if(!card)return;const on=liveRouteMode();card.classList.toggle('route-hidden',!on);standard?.classList.toggle('active',!on);route?.classList.toggle('active',on);if(!on)return;const s=getLiveSettings(),geo=(s.lastGeo&&s.lastGeo.driverId===driver.id)?s.lastGeo:null;const notice=$('livePhoneDriverNotice');if(notice)notice.innerHTML=`<b>Zuordnung:</b> Die GPS-Position dieses Handys wird ausschließlich für die Fahrten von <b>${esc(driver.name)}</b> verwendet. Bitte stelle sicher, dass ${esc(driver.name)} dieses Gerät verwendet.`;const chain=[];chain.push(`<div class="route-step ${geo?'ok':'pending'}"><span class="step-icon">${geo?'✓':'1'}</span><div><b>Standort dieses Handys</b><small>${geo?`${Number(geo.lat).toFixed(5)}, ${Number(geo.lng).toFixed(5)} · Genauigkeit ${Math.round(geo.accuracy||0)} m`:'Tippe auf „Standort dieses Handys verwenden“'}</small></div><em>${geo?'ermittelt':'offen'}</em></div>`);drides.slice(0,6).forEach((r,i)=>{const delay=delayForRide(r),[label,cls]=routeStatusLabel(delay,threshold);const hasPrediction=delay!==0||Boolean(r.delay||r.delayMinutes||r.delayText);chain.push(`<div class="route-step ${hasPrediction?(cls==='bad'||cls==='warn'?'warn':'ok'):'pending'}"><span class="step-icon">${i+2}</span><div><b>${i===0?'Position → Abholort → Ziel':'Vorheriges Ziel → Abholort → Ziel'}</b><small>${esc(r.pickup||'Abholort fehlt')} → ${esc(r.destination||'Ziel fehlt')} · ${esc(livePickupClockLabel(r))}</small></div><em>${hasPrediction?(delay?`+${delay} Min. · ${label}`:label):(i===0?'ZEITCHECK':'PLANPRÜFUNG')}</em></div>`)});$('liveRouteChain').innerHTML=chain.join('');const late=drides.filter(r=>delayForRide(r)>=threshold).length,risk=drides.filter(r=>delayForRide(r)>0&&delayForRide(r)<threshold).length,onTime=drides.filter(r=>delayForRide(r)<=0).length;$('liveRouteSummary').innerHTML=`<div><small>PÜNKTLICH</small><b style="color:#59ef8b">${onTime}</b></div><div><small>GEFÄHRDET</small><b style="color:#ffc95a">${risk}</b></div><div><small>VERSPÄTET</small><b style="color:#ff7189">${late}</b></div>`;$('liveGeoState').innerHTML=geo?`<b>Standort dieses Handys verwendet:</b> ${Number(geo.lat).toFixed(5)}, ${Number(geo.lng).toFixed(5)} · ${esc(driver.name)} zugeordnet · ${esc(geoAgeLabel(geo))} · zuletzt ${new Date(geo.time).toLocaleTimeString('de-DE')}`:`<b>Standort dieses Handys:</b> noch nicht ermittelt. Tippe auf den Button und erlaube den Standortzugriff. Die Position wird danach ${esc(driver.name)} zugeordnet.`;drides.filter(r=>delayForRide(r)>=threshold).forEach(r=>ensureLiveDelayEvent(driver,r,threshold))}
+function navigationSearchQuery(name){
+  const n=String(name||'').trim();
+  if(!n)return'';
+  if(isAirport(n))return'Düsseldorf Airport, Flughafenstraße, Düsseldorf, Germany';
+  if(/marriott\s*seestern|seestern\s*dus/i.test(n))return'Courtyard by Marriott Düsseldorf Seestern, Düsseldorf, Germany';
+  if(/holiday\s*inn/i.test(n))return'Holiday Inn Düsseldorf - Neuss, Germany';
+  if(/nh\s*nord/i.test(n))return'NH Düsseldorf City Nord, Düsseldorf, Germany';
+  return /düsseldorf|duesseldorf|dus/i.test(n)?`${n}, Germany`:`${n}, Düsseldorf, Germany`;
+}
+async function mapboxGeocode(name,token,proximity){
+  const q=navigationSearchQuery(name);if(!q)return null;
+  const params=new URLSearchParams({q,access_token:token,limit:'1',autocomplete:'false',language:'de',country:'de'});
+  if(proximity&&Number.isFinite(Number(proximity.lng))&&Number.isFinite(Number(proximity.lat)))params.set('proximity',`${Number(proximity.lng)},${Number(proximity.lat)}`);
+  const res=await fetch(`https://api.mapbox.com/search/geocode/v6/forward?${params.toString()}`);
+  if(!res.ok){let msg=`Geocoding HTTP ${res.status}`;try{const j=await res.json();if(j?.message)msg=j.message}catch{}throw new Error(msg)}
+  const data=await res.json(),feature=data?.features?.[0],coords=feature?.geometry?.coordinates;
+  if(!Array.isArray(coords)||coords.length<2)return null;
+  return{lng:Number(coords[0]),lat:Number(coords[1]),label:feature.properties?.full_address||feature.properties?.name||name,source:name};
+}
+async function mapboxDirections(coords,token){
+  if(!Array.isArray(coords)||coords.length<2)throw new Error('Zu wenige Koordinaten für die Route.');
+  const coordinateText=coords.map(p=>`${Number(p.lng)},${Number(p.lat)}`).join(';');
+  const params=new URLSearchParams({access_token:token,overview:'false',steps:'false'});
+  const res=await fetch(`https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${coordinateText}?${params.toString()}`);
+  if(!res.ok){let msg=`Routing HTTP ${res.status}`;try{const j=await res.json();if(j?.message)msg=j.message}catch{}throw new Error(msg)}
+  const data=await res.json(),route=data?.routes?.[0];if(!route)throw new Error(data?.message||'Keine Route gefunden.');return route;
+}
+function targetDateForRide(r,reference){
+  const t=effectiveTime(r),m=String(t||'').match(/(\d{1,2}):(\d{2})/);if(!m)return null;
+  const ref=new Date(reference||Date.now()),target=new Date(ref);target.setHours(Number(m[1]),Number(m[2]),0,0);
+  if(target.getTime()<ref.getTime()-12*3600000)target.setDate(target.getDate()+1);
+  return target;
+}
+function clockOf(value){return new Date(value).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}
+function durationLabel(seconds){const min=Math.max(0,Math.round(Number(seconds||0)/60));return min<60?`${min} Min.`:`${Math.floor(min/60)} Std. ${min%60} Min.`}
+function distanceLabel(meters){const km=Number(meters||0)/1000;return km<10?`${km.toFixed(1)} km`:`${Math.round(km)} km`}
+function etaAssessment(lateMinutes,marginMinutes,threshold){
+  if(lateMinutes>threshold)return{key:'bad',label:`VERSPÄTUNG +${lateMinutes} MIN.`};
+  if(lateMinutes>0)return{key:'warn',label:`KNAPP · +${lateMinutes} MIN.`};
+  if(marginMinutes<=threshold)return{key:'warn',label:`KNAPP · ${Math.max(0,marginMinutes)} MIN. PUFFER`};
+  return{key:'good',label:`MACHBAR · ${marginMinutes} MIN. PUFFER`};
+}
+async function calculateLiveEta(driver,drides){
+  const s=getLiveSettings(),token=String(s.mapboxToken||'').trim(),geo=s.lastGeo&&s.lastGeo.driverId===driver.id?s.lastGeo:null;
+  if(!token)throw new Error('Mapbox-Token fehlt. In Einstellungen → Navigation eintragen.');
+  if(!geo)throw new Error('Aktueller Handy-Standort fehlt. Zuerst Standort dieses Handys verwenden.');
+  const threshold=Math.max(1,Number(s.warnThreshold||7)),buffer=Math.max(0,Number(s.stopBufferMinutes||5));
+  const runId=++liveEtaRunId,results=[];let cursor=new Date(),origin={lng:Number(geo.lng),lat:Number(geo.lat)},proximity={lng:Number(geo.lng),lat:Number(geo.lat)};
+  for(const ride of drides.slice(0,4)){
+    if(runId!==liveEtaRunId)return null;
+    const names=routePointsForRide(ride);if(!names.length)continue;
+    const points=[];
+    for(const name of names){const p=await mapboxGeocode(name,token,proximity);if(!p)throw new Error(`Ort nicht gefunden: ${name}`);points.push(p)}
+    const route=await mapboxDirections([origin,...points],token),legs=Array.isArray(route.legs)?route.legs:[];
+    if(!legs.length)throw new Error(`Keine Fahrzeit für ${ride.pickup||ride.id} erhalten.`);
+    const scheduled=targetDateForRide(ride,cursor),toPickupSeconds=Number(legs[0]?.duration||0),arrivalPickup=new Date(cursor.getTime()+toPickupSeconds*1000);
+    const lateMinutes=scheduled?Math.max(0,Math.ceil((arrivalPickup-scheduled)/60000)):0;
+    const marginMinutes=scheduled?Math.floor((scheduled-arrivalPickup)/60000):0;
+    const assessment=etaAssessment(lateMinutes,marginMinutes,threshold);
+    let finishBase=scheduled&&arrivalPickup<scheduled?new Date(scheduled):arrivalPickup;
+    let finishMs=finishBase.getTime();
+    const pickupAndIntermediateStops=Math.max(0,points.length-1);
+    if(pickupAndIntermediateStops>0)finishMs+=buffer*60000;
+    for(let i=1;i<legs.length;i++){
+      finishMs+=Number(legs[i]?.duration||0)*1000;
+      if(i<legs.length-1)finishMs+=buffer*60000;
+    }
+    const finish=new Date(finishMs);
+    const result={rideId:String(ride.id),pickup:ride.pickup,destination:ride.destination,scheduled:scheduled?.toISOString()||'',arrivalPickup:arrivalPickup.toISOString(),finish:finish.toISOString(),lateMinutes,marginMinutes,assessment,duration:Number(route.duration||0),distance:Number(route.distance||0),points:names};
+    results.push(result);liveEtaResults.set(String(ride.id),result);cursor=finish;origin=points.at(-1);proximity=origin;
+  }
+  return results;
+}
+function renderLiveEtaResults(results){
+  const box=$('liveEtaState');if(!box)return;
+  if(!results||!results.length){box.innerHTML='<b>Live-ETA:</b> Keine berechenbaren Fahrten.';return}
+  box.innerHTML=results.map((x,i)=>`<div class="route-step ${x.assessment.key==='bad'?'warn':x.assessment.key==='warn'?'warn':'ok'}"><span class="step-icon">${i+1}</span><div><b>${esc(i===0?'Aktuelle Fahrt':'Folgefahrt')} · ${esc(x.pickup||'Abholung')}</b><small>ETA Abholung ${esc(clockOf(x.arrivalPickup))}${x.scheduled?` · geplant ${esc(clockOf(x.scheduled))}`:''} · Ziel ca. ${esc(clockOf(x.finish))} · ${esc(distanceLabel(x.distance))} / ${esc(durationLabel(x.duration))}</small></div><em>${esc(x.assessment.label)}</em></div>`).join('');
+  const first=results[0];
+  if(first){const d=$('liveDelayContent');if(d)d.innerHTML=`<div class="delay-number">${first.lateMinutes?`+${first.lateMinutes} Minuten`:`${Math.max(0,first.marginMinutes)} Min. Puffer`}</div><b>${esc(first.pickup||'Abholung')} → ${esc(first.destination||'Ziel')}</b><div class="live-meta">Mapbox Live-ETA · Abholung ca. ${esc(clockOf(first.arrivalPickup))} · Fahrtende ca. ${esc(clockOf(first.finish))}</div>`;}
+}
+async function refreshLiveEta(){
+  const box=$('liveEtaState'),btn=$('liveEtaRefreshBtn'),s=getLiveSettings(),driver=liveDriverList().find(x=>x.id===s.driverId);
+  if(!driver){if(box)box.innerHTML='<b>Live-ETA:</b> Bitte Fahrer auswählen.';return}
+  const drides=ridesForLiveDriver(driver.name);if(!drides.length){if(box)box.innerHTML='<b>Live-ETA:</b> Keine offenen Fahrten.';return}
+  if(btn){btn.disabled=true;btn.textContent='⏳ Live-ETA wird berechnet …'}if(box)box.innerHTML='<b>Live-ETA:</b> Orte und aktuelle Fahrzeiten werden geprüft …';
+  try{const results=await calculateLiveEta(driver,drides);if(results){renderLiveDisposition(false);renderLiveEtaResults(results)}}
+  catch(e){if(box)box.innerHTML=`<b>Live-ETA nicht verfügbar:</b> ${esc(e.message)}`;showToast('Live-ETA konnte nicht berechnet werden','warn')}
+  finally{if(btn){btn.disabled=false;btn.textContent='🚦 Live-ETA aktualisieren'}}
+}
+function renderRouteCheck(driver,drides,threshold){
+  const card=$('liveRouteCheckCard'),standard=$('liveModeStandard'),route=$('liveModeRoute');if(!card)return;
+  const on=liveRouteMode();card.classList.toggle('route-hidden',!on);standard?.classList.toggle('active',!on);route?.classList.toggle('active',on);if(!on)return;
+  const s=getLiveSettings(),geo=(s.lastGeo&&s.lastGeo.driverId===driver.id)?s.lastGeo:null,notice=$('livePhoneDriverNotice');
+  if(notice)notice.innerHTML=`<b>Zuordnung:</b> Die GPS-Position dieses Handys wird ausschließlich für die Fahrten von <b>${esc(driver.name)}</b> verwendet. Bitte stelle sicher, dass ${esc(driver.name)} dieses Gerät verwendet.`;
+  const chain=[];
+  chain.push(`<div class="route-step ${geo?'ok':'pending'}"><span class="step-icon">${geo?'✓':'1'}</span><div><b>Standort dieses Handys</b><small>${geo?`${Number(geo.lat).toFixed(5)}, ${Number(geo.lng).toFixed(5)} · Genauigkeit ${Math.round(geo.accuracy||0)} m`:'Tippe auf „Standort dieses Handys verwenden“'}</small></div><em>${geo?'ermittelt':'offen'}</em></div>`);
+  drides.slice(0,6).forEach((r,i)=>{
+    const eta=liveEtaResults.get(String(r.id));
+    if(eta){
+      const cls=eta.assessment.key==='good'?'ok':'warn';
+      chain.push(`<div class="route-step ${cls}"><span class="step-icon">${i+2}</span><div><b>${i===0?'GPS → Abholort → Ziel':'Vorheriges Ziel → Abholort → Ziel'}</b><small>${esc(r.pickup||'Abholort fehlt')} → ${esc(r.destination||'Ziel fehlt')} · ETA ${esc(clockOf(eta.arrivalPickup))} · Ziel ca. ${esc(clockOf(eta.finish))}</small></div><em>${esc(eta.assessment.label)}</em></div>`);
+      return;
+    }
+    const delay=delayForRide(r),[label,cls]=routeStatusLabel(delay,threshold),hasPrediction=delay!==0||Boolean(r.delay||r.delayMinutes||r.delayText);
+    chain.push(`<div class="route-step ${hasPrediction?(cls==='bad'||cls==='warn'?'warn':'ok'):'pending'}"><span class="step-icon">${i+2}</span><div><b>${i===0?'Position → Abholort → Ziel':'Vorheriges Ziel → Abholort → Ziel'}</b><small>${esc(r.pickup||'Abholort fehlt')} → ${esc(r.destination||'Ziel fehlt')} · ${esc(livePickupClockLabel(r))}</small></div><em>${hasPrediction?(delay?`+${delay} Min. · ${label}`:label):(i===0?'ZEITCHECK':'PLANPRÜFUNG')}</em></div>`);
+  });
+  $('liveRouteChain').innerHTML=chain.join('');
+  const etaValues=drides.map(r=>liveEtaResults.get(String(r.id))).filter(Boolean),late=etaValues.length?etaValues.filter(x=>x.assessment.key==='bad').length:drides.filter(r=>delayForRide(r)>=threshold).length,risk=etaValues.length?etaValues.filter(x=>x.assessment.key==='warn').length:drides.filter(r=>delayForRide(r)>0&&delayForRide(r)<threshold).length,onTime=etaValues.length?etaValues.filter(x=>x.assessment.key==='good').length:drides.filter(r=>delayForRide(r)<=0).length;
+  $('liveRouteSummary').innerHTML=`<div><small>MACHBAR</small><b style="color:#59ef8b">${onTime}</b></div><div><small>KNAPP</small><b style="color:#ffc95a">${risk}</b></div><div><small>VERSPÄTET</small><b style="color:#ff7189">${late}</b></div>`;
+  $('liveGeoState').innerHTML=geo?`<b>Standort dieses Handys verwendet:</b> ${Number(geo.lat).toFixed(5)}, ${Number(geo.lng).toFixed(5)} · ${esc(driver.name)} zugeordnet · ${esc(geoAgeLabel(geo))} · zuletzt ${new Date(geo.time).toLocaleTimeString('de-DE')}`:`<b>Standort dieses Handys:</b> noch nicht ermittelt. Tippe auf den Button und erlaube den Standortzugriff. Die Position wird danach ${esc(driver.name)} zugeordnet.`;
+  drides.filter(r=>delayForRide(r)>=threshold).forEach(r=>ensureLiveDelayEvent(driver,r,threshold));
+}
 function ensureLiveDelayEvent(driver,ride,threshold){const key=`ATMS_LIVE_WARN_${driver.id}_${ride.id}`;const delay=delayForRide(ride);let prior=null;try{prior=JSON.parse(localStorage.getItem(key)||'null')}catch{}if(prior&&prior.delay===delay)return;addLiveEvent(`Automatische Verspätungswarnung: ${driver.name}, Fahrt ${ride.id}, ${ride.pickup||'Abholung'} → ${ride.destination||'Ziel'}, Prognose +${delay} Min., Warnschwelle ${threshold} Min. Nachricht für Info-Chat und Dispo erstellt.`,'warn');localStorage.setItem(key,JSON.stringify({delay,time:new Date().toISOString()}))}
 function requestLivePosition(){
   const state=$('liveGeoState'),btn=$('liveGetPositionBtn');
@@ -502,11 +637,11 @@ function requestLivePosition(){
     fail(msg,detail);
   },options)
 }
-function renderLiveDisposition(){showView('live');document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.nav==='live'));const s=getLiveSettings(),drivers=liveDriverList(),sel=$('liveDriverSelect');if(!drivers.length){sel.innerHTML='<option value="">Keine Fahrer vorhanden</option>';renderLiveEmpty();return}if(!s.driverId||!drivers.some(d=>d.id===s.driverId))s.driverId=drivers[0].id;sel.innerHTML=drivers.map(d=>`<option value="${esc(d.id)}" ${d.id===s.driverId?'selected':''}>${d.favorite?'⭐ ':''}${esc(d.name)}${d.vehicle?' · '+esc(d.vehicle):''}</option>`).join('');sel.value=s.driverId;saveLiveSettings(s);const d=drivers.find(x=>x.id===s.driverId),consent=!!s.consentByDriver?.[s.driverId];$('liveTrackingConsent').checked=consent;$('liveWarnThreshold').value=s.warnThreshold||7;$('liveTrackingState').textContent=consent?'Tracking freigegeben':'Zustimmung ausstehend';$('liveTrackingState').className='tracking-state '+(consent?'active':'wait');$('liveTrackingMeta').textContent=consent?'Zustimmung gespeichert. Die Position kann auf diesem Handy für die Routenprüfung ermittelt werden.':'Tracking wird erst nach eindeutiger Zustimmung aktiviert.';const tracked=drivers.filter(x=>s.consentByDriver?.[x.id]);$('liveSingleDriverNotice').textContent=tracked.length<=1?`Hinweis: Aktuell ist nur ${d.name} für Live-Disposition ausgewählt/verfügbar. Fahrerwechsel werden nur bei real vorhandenen Daten vorgeschlagen.`:`${tracked.length} Fahrer mit Freigabestatus verfügbar.`;const drides=ridesForLiveDriver(d.name),limit=liveExpanded?drides.length:4,threshold=Number(s.warnThreshold||7);$('liveTimeline').innerHTML=drides.length?drides.slice(0,limit).map((r,i)=>{const delay=delayForRide(r),cls=liveStatusClass(delay,threshold);return `<div class="timeline-item ${cls}"><div class="timeline-top"><div><div class="timeline-time">${esc(effectiveTime(r)||'–')}</div><div class="timeline-route">${esc(r.pickup||'Start nicht verfügbar')} → ${esc(r.destination||'Ziel nicht verfügbar')}</div></div><span class="timeline-status">${i===0?'AKTUELL':i===1?'NÄCHSTE':i===2?'ÜBERNÄCHSTE':'GEPLANT'}</span></div><div class="timeline-sub">${delay?`Prognose: +${delay} Min.`:'Pünktlich / keine Verspätung gemeldet'} · ${esc(r.flightNumber||r.id)}</div></div>`}).join(''):'<div class="live-empty">Keine offenen Fahrten für diesen Fahrer.</div>';$('liveMoreRidesBtn').style.display=drides.length>4?'block':'none';$('liveMoreRidesBtn').textContent=liveExpanded?'Weniger Fahrten anzeigen':'Weitere Fahrten anzeigen';const critical=drides.find(r=>delayForRide(r)>=threshold)||drides.find(r=>delayForRide(r)>0);renderLiveDelayAndSolution(d,critical,drivers,drides,threshold,consent);renderRouteCheck(d,drides,threshold);renderDriverSessionCard();const routeRide=drides[0]||critical;const routeGeo=s.lastGeo&&s.lastGeo.driverId===d.id?s.lastGeo:null;const routeLabel=routeRide?routeLabelForRide(routeRide):'';$('liveMap').innerHTML=routeRide?`<b>${routeGeo?'Standort dieses Handys':esc(routePointsForRide(routeRide)[0]||routeRide.pickup||'Start')}</b><span>↓ Route mit allen Stopps</span><b>${esc(routeLabel)}</b><small>${routeGeo?'GPS-Standort → Abholort/Stopps → Ziel':'Ohne GPS startet die Route am ersten Abholort'} · Google Maps berechnet Navigation und Verkehr</small>`:'<span>Keine Route verfügbar</span>';$('liveOpenMapBtn').disabled=!routeRide;$('liveOpenMapBtn').dataset.rideId=routeRide?.id||'';$('liveLastUpdate').textContent=new Date().toLocaleTimeString('de-DE');$('liveSystemPill').textContent=consent?'● LIVE-BEREIT':'● ZUSTIMMUNG OFFEN';renderLiveLog()}
+function renderLiveDisposition(resetEta=true){showView('live');document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.nav==='live'));const s=getLiveSettings(),drivers=liveDriverList(),sel=$('liveDriverSelect');if(!drivers.length){sel.innerHTML='<option value="">Keine Fahrer vorhanden</option>';renderLiveEmpty();return}if(!s.driverId||!drivers.some(d=>d.id===s.driverId))s.driverId=drivers[0].id;sel.innerHTML=drivers.map(d=>`<option value="${esc(d.id)}" ${d.id===s.driverId?'selected':''}>${d.favorite?'⭐ ':''}${esc(d.name)}${d.vehicle?' · '+esc(d.vehicle):''}</option>`).join('');sel.value=s.driverId;saveLiveSettings(s);renderNavigationSettings();const d=drivers.find(x=>x.id===s.driverId),consent=!!s.consentByDriver?.[s.driverId];$('liveTrackingConsent').checked=consent;$('liveWarnThreshold').value=s.warnThreshold||7;$('liveTrackingState').textContent=consent?'Tracking freigegeben':'Zustimmung ausstehend';$('liveTrackingState').className='tracking-state '+(consent?'active':'wait');$('liveTrackingMeta').textContent=consent?'Zustimmung gespeichert. Die Position kann auf diesem Handy für die Routenprüfung ermittelt werden.':'Tracking wird erst nach eindeutiger Zustimmung aktiviert.';const tracked=drivers.filter(x=>s.consentByDriver?.[x.id]);$('liveSingleDriverNotice').textContent=tracked.length<=1?`Hinweis: Aktuell ist nur ${d.name} für Live-Disposition ausgewählt/verfügbar. Fahrerwechsel werden nur bei real vorhandenen Daten vorgeschlagen.`:`${tracked.length} Fahrer mit Freigabestatus verfügbar.`;const drides=ridesForLiveDriver(d.name),limit=liveExpanded?drides.length:4,threshold=Number(s.warnThreshold||7);$('liveTimeline').innerHTML=drides.length?drides.slice(0,limit).map((r,i)=>{const delay=delayForRide(r),cls=liveStatusClass(delay,threshold);return `<div class="timeline-item ${cls}"><div class="timeline-top"><div><div class="timeline-time">${esc(effectiveTime(r)||'–')}</div><div class="timeline-route">${esc(r.pickup||'Start nicht verfügbar')} → ${esc(r.destination||'Ziel nicht verfügbar')}</div></div><span class="timeline-status">${i===0?'AKTUELL':i===1?'NÄCHSTE':i===2?'ÜBERNÄCHSTE':'GEPLANT'}</span></div><div class="timeline-sub">${delay?`Prognose: +${delay} Min.`:'Pünktlich / keine Verspätung gemeldet'} · ${esc(r.flightNumber||r.id)}</div></div>`}).join(''):'<div class="live-empty">Keine offenen Fahrten für diesen Fahrer.</div>';$('liveMoreRidesBtn').style.display=drides.length>4?'block':'none';$('liveMoreRidesBtn').textContent=liveExpanded?'Weniger Fahrten anzeigen':'Weitere Fahrten anzeigen';const critical=drides.find(r=>delayForRide(r)>=threshold)||drides.find(r=>delayForRide(r)>0);renderLiveDelayAndSolution(d,critical,drivers,drides,threshold,consent);renderRouteCheck(d,drides,threshold);renderDriverSessionCard();const routeRide=drides[0]||critical;const routeGeo=s.lastGeo&&s.lastGeo.driverId===d.id?s.lastGeo:null;const routeLabel=routeRide?routeLabelForRide(routeRide):'';$('liveMap').innerHTML=routeRide?`<b>${routeGeo?'Standort dieses Handys':esc(routePointsForRide(routeRide)[0]||routeRide.pickup||'Start')}</b><span>↓ Route mit allen Stopps</span><b>${esc(routeLabel)}</b><small>${routeGeo?'GPS-Standort → Abholort/Stopps → Ziel':'Ohne GPS startet die Route am ersten Abholort'} · Google Maps berechnet Navigation und Verkehr</small>`:'<span>Keine Route verfügbar</span>';$('liveOpenMapBtn').disabled=!routeRide;$('liveOpenMapBtn').dataset.rideId=routeRide?.id||'';$('liveLastUpdate').textContent=new Date().toLocaleTimeString('de-DE');$('liveSystemPill').textContent=consent?'● LIVE-BEREIT':'● ZUSTIMMUNG OFFEN';if(resetEta){const eta=$('liveEtaState');if(eta)eta.innerHTML=s.mapboxToken?(routeGeo?'<b>Live-ETA bereit.</b> Tippe auf „Live-ETA aktualisieren“.':'<b>Live-ETA wartet auf GPS.</b> Standort dieses Handys zuerst ermitteln.'):'<b>Live-ETA nicht eingerichtet.</b> Mapbox-Token unter Einstellungen → Navigation speichern.';}renderLiveLog()}
 function renderLiveEmpty(){$('liveTimeline').innerHTML='<div class="live-empty">Bitte zuerst Fahrer oder Fahrten anlegen.</div>';$('liveDelayContent').innerHTML='<div class="live-empty">Keine Prüfung möglich.</div>';$('liveSolutionContent').innerHTML='<div class="live-empty">Keine Lösung verfügbar.</div>';$('liveApplySolutionBtn').disabled=true;renderLiveLog()}
 function renderLiveDelayAndSolution(driver,critical,drivers,drides,threshold,consent){liveSuggested=null;if(!critical){$('liveDelayContent').innerHTML='<div class="tracking-state active">Keine Verspätung erkannt</div><div class="live-meta">Alle vorhandenen Fahrtdaten liegen unter der Warnschwelle.</div>';$('liveSolutionContent').innerHTML='<div class="live-empty">Aktuell ist keine Umplanung erforderlich.</div>';$('liveApplySolutionBtn').disabled=true;return}const delay=delayForRide(critical);$('liveDelayContent').innerHTML=`<div class="delay-number">+${delay} Minuten</div><b>${esc(critical.pickup)} → ${esc(critical.destination)}</b><div class="live-meta">Warnschwelle: ${threshold} Min. · Betroffene Fahrt: ${esc(critical.id)}</div>`;const alternatives=drivers.filter(x=>x.id!==driver.id&&x.active!==false&&getLiveSettings().consentByDriver?.[x.id]);if(!alternatives.length){$('liveSolutionContent').innerHTML='<div class="solution-title">Dispo manuell informieren</div><div class="solution-details">Kein weiterer Fahrer mit gültiger Freigabe und realen Daten verfügbar. Es wird kein Ersatzfahrer simuliert.</div>';$('liveApplySolutionBtn').disabled=true;return}const alt=alternatives[0];liveSuggested={rideId:critical.id,fromDriver:driver.name,toDriver:alt.name,toId:alt.id,delay};$('liveSolutionContent').innerHTML=`<span class="solution-badge">BESTE VERFÜGBARE LÖSUNG</span><div class="solution-title">Fahrt an ${esc(alt.name)} anfragen</div><div class="solution-details">Fahrt ${esc(critical.id)} kontrolliert zur Übernahme anbieten.<br>Vor Ausführung werden Verfügbarkeit, Bestätigung und aktuelle Daten erneut geprüft.</div>`;$('liveApplySolutionBtn').disabled=!consent}
 function applyLiveSolution(){if(!liveSuggested)return;const s=getLiveSettings(),drivers=liveDriverList(),target=drivers.find(x=>x.id===liveSuggested.toId);if(!target||target.active===false||!s.consentByDriver?.[target.id]){addLiveEvent('Übergabe abgebrochen: Ersatzfahrer nicht mehr verfügbar oder Trackingfreigabe fehlt.','warn');showToast('Übergabe nicht möglich','warn');renderLiveDisposition();return}if(!confirm(`Fahrt ${liveSuggested.rideId} an ${target.name} zur Übernahme zuweisen?`))return;const original=rides.find(r=>String(r.id)===String(liveSuggested.rideId));if(!original){showToast('Fahrt nicht gefunden','error');return}original.driver=target.name;save();addLiveEvent(`Übergabe erfolgreich: Fahrt ${liveSuggested.rideId} von ${liveSuggested.fromDriver} an ${target.name}. Prognostizierte Verspätung: +${liveSuggested.delay} Min.`,'ok');showToast('Fahrt neu zugeordnet','ok');renderLiveDisposition()}
-function initLiveDisposition(){bindClick('liveShiftToggleBtn',toggleDriverShift);bindClick('liveModeStandard',()=>setLiveMode('standard'));bindClick('liveModeRoute',()=>setLiveMode('route'));bindClick('liveGetPositionBtn',requestLivePosition);const sel=$('liveDriverSelect');if(sel)sel.addEventListener('change',e=>{const activeSession=getDriverSession();if(activeSession.active&&e.target.value!==activeSession.driverId){showToast(`Schicht von ${activeSession.driverName} zuerst beenden`,'warn');e.target.value=activeSession.driverId;return}const s=getLiveSettings();s.driverId=e.target.value;saveLiveSettings(s);const d=liveDriverList().find(x=>x.id===s.driverId);addLiveEvent(`Fahrer für die Routenprüfung ausgewählt: ${d?.name||'unbekannt'}. Standort dieses Handys muss für diesen Fahrer bestätigt werden.`);const btn=$('liveGetPositionBtn');if(btn)btn.textContent='📍 Standort dieses Handys verwenden';renderLiveDisposition()});const consent=$('liveTrackingConsent');if(consent)consent.addEventListener('change',e=>{const s=getLiveSettings();if(!s.consentByDriver)s.consentByDriver={};s.consentByDriver[s.driverId]=e.target.checked;saveLiveSettings(s);addLiveEvent(`${e.target.checked?'Trackingfreigabe erteilt':'Trackingfreigabe beendet'} für ${liveDriverList().find(x=>x.id===s.driverId)?.name||'Fahrer'}.`);renderLiveDisposition()});bindClick('liveRefreshBtn',renderLiveDisposition);bindClick('liveMoreRidesBtn',()=>{liveExpanded=!liveExpanded;renderLiveDisposition()});bindClick('liveApplySolutionBtn',applyLiveSolution);const th=$('liveWarnThreshold');if(th)th.addEventListener('change',e=>{const s=getLiveSettings();s.warnThreshold=Math.max(1,Math.min(60,Number(e.target.value)||7));saveLiveSettings(s);renderLiveDisposition()});bindClick('liveOpenMapBtn',()=>{const id=$('liveOpenMapBtn').dataset.rideId,r=visualRides(rides).find(x=>String(x.id)===String(id));if(!r)return;const settings=getLiveSettings(),driver=liveDriverList().find(x=>x.id===settings.driverId),geo=settings.lastGeo&&driver&&settings.lastGeo.driverId===driver.id?settings.lastGeo:null,url=googleMapsRouteUrl(r,geo);if(!url){showToast('Keine vollständige Route verfügbar','warn');return}window.open(url,'_blank')})}
+function initLiveDisposition(){bindClick('liveEtaRefreshBtn',refreshLiveEta);bindClick('liveShiftToggleBtn',toggleDriverShift);bindClick('liveModeStandard',()=>setLiveMode('standard'));bindClick('liveModeRoute',()=>setLiveMode('route'));bindClick('liveGetPositionBtn',requestLivePosition);const sel=$('liveDriverSelect');if(sel)sel.addEventListener('change',e=>{const activeSession=getDriverSession();if(activeSession.active&&e.target.value!==activeSession.driverId){showToast(`Schicht von ${activeSession.driverName} zuerst beenden`,'warn');e.target.value=activeSession.driverId;return}const s=getLiveSettings();s.driverId=e.target.value;saveLiveSettings(s);const d=liveDriverList().find(x=>x.id===s.driverId);addLiveEvent(`Fahrer für die Routenprüfung ausgewählt: ${d?.name||'unbekannt'}. Standort dieses Handys muss für diesen Fahrer bestätigt werden.`);const btn=$('liveGetPositionBtn');if(btn)btn.textContent='📍 Standort dieses Handys verwenden';renderLiveDisposition()});const consent=$('liveTrackingConsent');if(consent)consent.addEventListener('change',e=>{const s=getLiveSettings();if(!s.consentByDriver)s.consentByDriver={};s.consentByDriver[s.driverId]=e.target.checked;saveLiveSettings(s);addLiveEvent(`${e.target.checked?'Trackingfreigabe erteilt':'Trackingfreigabe beendet'} für ${liveDriverList().find(x=>x.id===s.driverId)?.name||'Fahrer'}.`);renderLiveDisposition()});bindClick('liveRefreshBtn',renderLiveDisposition);bindClick('liveMoreRidesBtn',()=>{liveExpanded=!liveExpanded;renderLiveDisposition()});bindClick('liveApplySolutionBtn',applyLiveSolution);const th=$('liveWarnThreshold');if(th)th.addEventListener('change',e=>{const s=getLiveSettings();s.warnThreshold=Math.max(1,Math.min(60,Number(e.target.value)||7));saveLiveSettings(s);renderLiveDisposition()});bindClick('liveOpenMapBtn',()=>{const id=$('liveOpenMapBtn').dataset.rideId,r=visualRides(rides).find(x=>String(x.id)===String(id));if(!r)return;const settings=getLiveSettings(),driver=liveDriverList().find(x=>x.id===settings.driverId),geo=settings.lastGeo&&driver&&settings.lastGeo.driverId===driver.id?settings.lastGeo:null,url=googleMapsRouteUrl(r,geo);if(!url){showToast('Keine vollständige Route verfügbar','warn');return}window.open(url,'_blank')})}
 
 function safeEl(id){return document.getElementById(id)}
 function bindClick(id,handler){const el=safeEl(id);if(el)el.addEventListener('click',handler)}
@@ -526,7 +661,7 @@ function initApp(){
     const showInactive=safeEl('driverShowInactive');if(showInactive)showInactive.addEventListener('change',renderDriverContactList);
     const dispatcherSelect=safeEl('cockpitDispatcherSelect');
     if(dispatcherSelect)dispatcherSelect.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
-    bindClick('saveInfoChatBtn',saveInfoChatSettings);
+    bindClick('saveInfoChatBtn',saveInfoChatSettings);bindClick('saveNavigationSettingsBtn',saveNavigationSettings);bindClick('testNavigationApiBtn',testNavigationApi);
     const infoChatType=$('infoChatType');
     if(infoChatType)infoChatType.addEventListener('change',renderInfoChatSettings);
     bindClick('addDispatcher',addDispatcher);
@@ -549,12 +684,12 @@ function initApp(){
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
     document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));showView('import');safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
-    try{loadWhatsappSettings();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){alert('Nachrichten sind für eine spätere Version vorbereitet.')}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
+    try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){alert('Nachrichten sind für eine spätere Version vorbereitet.')}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
 
     try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(e){rides=[]}
     initLiveDisposition();
     if(getDriverSession().active)startLiveGeoWatch();
-    try{loadWhatsappSettings();updateBackupUI()}catch(e){console.warn('Einstellungen konnten nicht geladen werden',e)}
+    try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){console.warn('Einstellungen konnten nicht geladen werden',e)}
     if(rides.length){const ji=safeEl('jsonInput');if(ji)ji.value=JSON.stringify({rides},null,2);render()}else{showView('import')}
   }catch(error){showAppError(error);try{showView('import')}catch(_){} }
 }
