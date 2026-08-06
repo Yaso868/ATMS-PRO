@@ -1,0 +1,12 @@
+ATMS PRO – PWA DEV 14.6.5 – LIVE-001A
+Datum: 06.08.2026
+
+LIVE-001A – Routenprüfung mit Handy-GPS
+
+- Google Maps startet mit dem aktuellen GPS-Standort des ausgewählten Fahrers.
+- Die Route führt zum Abholort und anschließend zum Ziel.
+- Bei Bündelfahrten werden alle vorhandenen Stopps in ihrer Reihenfolge als Wegpunkte übergeben.
+- Ohne vorhandenen GPS-Standort startet die Route am ersten Abholort.
+- Die Live-Dispo-Karte zeigt die vollständige Stoppreihenfolge an.
+- Für die Navigation und aktuelle Verkehrslage wird Google Maps geöffnet.
+- Keine automatische ETA- oder Folgefahrtenverspätung in dieser Ausbaustufe.
