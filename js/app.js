@@ -186,22 +186,43 @@ function rideDestinationSummary(r){return rideMessagePlaces(r,'destination').joi
 function getInfoChatSettings(){
   try{
     const saved=JSON.parse(localStorage.getItem(INFO_CHAT_SETTINGS)||'{}');
-    return {name:String(saved.name||'INFO / STATUS').trim()||'INFO / STATUS',type:'group'};
-  }catch{return{name:'INFO / STATUS',type:'group'}}
+    const type=saved.type==='single'?'single':'group';
+    return {
+      name:String(saved.name||'INFO / STATUS').trim()||'INFO / STATUS',
+      type,
+      phone:String(saved.phone||'').trim()
+    };
+  }catch{return{name:'INFO / STATUS',type:'group',phone:''}}
 }
 function saveInfoChatSettings(){
-  const input=$('infoChatName');
-  const name=String(input&&input.value||'').trim()||'INFO / STATUS';
-  localStorage.setItem(INFO_CHAT_SETTINGS,JSON.stringify({name,type:'group'}));
+  const name=String($('infoChatName')?.value||'').trim()||'INFO / STATUS';
+  const type=$('infoChatType')?.value==='single'?'single':'group';
+  const phone=String($('infoChatPhone')?.value||'').trim();
+  if(type==='single'&&!cleanPhone(phone)){
+    alert('Bitte für den WhatsApp-Einzelchat eine Telefonnummer eingeben.');
+    return;
+  }
+  localStorage.setItem(INFO_CHAT_SETTINGS,JSON.stringify({name,type,phone}));
   renderInfoChatSettings();
-  showToast('Info-Chat gespeichert','ok');
+  showToast('Info-/Status-Chat gespeichert','ok');
   updateBackupUI();
 }
 function renderInfoChatSettings(){
   const settings=getInfoChatSettings();
-  const input=$('infoChatName'),status=$('infoChatStatus'),button=$('infoStatusBtn');
-  if(input&&document.activeElement!==input)input.value=settings.name;
-  if(status)status.textContent=`Aktiver Gruppenchat: ${settings.name} · Auswahl erfolgt in WhatsApp`;
+  const name=$('infoChatName'),type=$('infoChatType'),phone=$('infoChatPhone');
+  const status=$('infoChatStatus'),button=$('infoStatusBtn');
+  if(name&&document.activeElement!==name)name.value=settings.name;
+  if(type)type.value=settings.type;
+  if(phone&&document.activeElement!==phone)phone.value=settings.phone;
+  if(phone){
+    phone.disabled=settings.type!=='single';
+    phone.placeholder=settings.type==='single'?'z. B. +4915112345678':'Bei WhatsApp-Gruppen nicht erforderlich';
+  }
+  if(status){
+    status.textContent=settings.type==='single'
+      ? `Aktiver Einzelchat: ${settings.name}${settings.phone?' · '+settings.phone:''}`
+      : `Aktiver Gruppenchat: ${settings.name} · Gruppe wird in WhatsApp ausgewählt`;
+  }
   if(button)button.textContent=`📢 ${settings.name}`;
 }
 function getWhatsappSettings(){return {infoChat:getInfoChatSettings()}}
@@ -248,8 +269,12 @@ function privateRideMessage(r,targetLabel){
 function openPrivateWhatsapp(phone,label,text=''){
   const p=cleanPhone(phone);
   if(!p){alert(`Für ${label||'diesen Kontakt'} ist keine Telefonnummer gespeichert.`);return}
-  const suffix=text?`?text=${encodeURIComponent(text)}`:'';
-  window.location.href=`https://wa.me/${p}${suffix}`;
+  const encoded=encodeURIComponent(text||'');
+  const mobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const url=mobile
+    ? `whatsapp://send?phone=${p}${encoded?`&text=${encoded}`:''}`
+    : `https://api.whatsapp.com/send?phone=${p}${encoded?`&text=${encoded}`:''}`;
+  window.location.href=url;
 }
 function openDispatcherMessage(){
   const d=getCurrentDispatcher();
@@ -270,9 +295,14 @@ function openInfoStatus(){
   if(!active)return;
   const text=infoStatusMessage(active);
   if(!text){alert('Für diese Fahrt konnte kein Info-/Status-Text erstellt werden.');return}
+  const settings=getInfoChatSettings();
+  if(settings.type==='single'){
+    openPrivateWhatsapp(settings.phone,settings.name,text);
+    return;
+  }
   const encoded=encodeURIComponent(text);
   const mobile=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  window.location.href=mobile?`whatsapp://send?text=${encoded}`:`https://wa.me/?text=${encoded}`;
+  window.location.href=mobile?`whatsapp://send?text=${encoded}`:`https://api.whatsapp.com/send?text=${encoded}`;
 }
 function whatsappMessage(r){return infoStatusMessage(r)}
 function openWhatsapp(){openInfoStatus()}
@@ -458,6 +488,8 @@ function initApp(){
     const dispatcherSelect=safeEl('cockpitDispatcherSelect');
     if(dispatcherSelect)dispatcherSelect.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     bindClick('saveInfoChatBtn',saveInfoChatSettings);
+    const infoChatType=$('infoChatType');
+    if(infoChatType)infoChatType.addEventListener('change',renderInfoChatSettings);
     bindClick('addDispatcher',addDispatcher);
     bindClick('exportBackupBtn',exportAtmsBackup);
     bindClick('importBackupBtn',chooseBackupFile);

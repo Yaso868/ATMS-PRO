@@ -1,0 +1,11 @@
+ATMS PRO – CR-004.2
+Version 14.6.4
+Datum: 06.08.2026
+
+Änderungen:
+- Disponenten-Einzelchat öffnet WhatsApp mit bereits eingefügter Fahrtnachricht.
+- INFO / STATUS kann in den Einstellungen als WhatsApp-Gruppe oder Einzelchat festgelegt werden.
+- Chatname und optionale Telefonnummer werden lokal gespeichert.
+- Bei Gruppen wird die fertige Nachricht über WhatsApp geteilt; die Gruppe wird dort ausgewählt.
+- Bei Einzelchat wird der gespeicherte Kontakt direkt mit fertiger Nachricht geöffnet.
+- Service-Worker-Cache auf CR-004.2 erhöht.
