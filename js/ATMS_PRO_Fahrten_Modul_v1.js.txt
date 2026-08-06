@@ -1,0 +1,53 @@
+// ATMS PRO - Fahrten Modul v1
+
+function createFahrt(data, index) {
+    return {
+        id: `ATMS-${new Date().toISOString().slice(0,10).replaceAll("-", "")}-${String(index + 1).padStart(3, "0")}`,
+        zeit: data.zeit || "",
+        von: data.von || "",
+        nach: data.nach || "",
+        flug: data.flug || "",
+        fahrer: data.fahrer || "",
+        fahrzeug: data.fahrzeug || "",
+        personen: data.personen || 0,
+        preis: data.preis || "",
+        status: "Offen"
+    };
+}
+
+
+function createFahrtenListe(importDaten) {
+
+    return importDaten.map((row, index) => {
+        return createFahrt(row, index);
+    });
+
+}
+
+
+function renderFahrten(container, fahrten) {
+
+    container.innerHTML = "";
+
+    fahrten.forEach(fahrt => {
+
+        const card = document.createElement("div");
+
+        card.className = "fahrt-card";
+
+        card.innerHTML = `
+            <h3>🚖 ${fahrt.id}</h3>
+            <p>⏰ ${fahrt.zeit}</p>
+            <p>📍 ${fahrt.von} → ${fahrt.nach}</p>
+            <p>✈️ ${fahrt.flug || "-"}</p>
+            <p>👤 ${fahrt.fahrer || "Nicht zugeordnet"}</p>
+            <p>🚐 ${fahrt.fahrzeug || "-"}</p>
+            <p>👥 ${fahrt.personen}</p>
+            <p>Status: 🟡 ${fahrt.status}</p>
+        `;
+
+        container.appendChild(card);
+
+    });
+
+}

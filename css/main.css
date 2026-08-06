@@ -277,3 +277,38 @@
 .plan-stats-extended{grid-template-columns:repeat(6,minmax(90px,1fr))}.plan-stats-extended>div:last-child b{font-size:13px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plan-preview{min-width:1120px}
 @media(max-width:800px){.plan-stats-extended{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-profile-info{grid-template-columns:1fr}.plan-profile-info span{justify-self:start}.plan-preview-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}}
+/* ATMS PRO Dashboard Statistik */
+
+.dashboard-stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:8px;
+    margin-top:8px;
+}
+
+.dashboard-stat{
+    background:#062433;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px 6px;
+    text-align:center;
+}
+
+.dashboard-stat b{
+    display:block;
+    font-size:20px;
+    color:#ffffff;
+}
+
+.dashboard-stat span{
+    display:block;
+    margin-top:3px;
+    font-size:11px;
+    color:var(--muted);
+}
+
+@media(max-width:600px){
+    .dashboard-stats{
+        grid-template-columns:repeat(2,1fr);
+    }
+}

@@ -142,53 +142,6 @@
     return index === undefined ? '' : row[index];
   }
 
-  function looksLikeDriverName(value) {
-    const text = cellText(value);
-    if (!text) return false;
-    if (/^(van|pkw|bus|sprinter|taxi)$/i.test(text)) return false;
-    return /^[A-Za-zÄÖÜäöüß\- ]{2,}$/.test(text);
-  }
-
-  function getDriverValue(row, mapping) {
-    const mapped = cellText(valueAt(row, mapping, 'driver'));
-    if (mapped) return mapped;
-
-    const last = row[row.length - 1];
-    if (looksLikeDriverName(last)) return cellText(last);
-
-    return '';
-  }
-
-
-
-  function findPriceValue(row, mapping) {
-    const mapped = parseNumber(valueAt(row, mapping, 'price'));
-    if (mapped > 0) return mapped;
-
-    const first = parseNumber(row[0]);
-    if (first > 0) return first;
-
-    for (const cell of row) {
-      const text = cellText(cell);
-      if (/[0-9]+[,.][0-9]{2}/.test(text)) {
-        const value = parseNumber(text);
-        if (value > 0 && value < 1000) return value;
-      }
-    }
-
-    return 0;
-  }
-
-
-  function getVehicleValue(row, mapping) {
-    const mapped = cellText(valueAt(row, mapping, 'vehicle'));
-    if (mapped) return mapped;
-
-    // ATMS Standard Planliste: erste Wg-Spalte = Fahrzeug
-    const fixedVehicle = cellText(row[9]);
-    return fixedVehicle || 'Pkw';
-  }
-
   function makeRide(row, rowNumber, mapping, fileName) {
     const arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
     const departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
@@ -216,11 +169,11 @@
       flightNumber,
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
       flightLocation: cellText(valueAt(row, mapping, 'flightLocation')),
-      vehicle: getVehicleValue(row, mapping),
+      vehicle: cellText(valueAt(row, mapping, 'vehicle')) || 'Pkw',
       persons: parseNumber(valueAt(row, mapping, 'persons')),
-      price: findPriceValue(row, mapping),
+      price: parseNumber(valueAt(row, mapping, 'price')),
       currency: 'EUR',
-      driver: getDriverValue(row, mapping),
+      driver: cellText(valueAt(row, mapping, 'driver')),
       notes: cellText(valueAt(row, mapping, 'notes')),
       rideType,
       importStatus: 'recognized'
@@ -518,10 +471,7 @@
     try {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
       if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
-      localStorage.removeItem('atms_beta_14_3_1_rides');
-       localStorage.removeItem('atms_beta_14_3_1_done');
-
-       const result = window.applyImportedRides(normalized);
+      const result = window.applyImportedRides(normalized);
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
       $('importStatus').textContent = result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`;

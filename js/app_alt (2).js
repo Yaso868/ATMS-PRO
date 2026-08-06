@@ -3,7 +3,7 @@ const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
 function runStartupSelfCheck(){const required=['search','plusBtn','rideList','fileInput','loadBtn','exportBackupBtn','importBackupBtn','resetDataBtn'];const missing=required.filter(id=>!document.getElementById(id));if(missing.length){throw new Error('Fehlende App-Elemente: '+missing.join(', '));}return true;}
-function first(...v){for(const x of v)if(x!==undefined&&x!==null&&String(x).trim()!=='')return String(x).trim();return ''}function clean(t){return t.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')}function planTimeOf(r){return first(r.time,r.planTime,r.plan_abholzeit,r.planzeit,r.plan_zeit,r.abholzeit)}function dispoTimeOf(r){return first(r.dispoTime,r.dispo_time,r.dispoZeit,r.dispozeit,r.dispo_zeit,r.dispo_abholzeit,r.dispo_uhrzeit,r.uhrzeit2,r.uhrzeit_2,r.zweiteUhrzeit,r.secondColumnTime,r.dispositionTime,r.disposition_time,r.disponierte_abholzeit,r.zweite_uhrzeit,r.zweiteZeit,r.zweite_zeit,r.secondTime,r.second_time,r.secondPickupTime,r.pickupTimeDispo,r.pickup_time_dispo)}function liveTimeOf(r){return first(r.liveTime,r.currentTime,r.current_time,r.aktuelle_abholzeit,r.aktuelleZeit,r.aktuelle_zeit,r.live_abholzeit,r.flightradar_abholzeit,r.verspaetete_abholzeit,r.verspätete_abholzeit,r.livePickupTime,r.live_pickup_time)}function normalizeStops(r){const raw=r.bundleStops||r.stops||r.destinations||r.ziele||r.bundle_ziele||[];if(!Array.isArray(raw))return[];return raw.map((s,i)=>{if(typeof s==='string')return{name:s,persons:0,order:i+1};return{name:first(s.name,s.destination,s.ziel,s.ort,s.hotel),persons:Number(s.persons||s.personen||0),order:Number(s.order||s.reihenfolge||i+1)}}).filter(s=>s.name)}
+function first(...v){for(const x of v)if(x!==undefined&&x!==null&&String(x).trim()!=='')return String(x).trim();return ''}function clean(t){return t.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'')}function planTimeOf(r){return first(r.time,r.planTime,r.plan_abholzeit,r.planzeit,r.plan_zeit,r.abholzeit)}function dispoTimeOf(r){return first(r.dispoTime,r.dispo_time,r.dispoZeit,r.dispozeit,r.dispo_zeit,r.dispo_abholzeit,r.dispo_uhrzeit,r.uhrzeit2,r.uhrzeit_2,r.zweiteUhrzeit,r.secondColumnTime,r.flightScheduledTime,r.flug_uhrzeit,r.fluguhrzeit,r.dispositionTime,r.disposition_time,r.disponierte_abholzeit,r.zweite_uhrzeit,r.zweiteZeit,r.zweite_zeit,r.secondTime,r.second_time,r.secondPickupTime,r.pickupTimeDispo,r.pickup_time_dispo,r.flightTime)}function liveTimeOf(r){return first(r.liveTime,r.currentTime,r.current_time,r.aktuelle_abholzeit,r.aktuelleZeit,r.aktuelle_zeit,r.live_abholzeit,r.flightradar_abholzeit,r.verspaetete_abholzeit,r.verspätete_abholzeit,r.livePickupTime,r.live_pickup_time)}function normalizeStops(r){const raw=r.bundleStops||r.stops||r.destinations||r.ziele||r.bundle_ziele||[];if(!Array.isArray(raw))return[];return raw.map((s,i)=>{if(typeof s==='string')return{name:s,persons:0,order:i+1};return{name:first(s.name,s.destination,s.ziel,s.ort,s.hotel),persons:Number(s.persons||s.personen||0),order:Number(s.order||s.reihenfolge||i+1)}}).filter(s=>s.name)}
 function isBundleRide(r){return Boolean(r.bundle||r.isBundle||r.bundelfahrt||r.is_bundelfahrt||r.bundleRide||normalizeStops(r).length>1)}
 function norm(r,i){const plan=planTimeOf(r),dispo=dispoTimeOf(r),live=liveTimeOf(r);return{...r,id:first(r.id,'ride-'+(i+1)),date:first(r.date,r.datum),time:plan,planTime:plan,dispoTime:dispo,liveTime:live,driver:first(r.driver,r.fahrer),pickup:first(r.pickup,r.abholort,r.start),destination:first(r.destination,r.zielort,r.ziel),flightNumber:first(r.flightNumber,r.flugnummer).toUpperCase(),flightLocation:first(r.flightLocation,r.flugort,r.ort),iata:first(r.iata),airline:first(r.airline),partner:first(r.partner,r.airline),company:first(r.company,r.firma,'WT'),vehicle:first(r.vehicle,r.fahrzeug,'Pkw'),persons:Number(r.persons||r.personen||0),price:Number(r.price||r.preis||0),currency:first(r.currency,'EUR'),notes:first(r.notes,r.hinweis),flightStatus:first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status),delayMinutes:Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0),landed:Boolean(r.landed||r.gelandet),isBundle:isBundleRide(r),bundleStops:normalizeStops(r)}}
 function normKey(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
@@ -284,25 +284,19 @@ function mergeImportedRides(current,incoming){
   return [...map.values()];
 }
 function applyImportedRides(newRides){
-  if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
-
-  try{
-    localStorage.setItem('atms_import_previous_v1',JSON.stringify({
-      savedAt:new Date().toISOString(),
-      rides
-    }));
-  }catch(_){}
-
-  // Planlisten-Import: neue Liste ersetzt alte Liste vollständig
+  const choice=importChoice(newRides);
+  if(choice==='cancel')return {cancelled:true,count:rides.length};
+  try{localStorage.setItem('atms_import_previous_v1',JSON.stringify({savedAt:new Date().toISOString(),rides}))}catch(_){}
+  if(choice==='merge'){
+    rides=mergeImportedRides(rides,newRides);
+    done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
+    save();
+    return {cancelled:false,mode:'merge',count:rides.length};
+  }
   rides=newRides;
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
   save();
-
-  return {
-    cancelled:false,
-    mode:'replace',
-    count:rides.length
-  };
+  return {cancelled:false,mode:'replace',count:rides.length};
 }
 
 
