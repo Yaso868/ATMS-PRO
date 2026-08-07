@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'FLIGHT-001';
+  const VERSION = 'FLIGHT-002';
 
   const text = value => String(value ?? '').trim();
   const upper = value => {
@@ -70,11 +70,13 @@
       const flightNumber = upper(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
       if (!isRealFlightNumber(flightNumber)) continue;
       const direction = normalizeDirection(ride);
-      const key = `${flightNumber}|${direction || 'unknown'}|${text(ride?.date)}`;
+      const flightTime = text(ride?.flightTime);
+      const key = `${flightNumber}|${direction || 'unknown'}|${text(ride?.date)}|${flightTime}`;
       if (!map.has(key)) {
         map.set(key, {
           flightNumber,
           date: text(ride?.date),
+          flightTime,
           direction,
           relevantSide: relevantSide(direction),
           currentLocation: text(ride?.flightLocation),
@@ -103,6 +105,7 @@
     const payload = flights.map(f => ({
       flightNumber: f.flightNumber,
       date: f.date || null,
+      flightTime: f.flightTime || null,
       direction: f.direction || null,
       relevantSide: f.relevantSide,
       locationFromPlan: f.currentLocation || null,
@@ -116,6 +119,8 @@
 `- direction = arrival: Für ATMS ist der HERKUNFTSORT (origin) relevant.\n` +
 `- direction = departure: Für ATMS ist der ZIELORT (destination) relevant.\n` +
 `- Wenn date null ist, nutze den heutigen Tag in Europe/Berlin und setze dateAssumed=true.\n` +
+`- flightTime ist die Flugzeit aus der Planliste. Verwende sie zur Unterscheidung mehrerer Flüge mit derselben Flugnummer am selben Tag.\n` +
+`- Gleiche Flugnummer + gleiches Datum + gleiche Richtung + gleiche flightTime = derselbe zu prüfende Flug. Unterschiedliche flightTime = getrennt prüfen.\n` +
 `- Wenn ein eindeutiger aktueller Flug nicht sicher gefunden wird, NICHT raten. status muss dann \"needs_manual_check\" sein.\n` +
 `- locationFromPlan ist nur ein Vergleichswert aus der Dispoliste. Bei Widerspruch kennzeichne conflict=true; überschreibe nicht still.\n` +
 `- Gib ausschließlich valides JSON zurück, keinen Markdown-Text.\n\n` +
@@ -128,17 +133,25 @@
     const resultFlights = Array.isArray(result?.flights) ? result.flights : [];
     const byKey = new Map();
     resultFlights.forEach(item => {
-      const key = `${upper(item.flightNumber)}|${text(item.direction) || 'unknown'}|${text(item.date)}`;
-      byKey.set(key, item);
-      byKey.set(`${upper(item.flightNumber)}|${text(item.direction) || 'unknown'}|`, item);
+      const flightNumber = upper(item.flightNumber);
+      const direction = text(item.direction) || 'unknown';
+      const date = text(item.date);
+      const flightTime = text(item.flightTime);
+      byKey.set(`${flightNumber}|${direction}|${date}|${flightTime}`, item);
+      if (!flightTime) byKey.set(`${flightNumber}|${direction}|${date}|`, item);
+      if (!date && !flightTime) byKey.set(`${flightNumber}|${direction}||`, item);
     });
 
     return (Array.isArray(rides) ? rides : []).map(ride => {
       const flightNumber = upper(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
       if (!flightNumber) return ride;
       const direction = normalizeDirection(ride);
-      const resultItem = byKey.get(`${flightNumber}|${direction || 'unknown'}|${text(ride?.date)}`) ||
-        byKey.get(`${flightNumber}|${direction || 'unknown'}|`);
+      const date = text(ride?.date);
+      const flightTime = text(ride?.flightTime);
+      const resultItem =
+        byKey.get(`${flightNumber}|${direction || 'unknown'}|${date}|${flightTime}`) ||
+        byKey.get(`${flightNumber}|${direction || 'unknown'}|${date}|`) ||
+        byKey.get(`${flightNumber}|${direction || 'unknown'}||`);
       if (!resultItem) return ride;
 
       const verified = resultItem.status === 'verified' && text(resultItem.relevantLocation);
