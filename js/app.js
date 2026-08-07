@@ -369,6 +369,79 @@ function resetAtmsData(){
 }
 
 
+/* FLIGHT-001 – Gemini-Flugprüfung (halbautomatisch, ohne API) */
+function flightDirectionForGemini(r){
+  const d=directionOf(r);
+  if(d==='airport_to_hotels')return'arrival';
+  if(d==='hotels_to_airport')return'departure';
+  return'unknown';
+}
+function flightCheckItems(source=rides){
+  const map=new Map();
+  for(const r of source){
+    const flight=String(r.flightNumber||'').trim().toUpperCase();
+    if(!flight)continue;
+    const date=String(r.date||'').trim();
+    const direction=flightDirectionForGemini(r);
+    const key=[flight,date,direction].join('|');
+    if(!map.has(key))map.set(key,{flightNumber:flight,date:date||'Datum aus Planliste prüfen',direction,currentFlightLocation:String(r.flightLocation||'').trim()});
+  }
+  return [...map.values()];
+}
+function buildGeminiFlightPrompt(){
+  const items=flightCheckItems();
+  if(!items.length)throw new Error('Keine Flugnummern in der aktuellen Planliste gefunden.');
+  return `ATMS PRO – aktuelle Flugprüfung\n\nPrüfe JEDE unten aufgeführte Flugnummer für das angegebene Datum anhand möglichst aktueller öffentlich verfügbarer Webdaten. Eine Flugnummer darf NICHT dauerhaft einem Ort zugeordnet werden. Prüfe sie bei diesem Auftrag neu.\n\nRegeln:\n1. direction=arrival: Gesucht ist der HERKUNFTSORT des Fluges nach Düsseldorf (DUS).\n2. direction=departure: Gesucht ist der ZIELORT des Fluges ab Düsseldorf (DUS).\n3. Berücksichtige unbedingt das Datum.\n4. Übernimm keine alte oder vermutete Route nur aufgrund der Flugnummer.\n5. Wenn die Route nicht eindeutig aktuell verifiziert werden kann, setze confidence auf \"uncertain\" und flightLocation auf \"Flugort prüfen\".\n6. Erfinde keine Orte.\n7. Antworte ausschließlich mit gültigem JSON, ohne Markdown und ohne Erklärung.\n\nJSON-Format:\n{\n  \"flights\": [\n    {\"flightNumber\":\"EW0000\",\"date\":\"YYYY-MM-DD\",\"direction\":\"arrival|departure|unknown\",\"flightLocation\":\"Ort oder Flugort prüfen\",\"iata\":\"IATA oder leer\",\"confidence\":\"verified|uncertain\"}\n  ]\n}\n\nZu prüfen:\n${JSON.stringify(items,null,2)}`;
+}
+async function copyGeminiFlightPrompt(){
+  try{
+    const text=buildGeminiFlightPrompt();
+    await navigator.clipboard.writeText(text);
+    showToast('Gemini-Flugprüfung kopiert','ok');
+    const status=$('geminiFlightStatus');if(status)status.textContent=`${flightCheckItems().length} Flugprüfung(en) kopiert. Jetzt in Gemini einfügen.`;
+  }catch(e){
+    const text=(()=>{try{return buildGeminiFlightPrompt()}catch{return''}})();
+    const box=$('geminiFlightPromptFallback');if(box){box.value=text;box.classList.remove('hidden');box.select();}
+    showToast('Prompt anzeigen und manuell kopieren','warn');
+  }
+}
+function parseGeminiFlightResult(text){
+  const obj=JSON.parse(clean(String(text||'')));
+  const list=Array.isArray(obj)?obj:(Array.isArray(obj.flights)?obj.flights:[]);
+  if(!list.length)throw new Error('Keine geprüften Flüge im Gemini-Ergebnis gefunden.');
+  return list.map(x=>({flightNumber:String(x.flightNumber||'').trim().toUpperCase(),date:String(x.date||'').trim(),direction:String(x.direction||'unknown').trim(),flightLocation:String(x.flightLocation||'').trim(),iata:String(x.iata||'').trim().toUpperCase(),confidence:String(x.confidence||'uncertain').trim().toLowerCase()})).filter(x=>x.flightNumber);
+}
+function applyGeminiFlightResult(){
+  try{
+    const box=$('geminiFlightResult');
+    const checked=parseGeminiFlightResult(box?.value||'');
+    let updated=0,uncertain=0;
+    rides=rides.map(r=>{
+      if(!r.flightNumber)return r;
+      const flight=String(r.flightNumber).trim().toUpperCase(),date=String(r.date||'').trim(),direction=flightDirectionForGemini(r);
+      const hit=checked.find(x=>x.flightNumber===flight&&(!x.date||!date||x.date===date)&&(x.direction==='unknown'||direction==='unknown'||x.direction===direction))||checked.find(x=>x.flightNumber===flight);
+      if(!hit)return r;
+      const verified=hit.confidence==='verified'&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
+      updated++;if(!verified)uncertain++;
+      return {...r,flightLocation:verified?hit.flightLocation:'Flugort prüfen',iata:verified?hit.iata:'',flightCheckConfidence:verified?'verified':'uncertain',flightCheckedAt:new Date().toISOString()};
+    });
+    save();
+    if(box)box.value='';
+    const status=$('geminiFlightStatus');if(status)status.textContent=`${updated} Fahrt(en) aktualisiert${uncertain?` · ${uncertain} unsicher → Flugort prüfen`:''}.`;
+    showToast(`${updated} Flugdaten übernommen`,'ok');
+    render();
+  }catch(e){const status=$('geminiFlightStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Gemini-Ergebnis ungültig','warn');}
+}
+function ensureGeminiFlightPanel(){
+  if($('geminiFlightPanel'))return;
+  const load=$('loadBtn'),view=$('importView');if(!load||!view)return;
+  const panel=document.createElement('section');panel.id='geminiFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(255,255,255,.04)';
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🤖 Gemini-Flugprüfung</div><div style="font-size:13px;opacity:.8;margin-bottom:10px">Prüft Flugnummer + Datum neu. Keine feste Flugnummer→Ort-Zuordnung.</div><button type="button" id="copyGeminiFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🤖 Gemini-Prüfauftrag kopieren</button><textarea id="geminiFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="geminiFlightResult" placeholder="Gemini-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyGeminiFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Geprüfte Flugorte übernehmen</button><div id="geminiFlightStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Flugprüfung durchgeführt.</div>`;
+  load.parentElement?.insertBefore(panel,load.nextSibling);
+  $('copyGeminiFlightBtn')?.addEventListener('click',copyGeminiFlightPrompt);
+  $('applyGeminiFlightBtn')?.addEventListener('click',applyGeminiFlightResult);
+}
+
 function importChoice(newRides){
   if(!Array.isArray(newRides)||!newRides.length)throw Error('Keine Fahrten gefunden');
   if(!rides.length)return 'replace';
@@ -688,6 +761,7 @@ function initApp(){
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
     try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){alert('Nachrichten sind für eine spätere Version vorbereitet.')}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
 
+    ensureGeminiFlightPanel();
     try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(e){rides=[]}
     initLiveDisposition();
     if(getDriverSession().active)startLiveGeoWatch();
@@ -700,3 +774,5 @@ window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
 window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+
+window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
