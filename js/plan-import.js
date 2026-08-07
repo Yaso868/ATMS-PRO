@@ -40,6 +40,14 @@
     return Number.isFinite(number) ? number : 0;
   }
 
+  function normalizeFlightLocation(value) {
+    const text = cellText(value).trim();
+    if (!text) return '';
+    if (/^zirich$/i.test(text) || /^zurich$/i.test(text)) return 'Zürich';
+    if (/^milan$/i.test(text)) return 'Mailand';
+    return text;
+  }
+
   function normalizeFlightNumber(value) {
     const raw = cellText(value).trim();
     if (!raw || /^[-–—]+$/.test(raw)) return '';
@@ -189,11 +197,20 @@
 
   function getVehicleValue(row, mapping) {
     const mapped = cellText(valueAt(row, mapping, 'vehicle'));
-    if (mapped) return mapped;
+    if (mapped && !/^\d+(?:[.,]\d+)?$/.test(mapped)) return mapped;
 
-    // ATMS Standard Planliste: erste Wg-Spalte = Fahrzeug
-    const fixedVehicle = cellText(row[9]);
-    return fixedVehicle || 'Pkw';
+    // ATMS Standard Planliste: erste Wg-Spalte = Spalte 9 (Index 8)
+    const fixedVehicle = cellText(row[8]);
+    if (fixedVehicle && !/^\d+(?:[.,]\d+)?$/.test(fixedVehicle)) return fixedVehicle;
+    return mapped || 'Pkw';
+  }
+
+  function getPersonsValue(row, mapping) {
+    const mapped = parseNumber(valueAt(row, mapping, 'persons'));
+    if (mapped > 0) return mapped;
+    // ATMS Standard Planliste: Pers = Spalte 10 (Index 9)
+    const fixedPersons = parseNumber(row[9]);
+    return fixedPersons > 0 ? fixedPersons : 0;
   }
 
   function makeRide(row, rowNumber, mapping, fileName) {
@@ -217,14 +234,14 @@
       destination,
       customer,
       company,
-      partner: company,
+      partner: customer || company,
       arrivalFlight,
       departureFlight,
       flightNumber,
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
-      flightLocation: cellText(valueAt(row, mapping, 'flightLocation')),
+      flightLocation: normalizeFlightLocation(valueAt(row, mapping, 'flightLocation')),
       vehicle: getVehicleValue(row, mapping),
-      persons: parseNumber(valueAt(row, mapping, 'persons')),
+      persons: getPersonsValue(row, mapping),
       price: findPriceValue(row, mapping),
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
@@ -458,7 +475,7 @@
       if (!ride.flightLocation || ride.flightLocation === 'Flugort prüfen' || ride.flightLocation !== hit.flightLocation) changed++;
       return {
         ...ride,
-        flightLocation: hit.flightLocation,
+        flightLocation: normalizeFlightLocation(hit.flightLocation),
         iata: hit.iata || ride.iata || '',
         flightCheckConfidence: hit.flightCheckConfidence || 'verified',
         flightCheckedAt: hit.flightCheckedAt || ride.flightCheckedAt || ''
@@ -538,7 +555,27 @@
       if (headerDetection.score < 3) throw new Error('Die Überschriften der Planliste wurden nicht eindeutig erkannt. Erwartet werden unter anderem Uhrzeit, Von und Nach.');
       const headers = uniqueHeaders(matrix[headerDetection.index]);
       let mappingInfo = detectAtmsMapping(headers);
-      if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
+      if (result.imageOcr) {
+        mappingInfo = {
+          mapping: {
+            price: 0,
+            time: 1,
+            pickup: 2,
+            destination: 3,
+            customer: 4,
+            company: 5,
+            arrivalFlight: 6,
+            departureFlight: 7,
+            vehicle: 8,
+            persons: 9,
+            flightTime: 10,
+            flightLocation: 11,
+            driver: 12
+          },
+          confidence: 1,
+          profile: 'ATMS Bildimport Alpha'
+        };
+      } else if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
       if (mappingInfo.confidence < 1) {
         const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
         if (missing.length) throw new Error(`Pflichtspalten nicht erkannt: ${missing.join(', ')}.`);
