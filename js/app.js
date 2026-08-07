@@ -447,6 +447,7 @@ function applyGeminiFlightResult(){
       return {...r,flightLocation:verified?hit.flightLocation:'Flugort prüfen',iata:verified?hit.iata:'',flightCheckConfidence:verified?'verified':'uncertain',flightCheckedAt:new Date().toISOString()};
     });
     save();
+    try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked}}));}catch(_){}
     if(box)box.value='';
     const status=$('geminiFlightStatus');if(status)status.textContent=`${updated} Fahrt(en) aktualisiert${uncertain?` · ${uncertain} unsicher → Flugort prüfen`:''}.`;
     showToast(`${updated} Flugdaten übernommen`,'ok');

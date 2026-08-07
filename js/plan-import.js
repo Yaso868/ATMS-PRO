@@ -421,7 +421,59 @@
     if (el) el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(mappingInfo.confidence * 100)} % Erkennung</span><small>${escapeHtml(labels.join(' · '))}</small>`;
   }
 
+  function syncFlightLocationsFromSavedRides() {
+    if (!state.rides.length) return 0;
+    let saved = [];
+    try {
+      const parsed = JSON.parse(localStorage.getItem('atms_beta_14_3_1_rides') || '[]');
+      if (Array.isArray(parsed)) saved = parsed;
+    } catch (_) {}
+    if (!saved.length) return 0;
+
+    const normalizeFlight = value => {
+      let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+      if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
+      return v;
+    };
+    const keyText = value => String(value || '').trim().toLowerCase();
+
+    let changed = 0;
+    state.rides = state.rides.map(ride => {
+      const flight = normalizeFlight(ride.flightNumber);
+      if (!flight) return ride;
+
+      const candidates = saved.filter(item => normalizeFlight(item.flightNumber) === flight && item.flightLocation && item.flightLocation !== 'Flugort prüfen');
+      if (!candidates.length) return ride;
+
+      let hit = candidates.find(item =>
+        ride.sourceRow && item.sourceRow && Number(item.sourceRow) === Number(ride.sourceRow)
+      );
+      if (!hit) hit = candidates.find(item =>
+        keyText(item.time || item.planTime) === keyText(ride.time || ride.planTime) &&
+        keyText(item.pickup) === keyText(ride.pickup) &&
+        keyText(item.destination) === keyText(ride.destination)
+      );
+      if (!hit) hit = candidates[0];
+
+      if (!ride.flightLocation || ride.flightLocation === 'Flugort prüfen' || ride.flightLocation !== hit.flightLocation) changed++;
+      return {
+        ...ride,
+        flightLocation: hit.flightLocation,
+        iata: hit.iata || ride.iata || '',
+        flightCheckConfidence: hit.flightCheckConfidence || 'verified',
+        flightCheckedAt: hit.flightCheckedAt || ride.flightCheckedAt || ''
+      };
+    });
+    return changed;
+  }
+
+  function refreshIssuesAfterFlightSync() {
+    syncFlightLocationsFromSavedRides();
+    state.issues = validate(state.rides);
+  }
+
   function render() {
+    refreshIssuesAfterFlightSync();
     const rides = state.rides, issues = state.issues;
     const errors = issues.filter(issue => issue.level === 'error').length;
     const warnings = issues.filter(issue => issue.level === 'warning').length;
@@ -528,6 +580,14 @@
     $('planAnalysis').classList.add('hidden');
     $('importStatus').textContent = file ? `Ausgewählt: ${file.name}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
   }
+
+  window.addEventListener('atms:gemini-flight-result', () => {
+    if (!state.rides.length) return;
+    try {
+      refreshIssuesAfterFlightSync();
+      render();
+    } catch (_) {}
+  });
 
   function importRides() {
     if (!state.rides.length) return;
