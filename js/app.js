@@ -409,7 +409,28 @@ function parseGeminiFlightResult(text){
   const obj=JSON.parse(clean(String(text||'')));
   const list=Array.isArray(obj)?obj:(Array.isArray(obj.flights)?obj.flights:[]);
   if(!list.length)throw new Error('Keine geprüften Flüge im Gemini-Ergebnis gefunden.');
-  return list.map(x=>({flightNumber:String(x.flightNumber||'').trim().toUpperCase(),date:String(x.date||'').trim(),direction:String(x.direction||'unknown').trim(),flightLocation:String(x.flightLocation||'').trim(),iata:String(x.iata||'').trim().toUpperCase(),confidence:String(x.confidence||'uncertain').trim().toLowerCase()})).filter(x=>x.flightNumber);
+  return list.map(x=>{
+    const direction=String(x.direction||'unknown').trim().toLowerCase();
+    const location=String(x.relevantLocation||x.flightLocation||'').trim();
+    const iata=String(
+      x.iata ||
+      (direction==='arrival'?x.originIata:'') ||
+      (direction==='departure'?x.destinationIata:'') ||
+      ''
+    ).trim().toUpperCase();
+    const status=String(x.status||'').trim().toLowerCase();
+    const confidence=String(x.confidence||'').trim().toLowerCase();
+    const verified=(status==='verified' || confidence==='verified' || confidence==='high' || confidence==='medium') && Boolean(location);
+    return {
+      flightNumber:String(x.flightNumber||'').trim().toUpperCase(),
+      date:String(x.date||'').trim(),
+      direction,
+      flightLocation:location,
+      iata,
+      confidence:verified?'verified':'uncertain',
+      status:status|| (verified?'verified':'needs_manual_check')
+    };
+  }).filter(x=>x.flightNumber);
 }
 function applyGeminiFlightResult(){
   try{
@@ -418,7 +439,7 @@ function applyGeminiFlightResult(){
     let updated=0,uncertain=0;
     rides=rides.map(r=>{
       if(!r.flightNumber)return r;
-      const flight=String(r.flightNumber).trim().toUpperCase(),date=String(r.date||'').trim(),direction=flightDirectionForGemini(r);
+      let flight=String(r.flightNumber).trim().toUpperCase();if(/^0S\d{1,4}[A-Z]?$/.test(flight))flight='OS'+flight.slice(2);const date=String(r.date||'').trim(),direction=flightDirectionForGemini(r);
       const hit=checked.find(x=>x.flightNumber===flight&&(!x.date||!date||x.date===date)&&(x.direction==='unknown'||direction==='unknown'||x.direction===direction))||checked.find(x=>x.flightNumber===flight);
       if(!hit)return r;
       const verified=hit.confidence==='verified'&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
