@@ -1,4 +1,4 @@
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -382,6 +382,105 @@ function flightDirectionForGemini(r){
   if(d==='hotels_to_airport')return'departure';
   return'unknown';
 }
+
+/* FLIGHT-CACHE-001 – geprüfte Gemini-Flugorte dauerhaft für exakt dieselbe Planfahrt sichern */
+function flightCacheNumber(value){
+  let v=String(value||'').trim().toUpperCase().replace(/\s+/g,'');
+  if(/^0S\d{1,4}[A-Z]?$/.test(v))v='OS'+v.slice(2);
+  return v;
+}
+function berlinDate(value=new Date()){
+  try{
+    return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Berlin',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
+  }catch(_){
+    const d=new Date(value),p=n=>String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
+}
+function flightRideFingerprint(r){
+  const parts=[
+    r?.sourceFile||'',
+    Number(r?.sourceRow||0)||'',
+    planTimeOf(r)||'',
+    r?.pickup||'',
+    r?.destination||'',
+    flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight),
+    flightDirectionForGemini(r),
+    r?.flightTime||'',
+    r?.driver||'',
+    Number(r?.persons||0)||''
+  ];
+  return parts.map(v=>normKey(v)).join('|');
+}
+function getFlightCache(){
+  try{
+    const list=JSON.parse(localStorage.getItem(FLIGHT_CACHE)||'[]');
+    return Array.isArray(list)?list:[];
+  }catch(_){return[]}
+}
+function saveFlightCache(list){
+  localStorage.setItem(FLIGHT_CACHE,JSON.stringify((Array.isArray(list)?list:[]).slice(0,400)));
+}
+function upsertFlightCache(entries){
+  if(!Array.isArray(entries)||!entries.length)return;
+  let cache=getFlightCache();
+  for(const entry of entries){
+    const fp=String(entry.fingerprint||'');
+    const rideId=String(entry.rideId||'');
+    cache=cache.filter(x=>{
+      const sameFingerprint=fp&&String(x.fingerprint||'')===fp;
+      const sameRide=rideId&&String(x.rideId||'')===rideId;
+      return !(sameFingerprint||sameRide);
+    });
+    cache.unshift(entry);
+  }
+  saveFlightCache(cache);
+}
+function findFlightCacheForRide(r){
+  const flight=flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight);
+  if(!flight)return null;
+  const direction=flightDirectionForGemini(r);
+  const fingerprint=flightRideFingerprint(r);
+  const rideId=String(r?.id||'');
+  const rideDate=String(r?.date||'').trim();
+  const today=berlinDate();
+  const candidates=getFlightCache().filter(x=>{
+    if(!x||x.verified!==true)return false;
+    if(flightCacheNumber(x.flightNumber)!==flight)return false;
+    if(x.direction&&direction!=='unknown'&&x.direction!=='unknown'&&x.direction!==direction)return false;
+    const exactRide=rideId&&String(x.rideId||'')===rideId;
+    const exactFingerprint=fingerprint&&String(x.fingerprint||'')===fingerprint;
+    if(!exactRide&&!exactFingerprint)return false;
+    if(rideDate)return !x.date||String(x.date)===rideDate;
+    const cacheDay=String(x.date||'').trim()||berlinDate(x.checkedAt||new Date());
+    return cacheDay===today;
+  });
+  candidates.sort((a,b)=>new Date(b.checkedAt||0)-new Date(a.checkedAt||0));
+  return candidates[0]||null;
+}
+function applyFlightCacheToRides(source){
+  let changed=0;
+  const out=(Array.isArray(source)?source:[]).map(r=>{
+    const hit=findFlightCacheForRide(r);
+    if(!hit)return r;
+    const nextLocation=String(hit.flightLocation||'').trim();
+    const nextIata=String(hit.iata||'').trim().toUpperCase();
+    if(!nextLocation)return r;
+    const sameLocation=String(r.flightLocation||'').trim()===nextLocation;
+    const sameIata=String(r.iata||'').trim().toUpperCase()===nextIata;
+    const sameCheck=String(r.flightCheckedAt||'')===String(hit.checkedAt||'');
+    if(sameLocation&&sameIata&&sameCheck)return r;
+    changed++;
+    return {
+      ...r,
+      flightLocation:nextLocation,
+      iata:nextIata,
+      flightCheckConfidence:'verified',
+      flightCheckedAt:hit.checkedAt||r.flightCheckedAt||''
+    };
+  });
+  return {rides:out,changed};
+}
 function flightCheckItems(source=rides){
   const map=new Map();
   for(const r of source){
@@ -430,11 +529,14 @@ function parseGeminiFlightResult(text){
     return {
       flightNumber:String(x.flightNumber||'').trim().toUpperCase(),
       date:String(x.date||'').trim(),
+      flightTime:String(x.flightTime||'').trim(),
       direction,
       flightLocation:location,
       iata,
       confidence:verified?'verified':'uncertain',
-      status:status|| (verified?'verified':'needs_manual_check')
+      status:status|| (verified?'verified':'needs_manual_check'),
+      conflict:Boolean(x.conflict),
+      checkedAt:String(obj.checkedAt||new Date().toISOString())
     };
   }).filter(x=>x.flightNumber);
 }
@@ -443,15 +545,55 @@ function applyGeminiFlightResult(){
     const box=$('geminiFlightResult');
     const checked=parseGeminiFlightResult(box?.value||'');
     let updated=0,uncertain=0;
+    const cacheEntries=[];
     rides=rides.map(r=>{
       if(!r.flightNumber)return r;
-      let flight=String(r.flightNumber).trim().toUpperCase();if(/^0S\d{1,4}[A-Z]?$/.test(flight))flight='OS'+flight.slice(2);const date=String(r.date||'').trim(),direction=flightDirectionForGemini(r);
-      const hit=checked.find(x=>x.flightNumber===flight&&(!x.date||!date||x.date===date)&&(x.direction==='unknown'||direction==='unknown'||x.direction===direction))||checked.find(x=>x.flightNumber===flight);
+      const flight=flightCacheNumber(r.flightNumber);
+      const date=String(r.date||'').trim();
+      const direction=flightDirectionForGemini(r);
+      const flightTime=String(r.flightTime||'').trim();
+
+      const candidates=checked.filter(x=>
+        flightCacheNumber(x.flightNumber)===flight &&
+        (!x.date||!date||x.date===date) &&
+        (x.direction==='unknown'||direction==='unknown'||x.direction===direction)
+      );
+
+      let hit=null;
+      if(flightTime)hit=candidates.find(x=>x.flightTime&&x.flightTime===flightTime);
+      if(!hit)hit=candidates.find(x=>!x.flightTime||!flightTime);
+      if(!hit)hit=candidates[0]||checked.find(x=>flightCacheNumber(x.flightNumber)===flight);
       if(!hit)return r;
+
       const verified=hit.confidence==='verified'&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
+      const checkedAt=hit.checkedAt||new Date().toISOString();
       updated++;if(!verified)uncertain++;
-      return {...r,flightLocation:verified?hit.flightLocation:'Flugort prüfen',iata:verified?hit.iata:'',flightCheckConfidence:verified?'verified':'uncertain',flightCheckedAt:new Date().toISOString()};
+
+      cacheEntries.push({
+        rideId:String(r.id||''),
+        fingerprint:flightRideFingerprint(r),
+        flightNumber:flight,
+        direction,
+        date:date||String(hit.date||'').trim(),
+        flightTime:flightTime||String(hit.flightTime||'').trim(),
+        flightLocation:verified?hit.flightLocation:'',
+        iata:verified?hit.iata:'',
+        verified:Boolean(verified),
+        conflict:Boolean(hit.conflict),
+        checkedAt,
+        sourceFile:String(r.sourceFile||''),
+        sourceRow:Number(r.sourceRow||0)||0
+      });
+
+      return {
+        ...r,
+        flightLocation:verified?hit.flightLocation:'Flugort prüfen',
+        iata:verified?hit.iata:'',
+        flightCheckConfidence:verified?'verified':'uncertain',
+        flightCheckedAt:checkedAt
+      };
     });
+    upsertFlightCache(cacheEntries);
     save();
     try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked}}));}catch(_){}
     if(box)box.value='';
@@ -790,7 +932,12 @@ function initApp(){
     try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){alert('Nachrichten sind für eine spätere Version vorbereitet.')}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
 
     ensureGeminiFlightPanel();
-    try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(e){rides=[]}
+    try{
+      rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
+      const restored=applyFlightCacheToRides(rides);
+      rides=restored.rides;
+      if(restored.changed)save();
+    }catch(e){rides=[]}
     initLiveDisposition();
     if(getDriverSession().active)startLiveGeoWatch();
     try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){console.warn('Einstellungen konnten nicht geladen werden',e)}
