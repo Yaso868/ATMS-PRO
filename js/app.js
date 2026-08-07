@@ -466,14 +466,16 @@ function applyFlightCacheToRides(source){
     const nextLocation=String(hit.flightLocation||'').trim();
     const nextIata=String(hit.iata||'').trim().toUpperCase();
     if(!nextLocation)return r;
+    const nextDate=String(r.date||'').trim() || String(hit.date||'').trim();
     const sameLocation=String(r.flightLocation||'').trim()===nextLocation;
     const sameIata=String(r.iata||'').trim().toUpperCase()===nextIata;
     const sameCheck=String(r.flightCheckedAt||'')===String(hit.checkedAt||'');
-    if(sameLocation&&sameIata&&sameCheck)return r;
+    const sameDate=String(r.date||'').trim()===nextDate;
+    if(sameLocation&&sameIata&&sameCheck&&sameDate)return r;
     changed++;
     return {
       ...r,
-      date:String(r.date||'').trim() || String(hit.date||'').trim(),
+      date:nextDate,
       flightLocation:nextLocation,
       iata:nextIata,
       flightCheckConfidence:'verified',
