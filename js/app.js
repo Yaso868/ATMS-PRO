@@ -473,6 +473,7 @@ function applyFlightCacheToRides(source){
     changed++;
     return {
       ...r,
+      date:String(r.date||'').trim() || String(hit.date||'').trim(),
       flightLocation:nextLocation,
       iata:nextIata,
       flightCheckConfidence:'verified',
@@ -587,6 +588,7 @@ function applyGeminiFlightResult(){
 
       return {
         ...r,
+        date:date || String(hit.date||'').trim(),
         flightLocation:verified?hit.flightLocation:'Flugort prüfen',
         iata:verified?hit.iata:'',
         flightCheckConfidence:verified?'verified':'uncertain',
