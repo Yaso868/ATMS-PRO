@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'FLIGHT-002';
+  const VERSION = 'FLIGHT-003';
 
   const text = value => String(value ?? '').trim();
   const upper = value => {
@@ -112,20 +112,23 @@
       sourceRows: f.sourceRows
     }));
 
-    return `ATMS PRO – FLIGHT-001 Flugprüfung\n\n` +
+    return `ATMS PRO – ${VERSION} Flugprüfung\n\n` +
 `Aufgabe:\n` +
 `Prüfe jede unten aufgeführte Flugnummer mit möglichst aktuellen öffentlichen Webdaten für den konkreten Flugtag. Verwende keine dauerhaft gespeicherte Zuordnung \"Flugnummer = Ort\". Dieselbe Flugnummer kann an einem anderen Tag eine andere Route haben.\n\n` +
 `WICHTIG:\n` +
 `- direction = arrival: Für ATMS ist der HERKUNFTSORT (origin) relevant.\n` +
 `- direction = departure: Für ATMS ist der ZIELORT (destination) relevant.\n` +
-`- Wenn date null ist, nutze den heutigen Tag in Europe/Berlin und setze dateAssumed=true.\n` +
+`- Wenn date bereits angegeben ist, verwende exakt dieses Datum und setze dateAssumed=false.\n` +
+`- Nur wenn date null ist, nutze den heutigen Tag in Europe/Berlin und setze dateAssumed=true.\n` +
 `- flightTime ist die Flugzeit aus der Planliste. Verwende sie zur Unterscheidung mehrerer Flüge mit derselben Flugnummer am selben Tag.\n` +
+`- Gib flightTime im Ergebnis exakt so zurück, wie sie im Prüfauftrag steht. Wenn sie null ist, gib null zurück und erfinde keine Uhrzeit.\n` +
 `- Gleiche Flugnummer + gleiches Datum + gleiche Richtung + gleiche flightTime = derselbe zu prüfende Flug. Unterschiedliche flightTime = getrennt prüfen.\n` +
+`- Wenn flightTime null ist und mehrere passende Flüge am selben Tag existieren, NICHT raten: status = \"needs_manual_check\".\n` +
 `- Wenn ein eindeutiger aktueller Flug nicht sicher gefunden wird, NICHT raten. status muss dann \"needs_manual_check\" sein.\n` +
 `- locationFromPlan ist nur ein Vergleichswert aus der Dispoliste. Bei Widerspruch kennzeichne conflict=true; überschreibe nicht still.\n` +
 `- Gib ausschließlich valides JSON zurück, keinen Markdown-Text.\n\n` +
 `Ausgabeformat:\n` +
-`{\n  \"checkedAt\": \"ISO-8601\",\n  \"flights\": [\n    {\n      \"flightNumber\": \"EW9442\",\n      \"date\": \"YYYY-MM-DD\",\n      \"dateAssumed\": false,\n      \"direction\": \"arrival|departure\",\n      \"originCity\": \"\",\n      \"originIata\": \"\",\n      \"destinationCity\": \"\",\n      \"destinationIata\": \"\",\n      \"relevantLocation\": \"\",\n      \"status\": \"verified|needs_manual_check\",\n      \"confidence\": \"high|medium|low\",\n      \"conflict\": false,\n      \"sourceNote\": \"kurze Angabe, worauf die Prüfung basiert\"\n    }\n  ]\n}\n\n` +
+`{\n  \"checkedAt\": \"ISO-8601\",\n  \"flights\": [\n    {\n      \"flightNumber\": \"EW9442\",\n      \"date\": \"YYYY-MM-DD\",\n      \"dateAssumed\": false,\n      \"flightTime\": \"HH:MM oder null\",\n      \"direction\": \"arrival|departure\",\n      \"originCity\": \"\",\n      \"originIata\": \"\",\n      \"destinationCity\": \"\",\n      \"destinationIata\": \"\",\n      \"relevantLocation\": \"\",\n      \"status\": \"verified|needs_manual_check\",\n      \"confidence\": \"high|medium|low\",\n      \"conflict\": false,\n      \"sourceNote\": \"kurze Angabe, worauf die Prüfung basiert\"\n    }\n  ]\n}\n\n` +
 `Zu prüfende Flüge:\n${JSON.stringify(payload, null, 2)}`;
   }
 
