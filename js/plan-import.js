@@ -2,11 +2,73 @@
   'use strict';
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null };
+  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '' };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
   const cellText = value => value === null || value === undefined ? '' : String(value).trim();
+
+  function berlinToday() {
+    try {
+      return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Europe/Berlin',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date());
+    } catch (_) {
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+  }
+
+  function formatPlanDate(value) {
+    const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : String(value || '');
+  }
+
+  function currentPlanDate() {
+    const input = $('planDateInput');
+    const value = cellText(input?.value || state.planDate || berlinToday());
+    state.planDate = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : berlinToday();
+    if (input && input.value !== state.planDate) input.value = state.planDate;
+    return state.planDate;
+  }
+
+  function ensurePlanDateControl() {
+    if ($('planDateControl')) return;
+    const drop = $('planImportDrop');
+    const analyzeBtn = $('analyzePlanBtn');
+    const anchorEl = drop || analyzeBtn;
+    if (!anchorEl) return;
+
+    state.planDate = state.planDate || berlinToday();
+
+    const wrap = document.createElement('div');
+    wrap.id = 'planDateControl';
+    wrap.style.cssText = 'margin:14px 0;padding:14px 16px;border:1px solid rgba(72,156,255,.35);border-radius:14px;background:rgba(7,33,63,.55)';
+    wrap.innerHTML = `
+      <label for="planDateInput" style="display:block;font-weight:800;margin-bottom:6px">📅 Plantag</label>
+      <div style="font-size:12px;opacity:.75;margin-bottom:10px">Automatisch auf heute gesetzt. Bei einer Liste für morgen oder einen anderen Tag bitte vor der Analyse ändern.</div>
+      <input id="planDateInput" type="date" value="${state.planDate}" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#071a2b;color:#fff;font-size:16px">
+      <div id="planDateStatus" style="font-size:12px;opacity:.8;margin-top:8px">Aktiver Plantag: ${formatPlanDate(state.planDate)}</div>
+    `;
+
+    if (drop) drop.insertAdjacentElement('afterend', wrap);
+    else analyzeBtn.parentElement?.insertBefore(wrap, analyzeBtn);
+
+    $('planDateInput')?.addEventListener('change', event => {
+      state.planDate = event.target.value || berlinToday();
+      event.target.value = state.planDate;
+      const status = $('planDateStatus');
+      if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(state.planDate)}`;
+      if (state.rides.length) {
+        state.rides = state.rides.map(ride => ({ ...ride, date: state.planDate }));
+        state.issues = validate(state.rides);
+        render();
+      }
+    });
+  }
 
   function normalizeTime(value) {
     if (value === null || value === undefined || value === '') return '';
@@ -226,7 +288,7 @@
       id: `import-${Date.now()}-${rowNumber}`,
       sourceRow: rowNumber,
       sourceFile: fileName,
-      date: '',
+      date: currentPlanDate(),
       time: normalizeTime(valueAt(row, mapping, 'time')),
       planTime: normalizeTime(valueAt(row, mapping, 'time')),
       flightTime: normalizeTime(valueAt(row, mapping, 'flightTime')),
@@ -459,7 +521,14 @@
       const flight = normalizeFlight(ride.flightNumber);
       if (!flight) return ride;
 
-      const candidates = saved.filter(item => normalizeFlight(item.flightNumber) === flight && item.flightLocation && item.flightLocation !== 'Flugort prüfen');
+      const rideDate = cellText(ride.date);
+      const candidates = saved.filter(item => {
+        if (normalizeFlight(item.flightNumber) !== flight) return false;
+        if (!item.flightLocation || item.flightLocation === 'Flugort prüfen') return false;
+        const savedDate = cellText(item.date);
+        if (rideDate) return savedDate === rideDate;
+        return !savedDate;
+      });
       if (!candidates.length) return ride;
 
       let hit = candidates.find(item =>
@@ -537,10 +606,15 @@
   async function analyze() {
     if (!state.file) return;
     try {
+      currentPlanDate();
       $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
       const result = await readFile(state.file);
       if (result.kind === 'json') {
-        state.rides = result.rows.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
+        const planDate = currentPlanDate();
+        state.rides = result.rows.map((ride, index) => {
+          const withDate = { ...ride, date: cellText(ride?.date) || planDate };
+          return window.norm ? window.norm(withDate, index) : withDate;
+        });
         if (window.ATMSFlight) state.rides = window.ATMSFlight.prepareRides(state.rides);
         state.meta = { sheetName: 'JSON', profile: 'ATMS JSON' };
         state.issues = validate(state.rides.map((ride, index) => ({ ...ride, sourceRow: index + 1 })));
@@ -615,7 +689,8 @@
     $('analyzePlanBtn').disabled = !file;
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
-    $('importStatus').textContent = file ? `Ausgewählt: ${file.name}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
+    const planDate = currentPlanDate();
+    $('importStatus').textContent = file ? `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
   }
 
   window.addEventListener('atms:gemini-flight-result', () => {
@@ -668,6 +743,8 @@
   function init() {
     const input = $('fileInput'), drop = $('planImportDrop');
     if (!input) return;
+    ensurePlanDateControl();
+    currentPlanDate();
     input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
