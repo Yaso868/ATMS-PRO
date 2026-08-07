@@ -41,7 +41,9 @@
   }
 
   function normalizeFlightNumber(value) {
-    return cellText(value).toUpperCase().replace(/\s+/g, '');
+    const raw = cellText(value).trim();
+    if (!raw || /^[-–—]+$/.test(raw)) return '';
+    return raw.toUpperCase().replace(/\s+/g, '');
   }
 
   function looksLikeFlight(value) {
@@ -245,6 +247,7 @@
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
+      if (ride.flightNumber && !ride.flightLocation) issues.push({ level: 'warning', row, text: `Flugort für ${ride.flightNumber} fehlt – aktuelle Gemini-Prüfung empfohlen` });
       if (ride.persons < 0) issues.push({ level: 'warning', row, text: 'Personenzahl ist ungültig' });
       const fingerprint = [ride.time, cleanKey(ride.pickup), cleanKey(ride.destination), cleanKey(ride.driver), ride.flightNumber].join('|');
       if (fingerprints.has(fingerprint)) issues.push({ level: 'warning', row, text: 'Mögliche doppelte Fahrt erkannt' });
@@ -422,6 +425,11 @@
     $('planErrorCount').textContent = errors;
     if ($('planFlightCount')) $('planFlightCount').textContent = new Set(rides.map(ride => ride.flightNumber).filter(Boolean)).size;
     if ($('planSheetName')) $('planSheetName').textContent = state.meta.sheetName || '–';
+    if ($('flightCheckStatus')) {
+      const fs = window.ATMSFlight ? window.ATMSFlight.summary(rides) : { total: 0, withLocation: 0, needsCheck: 0 };
+      $('flightCheckStatus').textContent = fs.total ? `${fs.total} Flüge · ${fs.withLocation} Ort aus Liste · ${fs.needsCheck} aktuell zu prüfen` : 'Keine Flugnummern erkannt.';
+    }
+    if ($('copyFlightCheckBtn')) $('copyFlightCheckBtn').disabled = !rides.some(ride => ride.flightNumber);
 
     $('planIssues').innerHTML = issues.length
       ? issues.slice(0, 20).map(issue => `<div class="plan-issue ${issue.level}"><b>Zeile ${issue.row}</b> · ${escapeHtml(issue.text)}</div>`).join('')
@@ -457,6 +465,7 @@
       const result = await readFile(state.file);
       if (result.kind === 'json') {
         state.rides = result.rows.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
+        if (window.ATMSFlight) state.rides = window.ATMSFlight.prepareRides(state.rides);
         state.meta = { sheetName: 'JSON', profile: 'ATMS JSON' };
         state.issues = validate(state.rides.map((ride, index) => ({ ...ride, sourceRow: index + 1 })));
         if ($('planProfileInfo')) $('planProfileInfo').innerHTML = '<b>ATMS JSON</b><span>100 % Erkennung</span><small>Bestehende ATMS-Datenstruktur erkannt.</small>';
@@ -486,11 +495,11 @@
       if (!rides.length) throw new Error('Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
       state.matrix = matrix;
-      state.rides = rides;
+      state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(rides) : rides;
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: result.imageOcr ? 'ATMS Bildimport Alpha' : mappingInfo.profile };
       if (result.imageOcr) mappingInfo = { ...mappingInfo, profile: 'ATMS Bildimport Alpha' };
-      state.issues = validate(rides);
+      state.issues = validate(state.rides);
       localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);
       render();
@@ -532,12 +541,33 @@
     }
   }
 
+  async function copyFlightCheckPrompt() {
+    if (!state.rides.length || !window.ATMSFlight) return;
+    const prompt = window.ATMSFlight.buildGeminiPrompt(state.rides);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      $('importStatus').textContent = 'Gemini-Flugprüfauftrag wurde kopiert. In Gemini einfügen und die Flüge für den aktuellen Tag prüfen lassen.';
+      if (typeof window.showToast === 'function') window.showToast('Gemini-Flugprüfung kopiert', 'ok');
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = prompt;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      $('importStatus').textContent = 'Gemini-Flugprüfauftrag wurde kopiert.';
+    }
+  }
+
   function init() {
     const input = $('fileInput'), drop = $('planImportDrop');
     if (!input) return;
     input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
+    $('copyFlightCheckBtn')?.addEventListener('click', copyFlightCheckPrompt);
     if (drop) {
       ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('over'); }));
       ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
