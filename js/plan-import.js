@@ -43,7 +43,12 @@
   function normalizeFlightNumber(value) {
     const raw = cellText(value).trim();
     if (!raw || /^[-–—]+$/.test(raw)) return '';
-    return raw.toUpperCase().replace(/\s+/g, '');
+    let normalized = raw.toUpperCase().replace(/\s+/g, '');
+    // Häufiger OCR-Fehler bei Austrian Airlines: 0S162 -> OS162
+    if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
+    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden
+    if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)$/.test(normalized)) return '';
+    return normalized;
   }
 
   function looksLikeFlight(value) {
@@ -314,8 +319,10 @@
     return canvas;
   }
 
-  const IMAGE_HEADERS = ['Preis','Uhrzeit','Von','Nach','Name','Firma','Uhrzeit','Flug ang.','Flug ausg.','Wg','Pers','Uhrzeit','Ort','Wg'];
-  const IMAGE_COLUMN_RATIOS = [0,0.06,0.12,0.255,0.385,0.475,0.53,0.585,0.645,0.705,0.755,0.795,0.84,0.925,1.001];
+  // ATMS Bild-Planliste: 13 echte Spalten.
+  // Wichtig: Zwischen "Firma" und "Flug ang." gibt es KEINE zusätzliche Uhrzeit-Spalte.
+  const IMAGE_HEADERS = ['Preis','Uhrzeit','Von','Nach','Name','Firma','Flug ang.','Flug ausg.','Wg','Pers','Uhrzeit','Ort','Wg'];
+  const IMAGE_COLUMN_RATIOS = [0,0.06,0.107,0.260,0.396,0.486,0.547,0.612,0.675,0.718,0.759,0.823,0.931,1.001];
 
   function imageWordsToMatrix(words, width) {
     const usable = (words || []).filter(w => {

@@ -4,7 +4,16 @@
   const VERSION = 'FLIGHT-001';
 
   const text = value => String(value ?? '').trim();
-  const upper = value => text(value).toUpperCase().replace(/\s+/g, '');
+  const upper = value => {
+    let v = text(value).toUpperCase().replace(/\s+/g, '');
+    if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
+    return v;
+  };
+  const isRealFlightNumber = value => {
+    const v = upper(value);
+    if (!v || /^(VAN|PKW|BUS|SPRINTER|TAXI|WG)$/.test(v)) return false;
+    return /^[A-Z0-9]{2,3}\d{1,4}[A-Z]?$/.test(v);
+  };
 
   function normalizeDirection(ride) {
     if (ride?.flightDirection === 'arrival' || ride?.arrivalFlight) return 'arrival';
@@ -59,7 +68,7 @@
     const map = new Map();
     for (const ride of Array.isArray(rides) ? rides : []) {
       const flightNumber = upper(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
-      if (!flightNumber) continue;
+      if (!isRealFlightNumber(flightNumber)) continue;
       const direction = normalizeDirection(ride);
       const key = `${flightNumber}|${direction || 'unknown'}|${text(ride?.date)}`;
       if (!map.has(key)) {
