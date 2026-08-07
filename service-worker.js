@@ -1,10 +1,11 @@
-const CACHE_NAME = "atms-pro-pwa-14-6-8-cr0043";
+const CACHE_NAME = "atms-pro-pwa-14-6-10-flight001";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./css/main.css",
   "./js/app.js",
+  "./js/flight-engine.js",
   "./js/plan-import.js",
   "./js/pwa.js",
   "./icons/icon-192.png",
