@@ -532,3 +532,13 @@
   #listView .ride.bundle .bundle-stop-row b{font-size:10px}
   #listView .ride.bundle .bundle-stop-pax{font-size:9px}
 }
+
+/* ==========================================================
+   ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 4
+   Bündelfahrt: mehr optischer Abstand zwischen dem Badge
+   „BÜNDELFAHRT“ links und dem Flugort/Zielort rechts.
+   Reine CSS-Anpassung, keine Funktions- oder Datenlogik.
+   ========================================================== */
+#listView .ride.bundle .flightloc{
+  margin-left:8px;
+}
