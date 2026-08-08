@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  // ATMS PRO Patch 08.08.2026 08:14 Uhr (Europe/Berlin): fehlende Flugorte pro FLIGHT-003-Prüfbasis gruppieren.
+
   const PROFILE_KEY = 'atms_import_profile_v1';
   const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '' };
   const $ = id => document.getElementById(id);
@@ -324,6 +326,8 @@
   function validate(rides) {
     const issues = [];
     const fingerprints = new Set();
+    const missingFlightLocations = new Map();
+
     rides.forEach(ride => {
       const row = ride.sourceRow;
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
@@ -331,12 +335,38 @@
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
-      if (ride.flightNumber && !ride.flightLocation) issues.push({ level: 'warning', row, text: `Flugort für ${ride.flightNumber} fehlt – aktuelle Gemini-Prüfung empfohlen` });
+
+      if (ride.flightNumber && !ride.flightLocation) {
+        const flightNumber = normalizeFlightNumber(ride.flightNumber);
+        const key = [
+          flightNumber,
+          cellText(ride.date),
+          cellText(ride.flightDirection),
+          normalizeTime(ride.flightTime)
+        ].join('|');
+        if (!missingFlightLocations.has(key)) {
+          missingFlightLocations.set(key, { flightNumber, rows: [] });
+        }
+        missingFlightLocations.get(key).rows.push(row);
+      }
+
       if (ride.persons < 0) issues.push({ level: 'warning', row, text: 'Personenzahl ist ungültig' });
       const fingerprint = [ride.time, cleanKey(ride.pickup), cleanKey(ride.destination), cleanKey(ride.driver), ride.flightNumber].join('|');
       if (fingerprints.has(fingerprint)) issues.push({ level: 'warning', row, text: 'Mögliche doppelte Fahrt erkannt' });
       fingerprints.add(fingerprint);
     });
+
+    missingFlightLocations.forEach(group => {
+      const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
+      issues.push({
+        level: 'warning',
+        row: rows[0],
+        rows,
+        text: `Flugort für ${group.flightNumber} fehlt – aktuelle Gemini-Prüfung empfohlen`
+      });
+    });
+
+    issues.sort((a, b) => Number(a.row || 0) - Number(b.row || 0));
     return issues;
   }
 
@@ -577,11 +607,17 @@
     if ($('copyFlightCheckBtn')) $('copyFlightCheckBtn').disabled = !rides.some(ride => ride.flightNumber);
 
     $('planIssues').innerHTML = issues.length
-      ? issues.slice(0, 20).map(issue => `<div class="plan-issue ${issue.level}"><b>Zeile ${issue.row}</b> · ${escapeHtml(issue.text)}</div>`).join('')
+      ? issues.slice(0, 20).map(issue => {
+          const rows = Array.isArray(issue.rows) && issue.rows.length ? issue.rows : [issue.row];
+          const rowLabel = rows.length === 1
+            ? `Zeile ${rows[0]}`
+            : `Zeilen ${rows.slice(0, -1).join(', ')} und ${rows[rows.length - 1]}`;
+          return `<div class="plan-issue ${issue.level}"><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>`;
+        }).join('')
       : '<div class="plan-issue ok">✓ Keine kritischen Probleme erkannt.</div>';
 
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
-      const rowIssues = issues.filter(issue => issue.row === ride.sourceRow);
+      const rowIssues = issues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
       const status = rowIssues.some(issue => issue.level === 'error') ? 'Fehler' : rowIssues.length ? 'Prüfen' : 'OK';
       const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
       return `<tr>
