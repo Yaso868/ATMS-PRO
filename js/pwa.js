@@ -250,3 +250,45 @@
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init,{once:true});
   else init();
 })();
+
+// ATMS PRO STEP 10 – JFIF/Bilddaten nicht im erweiterten JSON-Feld anzeigen.
+// Der direkte Planimport und der Bildimport bleiben unverändert.
+(function(){
+  'use strict';
+
+  function looksLikeBinaryImageText(value){
+    const text=String(value||'');
+    if(!text) return false;
+    if(text.includes('JFIF') || text.includes('Exif')) return true;
+    const replacementCount=(text.match(/\uFFFD/g)||[]).length;
+    return replacementCount >= 2;
+  }
+
+  function initImportBinaryGuard(){
+    const fileInput=document.getElementById('fileInput');
+    const jsonInput=document.getElementById('jsonInput');
+    if(!fileInput || !jsonInput) return;
+
+    fileInput.addEventListener('change',function(event){
+      const file=event.target.files && event.target.files[0];
+      if(!file) return;
+      const name=String(file.name||'').toLowerCase();
+      const type=String(file.type||'').toLowerCase();
+      const isJson=name.endsWith('.json') || type==='application/json';
+      if(isJson) return;
+
+      // app.js liest den gemeinsamen Datei-Input in älteren Builds zusätzlich als Text.
+      // Bei JPG/PNG erscheint dadurch binärer JFIF/Exif-Zeichensalat im Legacy-JSON-Feld.
+      // Einige kurze Nachprüfungen fangen auch das asynchrone File.text() sicher ab.
+      let checks=0;
+      const timer=setInterval(function(){
+        checks++;
+        if(looksLikeBinaryImageText(jsonInput.value)) jsonInput.value='';
+        if(checks>=30) clearInterval(timer);
+      },100);
+    });
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initImportBinaryGuard,{once:true});
+  else initImportBinaryGuard();
+})();
