@@ -312,3 +312,96 @@
         grid-template-columns:repeat(2,1fr);
     }
 }
+/* ==========================================================
+   ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 1
+   Nur Kopfbereich: Suchleiste + 4 Statistikboxen in EINER Reihe
+   Keine Änderung an FLIGHT-003, Import, Cache oder Fahrtenlogik.
+   ========================================================== */
+#listView .compact-top{
+  padding:8px 10px 8px;
+}
+#listView .compact-search{
+  margin-top:0;
+}
+#listView .summary-row{
+  display:block;
+  min-height:0;
+  margin-top:7px;
+}
+#listView .summary-row .sub{
+  display:none;
+}
+#listView .dashboard-stats{
+  width:100%;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:6px;
+  margin-top:0;
+}
+#listView .dashboard-stat{
+  min-width:0;
+  min-height:58px;
+  display:grid;
+  grid-template-columns:24px minmax(0,1fr);
+  grid-template-rows:auto auto;
+  column-gap:6px;
+  align-items:center;
+  align-content:center;
+  padding:7px 6px;
+  text-align:left;
+  border-radius:13px;
+  background:linear-gradient(180deg,#062433,#05202d);
+}
+#listView .dashboard-stat::before{
+  grid-column:1;
+  grid-row:1 / 3;
+  align-self:center;
+  justify-self:center;
+  font-size:18px;
+  line-height:1;
+  opacity:.95;
+}
+#listView .dashboard-stat:nth-child(1)::before{content:"🚘"}
+#listView .dashboard-stat:nth-child(2)::before{content:"👤"}
+#listView .dashboard-stat:nth-child(3)::before{content:"✈"}
+#listView .dashboard-stat:nth-child(4)::before{content:"🔔"}
+#listView .dashboard-stat b{
+  grid-column:2;
+  grid-row:1;
+  min-width:0;
+  font-size:18px;
+  line-height:1.05;
+  margin:0;
+  color:#fff;
+}
+#listView .dashboard-stat:first-child b{
+  color:var(--cyan);
+}
+#listView .dashboard-stat span{
+  grid-column:2;
+  grid-row:2;
+  min-width:0;
+  margin-top:2px;
+  font-size:10px;
+  line-height:1.05;
+  color:var(--muted);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+@media(max-width:600px){
+  #listView .dashboard-stats{
+    grid-template-columns:repeat(4,minmax(0,1fr));
+  }
+}
+@media(max-width:390px){
+  #listView .dashboard-stats{gap:4px}
+  #listView .dashboard-stat{
+    grid-template-columns:20px minmax(0,1fr);
+    column-gap:4px;
+    padding:6px 4px;
+  }
+  #listView .dashboard-stat::before{font-size:16px}
+  #listView .dashboard-stat b{font-size:17px}
+  #listView .dashboard-stat span{font-size:9px}
+}
