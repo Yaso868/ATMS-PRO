@@ -87,7 +87,7 @@
       }
     }
     const text = cellText(value);
-    const match = text.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?:\s|$)/);
+    const match = text.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?!\d)/);
     if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
     const compact = text.match(/^\d{3,4}$/);
     if (compact) {
