@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'FLIGHT-004';
+  const VERSION = 'FLIGHT-005';
   const FLIGHT_CACHE_KEY = 'atms_flight_cache_v1';
 
   const text = value => String(value ?? '').trim();
@@ -38,6 +38,58 @@
     } catch (_) {
       return [];
     }
+  }
+
+
+  function saveVerifiedFlightCache(list) {
+    try {
+      localStorage.setItem(FLIGHT_CACHE_KEY, JSON.stringify((Array.isArray(list) ? list : []).slice(0, 400)));
+    } catch (_) {}
+  }
+
+  // FLIGHT-005: Gemini-Ergebnisse werden zusätzlich direkt mit dem vom
+  // Prüfauftrag zurückgegebenen Plantag gespeichert. Dadurch bleibt ein
+  // Ergebnis für 09.08.2026 auch dann 09.08.2026, wenn im alten Fahrtenbestand
+  // noch Fahrten vom Vortag liegen.
+  function cacheVerifiedGeminiResults(checked) {
+    if (!Array.isArray(checked) || !checked.length) return 0;
+    let cache = getVerifiedFlightCache();
+    let added = 0;
+    checked.forEach(item => {
+      const flightNumber = upper(item?.flightNumber);
+      const date = text(item?.date);
+      const direction = text(item?.direction) || 'unknown';
+      const flightTime = text(item?.flightTime);
+      const location = text(item?.flightLocation || item?.relevantLocation);
+      const confidence = text(item?.confidence).toLowerCase();
+      const status = text(item?.status).toLowerCase();
+      const verified = Boolean(location && location !== 'Flugort prüfen' && !item?.conflict && (
+        confidence === 'verified' || confidence === 'high' || confidence === 'medium' || status === 'verified'
+      ));
+      if (!flightNumber || !date || !verified) return;
+      const iata = text(item?.iata || (direction === 'arrival' ? item?.originIata : '') || (direction === 'departure' ? item?.destinationIata : '')).toUpperCase();
+      const sameKey = x => upper(x?.flightNumber) === flightNumber && text(x?.date) === date && (text(x?.direction) || 'unknown') === direction && text(x?.flightTime) === flightTime;
+      cache = cache.filter(x => !sameKey(x));
+      cache.unshift({
+        rideId: '',
+        fingerprint: '',
+        flightNumber,
+        direction,
+        date,
+        flightTime,
+        flightLocation: location,
+        iata,
+        verified: true,
+        conflict: false,
+        checkedAt: text(item?.checkedAt) || new Date().toISOString(),
+        sourceFile: '',
+        sourceRow: 0,
+        source: 'gemini-plan-date'
+      });
+      added++;
+    });
+    if (added) saveVerifiedFlightCache(cache);
+    return added;
   }
 
   function verifiedCacheHit(ride, flightNumber, direction) {
@@ -157,7 +209,32 @@
     }
     return [...map.values()];
   }
+  let refreshScheduled = false;
+  function applyVerifiedCacheInPlace(rides) {
+    let changed = 0;
+    if (!Array.isArray(rides)) return changed;
+    rides.forEach(ride => {
+      if (!ride || text(ride.flightLocation)) return;
+      const prepared = prepareRide(ride);
+      if (!text(prepared.flightLocation)) return;
+      Object.assign(ride, prepared);
+      changed++;
+    });
+    return changed;
+  }
+  function schedulePlanImportRefresh() {
+    if (refreshScheduled) return;
+    refreshScheduled = true;
+    setTimeout(() => {
+      refreshScheduled = false;
+      try {
+        window.dispatchEvent(new CustomEvent('atms:gemini-flight-result', { detail: { cacheRefresh: true } }));
+      } catch (_) {}
+    }, 0);
+  }
   function summary(rides) {
+    const changed = applyVerifiedCacheInPlace(rides);
+    if (changed) schedulePlanImportRefresh();
     const flights = uniqueFlights(rides);
     return {
       total: flights.length,
@@ -167,9 +244,10 @@
   }
   function buildGeminiPrompt(rides) {
     const flights = uniqueFlights(rides);
+    const activePlanDate = text(document.getElementById('planDateInput')?.value);
     const payload = flights.map(f => ({
       flightNumber: f.flightNumber,
-      date: f.date || null,
+      date: f.date || activePlanDate || null,
       flightTime: f.flightTime || null,
       direction: f.direction || null,
       relevantSide: f.relevantSide,
@@ -238,6 +316,36 @@
       };
     });
   }
+
+  // Ergebnisse aus dem Gemini-Feld von app.js zusätzlich nach dem tatsächlichen
+  // Ergebnisdatum cachen. Danach kann die Planlisten-Vorschau denselben Plantag
+  // sofort wiederverwenden.
+  window.addEventListener('atms:gemini-flight-result', event => {
+    try {
+      const checked = event?.detail?.checked;
+      if (Array.isArray(checked) && checked.length) cacheVerifiedGeminiResults(checked);
+    } catch (_) {}
+  });
+
+  // Das gemeinsame Datei-Feld wird sowohl vom Planlisten-Import als auch vom
+  // alten JSON-Import beobachtet. Bilder/Excel dürfen deshalb nicht als Binärtext
+  // (z. B. "JFIF") im JSON-Feld landen.
+  document.addEventListener('DOMContentLoaded', () => {
+    const input = document.getElementById('fileInput');
+    if (!input) return;
+    input.addEventListener('change', event => {
+      const file = event.target?.files?.[0];
+      if (!file) return;
+      const name = String(file.name || '').toLowerCase();
+      const isJson = /\.json$/i.test(name) || /application\/json/i.test(file.type || '');
+      if (isJson) return;
+      setTimeout(() => {
+        const box = document.getElementById('jsonInput');
+        if (box) box.value = '';
+      }, 0);
+    });
+  });
+
   window.ATMSFlight = {
     version: VERSION,
     prepareRide,
@@ -245,6 +353,8 @@
     uniqueFlights,
     summary,
     buildGeminiPrompt,
-    applyResults
+    applyResults,
+    cacheVerifiedGeminiResults,
+    applyVerifiedCacheInPlace
   };
 })();
