@@ -625,3 +625,34 @@
     font-size:8.5px;
   }
 }
+
+/* ==========================================================
+   ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 8
+   Import-Tabelle: echte scrollbare Sicherheitszone oberhalb
+   der festen Bottom-Navigation.
+   Patch: 08.08.2026 · 23:42 Uhr (Europe/Berlin)
+
+   Hintergrund:
+   scroll-padding-bottom aus Schritt 7 erzeugt keinen echten
+   zusätzlichen Scroll-Inhalt. Deshalb konnten die letzten
+   Tabellenzeilen weiterhin hinter der festen Navigation liegen.
+
+   WICHTIG:
+   - Reine CSS-Anpassung.
+   - Keine Änderung an Import-, Fahrten-, Flug-, Live-Dispo-,
+     Bündel-, Cache- oder LocalStorage-Logik.
+   ========================================================== */
+@media(max-width:760px){
+  #importView .import{
+    padding-bottom:calc(120px + env(safe-area-inset-bottom));
+  }
+
+  /* Die zusätzliche Innenfläche gehört zum Scrollbereich der
+     Vorschautabelle. Dadurch kann die LETZTE Fahrt vollständig
+     oberhalb der festen Navigation positioniert werden. */
+  #importView .plan-preview-wrap{
+    padding-bottom:calc(82px + env(safe-area-inset-bottom));
+    scroll-padding-bottom:0;
+    overscroll-behavior:contain;
+  }
+}
