@@ -489,3 +489,46 @@
   #listView .meta,
   #listView .flightloc{font-size:11px}
 }
+
+/* ==========================================================
+   ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 3
+   Bündelfahrt: Halte in der Listenkarte wieder sichtbar,
+   jedoch platzsparend und mobil optimiert.
+   Reine CSS-Anpassung: keine Änderung an Bündel-, Flug-,
+   Import-, Cache- oder Cockpit-Logik.
+   ========================================================== */
+#listView .ride.bundle .bundle-stops{
+  display:block;
+  margin-top:4px;
+  font-size:10px;
+  line-height:1.15;
+}
+#listView .ride.bundle .bundle-stop-row{
+  gap:4px;
+  padding:2px 0 1px;
+  min-width:0;
+}
+#listView .ride.bundle .bundle-stop-row > span:last-child{
+  min-width:0;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#listView .ride.bundle .bundle-stop-row b{
+  font-size:10.5px;
+  line-height:1.15;
+}
+#listView .ride.bundle .bundle-stop-dot{
+  width:7px;
+  height:7px;
+  flex:0 0 7px;
+}
+#listView .ride.bundle .bundle-stop-pax{
+  font-size:9.5px;
+  line-height:1.15;
+}
+@media(max-width:390px){
+  #listView .ride.bundle .bundle-stops{font-size:9.5px}
+  #listView .ride.bundle .bundle-stop-row b{font-size:10px}
+  #listView .ride.bundle .bundle-stop-pax{font-size:9px}
+}
