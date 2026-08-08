@@ -542,3 +542,86 @@
 #listView .ride.bundle .flightloc{
   margin-left:8px;
 }
+
+/* ==========================================================
+   ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 7
+   Mobile Bottom-Navigation: alle 6 Menüpunkte in EINER Reihe.
+   Importansicht: genügend Abstand zum festen Navigationsbereich.
+   Patch: 08.08.2026 · 23:22 Uhr (Europe/Berlin)
+
+   WICHTIG:
+   - Reine CSS-Anpassung.
+   - Keine Änderung an Fahrten-, Import-, Flug-, Live-Dispo-,
+     Bündel-, Cache- oder LocalStorage-Logik.
+   ========================================================== */
+.bottom{
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  overflow-x:hidden;
+}
+
+@media(max-width:760px){
+  .app{
+    padding-bottom:calc(74px + env(safe-area-inset-bottom));
+  }
+  .bottom{
+    grid-template-columns:repeat(6,minmax(0,1fr));
+    overflow-x:hidden;
+    justify-content:stretch;
+    padding:4px 1px calc(4px + env(safe-area-inset-bottom));
+  }
+  .bottom .nav{
+    min-width:0;
+    width:auto;
+    padding:2px 0;
+    font-size:9px;
+    line-height:1.05;
+    white-space:nowrap;
+  }
+  .bottom .nav span{
+    font-size:21px;
+    line-height:1.05;
+  }
+  .bottom .nav-live span{
+    font-size:18px;
+  }
+  .bottom .nav-plus span{
+    width:44px;
+    height:44px;
+    margin:-17px auto 1px;
+    font-size:31px!important;
+  }
+  .bottom .nav-plus small{
+    font-size:9px;
+  }
+
+  /* Letzte Import-Zeilen können vollständig über die feste Leiste
+     gescrollt werden; die Navigation verdeckt sie nicht dauerhaft. */
+  .import{
+    padding-bottom:calc(92px + env(safe-area-inset-bottom));
+  }
+  .plan-preview-wrap{
+    scroll-padding-bottom:78px;
+  }
+}
+
+@media(max-width:390px){
+  .bottom .nav{
+    font-size:8.5px;
+    letter-spacing:-.1px;
+  }
+  .bottom .nav span{
+    font-size:20px;
+  }
+  .bottom .nav-live span{
+    font-size:17px;
+  }
+  .bottom .nav-plus span{
+    width:42px;
+    height:42px;
+    margin-top:-16px;
+    font-size:29px!important;
+  }
+  .bottom .nav-plus small{
+    font-size:8.5px;
+  }
+}
