@@ -405,3 +405,87 @@
   #listView .dashboard-stat b{font-size:17px}
   #listView .dashboard-stat span{font-size:9px}
 }
+
+/* ==========================================================
+   ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 2
+   Kompaktere Fahrtenkarten für Mobile.
+   Reine CSS-Anpassung: keine Änderung an Fahrten-, Import-,
+   FLIGHT-003-, Cache-, Bündel- oder Cockpit-Logik.
+   ========================================================== */
+#listView .list{
+  padding:7px 10px 18px;
+}
+#listView .ride{
+  grid-template-columns:76px minmax(0,1fr);
+  min-height:0;
+  margin-bottom:6px;
+  border-radius:13px;
+}
+#listView .left{
+  padding:8px 6px 7px 14px;
+}
+#listView .price,
+#listView .time{
+  font-size:17px;
+  line-height:1.18;
+}
+#listView .driver-left{
+  margin-top:3px;
+  font-size:13px;
+  line-height:1.1;
+}
+#listView .mid{
+  min-width:0;
+  padding:7px 28px 7px 8px;
+}
+#listView .route{
+  font-size:14px;
+  line-height:1.15;
+}
+#listView .partner{
+  margin-top:3px;
+  font-size:11px;
+  line-height:1.15;
+}
+#listView .meta{
+  margin-top:4px;
+  font-size:12px;
+  line-height:1.15;
+}
+#listView .flightloc{
+  margin-top:3px;
+  font-size:12px;
+  line-height:1.15;
+}
+#listView .bundle-badge{
+  margin-top:3px;
+  font-size:9px;
+  line-height:1.1;
+}
+/* In der Übersicht nur die kompakte Bündel-Zusammenfassung zeigen.
+   Die ausführliche Stoppliste bleibt in den Daten/Cockpit-Funktionen erhalten. */
+#listView .bundle-stops{
+  display:none;
+}
+#listView .chev{
+  right:10px;
+  top:50%;
+  bottom:auto;
+  transform:translateY(-50%);
+  font-size:20px;
+}
+/* Leere Erledigt-Leiste spart auf dem Handy unnötige Höhe.
+   Sobald erledigte Fahrten vorhanden sind, bleibt der Bereich sichtbar. */
+#listView .donebar:has(.done-empty){
+  display:none;
+}
+@media(max-width:390px){
+  #listView .ride{grid-template-columns:72px minmax(0,1fr)}
+  #listView .left{padding-left:12px}
+  #listView .price,
+  #listView .time{font-size:16px}
+  #listView .driver-left{font-size:12px}
+  #listView .route{font-size:13px}
+  #listView .meta,
+  #listView .flightloc{font-size:11px}
+}
