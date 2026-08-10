@@ -634,6 +634,7 @@
     const issues = [];
     const fingerprints = new Set();
     const missingFlightLocations = new Map();
+    const manualFlightChecks = new Map();
 
     rides.forEach(ride => {
       const row = ride.sourceRow;
@@ -655,6 +656,24 @@
           missingFlightLocations.set(key, { flightNumber, rows: [] });
         }
         missingFlightLocations.get(key).rows.push(row);
+      }
+
+      if (ride.flightNumber && ride.flightLocation && (ride.flightNeedsManualCheck || ride.flightCheckConfidence === 'uncertain')) {
+        const flightNumber = normalizeFlightNumber(ride.flightNumber);
+        const key = [
+          flightNumber,
+          cellText(ride.date),
+          cellText(ride.flightDirection),
+          normalizeTime(ride.flightTime)
+        ].join('|');
+        if (!manualFlightChecks.has(key)) {
+          manualFlightChecks.set(key, {
+            flightNumber,
+            location: normalizeFlightLocation(ride.flightLocation),
+            rows: []
+          });
+        }
+        manualFlightChecks.get(key).rows.push(row);
       }
 
       if (ride.persons < 0) issues.push({ level: 'warning', row, text: 'Personenzahl ist ungültig' });
@@ -699,6 +718,16 @@
         text: `${nextDayCandidates.length} Fahrt(en) liegen zwischen ${firstTime} und ${lastTime}. Gehören diese Fahrten zum Folgetag ${formatPlanDate(addDaysIso(currentPlanDate(), 1))}?`
       });
     }
+
+    manualFlightChecks.forEach(group => {
+      const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
+      issues.push({
+        level: 'warning',
+        row: rows[0],
+        rows,
+        text: `Flugort für ${group.flightNumber} bleibt ${group.location || 'vorhanden'} – Gemini-Prüfung unsicher, manuell prüfen`
+      });
+    });
 
     missingFlightLocations.forEach(group => {
       const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
@@ -1033,6 +1062,8 @@
         flightLocation: normalizeFlightLocation(hit.flightLocation),
         iata: hit.iata || ride.iata || '',
         flightCheckConfidence: hit.flightCheckConfidence || 'verified',
+        flightNeedsManualCheck: Boolean(hit.flightNeedsManualCheck || hit.flightCheckConfidence === 'uncertain'),
+        flightCheckSourceNote: hit.flightCheckSourceNote || ride.flightCheckSourceNote || '',
         flightCheckedAt: hit.flightCheckedAt || ride.flightCheckedAt || ''
       };
     });
