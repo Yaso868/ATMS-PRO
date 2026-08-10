@@ -552,7 +552,7 @@ function parseGeminiFlightResult(text){
       confidence:verified?'verified':'uncertain',
       status:status|| (verified?'verified':'needs_manual_check'),
       conflict:Boolean(x.conflict),
-      checkedAt:String(obj.checkedAt||new Date().toISOString())
+      geminiReportedCheckedAt:String(obj.checkedAt||'')
     };
   }).filter(x=>x.flightNumber);
 }
@@ -560,6 +560,9 @@ function applyGeminiFlightResult(){
   try{
     const box=$('geminiFlightResult');
     const checked=parseGeminiFlightResult(box?.value||'');
+    // ATMS setzt den tatsächlichen lokalen Übernahme-/Prüfzeitpunkt selbst.
+    // Ein von Gemini gelieferter checkedAt-Wert wird nicht als verlässlicher Zeitstempel gespeichert.
+    const atmsCheckedAt=new Date().toISOString();
     let updated=0,uncertain=0;
     const cacheEntries=[];
     rides=rides.map(r=>{
@@ -582,7 +585,7 @@ function applyGeminiFlightResult(){
       if(!hit)return r;
 
       const verified=hit.confidence==='verified'&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
-      const checkedAt=hit.checkedAt||new Date().toISOString();
+      const checkedAt=atmsCheckedAt;
       updated++;if(!verified)uncertain++;
 
       cacheEntries.push({
