@@ -4,7 +4,7 @@
   // ATMS PRO Patch 08.08.2026 08:14 Uhr (Europe/Berlin): fehlende Flugorte pro FLIGHT-003-Prüfbasis gruppieren.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '' };
+  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {} };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -107,17 +107,11 @@
   function pricePlausibility(value) {
     const price = Number(value) || 0;
     if (price <= 0) return { suspicious: false, suggestion: null };
-
-    // Sehr hohe Transferpreise nicht automatisch korrigieren, sondern nur markieren.
-    // Typischer OCR-Fall: Dezimaltrennzeichen geht verloren, z. B. 35,00 -> 3500.
     if (price >= 1000) {
       const decimalSuggestion = price / 100;
-      const suggestion = decimalSuggestion >= 10 && decimalSuggestion < 1000
-        ? decimalSuggestion
-        : null;
+      const suggestion = decimalSuggestion >= 10 && decimalSuggestion < 1000 ? decimalSuggestion : null;
       return { suspicious: true, suggestion };
     }
-
     return { suspicious: false, suggestion: null };
   }
 
@@ -370,14 +364,19 @@
       if (ride.persons < 0) issues.push({ level: 'warning', row, text: 'Personenzahl ist ungültig' });
 
       const priceCheck = pricePlausibility(ride.price);
-      if (priceCheck.suspicious) {
+      const priceDecision = state.priceDecisions[String(ride.id || row)] || '';
+      if (priceCheck.suspicious && !priceDecision) {
         const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
         const suggestionText = priceCheck.suggestion !== null
           ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
           : '';
         issues.push({
           level: 'warning',
+          kind: 'price',
           row,
+          rideId: String(ride.id || row),
+          originalPrice: Number(ride.price) || 0,
+          suggestedPrice: priceCheck.suggestion,
           text: `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
         });
       }
@@ -619,6 +618,27 @@
     state.issues = validate(state.rides);
   }
 
+  function resolvePriceIssue(rideId, action, suggestedPrice) {
+    const ride = state.rides.find(item => String(item.id) === String(rideId));
+    if (!ride) return;
+
+    if (action === 'suggestion') {
+      const value = Number(suggestedPrice);
+      if (!Number.isFinite(value) || value <= 0) return;
+      ride.price = value;
+      state.priceDecisions[String(rideId)] = 'suggestion';
+      if (typeof window.showToast === 'function') {
+        window.showToast(`${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value)} übernommen`, 'ok');
+      }
+    } else if (action === 'original') {
+      state.priceDecisions[String(rideId)] = 'original';
+      if (typeof window.showToast === 'function') window.showToast('Originalpreis bestätigt', 'ok');
+    }
+
+    state.issues = validate(state.rides);
+    render();
+  }
+
   function render() {
     refreshIssuesAfterFlightSync();
     const rides = state.rides, issues = state.issues;
@@ -643,9 +663,35 @@
           const rowLabel = rows.length === 1
             ? `Zeile ${rows[0]}`
             : `Zeilen ${rows.slice(0, -1).join(', ')} und ${rows[rows.length - 1]}`;
+
+          if (issue.kind === 'price') {
+            const suggestion = Number(issue.suggestedPrice);
+            const suggestionLabel = Number.isFinite(suggestion) && suggestion > 0
+              ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(suggestion)
+              : '';
+            const originalLabel = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(Number(issue.originalPrice) || 0);
+            return `<div class="plan-issue ${issue.level}" style="padding-bottom:12px">
+              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                ${suggestionLabel ? `<button type="button" class="price-review-btn" data-price-action="suggestion" data-ride-id="${escapeHtml(issue.rideId)}" data-suggested-price="${suggestion}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(suggestionLabel)} übernehmen</button>` : ''}
+                <button type="button" class="price-review-btn" data-price-action="original" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">Original ${escapeHtml(originalLabel)} ist korrekt</button>
+              </div>
+            </div>`;
+          }
+
           return `<div class="plan-issue ${issue.level}"><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>`;
         }).join('')
       : '<div class="plan-issue ok">✓ Keine kritischen Probleme erkannt.</div>';
+
+    $('planIssues').querySelectorAll('.price-review-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        resolvePriceIssue(
+          button.dataset.rideId,
+          button.dataset.priceAction,
+          button.dataset.suggestedPrice
+        );
+      });
+    });
 
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
       const rowIssues = issues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
@@ -664,10 +710,13 @@
       </tr>`;
     }).join('');
 
-    $('importPlanBtn').disabled = rides.length === 0 || errors > 0;
+    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || issues.some(issue => issue.kind === 'price');
+    const unresolvedPriceIssues = issues.filter(issue => issue.kind === 'price').length;
     $('importStatus').textContent = errors
       ? `${rides.length} Fahrten erkannt. ${errors} Fehler müssen vor dem Import behoben werden.`
-      : `${rides.length} Fahrten erkannt und geprüft. Bereit zur Übernahme.`;
+      : unresolvedPriceIssues
+        ? `${rides.length} Fahrten erkannt. ${unresolvedPriceIssues} auffälliger Preis muss vor der Übernahme bestätigt werden.`
+        : `${rides.length} Fahrten erkannt und geprüft. Bereit zur Übernahme.`;
   }
 
   async function analyze() {
@@ -753,6 +802,7 @@
     state.rides = [];
     state.issues = [];
     state.meta = {};
+    state.priceDecisions = {};
     $('analyzePlanBtn').disabled = !file;
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
