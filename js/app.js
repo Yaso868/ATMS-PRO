@@ -489,19 +489,30 @@ function applyFlightCacheToRides(source){
 function flightCheckItems(source=rides){
   const map=new Map();
   for(const r of source){
-    const flight=String(r.flightNumber||'').trim().toUpperCase();
+    const flight=flightCacheNumber(r.flightNumber||r.arrivalFlight||r.departureFlight);
     if(!flight)continue;
-    const date=String(r.date||'').trim();
+    const rawDate=String(r.date||'').trim();
+    const date=rawDate||berlinDate();
+    const dateAssumed=!rawDate;
     const direction=flightDirectionForGemini(r);
-    const key=[flight,date,direction].join('|');
-    if(!map.has(key))map.set(key,{flightNumber:flight,date:date||'Datum aus Planliste prüfen',direction,currentFlightLocation:String(r.flightLocation||'').trim()});
+    const flightTime=first(r.flightTime,r.flugzeit,r.flight_time);
+    const locationFromPlan=first(r.locationFromPlan,r.flightLocation,r.flugort,r.ort);
+    const key=[flight,date,direction,flightTime].join('|');
+    if(!map.has(key))map.set(key,{
+      flightNumber:flight,
+      date,
+      dateAssumed,
+      flightTime:flightTime||null,
+      direction,
+      locationFromPlan
+    });
   }
   return [...map.values()];
 }
 function buildGeminiFlightPrompt(){
   const items=flightCheckItems();
   if(!items.length)throw new Error('Keine Flugnummern in der aktuellen Planliste gefunden.');
-  return `ATMS PRO – aktuelle Flugprüfung\n\nPrüfe JEDE unten aufgeführte Flugnummer für das angegebene Datum anhand möglichst aktueller öffentlich verfügbarer Webdaten. Eine Flugnummer darf NICHT dauerhaft einem Ort zugeordnet werden. Prüfe sie bei diesem Auftrag neu.\n\nRegeln:\n1. direction=arrival: Gesucht ist der HERKUNFTSORT des Fluges nach Düsseldorf (DUS).\n2. direction=departure: Gesucht ist der ZIELORT des Fluges ab Düsseldorf (DUS).\n3. Berücksichtige unbedingt das Datum.\n4. Übernimm keine alte oder vermutete Route nur aufgrund der Flugnummer.\n5. Wenn die Route nicht eindeutig aktuell verifiziert werden kann, setze confidence auf \"uncertain\" und flightLocation auf \"Flugort prüfen\".\n6. Erfinde keine Orte.\n7. Antworte ausschließlich mit gültigem JSON, ohne Markdown und ohne Erklärung.\n\nJSON-Format:\n{\n  \"flights\": [\n    {\"flightNumber\":\"EW0000\",\"date\":\"YYYY-MM-DD\",\"direction\":\"arrival|departure|unknown\",\"flightLocation\":\"Ort oder Flugort prüfen\",\"iata\":\"IATA oder leer\",\"confidence\":\"verified|uncertain\"}\n  ]\n}\n\nZu prüfen:\n${JSON.stringify(items,null,2)}`;
+  return `ATMS PRO – FLIGHT-005 aktuelle Flugprüfung\n\nPrüfe JEDE unten aufgeführte Flugnummer für den angegebenen Flugtag anhand möglichst aktueller öffentlich verfügbarer Webdaten. Eine Flugnummer darf NICHT dauerhaft einem Ort zugeordnet werden. Prüfe sie bei diesem Auftrag neu.\n\nRegeln:\n1. direction=arrival: Gesucht ist der HERKUNFTSORT des Fluges nach Düsseldorf (DUS).\n2. direction=departure: Gesucht ist der ZIELORT des Fluges ab Düsseldorf (DUS).\n3. Verwende das angegebene date exakt. dateAssumed=true bedeutet nur, dass ATMS wegen fehlendem Plandatum Europe/Berlin \"heute\" eingesetzt hat.\n4. Nutze flightTime zur Unterscheidung, wenn mehrere Flüge mit derselben Flugnummer am selben Tag möglich sind.\n5. Wenn mehrere Flüge passen und flightTime fehlt oder die Route nicht eindeutig verifiziert werden kann: NICHT raten, status=\"needs_manual_check\" setzen.\n6. locationFromPlan ist ausschließlich ein Vergleichswert und keine verlässliche Quelle.\n7. Übernimm keine alte oder vermutete Route nur aufgrund der Flugnummer.\n8. Bei einem Konflikt mit locationFromPlan conflict=true setzen.\n9. Erfinde keine Orte oder IATA-Codes.\n10. Antworte ausschließlich mit gültigem JSON, ohne Markdown und ohne Erklärung.\n\nJSON-Format:\n{\n  \"checkedAt\": \"ISO-8601\",\n  \"flights\": [\n    {\n      \"flightNumber\": \"EW0000\",\n      \"date\": \"YYYY-MM-DD\",\n      \"dateAssumed\": false,\n      \"flightTime\": null,\n      \"direction\": \"arrival|departure|unknown\",\n      \"originCity\": \"\",\n      \"originIata\": \"\",\n      \"destinationCity\": \"\",\n      \"destinationIata\": \"\",\n      \"relevantLocation\": \"\",\n      \"status\": \"verified|needs_manual_check\",\n      \"confidence\": \"high|medium|low\",\n      \"conflict\": false,\n      \"sourceNote\": \"\"\n    }\n  ]\n}\n\nZu prüfen:\n${JSON.stringify(items,null,2)}`;
 }
 async function copyGeminiFlightPrompt(){
   try{
