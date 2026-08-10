@@ -1,10 +1,10 @@
 (() => {
   'use strict';
 
-  // ATMS PRO Patch 08.08.2026 08:14 Uhr (Europe/Berlin): fehlende Flugorte pro FLIGHT-003-Prüfbasis gruppieren.
+  // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateDecisions: {}, dateInfo: {} };
+  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {} };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -47,88 +47,111 @@
     return h * 60 + min;
   }
 
-  function dateDecisionKey(ride) {
-    return String(ride?.id || ride?.sourceRow || '');
-  }
+  // DAY-002 – Plantag und tatsächliches Fahrtdatum
+  // --------------------------------------------------
+  // Die normale/geplante Fahrtzeit wird dynamisch anhand der Kopfzeile und Nachbarspalten erkannt.
+  // Eine zweite Wiederholung derselben Fahrtzeit ist OPTIONAL und darf vollständig fehlen.
+  // Die aktuelle/prognostizierte Flugzeit (Verspätung/früher) wird separat erkannt und
+  // darf das geplante Fahrtdatum NICHT verändern.
+  //
+  // Die Reihenfolge der Planlistenzeilen ist ausdrücklich NICHT chronologisch
+  // und wird deshalb niemals für einen Datumswechsel ausgewertet.
+  // Fahrten von 00:00 bis 05:59 werden als gemeinsamer Folgetag-Kandidat
+  // erkannt und müssen einmal für die ganze Liste bestätigt werden.
+  const NEXT_DAY_CUTOFF_MINUTES = 6 * 60;
 
   function assignRideDates(rides, options = {}) {
     const baseDate = currentPlanDate();
+    const nextDate = addDaysIso(baseDate, 1);
     const preserveExplicit = Boolean(options.preserveExplicit);
-    let activeDate = baseDate;
-    let previousMinutes = null;
-    let rolloverCount = 0;
-    let autoRolloverCount = 0;
-    const ambiguous = [];
-    const counts = {};
+    const candidateIndexes = [];
 
     const out = (Array.isArray(rides) ? rides : []).map((ride, index) => {
       const explicitDate = cellText(ride?.date);
       if (preserveExplicit && /^\d{4}-\d{2}-\d{2}$/.test(explicitDate)) {
-        counts[explicitDate] = (counts[explicitDate] || 0) + 1;
-        const mins = timeToMinutes(ride?.time || ride?.planTime);
-        if (mins !== null) previousMinutes = mins;
         return {
           ...ride,
           planDate: cellText(ride?.planDate) || baseDate,
           date: explicitDate,
           dateNeedsManualCheck: false,
+          dateCandidateNextDay: false,
           dateSource: cellText(ride?.dateSource) || 'explicit'
         };
       }
 
       const mins = timeToMinutes(ride?.time || ride?.planTime);
-      let transition = '';
-      let needsManual = false;
-
-      if (previousMinutes !== null && mins !== null && mins < previousMinutes) {
-        const clearMidnight = previousMinutes >= (18 * 60) && mins <= (6 * 60);
-        const decision = state.dateDecisions[dateDecisionKey(ride)] || '';
-
-        if (clearMidnight || decision === 'next_day') {
-          activeDate = addDaysIso(activeDate, 1);
-          rolloverCount++;
-          transition = clearMidnight ? 'midnight_auto' : 'manual_next_day';
-          if (clearMidnight) autoRolloverCount++;
-        } else if (decision === 'same_day') {
-          transition = 'manual_same_day';
-        } else {
-          needsManual = true;
-          ambiguous.push({
-            row: ride?.sourceRow || index + 1,
-            rideId: dateDecisionKey(ride),
-            previousTime: previousMinutes,
-            currentTime: mins
-          });
-        }
-      }
-
-      if (mins !== null) previousMinutes = mins;
-      counts[activeDate] = (counts[activeDate] || 0) + 1;
+      const isNextDayCandidate = mins !== null && mins < NEXT_DAY_CUTOFF_MINUTES;
+      if (isNextDayCandidate) candidateIndexes.push(index);
 
       return {
         ...ride,
         planDate: baseDate,
-        date: activeDate,
-        dateNeedsManualCheck: needsManual,
-        dateTransition: transition,
-        dateSource: transition === 'midnight_auto'
-          ? 'midnight_auto'
-          : transition === 'manual_next_day'
-            ? 'manual_next_day'
-            : transition === 'manual_same_day'
-              ? 'manual_same_day'
-              : activeDate === baseDate ? 'plan_date' : 'after_rollover'
+        date: baseDate,
+        dateNeedsManualCheck: false,
+        dateCandidateNextDay: isNextDayCandidate,
+        dateSource: isNextDayCandidate ? 'next_day_candidate' : 'plan_date'
       };
+    });
+
+    const decision = state.dateBoundaryDecision || '';
+    if (candidateIndexes.length && decision === 'next_day') {
+      candidateIndexes.forEach(index => {
+        out[index] = {
+          ...out[index],
+          date: nextDate,
+          dateNeedsManualCheck: false,
+          dateSource: 'next_day_confirmed'
+        };
+      });
+    } else if (candidateIndexes.length && decision === 'same_day') {
+      candidateIndexes.forEach(index => {
+        out[index] = {
+          ...out[index],
+          date: baseDate,
+          dateNeedsManualCheck: false,
+          dateSource: 'same_day_confirmed'
+        };
+      });
+    } else if (candidateIndexes.length) {
+      candidateIndexes.forEach(index => {
+        out[index] = {
+          ...out[index],
+          date: baseDate,
+          dateNeedsManualCheck: true,
+          dateSource: 'next_day_candidate'
+        };
+      });
+    }
+
+    const counts = {};
+    out.forEach(ride => {
+      const date = cellText(ride?.date);
+      if (date) counts[date] = (counts[date] || 0) + 1;
     });
 
     state.dateInfo = {
       baseDate,
+      nextDate,
       counts,
-      rolloverCount,
-      autoRolloverCount,
-      ambiguousCount: ambiguous.length
+      candidateCount: candidateIndexes.length,
+      decision,
+      requiresConfirmation: Boolean(candidateIndexes.length && !decision),
+      cutoff: '06:00'
     };
     return out;
+  }
+
+  function resolveDateBoundary(action) {
+    if (action !== 'next_day' && action !== 'same_day') return;
+    state.dateBoundaryDecision = action;
+    state.rides = assignRideDates(state.rides);
+    state.issues = validate(state.rides);
+    render();
+    if (typeof window.showToast === 'function') {
+      const count = state.dateInfo?.candidateCount || 0;
+      const date = action === 'next_day' ? state.dateInfo?.nextDate : state.dateInfo?.baseDate;
+      window.showToast(`${count} Fahrt(en) auf ${formatPlanDate(date)} bestätigt`, 'ok');
+    }
   }
 
   function updatePlanDateSummary() {
@@ -143,7 +166,7 @@
     }
 
     if (!state.rides.length) {
-      summary.textContent = 'Fahrtdatum wird nach der Analyse je Fahrt festgelegt.';
+      summary.textContent = 'Plantag = erster Kalendertag der Liste. Fahrten 00:00–05:59 werden als möglicher Folgetag gemeinsam geprüft.';
       return;
     }
 
@@ -153,13 +176,16 @@
       if (date) counts[date] = (counts[date] || 0) + 1;
     });
     const parts = Object.entries(counts).map(([date, count]) => `${formatPlanDate(date)}: ${count}`);
-    const rollover = state.dateInfo?.autoRolloverCount
-      ? ` · ✓ ${state.dateInfo.autoRolloverCount} Mitternachtswechsel automatisch erkannt`
-      : '';
-    const ambiguous = state.dateInfo?.ambiguousCount
-      ? ` · ⚠ ${state.dateInfo.ambiguousCount} Datumswechsel unklar`
-      : '';
-    summary.textContent = `Fahrtdaten: ${parts.join(' · ')}${rollover}${ambiguous}`;
+    const candidateCount = state.dateInfo?.candidateCount || 0;
+    let suffix = '';
+    if (candidateCount && !state.dateBoundaryDecision) {
+      suffix = ` · ⚠ ${candidateCount} Fahrt(en) 00:00–05:59: Folgetag einmal bestätigen`;
+    } else if (candidateCount && state.dateBoundaryDecision === 'next_day') {
+      suffix = ` · ✓ ${candidateCount} Fahrt(en) dem ${formatPlanDate(state.dateInfo?.nextDate)} zugeordnet`;
+    } else if (candidateCount && state.dateBoundaryDecision === 'same_day') {
+      suffix = ` · ✓ ${candidateCount} Fahrt(en) bewusst beim ${formatPlanDate(state.dateInfo?.baseDate)} belassen`;
+    }
+    summary.textContent = `Fahrtdaten: ${parts.join(' · ')}${suffix}`;
   }
 
   function currentPlanDate() {
@@ -184,7 +210,7 @@
     wrap.style.cssText = 'margin:14px 0;padding:14px 16px;border:1px solid rgba(72,156,255,.35);border-radius:14px;background:rgba(7,33,63,.55)';
     wrap.innerHTML = `
       <label for="planDateInput" style="display:block;font-weight:800;margin-bottom:6px">📅 Plantag</label>
-      <div style="font-size:12px;opacity:.75;margin-bottom:10px">Plantag der Liste. Fahrten nach einem eindeutigen Mitternachtswechsel erhalten automatisch den nächsten Kalendertag.</div>
+      <div style="font-size:12px;opacity:.75;margin-bottom:10px">Plantag = erster Kalendertag der Liste. Fahrten zwischen 00:00 und 05:59 werden als möglicher Folgetag gemeinsam erkannt und einmal bestätigt.</div>
       <input id="planDateInput" type="date" value="${state.planDate}" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#071a2b;color:#fff;font-size:16px">
       <div id="planDateStatus" style="font-size:12px;opacity:.8;margin-top:8px">Aktiver Plantag: ${formatPlanDate(state.planDate)}</div>
     `;
@@ -198,7 +224,7 @@
       const status = $('planDateStatus');
       if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(state.planDate)}`;
       if (state.rides.length) {
-        state.dateDecisions = {};
+        state.dateBoundaryDecision = '';
         state.rides = assignRideDates(state.rides);
         state.issues = validate(state.rides);
         render();
@@ -328,37 +354,171 @@
     return best;
   }
 
-  function fieldForHeader(header, counters) {
+  function canonicalHeaderField(header) {
     const key = header.key;
-    const occurrence = header.occurrence;
-    if (key === 'uhrzeit') return occurrence === 1 ? 'time' : 'flightTime';
-    if (key === 'wg') return occurrence === 1 ? 'vehicle' : 'driver';
+    if (key === 'wg') return '';
+    if (key === 'uhrzeit' || key === 'zeit') return '';
     for (const [field, list] of Object.entries(aliases)) {
+      if (field === 'time' || field === 'flightTime' || field === 'driver') continue;
       if (list.includes(key)) return field;
     }
-    counters[key] = (counters[key] || 0) + 1;
     return '';
   }
 
+  function nearestHeaderDistance(headers, header, keys) {
+    const wanted = new Set(keys);
+    let best = Infinity;
+    headers.forEach(other => {
+      if (other.index === header.index) return;
+      if (wanted.has(other.key)) best = Math.min(best, Math.abs(other.index - header.index));
+    });
+    return best;
+  }
+
+  function nextRecognizedHeader(headers, header) {
+    return headers
+      .filter(other => other.index > header.index)
+      .sort((a,b) => a.index - b.index)
+      .find(other => other.key && !/^spalte\d+$/.test(other.key)) || null;
+  }
+
+  function previousRecognizedHeader(headers, header) {
+    return headers
+      .filter(other => other.index < header.index)
+      .sort((a,b) => b.index - a.index)
+      .find(other => other.key && !/^spalte\d+$/.test(other.key)) || null;
+  }
+
+  function detectTimeColumns(headers, mapping, ambiguities) {
+    const timeHeaders = headers.filter(h => h.key === 'uhrzeit' || h.key === 'zeit' || aliases.time.includes(h.key));
+    if (!timeHeaders.length) {
+      ambiguities.push('Keine normale Fahrtzeit-Spalte erkannt');
+      return;
+    }
+
+    // Aktuelle/prognostizierte Flugzeit: Uhrzeit direkt/nahe bei "Ort".
+    let flightTimeHeader = null;
+    const locationHeaders = headers.filter(h => aliases.flightLocation.includes(h.key));
+    if (locationHeaders.length) {
+      const candidates = timeHeaders
+        .map(h => ({ h, d: nearestHeaderDistance(headers, h, locationHeaders.map(x => x.key)) }))
+        .filter(x => x.d <= 2)
+        .sort((a,b) => a.d - b.d || b.h.index - a.h.index);
+      if (candidates.length) flightTimeHeader = candidates[0].h;
+    }
+
+    // Wiederholung der Fahrtzeit: Uhrzeit nahe bei Flug ang./Flug ausg.
+    let mirrorHeader = null;
+    const flightHeaderKeys = [
+      ...aliases.arrivalFlight,
+      ...aliases.departureFlight
+    ];
+    const mirrorCandidates = timeHeaders
+      .filter(h => !flightTimeHeader || h.index !== flightTimeHeader.index)
+      .map(h => ({ h, d: nearestHeaderDistance(headers, h, flightHeaderKeys) }))
+      .filter(x => x.d <= 2)
+      .sort((a,b) => a.d - b.d || a.h.index - b.h.index);
+    if (mirrorCandidates.length) mirrorHeader = mirrorCandidates[0].h;
+
+    // Normale Fahrtzeit: Uhrzeit nahe bei Von/Nach/Preis, aber nicht Flugzeit.
+    const rideContextKeys = [
+      ...aliases.price,
+      ...aliases.pickup,
+      ...aliases.destination
+    ];
+    const rideCandidates = timeHeaders
+      .filter(h => (!flightTimeHeader || h.index !== flightTimeHeader.index) && (!mirrorHeader || h.index !== mirrorHeader.index))
+      .map(h => ({ h, d: nearestHeaderDistance(headers, h, rideContextKeys) }))
+      .sort((a,b) => a.d - b.d || a.h.index - b.h.index);
+
+    let rideTimeHeader = rideCandidates[0]?.h || null;
+
+    // Falls die Wiederholung die einzige Nicht-Flugzeit neben einer primären Uhrzeit ist,
+    // muss die primäre Uhrzeit trotzdem erhalten bleiben. Die erste Uhrzeit in der Nähe
+    // von Von/Nach/Preis gewinnt.
+    if (!rideTimeHeader) {
+      const remaining = timeHeaders.filter(h => !flightTimeHeader || h.index !== flightTimeHeader.index);
+      if (remaining.length) {
+        rideTimeHeader = remaining
+          .map(h => ({ h, d: nearestHeaderDistance(headers, h, rideContextKeys) }))
+          .sort((a,b) => a.d - b.d || a.h.index - b.h.index)[0].h;
+        if (mirrorHeader && rideTimeHeader.index === mirrorHeader.index) mirrorHeader = null;
+      }
+    }
+
+    if (rideTimeHeader) mapping.time = rideTimeHeader.index;
+    else ambiguities.push('Normale Fahrtzeit konnte nicht sicher zugeordnet werden');
+
+    if (flightTimeHeader && (!rideTimeHeader || flightTimeHeader.index !== rideTimeHeader.index)) {
+      mapping.flightTime = flightTimeHeader.index;
+    }
+
+    if (mirrorHeader &&
+        (!rideTimeHeader || mirrorHeader.index !== rideTimeHeader.index) &&
+        (!flightTimeHeader || mirrorHeader.index !== flightTimeHeader.index)) {
+      mapping.timeMirror = mirrorHeader.index;
+    }
+
+    // Zusätzliche Uhrzeit-Spalten, die nicht semantisch zugeordnet werden können, sind unsicher.
+    const assigned = new Set([mapping.time, mapping.timeMirror, mapping.flightTime].filter(v => v !== undefined));
+    const unassigned = timeHeaders.filter(h => !assigned.has(h.index));
+    if (unassigned.length) {
+      ambiguities.push(`Zusätzliche Uhrzeit-Spalte(n) nicht eindeutig: ${unassigned.map(h => h.label).join(', ')}`);
+    }
+  }
+
   function detectAtmsMapping(headers) {
-    const counters = {};
     const mapping = {};
+    const ambiguities = [];
+
+    // Eindeutige Spalten zuerst dynamisch anhand ihrer Überschrift erkennen.
     headers.forEach(header => {
-      const field = fieldForHeader(header, counters);
+      const field = canonicalHeaderField(header);
       if (field && mapping[field] === undefined) mapping[field] = header.index;
     });
-    const confidenceFields = ['time','pickup','destination','driver'];
-    const confidence = confidenceFields.filter(field => mapping[field] !== undefined).length / confidenceFields.length;
-    return { mapping, confidence, profile: confidence >= 0.75 ? 'ATMS Standard-Planliste' : 'Automatische Spaltenerkennung' };
+
+    // "Wg" kann mehrfach vorkommen. Erstes Wg = Fahrzeug, späteres Wg/letzte Textspalte
+    // kann je nach Planlayout Fahrer sein. Eine explizite Fahrer-Überschrift hat Vorrang.
+    const driverHeader = headers.find(h => aliases.driver.includes(h.key));
+    if (driverHeader) mapping.driver = driverHeader.index;
+
+    const wgHeaders = headers.filter(h => h.key === 'wg' || aliases.vehicle.includes(h.key));
+    if (mapping.vehicle === undefined && wgHeaders.length) mapping.vehicle = wgHeaders[0].index;
+    if (mapping.driver === undefined && wgHeaders.length >= 2) mapping.driver = wgHeaders[wgHeaders.length - 1].index;
+
+    detectTimeColumns(headers, mapping, ambiguities);
+
+    const confidenceFields = ['time','pickup','destination'];
+    const core = confidenceFields.filter(field => mapping[field] !== undefined).length / confidenceFields.length;
+    const confidence = Math.max(0, core - (ambiguities.length ? 0.15 : 0));
+
+    return {
+      mapping,
+      confidence,
+      ambiguities,
+      profile: confidence >= 0.85 ? 'ATMS Flexible Planliste' : 'Automatische Spaltenerkennung'
+    };
   }
 
   function genericMapping(headers) {
     const mapping = {};
-    for (const [field, list] of Object.entries(aliases)) {
-      const match = headers.find(header => list.includes(header.key));
-      if (match) mapping[field] = match.index;
-    }
-    return { mapping, confidence: ['time','pickup','destination'].filter(field => mapping[field] !== undefined).length / 3, profile: 'Allgemeiner Tabellenimport' };
+    const ambiguities = [];
+
+    headers.forEach(header => {
+      const field = canonicalHeaderField(header);
+      if (field && mapping[field] === undefined) mapping[field] = header.index;
+    });
+    detectTimeColumns(headers, mapping, ambiguities);
+
+    const driverHeader = headers.find(h => aliases.driver.includes(h.key));
+    if (driverHeader) mapping.driver = driverHeader.index;
+
+    return {
+      mapping,
+      confidence: ['time','pickup','destination'].filter(field => mapping[field] !== undefined).length / 3 - (ambiguities.length ? 0.15 : 0),
+      ambiguities,
+      profile: 'Allgemeiner flexibler Tabellenimport'
+    };
   }
 
   function valueAt(row, mapping, field) {
@@ -439,6 +599,7 @@
       date: currentPlanDate(),
       time: normalizeTime(valueAt(row, mapping, 'time')),
       planTime: normalizeTime(valueAt(row, mapping, 'time')),
+      timeMirror: normalizeTime(valueAt(row, mapping, 'timeMirror')),
       flightTime: normalizeTime(valueAt(row, mapping, 'flightTime')),
       pickup,
       destination,
@@ -477,15 +638,6 @@
     rides.forEach(ride => {
       const row = ride.sourceRow;
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
-      if (ride.dateNeedsManualCheck) {
-        issues.push({
-          level: 'error',
-          kind: 'date',
-          row,
-          rideId: String(ride.id || row),
-          text: `Datumswechsel bei ${ride.time || 'dieser Fahrt'} ist nicht eindeutig. Bitte festlegen, ob ab hier der nächste Kalendertag beginnt.`
-        });
-      }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
@@ -529,6 +681,24 @@
       if (fingerprints.has(fingerprint)) issues.push({ level: 'warning', row, text: 'Mögliche doppelte Fahrt erkannt' });
       fingerprints.add(fingerprint);
     });
+
+    const nextDayCandidates = rides.filter(ride => ride.dateNeedsManualCheck && ride.dateCandidateNextDay);
+    if (nextDayCandidates.length) {
+      const times = nextDayCandidates.map(ride => cellText(ride.time)).filter(Boolean).sort();
+      const firstTime = times[0] || '00:00';
+      const lastTime = times[times.length - 1] || '05:59';
+      issues.push({
+        level: 'error',
+        kind: 'date_batch',
+        row: 0,
+        count: nextDayCandidates.length,
+        firstTime,
+        lastTime,
+        baseDate: currentPlanDate(),
+        nextDate: addDaysIso(currentPlanDate(), 1),
+        text: `${nextDayCandidates.length} Fahrt(en) liegen zwischen ${firstTime} und ${lastTime}. Gehören diese Fahrten zum Folgetag ${formatPlanDate(addDaysIso(currentPlanDate(), 1))}?`
+      });
+    }
 
     missingFlightLocations.forEach(group => {
       const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
@@ -602,53 +772,165 @@
     return canvas;
   }
 
-  // ATMS Bild-Planliste: 13 echte Spalten.
-  // Wichtig: Zwischen "Firma" und "Flug ang." gibt es KEINE zusätzliche Uhrzeit-Spalte.
-  const IMAGE_HEADERS = ['Preis','Uhrzeit','Von','Nach','Name','Firma','Flug ang.','Flug ausg.','Wg','Pers','Uhrzeit','Ort','Wg'];
-  const IMAGE_COLUMN_RATIOS = [0,0.06,0.107,0.260,0.396,0.486,0.547,0.612,0.675,0.718,0.759,0.823,0.931,1.001];
+  // ATMS Bildimport – Spalten werden aus der sichtbaren Kopfzeile erkannt.
+  // Es gibt KEINE feste flexible Spalten-Annahme mehr.
+  // Die wiederholte Uhrzeit-Spalte ist optional; Spalten dürfen verschoben werden.
 
-  function imageWordsToMatrix(words, width) {
+  function groupOcrLines(words) {
     const usable = (words || []).filter(w => {
-      const text = cellText(w.text);
+      const value = cellText(w.text);
       const conf = Number(w.confidence ?? w.conf ?? 0);
-      return text && conf >= 28 && w.bbox;
+      return value && conf >= 28 && w.bbox;
     }).map(w => ({
       text: cellText(w.text),
-      x0: w.bbox.x0, x1: w.bbox.x1,
-      y0: w.bbox.y0, y1: w.bbox.y1,
-      cy: (w.bbox.y0 + w.bbox.y1) / 2
+      key: cleanKey(w.text),
+      x0: Number(w.bbox.x0 || 0),
+      x1: Number(w.bbox.x1 || 0),
+      y0: Number(w.bbox.y0 || 0),
+      y1: Number(w.bbox.y1 || 0),
+      cy: (Number(w.bbox.y0 || 0) + Number(w.bbox.y1 || 0)) / 2
     })).sort((a,b) => a.cy - b.cy || a.x0 - b.x0);
 
     const heights = usable.map(w => Math.max(1, w.y1 - w.y0)).sort((a,b)=>a-b);
-    const medianH = heights.length ? heights[Math.floor(heights.length/2)] : 20;
-    const tolerance = Math.max(10, medianH * 0.75);
+    const medianH = heights.length ? heights[Math.floor(heights.length / 2)] : 20;
+    const tolerance = Math.max(10, medianH * 0.72);
     const lines = [];
+
     usable.forEach(word => {
-      let line = lines.find(l => Math.abs(l.cy - word.cy) <= tolerance);
-      if (!line) { line = { cy: word.cy, words: [] }; lines.push(line); }
+      let line = lines.find(item => Math.abs(item.cy - word.cy) <= tolerance);
+      if (!line) {
+        line = { cy: word.cy, words: [] };
+        lines.push(line);
+      }
       line.words.push(word);
       line.cy = line.words.reduce((sum,w)=>sum+w.cy,0) / line.words.length;
     });
-    lines.sort((a,b)=>a.cy-b.cy);
 
-    const rows = [];
-    lines.forEach(line => {
-      const cells = Array(14).fill('').map(()=>[]);
-      line.words.sort((a,b)=>a.x0-b.x0).forEach(word => {
-        const cx = (word.x0 + word.x1) / 2 / width;
-        let col = IMAGE_COLUMN_RATIOS.findIndex((r,i)=>i<IMAGE_COLUMN_RATIOS.length-1 && cx >= r && cx < IMAGE_COLUMN_RATIOS[i+1]);
-        if (col < 0) col = 13;
+    lines.forEach(line => line.words.sort((a,b)=>a.x0-b.x0));
+    return lines.sort((a,b)=>a.cy-b.cy);
+  }
+
+  function canonicalImageHeaderLabel(key) {
+    if (key === 'preis' || key === 'price') return 'Preis';
+    if (key === 'uhrzeit' || key === 'zeit') return 'Uhrzeit';
+    if (key === 'von' || key === 'from') return 'Von';
+    if (key === 'nach' || key === 'to') return 'Nach';
+    if (key === 'name' || key === 'kunde') return 'Name';
+    if (key === 'firma' || key === 'company') return 'Firma';
+    if (key === 'wg' || key === 'wagen') return 'Wg';
+    if (key === 'pers' || key === 'personen' || key === 'pax') return 'Pers';
+    if (key === 'ort' || key === 'flugort') return 'Ort';
+    if (key === 'fahrer' || key === 'driver') return 'Fahrer';
+    return '';
+  }
+
+  function headerAnchorsFromLine(line) {
+    const anchors = [];
+    const words = line.words || [];
+
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const key = cleanKey(word.text);
+
+      if (key === 'flug' && words[i + 1]) {
+        const nextKey = cleanKey(words[i + 1].text);
+        if (/^(ang|ank|ankunft)$/.test(nextKey)) {
+          anchors.push({
+            label: 'Flug ang.',
+            key: 'flugang',
+            x: (word.x0 + words[i + 1].x1) / 2
+          });
+          i++;
+          continue;
+        }
+        if (/^(ausg|aus|abg|abflug)$/.test(nextKey)) {
+          anchors.push({
+            label: 'Flug ausg.',
+            key: 'flugausg',
+            x: (word.x0 + words[i + 1].x1) / 2
+          });
+          i++;
+          continue;
+        }
+      }
+
+      // OCR schreibt gelegentlich "Flugang." / "Flugausg." in ein Wort.
+      if (/^flug(ang|ank|ankunft)$/.test(key)) {
+        anchors.push({ label: 'Flug ang.', key: 'flugang', x: (word.x0 + word.x1) / 2 });
+        continue;
+      }
+      if (/^flug(ausg|aus|abg|abflug)$/.test(key)) {
+        anchors.push({ label: 'Flug ausg.', key: 'flugausg', x: (word.x0 + word.x1) / 2 });
+        continue;
+      }
+
+      const label = canonicalImageHeaderLabel(key);
+      if (label) anchors.push({ label, key: cleanKey(label), x: (word.x0 + word.x1) / 2 });
+    }
+
+    return anchors.sort((a,b)=>a.x-b.x);
+  }
+
+  function scoreImageHeaderAnchors(anchors) {
+    const keys = anchors.map(a => a.key);
+    let score = 0;
+    ['preis','uhrzeit','von','nach','name','firma','flugang','flugausg','pers','ort','fahrer','wg']
+      .forEach(key => { if (keys.includes(key)) score++; });
+    if (keys.includes('von') && keys.includes('nach')) score += 2;
+    if (keys.includes('uhrzeit')) score += 1;
+    return score;
+  }
+
+  function detectImageHeaderLine(lines) {
+    let best = null;
+    lines.slice(0, Math.min(lines.length, 35)).forEach((line, index) => {
+      const anchors = headerAnchorsFromLine(line);
+      const score = scoreImageHeaderAnchors(anchors);
+      if (!best || score > best.score) best = { line, index, anchors, score };
+    });
+    return best;
+  }
+
+  function anchorsToBoundaries(anchors, width) {
+    const sorted = anchors.slice().sort((a,b)=>a.x-b.x);
+    const boundaries = [0];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      boundaries.push((sorted[i].x + sorted[i + 1].x) / 2);
+    }
+    boundaries.push(width);
+    return { sorted, boundaries };
+  }
+
+  function imageWordsToMatrix(words, width) {
+    const lines = groupOcrLines(words);
+    const header = detectImageHeaderLine(lines);
+
+    if (!header || header.score < 6 || header.anchors.length < 6) {
+      throw new Error('Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden. Bitte vollständige Kopfzeile mit hochladen.');
+    }
+
+    const { sorted: anchors, boundaries } = anchorsToBoundaries(header.anchors, width);
+    const headerRow = anchors.map(anchor => anchor.label);
+    const rows = [headerRow];
+
+    lines.slice(header.index + 1).forEach(line => {
+      const cells = Array(anchors.length).fill('').map(()=>[]);
+      (line.words || []).forEach(word => {
+        const cx = (word.x0 + word.x1) / 2;
+        let col = boundaries.findIndex((right, i) => i > 0 && cx < right) - 1;
+        if (col < 0) col = 0;
+        if (col >= cells.length) col = cells.length - 1;
         cells[col].push(word.text);
       });
+
       const row = cells.map(parts => parts.join(' ').replace(/\s+/g,' ').trim());
-      const time = normalizeTime(row[1]);
-      const hasRoute = row[2] || row[3];
-      if ((/^\d{1,2}:\d{2}$/.test(time) || /^\d{3,4}$/.test(row[1].replace(/\D/g,''))) && hasRoute) {
-        row[1] = time;
-        rows.push(row);
-      }
+      const nonEmpty = row.filter(Boolean).length;
+      const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
+      const hasFlight = row.some(value => looksLikeFlight(value));
+      if (nonEmpty >= 3 && (hasTime || hasFlight)) rows.push(row);
     });
-    return [IMAGE_HEADERS, ...rows];
+
+    return rows;
   }
 
   async function readImagePlan(file) {
@@ -762,17 +1044,6 @@
     state.issues = validate(state.rides);
   }
 
-  function resolveDateIssue(rideId, action) {
-    if (!rideId) return;
-    if (action !== 'next_day' && action !== 'same_day') return;
-    state.dateDecisions[String(rideId)] = action;
-    state.rides = assignRideDates(state.rides);
-    state.issues = validate(state.rides);
-    render();
-    if (typeof window.showToast === 'function') {
-      window.showToast(action === 'next_day' ? 'Nächster Kalendertag bestätigt' : 'Gleicher Kalendertag bestätigt', 'ok');
-    }
-  }
 
   function resolvePriceIssue(rideId, action, suggestedPrice) {
     const ride = state.rides.find(item => String(item.id) === String(rideId));
@@ -824,12 +1095,13 @@
             ? `Zeile ${rows[0]}`
             : `Zeilen ${rows.slice(0, -1).join(', ')} und ${rows[rows.length - 1]}`;
 
-          if (issue.kind === 'date') {
+          if (issue.kind === 'date_batch') {
             return `<div class="plan-issue error" style="padding-bottom:12px">
-              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              <div><b>Datumsprüfung</b> · ${escapeHtml(issue.text)}</div>
+              <div style="font-size:12px;opacity:.82;margin-top:7px">Maßgeblich ist die normale Fahrtzeit aus Spalte 2/7. Die aktuelle Flugzeit aus Spalte 12 verändert das geplante Fahrtdatum nicht.</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-                <button type="button" class="date-review-btn" data-date-action="next_day" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:150px;padding:10px;border-radius:10px;font-weight:800">✓ Ab hier nächster Tag</button>
-                <button type="button" class="date-review-btn" data-date-action="same_day" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:150px;padding:10px;border-radius:10px;font-weight:800">Gleicher Tag</button>
+                <button type="button" class="date-boundary-btn" data-date-action="next_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(String(issue.count))} Fahrt(en) → ${escapeHtml(formatPlanDate(issue.nextDate))}</button>
+                <button type="button" class="date-boundary-btn" data-date-action="same_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">Alle bleiben ${escapeHtml(formatPlanDate(issue.baseDate))}</button>
               </div>
             </div>`;
           }
@@ -853,9 +1125,9 @@
         }).join('')
       : '<div class="plan-issue ok">✓ Keine kritischen Probleme erkannt.</div>';
 
-    $('planIssues').querySelectorAll('.date-review-btn').forEach(button => {
+    $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
-        resolveDateIssue(button.dataset.rideId, button.dataset.dateAction);
+        resolveDateBoundary(button.dataset.dateAction);
       });
     });
 
@@ -922,30 +1194,17 @@
       if (headerDetection.score < 3) throw new Error('Die Überschriften der Planliste wurden nicht eindeutig erkannt. Erwartet werden unter anderem Uhrzeit, Von und Nach.');
       const headers = uniqueHeaders(matrix[headerDetection.index]);
       let mappingInfo = detectAtmsMapping(headers);
+      if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
       if (result.imageOcr) {
         mappingInfo = {
-          mapping: {
-            price: 0,
-            time: 1,
-            pickup: 2,
-            destination: 3,
-            customer: 4,
-            company: 5,
-            arrivalFlight: 6,
-            departureFlight: 7,
-            vehicle: 8,
-            persons: 9,
-            flightTime: 10,
-            flightLocation: 11,
-            driver: 12
-          },
-          confidence: 1,
-          profile: 'ATMS Bildimport Alpha'
+          ...mappingInfo,
+          profile: mappingInfo.confidence >= 0.85 ? 'ATMS Bildimport Flex' : 'ATMS Bildimport – Prüfung nötig'
         };
-      } else if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
-      if (mappingInfo.confidence < 1) {
-        const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
-        if (missing.length) throw new Error(`Pflichtspalten nicht erkannt: ${missing.join(', ')}.`);
+      }
+      const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
+      if (missing.length) throw new Error(`Pflichtspalten nicht erkannt: ${missing.join(', ')}.`);
+      if (Array.isArray(mappingInfo.ambiguities) && mappingInfo.ambiguities.length) {
+        throw new Error(`Spaltenzuordnung nicht eindeutig: ${mappingInfo.ambiguities.join(' · ')}. Bitte Planliste prüfen; ATMS rät nicht.`);
       }
 
       const dataRows = matrix.slice(headerDetection.index + 1);
@@ -961,8 +1220,7 @@
       state.rides = assignRideDates(rides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
       state.mapping = mappingInfo.mapping;
-      state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: result.imageOcr ? 'ATMS Bildimport Alpha' : mappingInfo.profile };
-      if (result.imageOcr) mappingInfo = { ...mappingInfo, profile: 'ATMS Bildimport Alpha' };
+      state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
       localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);
@@ -981,6 +1239,8 @@
     state.issues = [];
     state.meta = {};
     state.priceDecisions = {};
+    state.dateBoundaryDecision = '';
+    state.dateInfo = {};
     $('analyzePlanBtn').disabled = !file;
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
