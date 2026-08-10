@@ -104,6 +104,23 @@
     return Number.isFinite(number) ? number : 0;
   }
 
+  function pricePlausibility(value) {
+    const price = Number(value) || 0;
+    if (price <= 0) return { suspicious: false, suggestion: null };
+
+    // Sehr hohe Transferpreise nicht automatisch korrigieren, sondern nur markieren.
+    // Typischer OCR-Fall: Dezimaltrennzeichen geht verloren, z. B. 35,00 -> 3500.
+    if (price >= 1000) {
+      const decimalSuggestion = price / 100;
+      const suggestion = decimalSuggestion >= 10 && decimalSuggestion < 1000
+        ? decimalSuggestion
+        : null;
+      return { suspicious: true, suggestion };
+    }
+
+    return { suspicious: false, suggestion: null };
+  }
+
   function normalizeFlightLocation(value) {
     const text = cellText(value).trim();
     if (!text) return '';
@@ -351,6 +368,20 @@
       }
 
       if (ride.persons < 0) issues.push({ level: 'warning', row, text: 'Personenzahl ist ungültig' });
+
+      const priceCheck = pricePlausibility(ride.price);
+      if (priceCheck.suspicious) {
+        const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
+        const suggestionText = priceCheck.suggestion !== null
+          ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
+          : '';
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
+        });
+      }
+
       const fingerprint = [ride.time, cleanKey(ride.pickup), cleanKey(ride.destination), cleanKey(ride.driver), ride.flightNumber].join('|');
       if (fingerprints.has(fingerprint)) issues.push({ level: 'warning', row, text: 'Mögliche doppelte Fahrt erkannt' });
       fingerprints.add(fingerprint);
