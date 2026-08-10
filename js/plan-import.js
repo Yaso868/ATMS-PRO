@@ -4,7 +4,7 @@
   // ATMS PRO Patch 08.08.2026 08:14 Uhr (Europe/Berlin): fehlende Flugorte pro FLIGHT-003-Prüfbasis gruppieren.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {} };
+  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateDecisions: {}, dateInfo: {} };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -29,6 +29,139 @@
     return m ? `${m[3]}.${m[2]}.${m[1]}` : String(value || '');
   }
 
+
+  function addDaysIso(value, days = 1) {
+    const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return value;
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    d.setUTCDate(d.getUTCDate() + Number(days || 0));
+    return d.toISOString().slice(0, 10);
+  }
+
+  function timeToMinutes(value) {
+    const normalized = normalizeTime(value);
+    const m = String(normalized || '').match(/^(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    const h = Number(m[1]), min = Number(m[2]);
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+    return h * 60 + min;
+  }
+
+  function dateDecisionKey(ride) {
+    return String(ride?.id || ride?.sourceRow || '');
+  }
+
+  function assignRideDates(rides, options = {}) {
+    const baseDate = currentPlanDate();
+    const preserveExplicit = Boolean(options.preserveExplicit);
+    let activeDate = baseDate;
+    let previousMinutes = null;
+    let rolloverCount = 0;
+    let autoRolloverCount = 0;
+    const ambiguous = [];
+    const counts = {};
+
+    const out = (Array.isArray(rides) ? rides : []).map((ride, index) => {
+      const explicitDate = cellText(ride?.date);
+      if (preserveExplicit && /^\d{4}-\d{2}-\d{2}$/.test(explicitDate)) {
+        counts[explicitDate] = (counts[explicitDate] || 0) + 1;
+        const mins = timeToMinutes(ride?.time || ride?.planTime);
+        if (mins !== null) previousMinutes = mins;
+        return {
+          ...ride,
+          planDate: cellText(ride?.planDate) || baseDate,
+          date: explicitDate,
+          dateNeedsManualCheck: false,
+          dateSource: cellText(ride?.dateSource) || 'explicit'
+        };
+      }
+
+      const mins = timeToMinutes(ride?.time || ride?.planTime);
+      let transition = '';
+      let needsManual = false;
+
+      if (previousMinutes !== null && mins !== null && mins < previousMinutes) {
+        const clearMidnight = previousMinutes >= (18 * 60) && mins <= (6 * 60);
+        const decision = state.dateDecisions[dateDecisionKey(ride)] || '';
+
+        if (clearMidnight || decision === 'next_day') {
+          activeDate = addDaysIso(activeDate, 1);
+          rolloverCount++;
+          transition = clearMidnight ? 'midnight_auto' : 'manual_next_day';
+          if (clearMidnight) autoRolloverCount++;
+        } else if (decision === 'same_day') {
+          transition = 'manual_same_day';
+        } else {
+          needsManual = true;
+          ambiguous.push({
+            row: ride?.sourceRow || index + 1,
+            rideId: dateDecisionKey(ride),
+            previousTime: previousMinutes,
+            currentTime: mins
+          });
+        }
+      }
+
+      if (mins !== null) previousMinutes = mins;
+      counts[activeDate] = (counts[activeDate] || 0) + 1;
+
+      return {
+        ...ride,
+        planDate: baseDate,
+        date: activeDate,
+        dateNeedsManualCheck: needsManual,
+        dateTransition: transition,
+        dateSource: transition === 'midnight_auto'
+          ? 'midnight_auto'
+          : transition === 'manual_next_day'
+            ? 'manual_next_day'
+            : transition === 'manual_same_day'
+              ? 'manual_same_day'
+              : activeDate === baseDate ? 'plan_date' : 'after_rollover'
+      };
+    });
+
+    state.dateInfo = {
+      baseDate,
+      counts,
+      rolloverCount,
+      autoRolloverCount,
+      ambiguousCount: ambiguous.length
+    };
+    return out;
+  }
+
+  function updatePlanDateSummary() {
+    const control = $('planDateControl');
+    if (!control) return;
+    let summary = $('planDateSummary');
+    if (!summary) {
+      summary = document.createElement('div');
+      summary.id = 'planDateSummary';
+      summary.style.cssText = 'font-size:12px;margin-top:8px;line-height:1.45;font-weight:700';
+      control.appendChild(summary);
+    }
+
+    if (!state.rides.length) {
+      summary.textContent = 'Fahrtdatum wird nach der Analyse je Fahrt festgelegt.';
+      return;
+    }
+
+    const counts = {};
+    state.rides.forEach(ride => {
+      const date = cellText(ride?.date);
+      if (date) counts[date] = (counts[date] || 0) + 1;
+    });
+    const parts = Object.entries(counts).map(([date, count]) => `${formatPlanDate(date)}: ${count}`);
+    const rollover = state.dateInfo?.autoRolloverCount
+      ? ` · ✓ ${state.dateInfo.autoRolloverCount} Mitternachtswechsel automatisch erkannt`
+      : '';
+    const ambiguous = state.dateInfo?.ambiguousCount
+      ? ` · ⚠ ${state.dateInfo.ambiguousCount} Datumswechsel unklar`
+      : '';
+    summary.textContent = `Fahrtdaten: ${parts.join(' · ')}${rollover}${ambiguous}`;
+  }
+
   function currentPlanDate() {
     const input = $('planDateInput');
     const value = cellText(input?.value || state.planDate || berlinToday());
@@ -51,7 +184,7 @@
     wrap.style.cssText = 'margin:14px 0;padding:14px 16px;border:1px solid rgba(72,156,255,.35);border-radius:14px;background:rgba(7,33,63,.55)';
     wrap.innerHTML = `
       <label for="planDateInput" style="display:block;font-weight:800;margin-bottom:6px">📅 Plantag</label>
-      <div style="font-size:12px;opacity:.75;margin-bottom:10px">Automatisch auf heute gesetzt. Bei einer Liste für morgen oder einen anderen Tag bitte vor der Analyse ändern.</div>
+      <div style="font-size:12px;opacity:.75;margin-bottom:10px">Plantag der Liste. Fahrten nach einem eindeutigen Mitternachtswechsel erhalten automatisch den nächsten Kalendertag.</div>
       <input id="planDateInput" type="date" value="${state.planDate}" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#071a2b;color:#fff;font-size:16px">
       <div id="planDateStatus" style="font-size:12px;opacity:.8;margin-top:8px">Aktiver Plantag: ${formatPlanDate(state.planDate)}</div>
     `;
@@ -65,7 +198,8 @@
       const status = $('planDateStatus');
       if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(state.planDate)}`;
       if (state.rides.length) {
-        state.rides = state.rides.map(ride => ({ ...ride, date: state.planDate }));
+        state.dateDecisions = {};
+        state.rides = assignRideDates(state.rides);
         state.issues = validate(state.rides);
         render();
       }
@@ -301,6 +435,7 @@
       id: `import-${Date.now()}-${rowNumber}`,
       sourceRow: rowNumber,
       sourceFile: fileName,
+      planDate: currentPlanDate(),
       date: currentPlanDate(),
       time: normalizeTime(valueAt(row, mapping, 'time')),
       planTime: normalizeTime(valueAt(row, mapping, 'time')),
@@ -342,6 +477,15 @@
     rides.forEach(ride => {
       const row = ride.sourceRow;
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
+      if (ride.dateNeedsManualCheck) {
+        issues.push({
+          level: 'error',
+          kind: 'date',
+          row,
+          rideId: String(ride.id || row),
+          text: `Datumswechsel bei ${ride.time || 'dieser Fahrt'} ist nicht eindeutig. Bitte festlegen, ob ab hier der nächste Kalendertag beginnt.`
+        });
+      }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
@@ -618,6 +762,18 @@
     state.issues = validate(state.rides);
   }
 
+  function resolveDateIssue(rideId, action) {
+    if (!rideId) return;
+    if (action !== 'next_day' && action !== 'same_day') return;
+    state.dateDecisions[String(rideId)] = action;
+    state.rides = assignRideDates(state.rides);
+    state.issues = validate(state.rides);
+    render();
+    if (typeof window.showToast === 'function') {
+      window.showToast(action === 'next_day' ? 'Nächster Kalendertag bestätigt' : 'Gleicher Kalendertag bestätigt', 'ok');
+    }
+  }
+
   function resolvePriceIssue(rideId, action, suggestedPrice) {
     const ride = state.rides.find(item => String(item.id) === String(rideId));
     if (!ride) return;
@@ -648,6 +804,7 @@
     const errors = issues.filter(issue => issue.level === 'error').length;
     const warnings = issues.filter(issue => issue.level === 'warning').length;
     $('planAnalysis').classList.remove('hidden');
+    updatePlanDateSummary();
     $('planRideCount').textContent = rides.length;
     $('planDriverCount').textContent = new Set(rides.map(ride => ride.driver).filter(Boolean)).size;
     $('planWarningCount').textContent = warnings;
@@ -666,6 +823,16 @@
           const rowLabel = rows.length === 1
             ? `Zeile ${rows[0]}`
             : `Zeilen ${rows.slice(0, -1).join(', ')} und ${rows[rows.length - 1]}`;
+
+          if (issue.kind === 'date') {
+            return `<div class="plan-issue error" style="padding-bottom:12px">
+              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                <button type="button" class="date-review-btn" data-date-action="next_day" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:150px;padding:10px;border-radius:10px;font-weight:800">✓ Ab hier nächster Tag</button>
+                <button type="button" class="date-review-btn" data-date-action="same_day" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:150px;padding:10px;border-radius:10px;font-weight:800">Gleicher Tag</button>
+              </div>
+            </div>`;
+          }
 
           if (issue.kind === 'price') {
             const suggestion = Number(issue.suggestedPrice);
@@ -686,6 +853,12 @@
         }).join('')
       : '<div class="plan-issue ok">✓ Keine kritischen Probleme erkannt.</div>';
 
+    $('planIssues').querySelectorAll('.date-review-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        resolveDateIssue(button.dataset.rideId, button.dataset.dateAction);
+      });
+    });
+
     $('planIssues').querySelectorAll('.price-review-btn').forEach(button => {
       button.addEventListener('click', () => {
         resolvePriceIssue(
@@ -701,7 +874,7 @@
       const status = rowIssues.some(issue => issue.level === 'error') ? 'Fehler' : rowIssues.length ? 'Prüfen' : 'OK';
       const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
       return `<tr>
-        <td>${escapeHtml(ride.time || '–')}</td>
+        <td>${escapeHtml(ride.time || '–')}<div style="font-size:11px;opacity:.72;margin-top:3px">${escapeHtml(formatPlanDate(ride.date))}</div></td>
         <td>${escapeHtml(ride.driver || 'Offen')}</td>
         <td>${escapeHtml(ride.pickup || '–')}</td>
         <td>${escapeHtml(ride.destination || '–')}</td>
@@ -731,9 +904,10 @@
       if (result.kind === 'json') {
         const planDate = currentPlanDate();
         state.rides = result.rows.map((ride, index) => {
-          const withDate = { ...ride, date: cellText(ride?.date) || planDate };
+          const withDate = { ...ride, planDate: cellText(ride?.planDate) || planDate, date: cellText(ride?.date) || planDate };
           return window.norm ? window.norm(withDate, index) : withDate;
         });
+        state.rides = assignRideDates(state.rides, { preserveExplicit: true });
         if (window.ATMSFlight) state.rides = window.ATMSFlight.prepareRides(state.rides);
         state.meta = { sheetName: 'JSON', profile: 'ATMS JSON' };
         state.issues = validate(state.rides.map((ride, index) => ({ ...ride, sourceRow: index + 1 })));
@@ -784,7 +958,8 @@
       if (!rides.length) throw new Error('Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
       state.matrix = matrix;
-      state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(rides) : rides;
+      state.rides = assignRideDates(rides);
+      state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: result.imageOcr ? 'ATMS Bildimport Alpha' : mappingInfo.profile };
       if (result.imageOcr) mappingInfo = { ...mappingInfo, profile: 'ATMS Bildimport Alpha' };
