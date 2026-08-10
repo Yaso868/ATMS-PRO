@@ -512,7 +512,53 @@ function flightCheckItems(source=rides){
 function buildGeminiFlightPrompt(){
   const items=flightCheckItems();
   if(!items.length)throw new Error('Keine Flugnummern in der aktuellen Planliste gefunden.');
-  return `ATMS PRO – FLIGHT-005 aktuelle Flugprüfung\n\nPrüfe JEDE unten aufgeführte Flugnummer für den angegebenen Flugtag anhand möglichst aktueller öffentlich verfügbarer Webdaten. Eine Flugnummer darf NICHT dauerhaft einem Ort zugeordnet werden. Prüfe sie bei diesem Auftrag neu.\n\nRegeln:\n1. direction=arrival: Gesucht ist der HERKUNFTSORT des Fluges nach Düsseldorf (DUS).\n2. direction=departure: Gesucht ist der ZIELORT des Fluges ab Düsseldorf (DUS).\n3. Verwende das angegebene date exakt. dateAssumed=true bedeutet nur, dass ATMS wegen fehlendem Plandatum Europe/Berlin \"heute\" eingesetzt hat.\n4. Nutze flightTime zur Unterscheidung, wenn mehrere Flüge mit derselben Flugnummer am selben Tag möglich sind.\n5. Wenn mehrere Flüge passen und flightTime fehlt oder die Route nicht eindeutig verifiziert werden kann: NICHT raten, status=\"needs_manual_check\" setzen.\n6. locationFromPlan ist ausschließlich ein Vergleichswert und keine verlässliche Quelle.\n7. Übernimm keine alte oder vermutete Route nur aufgrund der Flugnummer.\n8. Bei einem Konflikt mit locationFromPlan conflict=true setzen.\n9. Erfinde keine Orte oder IATA-Codes.\n10. Antworte ausschließlich mit gültigem JSON, ohne Markdown und ohne Erklärung.\n\nJSON-Format:\n{\n  \"checkedAt\": \"ISO-8601\",\n  \"flights\": [\n    {\n      \"flightNumber\": \"EW0000\",\n      \"date\": \"YYYY-MM-DD\",\n      \"dateAssumed\": false,\n      \"flightTime\": null,\n      \"direction\": \"arrival|departure|unknown\",\n      \"originCity\": \"\",\n      \"originIata\": \"\",\n      \"destinationCity\": \"\",\n      \"destinationIata\": \"\",\n      \"relevantLocation\": \"\",\n      \"status\": \"verified|needs_manual_check\",\n      \"confidence\": \"high|medium|low\",\n      \"conflict\": false,\n      \"sourceNote\": \"\"\n    }\n  ]\n}\n\nZu prüfen:\n${JSON.stringify(items,null,2)}`;
+  return `ATMS PRO – FLIGHT-006 aktuelle Flugprüfung mit Quellenabgleich
+
+Prüfe JEDE unten aufgeführte Flugnummer für den angegebenen Flugtag anhand möglichst aktueller, DATUMSSPEZIFISCHER Webdaten. Prüfe jeden Eintrag bei diesem Auftrag neu. Eine Flugnummer darf niemals allein aufgrund einer bekannten, früheren oder typischen Route einem Ort zugeordnet werden.
+
+VERIFIKATIONSREGELN:
+1. direction=arrival: Gesucht ist der HERKUNFTSORT des konkreten Fluges nach Düsseldorf (DUS).
+2. direction=departure: Gesucht ist der ZIELORT des konkreten Fluges ab Düsseldorf (DUS).
+3. Verwende das angegebene date EXAKT. Verifiziere ausdrücklich, dass die Flugnummer an diesem Datum mit Düsseldorf (DUS) als passendem Start- oder Zielairport existiert.
+4. Ein allgemeiner Flugplan, eine typische Route, historische Flugnummern-Daten oder eine gespeicherte Flugnummer→Ort-Zuordnung reichen NICHT als Verifikation.
+5. Für status="verified" und confidence="high" soll die konkrete Route für das exakte Datum möglichst durch mindestens ZWEI voneinander unabhängige aktuelle Quellen bestätigt sein.
+6. Bevorzuge als Quelle den Flughafen Düsseldorf bzw. die offizielle Airline-Flugstatus-/Flugplanquelle. Nutze möglichst zusätzlich eine unabhängige aktuelle Flugtracking-/Flugdatenquelle.
+7. Wenn nur eine allgemeine, nicht datumsspezifische Quelle verfügbar ist, wenn Quellen widersprechen oder wenn die konkrete DUS-Verbindung nicht sicher bestätigt werden kann: status="needs_manual_check" setzen. NICHT raten.
+8. confidence="high" nur bei eindeutiger datumsspezifischer Verifikation. Bei confidence="medium" oder "low" MUSS status="needs_manual_check" sein.
+9. Nutze flightTime nur als zusätzliches Unterscheidungsmerkmal, wenn mehrere passende Flüge mit derselben Flugnummer am selben Tag möglich sind.
+10. Wenn mehrere Flüge passen und flightTime fehlt oder nicht eindeutig zugeordnet werden kann: status="needs_manual_check".
+11. locationFromPlan ist ausschließlich ein Vergleichswert und KEINE Quelle. Prüfe auch Flüge mit bereits vorhandenem locationFromPlan vollständig neu.
+12. Bei Abweichung zwischen sicher verifizierter Route und locationFromPlan conflict=true setzen. Ein Tippfehler im Planort darf bei sicher verifizierter Route ebenfalls als conflict=true markiert werden.
+13. Erfinde keine Orte oder IATA-Codes. Wenn ein IATA-Code nicht sicher verifiziert ist, lasse ihn leer und setze bei relevanter Unsicherheit status="needs_manual_check".
+14. sourceNote muss kurz nennen, welche aktuellen/datumsspezifischen Quellen die Route bestätigt haben. Ein bloßer Text wie "scheduled flight" ohne Quellenabgleich reicht nicht.
+15. checkedAt muss der tatsächliche Zeitpunkt dieser Webprüfung als ISO-8601-UTC-Zeit sein. ATMS speichert zusätzlich selbst seinen eigenen Übernahmezeitpunkt.
+16. Antworte ausschließlich mit gültigem JSON, ohne Markdown und ohne Erklärung.
+
+JSON-Format:
+{
+  "checkedAt": "ISO-8601",
+  "flights": [
+    {
+      "flightNumber": "EW0000",
+      "date": "YYYY-MM-DD",
+      "dateAssumed": false,
+      "flightTime": null,
+      "direction": "arrival|departure|unknown",
+      "originCity": "",
+      "originIata": "",
+      "destinationCity": "",
+      "destinationIata": "",
+      "relevantLocation": "",
+      "status": "verified|needs_manual_check",
+      "confidence": "high|medium|low",
+      "conflict": false,
+      "sourceNote": ""
+    }
+  ]
+}
+
+Zu prüfen:
+${JSON.stringify(items,null,2)}`;
 }
 async function copyGeminiFlightPrompt(){
   try{
