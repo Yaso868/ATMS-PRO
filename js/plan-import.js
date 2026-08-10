@@ -627,6 +627,9 @@
       if (!Number.isFinite(value) || value <= 0) return;
       ride.price = value;
       state.priceDecisions[String(rideId)] = 'suggestion';
+      if (typeof window.ATMSPersistPriceOverride === 'function') {
+        window.ATMSPersistPriceOverride(ride, value);
+      }
       if (typeof window.showToast === 'function') {
         window.showToast(`${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value)} übernommen`, 'ok');
       }

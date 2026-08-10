@@ -1,4 +1,4 @@
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -7,6 +7,60 @@ function first(...v){for(const x of v)if(x!==undefined&&x!==null&&String(x).trim
 function isBundleRide(r){return Boolean(r.bundle||r.isBundle||r.bundelfahrt||r.is_bundelfahrt||r.bundleRide||normalizeStops(r).length>1)}
 function norm(r,i){const plan=planTimeOf(r),dispo=dispoTimeOf(r),live=liveTimeOf(r);return{...r,id:first(r.id,'ride-'+(i+1)),date:first(r.date,r.datum),time:plan,planTime:plan,dispoTime:dispo,liveTime:live,driver:first(r.driver,r.fahrer),pickup:first(r.pickup,r.abholort,r.start),destination:first(r.destination,r.zielort,r.ziel),flightNumber:first(r.flightNumber,r.flugnummer).toUpperCase(),flightLocation:first(r.flightLocation,r.flugort,r.ort),iata:first(r.iata),airline:first(r.airline),partner:first(r.partner,r.airline),company:first(r.company,r.firma,'WT'),vehicle:first(r.vehicle,r.fahrzeug,'Pkw'),persons:Number(r.persons||r.personen||0),price:Number(r.price||r.preis||0),currency:first(r.currency,'EUR'),notes:first(r.notes,r.hinweis),flightStatus:first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status),delayMinutes:Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0),landed:Boolean(r.landed||r.gelandet),isBundle:isBundleRide(r),bundleStops:normalizeStops(r)}}
 function normKey(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
+function getRideOverrides(){
+  try{
+    const list=JSON.parse(localStorage.getItem(RIDE_OVERRIDE_KEY)||'[]');
+    return Array.isArray(list)?list:[];
+  }catch(_){return[]}
+}
+function saveRideOverrides(list){
+  localStorage.setItem(RIDE_OVERRIDE_KEY,JSON.stringify((Array.isArray(list)?list:[]).slice(0,500)));
+}
+function upsertRideOverride(rideId,patch){
+  const id=String(rideId||'').trim();
+  if(!id)return;
+  let list=getRideOverrides();
+  const existing=list.find(x=>String(x?.rideId||'')===id)||{rideId:id};
+  const next={...existing,...patch,rideId:id,updatedAt:new Date().toISOString()};
+  list=list.filter(x=>String(x?.rideId||'')!==id);
+  list.unshift(next);
+  saveRideOverrides(list);
+}
+function applyRideOverrides(source){
+  const overrides=new Map(getRideOverrides().map(x=>[String(x?.rideId||''),x]));
+  let changed=0;
+  const out=(Array.isArray(source)?source:[]).map(r=>{
+    const hit=overrides.get(String(r?.id||''));
+    if(!hit)return r;
+    let next={...r};
+    if(Number.isFinite(Number(hit.price))&&Number(hit.price)>0&&Number(next.price)!==Number(hit.price)){
+      next.price=Number(hit.price);
+      next.priceConfirmedAt=hit.priceConfirmedAt||hit.updatedAt||'';
+      changed++;
+    }
+    if(hit.flightVerified===true&&String(hit.flightLocation||'').trim()){
+      const loc=String(hit.flightLocation||'').trim();
+      const iata=String(hit.iata||'').trim().toUpperCase();
+      if(String(next.flightLocation||'').trim()!==loc||String(next.iata||'').trim().toUpperCase()!==iata){
+        next.flightLocation=loc;
+        next.iata=iata;
+        next.flightCheckConfidence='verified';
+        next.flightCheckedAt=hit.flightCheckedAt||next.flightCheckedAt||'';
+        changed++;
+      }
+    }
+    return next;
+  });
+  return {rides:out,changed};
+}
+window.ATMSPersistPriceOverride=function(ride,price){
+  const value=Number(price);
+  if(!ride?.id||!Number.isFinite(value)||value<=0)return;
+  upsertRideOverride(ride.id,{price:value,priceConfirmedAt:new Date().toISOString()});
+};
+window.ATMSApplyRideOverrides=function(source){
+  return applyRideOverrides(source).rides;
+};
 function isAirport(v){const n=normKey(v);return n.includes('dus airport')||n==='dus' || n.includes('flughafen düsseldorf')||n.includes('duesseldorf airport')}
 function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return'airport_to_hotels';if(!isAirport(r.pickup)&&isAirport(r.destination))return'hotels_to_airport';return'normal'}
 function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),dir].join('|')}
@@ -83,7 +137,12 @@ function visualRides(source){
   return out
 }
 window.norm=norm;
-function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){localStorage.setItem(KEY,JSON.stringify(rides));localStorage.setItem(DONE,JSON.stringify([...done]))}function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
+function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
+  const corrected=applyRideOverrides(rides);
+  rides=corrected.rides;
+  localStorage.setItem(KEY,JSON.stringify(rides));
+  localStorage.setItem(DONE,JSON.stringify([...done]));
+}function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
 function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time|scheduled/.test(raw))return{key:'on-time',label:'Pünktlich'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
 function timeMarkup(r){const plan=planTimeOf(r);const current=effectiveTime(r);if(current&&plan&&current!==plan)return `<div class="time-stack"><div class="plan-small">${esc(plan)}</div><div class="current-large">${esc(current)}</div></div>`;return `<div class="time-single">${esc(current||plan||'--:--')}</div>`}
 function ridePartnerLabel(r){
@@ -650,6 +709,15 @@ function applyGeminiFlightResult(){
         sourceRow:Number(r.sourceRow||0)||0
       });
 
+      if(verified){
+        upsertRideOverride(r.id,{
+          flightVerified:true,
+          flightLocation:hit.flightLocation,
+          iata:hit.iata||'',
+          flightCheckedAt:checkedAt
+        });
+      }
+
       return {
         ...r,
         date:date || String(hit.date||'').trim(),
@@ -708,8 +776,11 @@ function applyImportedRides(newRides){
     }));
   }catch(_){}
 
-  // Planlisten-Import: neue Liste ersetzt alte Liste vollständig
+  // Planlisten-Import: neue Liste ersetzt alte Liste vollständig.
+  // Alte Bestätigungen werden NICHT auf neue Fahrten übertragen, da neue Importe neue IDs besitzen.
   rides=newRides;
+  const corrected=applyRideOverrides(rides);
+  rides=corrected.rides;
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
   save();
 
@@ -1000,9 +1071,11 @@ function initApp(){
     ensureGeminiFlightPanel();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
+      const overrideRestore=applyRideOverrides(rides);
+      rides=overrideRestore.rides;
       const restored=applyFlightCacheToRides(rides);
       rides=restored.rides;
-      if(restored.changed)save();
+      if(overrideRestore.changed||restored.changed)save();
     }catch(e){rides=[]}
     initLiveDisposition();
     if(getDriverSession().active)startLiveGeoWatch();
