@@ -1103,12 +1103,27 @@
     return Boolean(state.rides.length && !$('planAnalysis')?.classList.contains('hidden'));
   }
 
+  // CORE-001B 11.08.2026 19:10 Uhr: Übernahme-Zähler trennt jetzt sauber
+  // zwischen geprüften Fahrten, wirklich übernommenen Flugorten und manuellen Fällen.
+  // Dadurch kann die UI nicht mehr "0 übernommen" melden, obwohl ein Flugort gesetzt wurde.
   function applyGeminiResultsToStagedPlan(checked, appliedAt) {
     if (!stagedPlanIsActive() || !Array.isArray(checked)) {
-      return { handled: false, updated: 0, uncertain: 0, downgraded: 0 };
+      return {
+        handled: false,
+        matchedRides: 0,
+        appliedRides: 0,
+        manualRides: 0,
+        matchedFlights: 0,
+        appliedFlights: 0,
+        manualFlights: 0,
+        downgraded: 0
+      };
     }
 
-    let updated = 0, uncertain = 0, downgraded = 0;
+    let matchedRides = 0, appliedRides = 0, manualRides = 0, downgraded = 0;
+    const matchedFlightKeys = new Set();
+    const appliedFlightKeys = new Set();
+    const manualFlightKeys = new Set();
     const checkTime = cellText(appliedAt) || new Date().toISOString();
 
     state.rides = state.rides.map(ride => {
@@ -1118,6 +1133,7 @@
       const date = cellText(ride?.date);
       const direction = cellText(ride?.flightDirection || (ride?.arrivalFlight ? 'arrival' : ride?.departureFlight ? 'departure' : '')).toLowerCase() || 'unknown';
       const flightTime = cellText(ride?.flightTime);
+      const flightKey = `${flight}|${date}|${direction}|${flightTime}`;
 
       const candidates = checked.filter(item => {
         if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
@@ -1137,13 +1153,16 @@
       }
       if (!hit) return ride;
 
+      matchedRides++;
+      matchedFlightKeys.add(flightKey);
+
       const location = cellText(hit?.flightLocation || hit?.relevantLocation);
       const verified = hit?.status === 'verified' && hit?.confidence === 'verified' && !Boolean(hit?.conflict) && Boolean(location && location !== 'Flugort prüfen');
-      updated++;
-      if (!verified) uncertain++;
       if (hit?.verificationDowngraded) downgraded++;
 
       if (!verified) {
+        manualRides++;
+        manualFlightKeys.add(flightKey);
         return {
           ...ride,
           flightCheckConfidence: 'uncertain',
@@ -1153,6 +1172,8 @@
         };
       }
 
+      appliedRides++;
+      appliedFlightKeys.add(flightKey);
       return {
         ...ride,
         flightLocation: normalizeFlightLocation(location),
@@ -1166,7 +1187,16 @@
 
     state.issues = validate(state.rides);
     render();
-    return { handled: true, updated, uncertain, downgraded };
+    return {
+      handled: true,
+      matchedRides,
+      appliedRides,
+      manualRides,
+      matchedFlights: matchedFlightKeys.size,
+      appliedFlights: appliedFlightKeys.size,
+      manualFlights: manualFlightKeys.size,
+      downgraded
+    };
   }
 
   window.ATMSPlanImportHasStagedRides = stagedPlanIsActive;
