@@ -1,3 +1,4 @@
+// CORE-001A 11.08.2026 14:41 Uhr (Europe/Berlin): New-import isolation + conflict safety + staged flight apply.
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -711,7 +712,9 @@ function parseGeminiFlightResult(text){
     );
     const sourceCount=uniqueSourceKeys.size;
 
-    const claimedVerified=status==='verified' && confidence==='high' && Boolean(location);
+    const conflict=Boolean(x.conflict);
+    // CORE-001A: conflict=true darf niemals automatisch als verifiziert gelten.
+    const claimedVerified=status==='verified' && confidence==='high' && Boolean(location) && !conflict;
     const verified=claimedVerified && sourceCount>=2;
 
     return {
@@ -724,7 +727,7 @@ function parseGeminiFlightResult(text){
       iata,
       confidence:verified?'verified':'uncertain',
       status:verified?'verified':'needs_manual_check',
-      conflict:Boolean(x.conflict),
+      conflict,
       sources:normalizedSources,
       sourceCount,
       sourceNote:String(x.sourceNote||'').trim(),
@@ -740,6 +743,24 @@ function applyGeminiFlightResult(){
     // ATMS setzt den tatsächlichen lokalen Übernahme-/Prüfzeitpunkt selbst.
     // Ein von Gemini gelieferter checkedAt-Wert wird nicht als verlässlicher Zeitstempel gespeichert.
     const atmsCheckedAt=new Date().toISOString();
+
+    // CORE-001A: Wenn gerade eine Planliste analysiert wird, müssen die Ergebnisse
+    // direkt auf diese staged Liste angewendet werden. Alte gespeicherte Fahrten
+    // und localStorage dürfen dabei nicht als Zwischenweg dienen.
+    if(typeof window.ATMSPlanImportApplyGeminiFlightResults==='function' &&
+       typeof window.ATMSPlanImportHasStagedRides==='function' &&
+       window.ATMSPlanImportHasStagedRides()){
+      const staged=window.ATMSPlanImportApplyGeminiFlightResults(checked,atmsCheckedAt);
+      if(staged?.handled){
+        if(box)box.value='';
+        const status=$('geminiFlightStatus');
+        if(status)status.textContent=`${staged.updated} Fahrt(en) im aktuellen Plan geprüft${staged.uncertain?` · ${staged.uncertain} unsicher → vorhandener Flugort bleibt · manuell prüfen`:''}${staged.downgraded?` · ${staged.downgraded} wegen <2 Quellen heruntergestuft`:''}.`;
+        try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked,scope:'staged-plan',appliedAt:atmsCheckedAt}}));}catch(_){}
+        showToast(`${staged.updated} Flugdaten im aktuellen Plan übernommen`,'ok');
+        return;
+      }
+    }
+
     let updated=0,uncertain=0,downgraded=0;
     const cacheEntries=[];
     rides=rides.map(r=>{
@@ -788,7 +809,7 @@ function applyGeminiFlightResult(){
       // Keine unsichere Ersatzsuche über andere Daten/Plantagen.
       if(!hit)return r;
 
-      const verified=hit.confidence==='verified'&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
+      const verified=hit.confidence==='verified'&&!hit.conflict&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
       const checkedAt=atmsCheckedAt;
       updated++;if(!verified)uncertain++;if(hit.verificationDowngraded)downgraded++;
 
@@ -833,7 +854,7 @@ function applyGeminiFlightResult(){
     });
     upsertFlightCache(cacheEntries);
     save();
-    try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked}}));}catch(_){}
+    try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked,scope:'stored-rides',appliedAt:atmsCheckedAt}}));}catch(_){}
     if(box)box.value='';
     const status=$('geminiFlightStatus');if(status)status.textContent=`${updated} Fahrt(en) geprüft${uncertain?` · ${uncertain} unsicher → vorhandener Flugort bleibt · manuell prüfen`:''}${downgraded?` · ${downgraded} wegen <2 Quellen heruntergestuft`:''}.`;
     showToast(`${updated} Flugdaten übernommen`,'ok');
