@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'FLIGHT-005';
+  const VERSION = 'FLIGHT-005-CORE001A';
   const FLIGHT_CACHE_KEY = 'atms_flight_cache_v1';
 
   const text = value => String(value ?? '').trim();
@@ -27,10 +27,10 @@
     return 'unknown';
   }
 
-  // FLIGHT-004: Bereits sicher geprüfte Flugorte dürfen nur für exakt denselben
-  // Plantag + Flugnummer + Richtung wiederverwendet werden. Bei vorhandener
-  // Flugzeit wird zusätzlich exakt nach flightTime getrennt. Bei widersprüchlichen
-  // Cache-Treffern wird absichtlich NICHT geraten.
+  // CORE-001A · 11.08.2026 14:41 Uhr (Europe/Berlin):
+  // Der persistente Flugcache bleibt ausschließlich als Historie/Audit erhalten.
+  // Er darf bei einem neuen aktuellen Planimport niemals automatisch einen Flugort
+  // einsetzen. Jeder neue Import muss für seinen konkreten Prüflauf neu geprüft werden.
   function getVerifiedFlightCache() {
     try {
       const list = JSON.parse(localStorage.getItem(FLIGHT_CACHE_KEY) || '[]');
@@ -156,18 +156,18 @@
       };
     }
 
-    const cacheHit = currentLocation ? null : verifiedCacheHit(ride, flightNumber, direction);
-    const cachedLocation = text(cacheHit?.flightLocation);
-    const resolvedLocation = currentLocation || cachedLocation;
-    const source = currentLocation ? 'plan-list' : cachedLocation ? 'verified-flight-cache' : 'unverified';
-    const status = currentLocation ? 'location-from-plan' : cachedLocation ? 'verified-cache' : 'needs-current-check';
+    // CORE-001A: Persistente Altprüfungen werden hier bewusst NICHT abgefragt.
+    // Ein leerer Flugort bleibt leer und wird für den aktuellen Import neu geprüft.
+    const resolvedLocation = currentLocation;
+    const source = currentLocation ? 'plan-list' : 'unverified';
+    const status = currentLocation ? 'location-from-plan' : 'needs-current-check';
 
     return {
       ...ride,
       flightLocation: resolvedLocation,
-      iata: text(ride?.iata) || text(cacheHit?.iata).toUpperCase(),
-      flightCheckConfidence: cachedLocation ? 'verified' : ride?.flightCheckConfidence,
-      flightCheckedAt: cachedLocation ? text(cacheHit?.checkedAt) : ride?.flightCheckedAt,
+      iata: text(ride?.iata).toUpperCase(),
+      flightCheckConfidence: ride?.flightCheckConfidence,
+      flightCheckedAt: ride?.flightCheckedAt,
       flightVerification: {
         version: VERSION,
         status,
@@ -175,7 +175,7 @@
         direction,
         relevantSide: relevantSide(direction),
         currentLocation: resolvedLocation,
-        checkedAt: cachedLocation ? text(cacheHit?.checkedAt) : null
+        checkedAt: null
       }
     };
   }
@@ -211,16 +211,9 @@
   }
   let refreshScheduled = false;
   function applyVerifiedCacheInPlace(rides) {
-    let changed = 0;
-    if (!Array.isArray(rides)) return changed;
-    rides.forEach(ride => {
-      if (!ride || text(ride.flightLocation)) return;
-      const prepared = prepareRide(ride);
-      if (!text(prepared.flightLocation)) return;
-      Object.assign(ride, prepared);
-      changed++;
-    });
-    return changed;
+    // CORE-001A: absichtlich deaktiviert. API bleibt aus Rückwärtskompatibilität
+    // vorhanden, verändert aber keine neue Planliste mehr.
+    return 0;
   }
   function schedulePlanImportRefresh() {
     if (refreshScheduled) return;
@@ -233,8 +226,7 @@
     }, 0);
   }
   function summary(rides) {
-    const changed = applyVerifiedCacheInPlace(rides);
-    if (changed) schedulePlanImportRefresh();
+    // CORE-001A: summary() ist rein lesend und verändert die Planliste nicht mehr.
     const flights = uniqueFlights(rides);
     return {
       total: flights.length,
