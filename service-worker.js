@@ -1,16 +1,16 @@
-const CACHE_NAME = "atms-pro-pwa-2026-08-11-core-002b";
-// CORE-002B · 11.08.2026 19:58 Uhr (Europe/Berlin):
-// PWA-Cache-Version erhöht und JS-Dateien versioniert, damit neue Patches
-// nicht durch einen alten Service-Worker-/Browser-Cache verdeckt werden.
+const CACHE_NAME = "atms-pro-pwa-2026-08-11-core-003b";
+// CORE-003B · 11.08.2026 21:13 Uhr (Europe/Berlin):
+// Chronologische Datum+Uhrzeit-Sortierung aktiviert; Cache-Version erhöht, damit
+// die korrigierte app.js sofort geladen wird.
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./css/main.css",
-  "./js/app.js?v=CORE-002B",
-  "./js/flight-engine.js?v=CORE-002B",
-  "./js/plan-import.js?v=CORE-002B",
-  "./js/pwa.js?v=CORE-002B",
+  "./js/app.js?v=CORE-003B",
+  "./js/flight-engine.js?v=CORE-003B",
+  "./js/plan-import.js?v=CORE-003B",
+  "./js/pwa.js?v=CORE-003B",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
