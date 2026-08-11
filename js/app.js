@@ -754,9 +754,22 @@ function applyGeminiFlightResult(){
       if(staged?.handled){
         if(box)box.value='';
         const status=$('geminiFlightStatus');
-        if(status)status.textContent=`${staged.updated} Fahrt(en) im aktuellen Plan geprüft${staged.uncertain?` · ${staged.uncertain} unsicher → vorhandener Flugort bleibt · manuell prüfen`:''}${staged.downgraded?` · ${staged.downgraded} wegen <2 Quellen heruntergestuft`:''}.`;
+        const appliedFlights=Number(staged.appliedFlights||0);
+        const matchedFlights=Number(staged.matchedFlights||0);
+        const manualFlights=Number(staged.manualFlights||0);
+        const appliedRides=Number(staged.appliedRides||0);
+        const matchedRides=Number(staged.matchedRides||0);
+        // CORE-001B: Benutzeranzeige zählt eindeutige Flüge statt intern gematchter
+        // Fahrten. Bündelfahrten mit zwei Zeilen ergeben damit z. B. "1 Flugort übernommen".
+        if(status)status.textContent=`${matchedFlights} Flug/Flüge geprüft · ${appliedFlights} Flugort(e) übernommen${manualFlights?` · ${manualFlights} manuell prüfen`:''}${matchedRides!==matchedFlights?` · ${matchedRides} Fahrt(en) betroffen`:''}${staged.downgraded?` · ${staged.downgraded} wegen <2 Quellen heruntergestuft`:''}.`;
         try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked,scope:'staged-plan',appliedAt:atmsCheckedAt}}));}catch(_){}
-        showToast(`${staged.updated} Flugdaten im aktuellen Plan übernommen`,'ok');
+        if(appliedFlights>0){
+          showToast(`${appliedFlights} Flugort${appliedFlights===1?'':'e'} im aktuellen Plan übernommen`,'ok');
+        }else if(manualFlights>0){
+          showToast(`0 Flugorte übernommen · ${manualFlights} manuell prüfen`,'warn');
+        }else{
+          showToast(`0 Flugorte übernommen · kein passender aktueller Flug gefunden`,'warn');
+        }
         return;
       }
     }
