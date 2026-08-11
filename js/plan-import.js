@@ -3,6 +3,7 @@
 
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
   // PRICE-001 10.08.2026 23:18 Uhr: Fehlender/unsicherer OCR-Preis darf nicht mehr still als 0,00 € durchlaufen; manuelle Bestätigung erforderlich.
+  // CORE-001A 11.08.2026 14:41 Uhr: Neue Planlisten übernehmen keine alten Flugprüfungen mehr aus localStorage; Ergebnisse werden direkt auf die aktuell analysierte Liste angewendet.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
   const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {} };
@@ -1087,9 +1088,89 @@
   }
 
   function refreshIssuesAfterFlightSync() {
-    syncFlightLocationsFromSavedRides();
+    // CORE-001A: Kein Rückweg über bereits gespeicherte Fahrten/localStorage.
+    // Nur der aktuelle staged Plan wird neu validiert.
     state.issues = validate(state.rides);
   }
+
+  function normalizeFlightForCurrentCheck(value) {
+    let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
+    return v;
+  }
+
+  function stagedPlanIsActive() {
+    return Boolean(state.rides.length && !$('planAnalysis')?.classList.contains('hidden'));
+  }
+
+  function applyGeminiResultsToStagedPlan(checked, appliedAt) {
+    if (!stagedPlanIsActive() || !Array.isArray(checked)) {
+      return { handled: false, updated: 0, uncertain: 0, downgraded: 0 };
+    }
+
+    let updated = 0, uncertain = 0, downgraded = 0;
+    const checkTime = cellText(appliedAt) || new Date().toISOString();
+
+    state.rides = state.rides.map(ride => {
+      const flight = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
+      if (!flight) return ride;
+
+      const date = cellText(ride?.date);
+      const direction = cellText(ride?.flightDirection || (ride?.arrivalFlight ? 'arrival' : ride?.departureFlight ? 'departure' : '')).toLowerCase() || 'unknown';
+      const flightTime = cellText(ride?.flightTime);
+
+      const candidates = checked.filter(item => {
+        if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
+        if (cellText(item?.date) !== date) return false;
+        const itemDirection = cellText(item?.direction).toLowerCase() || 'unknown';
+        if (itemDirection !== direction) return false;
+        return true;
+      });
+
+      let hit = null;
+      if (flightTime) {
+        const exact = candidates.filter(item => cellText(item?.flightTime) === flightTime);
+        if (exact.length === 1) hit = exact[0];
+        else if (!exact.length && candidates.length === 1 && !cellText(candidates[0]?.flightTime)) hit = candidates[0];
+      } else if (candidates.length === 1) {
+        hit = candidates[0];
+      }
+      if (!hit) return ride;
+
+      const location = cellText(hit?.flightLocation || hit?.relevantLocation);
+      const verified = hit?.status === 'verified' && hit?.confidence === 'verified' && !Boolean(hit?.conflict) && Boolean(location && location !== 'Flugort prüfen');
+      updated++;
+      if (!verified) uncertain++;
+      if (hit?.verificationDowngraded) downgraded++;
+
+      if (!verified) {
+        return {
+          ...ride,
+          flightCheckConfidence: 'uncertain',
+          flightNeedsManualCheck: true,
+          flightCheckSourceNote: cellText(hit?.sourceNote) || ride?.flightCheckSourceNote || '',
+          flightCheckedAt: checkTime
+        };
+      }
+
+      return {
+        ...ride,
+        flightLocation: normalizeFlightLocation(location),
+        iata: cellText(hit?.iata).toUpperCase() || ride?.iata || '',
+        flightCheckConfidence: 'verified',
+        flightNeedsManualCheck: false,
+        flightCheckSourceNote: cellText(hit?.sourceNote),
+        flightCheckedAt: checkTime
+      };
+    });
+
+    state.issues = validate(state.rides);
+    render();
+    return { handled: true, updated, uncertain, downgraded };
+  }
+
+  window.ATMSPlanImportHasStagedRides = stagedPlanIsActive;
+  window.ATMSPlanImportApplyGeminiFlightResults = applyGeminiResultsToStagedPlan;
 
 
   function resolvePriceIssue(rideId, action, suggestedPrice) {
@@ -1320,8 +1401,10 @@
     $('importStatus').textContent = file ? `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
   }
 
-  window.addEventListener('atms:gemini-flight-result', () => {
+  window.addEventListener('atms:gemini-flight-result', event => {
     if (!state.rides.length) return;
+    // Bei scope=staged-plan wurde das Ergebnis bereits direkt auf state.rides angewendet.
+    if (event?.detail?.scope === 'staged-plan') return;
     try {
       refreshIssuesAfterFlightSync();
       render();
