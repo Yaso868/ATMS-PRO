@@ -1446,14 +1446,18 @@
     try {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
       if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
-      localStorage.removeItem('atms_beta_14_3_1_rides');
-       localStorage.removeItem('atms_beta_14_3_1_done');
-
-       const result = window.applyImportedRides(normalized);
+      // CORE-003A: bestehende Plantage nicht vorab aus localStorage löschen.
+      // applyImportedRides ersetzt nur den neu importierten Plantag und bewahrt andere Tage.
+      const result = window.applyImportedRides(normalized);
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
-      $('importStatus').textContent = result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`;
-      if (typeof window.showToast === 'function') window.showToast(`${result.count} Fahrten importiert`, 'ok');
+      $('importStatus').textContent = result.mode === 'replace-days'
+        ? `${result.count} Fahrten übernommen · ${result.total} Fahrten aus mehreren Plantagen gespeichert.`
+        : `${result.count} Fahrten übernommen.`;
+      if (typeof window.showToast === 'function') window.showToast(
+        result.mode === 'replace-days' ? `${result.count} Fahrten übernommen · ${result.total} insgesamt` : `${result.count} Fahrten importiert`,
+        'ok'
+      );
       if (typeof window.render === 'function') window.render();
     } catch (error) {
       $('importStatus').textContent = `Importfehler: ${error.message}`;

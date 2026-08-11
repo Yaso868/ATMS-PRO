@@ -64,7 +64,7 @@ window.ATMSApplyRideOverrides=function(source){
 };
 function isAirport(v){const n=normKey(v);return n.includes('dus airport')||n==='dus' || n.includes('flughafen düsseldorf')||n.includes('duesseldorf airport')}
 function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return'airport_to_hotels';if(!isAirport(r.pickup)&&isAirport(r.destination))return'hotels_to_airport';return'normal'}
-function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),dir].join('|')}
+function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [String(r.date||r.datum||'').trim(),normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),dir].join('|')}
 function sameBundleGroup(a,b){const ka=bundleGroupKey(a),kb=bundleGroupKey(b);return Boolean(ka&&ka===kb)}
 function hotelLabel(name){const n=String(name||'').trim();if(/nh\s*nord/i.test(n))return 'NH Nord DUS';if(/holiday\s*inn/i.test(n))return 'Holiday Inn DUS';return n}
 function knownBundleRepair(r){
@@ -927,9 +927,20 @@ function applyImportedRides(newRides){
     }));
   }catch(_){}
 
-  // Planlisten-Import: neue Liste ersetzt alte Liste vollständig.
-  // Alte Bestätigungen werden NICHT auf neue Fahrten übertragen, da neue Importe neue IDs besitzen.
-  rides=newRides;
+  // CORE-003A · 11.08.2026 20:41 Uhr (Europe/Berlin):
+  // Ein neuer Plantag darf andere bereits gespeicherte Plantage nicht mehr löschen.
+  // Re-Import desselben Datums ersetzt ausschließlich diesen Tag, damit korrigierte
+  // Planlisten keine Dubletten erzeugen. Fahrten anderer Tage bleiben erhalten.
+  const rideDate=r=>String(r?.date||r?.datum||'').trim();
+  const incomingDates=new Set(newRides.map(rideDate).filter(Boolean));
+  if(!incomingDates.size || newRides.some(r=>!rideDate(r))){
+    throw Error('Plantag fehlt bei mindestens einer Fahrt. Mehrtages-Speicherung wurde aus Sicherheitsgründen nicht verändert.');
+  }
+
+  const previousCount=rides.length;
+  const preserved=rides.filter(r=>!incomingDates.has(rideDate(r)));
+  const replacedCount=previousCount-preserved.length;
+  rides=mergeImportedRides(preserved,newRides);
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
@@ -937,8 +948,12 @@ function applyImportedRides(newRides){
 
   return {
     cancelled:false,
-    mode:'replace',
-    count:rides.length
+    mode:preserved.length?'replace-days':'replace',
+    count:newRides.length,
+    total:rides.length,
+    preservedCount:preserved.length,
+    replacedCount,
+    dates:[...incomingDates]
   };
 }
 
@@ -1213,7 +1228,7 @@ function initApp(){
     bindClick('mapBtn',()=>{if(active){const rs=active.isBundle&&Array.isArray(active.routeStops)?active.routeStops:[];const origin=rs.length?rs[0].name:(active.pickup||'');const destination=rs.length?rs[rs.length-1].name:(active.destination||'');const waypoints=rs.length>2?rs.slice(1,-1).map(s=>s.name).join('|'):'';window.open(`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}${waypoints?'&waypoints='+encodeURIComponent(waypoints):''}`,'_blank')}});
     bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));save();openCockpit(active.id)});
     const fileInput=safeEl('fileInput');if(fileInput)fileInput.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;safeEl('jsonInput').value=await f.text();safeEl('importStatus').textContent='Datei geladen. Jetzt „Fahrten laden“ tippen.'});
-    bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
+    bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}const multiDay=result.mode==='replace-days';safeEl('importStatus').textContent=multiDay?`${result.count} Fahrten übernommen · ${result.total} Fahrten aus mehreren Plantagen gespeichert.`:`${result.count} Fahrten übernommen.`;showToast(multiDay?`${result.count} Fahrten übernommen · ${result.total} insgesamt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
     document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));showView('import');safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
