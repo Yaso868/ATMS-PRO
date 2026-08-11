@@ -378,6 +378,19 @@ function openInfoStatus(){
 }
 function whatsappMessage(r){return infoStatusMessage(r)}
 function openWhatsapp(){openInfoStatus()}
+// CORE-002A · 11.08.2026 19:45 Uhr (Europe/Berlin):
+// Backup-Export repariert. Es werden ausschließlich ATMS-eigene localStorage-
+// Bereiche gesichert; fremde Browser-/Website-Daten bleiben unberührt.
+function atmsStorageSnapshot(){
+  const snapshot={};
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);
+    if(!key||!key.startsWith('atms_'))continue;
+    snapshot[key]=localStorage.getItem(key)??'';
+  }
+  return snapshot;
+}
+
 function backupPayload(){
   return {
     format:'ATMS_BACKUP',
