@@ -138,7 +138,93 @@ function visualRides(source){
   return out
 }
 window.norm=norm;
-function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
+function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}
+// CORE-003B · 11.08.2026 21:13 Uhr (Europe/Berlin):
+// Fahrten werden nicht mehr nur nach Uhrzeit, sondern immer nach Plantag + Uhrzeit
+// sortiert. Dadurch steht z. B. 12.08. 00:30 hinter 11.08. 23:45 statt ganz oben.
+function rideDateEpoch(r){
+  const raw=first(r?.date,r?.datum);
+  if(!raw)return null;
+  let m=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(m)return Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]));
+  m=raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if(m)return Date.UTC(Number(m[3]),Number(m[2])-1,Number(m[1]));
+  return null;
+}
+function isoDateFromEpoch(epoch){
+  if(!Number.isFinite(epoch))return'';
+  return new Date(epoch).toISOString().slice(0,10);
+}
+function addIsoDaysLocal(value,days){
+  const epoch=rideDateEpoch({date:value});
+  return epoch===null?'':isoDateFromEpoch(epoch+Number(days||0)*86400000);
+}
+// CORE-003C · 11.08.2026 21:27 Uhr (Europe/Berlin):
+// DAY-002-Bestätigungen werden auch beim Laden alter/zwischengespeicherter Daten
+// erneut konsistent gemacht. Dadurch kann eine bestätigte 00:30-Fahrt nicht als
+// 11.08. gespeichert bleiben, wenn planDate=11.08. und dateSource=next_day_confirmed ist.
+function normalizedRideDate(r){
+  let date=first(r?.date,r?.datum);
+  const planDate=first(r?.planDate,r?.plantag);
+  const source=first(r?.dateSource);
+  if(planDate&&source==='next_day_confirmed'){
+    const expected=addIsoDaysLocal(planDate,1);
+    if(expected&&(!date||date===planDate))date=expected;
+  }
+  return date||planDate;
+}
+function scopedRideId(r,index=0){
+  const date=normalizedRideDate(r);
+  const raw=String(r?.id||`ride-${index+1}`).trim();
+  const base=raw.replace(/^\d{4}-\d{2}-\d{2}::/,'');
+  return date?`${date}::${base}`:raw;
+}
+function normalizeRideIdentity(list,remapDone=false){
+  const source=Array.isArray(list)?list:[];
+  const idMap=new Map();
+  const out=source.map((ride,index)=>{
+    const oldId=String(ride?.id||`ride-${index+1}`);
+    const date=normalizedRideDate(ride);
+    const next={...ride,date:date||ride?.date};
+    const newId=scopedRideId(next,index);
+    next.id=newId;
+    if(oldId!==newId){
+      if(!idMap.has(oldId))idMap.set(oldId,[]);
+      idMap.get(oldId).push(newId);
+    }
+    return next;
+  });
+  if(remapDone&&idMap.size){
+    const nextDone=new Set();
+    [...done].forEach(id=>{
+      const mapped=idMap.get(String(id));
+      if(mapped?.length)mapped.forEach(x=>nextDone.add(x));
+      else nextDone.add(id);
+    });
+    done=nextDone;
+  }
+  return out;
+}
+function rideChronoEpoch(r){
+  const date=normalizedRideDate(r);
+  const day=rideDateEpoch({date});
+  if(day===null)return null;
+  let mins=minutesOf(planTimeOf(r));
+  if(mins===99999)mins=minutesOf(effectiveTime(r));
+  if(mins===99999)mins=0;
+  return day+mins*60000;
+}
+function compareRidesChronologically(a,b){
+  const ea=rideChronoEpoch(a),eb=rideChronoEpoch(b);
+  if(ea!==null&&eb!==null&&ea!==eb)return ea-eb;
+  if(ea!==null&&eb===null)return-1;
+  if(ea===null&&eb!==null)return 1;
+  const ta=minutesOf(planTimeOf(a)),tb=minutesOf(planTimeOf(b));
+  if(ta!==tb)return ta-tb;
+  const ra=Number(a?.sourceRow||0),rb=Number(b?.sourceRow||0);
+  if(ra!==rb)return ra-rb;
+  return String(a?.id||'').localeCompare(String(b?.id||''),'de');
+}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
   localStorage.setItem(KEY,JSON.stringify(rides));
@@ -162,7 +248,7 @@ function rideCard(r,i){
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
   return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${money(r.price)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta">✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</div>${bundleFlightLocation}${stopRows}</div><div class="chev">›</div></article>`
 }
-function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);const byTime=(a,b)=>minutesOf(effectiveTime(a))-minutesOf(effectiveTime(b));const open=vr.filter(r=>!isDone(r)&&matches(r)).sort(byTime);const fin=vr.filter(r=>isDone(r)&&matches(r)).sort(byTime);
+function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);const open=vr.filter(r=>!isDone(r)&&matches(r)).sort(compareRidesChronologically);const fin=vr.filter(r=>isDone(r)&&matches(r)).sort(compareRidesChronologically);
 $('summary').textContent=`${mode==='all'?open.length+fin.length:open.length} Fahrten · ${driverFilter||'Alle Fahrer'}`;
 
 const stats=$('dashboardStats');
@@ -913,12 +999,16 @@ Abbrechen = Import abbrechen`);
 }
 function mergeImportedRides(current,incoming){
   const map=new Map();
-  current.forEach(r=>map.set(String(r.id),r));
-  incoming.forEach(r=>map.set(String(r.id),r));
+  current.forEach((r,i)=>map.set(scopedRideId(r,i),r));
+  incoming.forEach((r,i)=>map.set(scopedRideId(r,i),r));
   return [...map.values()];
 }
 function applyImportedRides(newRides){
   if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
+  // CORE-003C: IDs sind plantagsbezogen. `ride-1` vom 10.08. darf `ride-1`
+  // vom 11.08. weder beim Merge noch bei Erledigt-/Bündel-Logik überschreiben.
+  rides=normalizeRideIdentity(rides,true);
+  newRides=normalizeRideIdentity(newRides,false);
 
   try{
     localStorage.setItem('atms_import_previous_v1',JSON.stringify({
@@ -1000,7 +1090,7 @@ function addLiveEvent(message,type='info'){const list=getLiveLog();list.unshift(
 function renderLiveLog(){const box=$('liveEventLog');if(!box)return;const list=getLiveLog();box.innerHTML=list.length?list.map(x=>`<div class="live-log-item"><b>${new Date(x.at).toLocaleString('de-DE')}</b><br>${esc(x.message)}</div>`).join(''):'<div class="live-empty">Noch keine Ereignisse protokolliert.</div>'}
 function liveDriverList(){const contacts=getDriverContacts().filter(x=>x.active!==false);const names=[...new Set(rides.map(r=>r.driver).filter(Boolean))];names.forEach(name=>{if(!contacts.some(c=>normKey(c.name)===normKey(name)))contacts.push({id:'ride-'+normKey(name),name,phone:'',vehicle:'',active:true,fromRide:true})});return contacts}
 function minutesOf(t){const m=String(t||'').match(/(\d{1,2}):(\d{2})/);return m?(+m[1]*60 + +m[2]):99999}
-function ridesForLiveDriver(name){return visualRides(rides).filter(r=>normKey(r.driver)===normKey(name)&&!(r._bundleMemberIds||[r.id]).every(id=>done.has(id))).sort((a,b)=>minutesOf(effectiveTime(a))-minutesOf(effectiveTime(b)))}
+function ridesForLiveDriver(name){return visualRides(rides).filter(r=>normKey(r.driver)===normKey(name)&&!(r._bundleMemberIds||[r.id]).every(id=>done.has(id))).sort(compareRidesChronologically)}
 function delayForRide(r){return Math.max(0,Number(r.delayMinutes||0))}
 function liveStatusClass(d,threshold){return d>=threshold?'bad':d>0?'warn':'good'}
 function liveRouteMode(){return getLiveSettings().mode==='route'}
@@ -1237,6 +1327,7 @@ function initApp(){
     ensureGeminiFlightPanel();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
+      rides=normalizeRideIdentity(rides,true);
       const overrideRestore=applyRideOverrides(rides);
       rides=overrideRestore.rides;
       const restored=applyFlightCacheToRides(rides);
