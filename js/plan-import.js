@@ -1160,7 +1160,8 @@
       if (!hit) return ride;
 
       matchedRides++;
-      matchedFlightKeys.add(flightKey);
+      const resultFlightKey = `${flight}|${date}|${direction}|${cellText(hit?.flightTime)}`;
+      matchedFlightKeys.add(resultFlightKey);
 
       const location = cellText(hit?.flightLocation || hit?.relevantLocation);
       const webCheckedAt = cellText(hit?.geminiReportedCheckedAt);
@@ -1170,7 +1171,7 @@
 
       if (!verified) {
         manualRides++;
-        manualFlightKeys.add(flightKey);
+        manualFlightKeys.add(resultFlightKey);
         return {
           ...ride,
           flightCheckConfidence: 'uncertain',
@@ -1183,7 +1184,7 @@
       }
 
       appliedRides++;
-      appliedFlightKeys.add(flightKey);
+      appliedFlightKeys.add(resultFlightKey);
       return {
         ...ride,
         flightLocation: normalizeFlightLocation(location),
@@ -1484,7 +1485,7 @@
 
 
 
-  // CORE-004C · 12.08.2026 14:38 Uhr (Europe/Berlin)
+  // CORE-004D · 12.08.2026 14:54 Uhr (Europe/Berlin)
   // Automatische aktuelle Flugprüfung über Firebase AI Logic + App Check.
   // An Gemini gehen ausschließlich minimale Flugdaten aus dem staged Plan:
   // Flugnummer, Datum, Richtung, ggf. Flugzeit und vorhandener Flugort als Vergleich.

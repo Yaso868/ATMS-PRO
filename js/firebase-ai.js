@@ -1,5 +1,5 @@
-// ATMS PRO · CORE-004C · FLIGHT-010
-// 12.08.2026 14:38 Uhr (Europe/Berlin)
+// ATMS PRO · CORE-004D · FLIGHT-011
+// 12.08.2026 14:54 Uhr (Europe/Berlin)
 // Firebase AI Logic + App Check + Gemini Developer API + Google Search grounding.
 // Dieses Modul sendet niemals die vollständige Planliste oder das Planlistenbild an Gemini.
 // Pro Request werden nur Flugnummer, Datum, Richtung, ggf. Flugzeit und ein vorhandener
@@ -13,11 +13,10 @@ import {
 import {
   getAI,
   getGenerativeModel,
-  GoogleAIBackend,
-  Schema
+  GoogleAIBackend
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js';
 
-const VERSION = 'CORE-004C-FLIGHT-010';
+const VERSION = 'CORE-004D-FLIGHT-011';
 const MODEL_NAME = 'gemini-2.5-flash';
 
 // Firebase-Web-Konfiguration: öffentliche App-Kennungen, keine Server-Secrets.
@@ -33,20 +32,10 @@ const firebaseConfig = {
 // Öffentlicher reCAPTCHA-Enterprise-Site-Key für Firebase App Check.
 const RECAPTCHA_ENTERPRISE_SITE_KEY = '6LegC4ItAAAAAFQygTQonjTOhe8X9CwKKa8I5iHe';
 
-const responseSchema = Schema.object({
-  properties: {
-    originCity: Schema.string({ description: 'Origin city of the concrete dated flight.' }),
-    originIata: Schema.string({ description: 'Three-letter origin IATA code, or empty string if not safely verified.' }),
-    destinationCity: Schema.string({ description: 'Destination city of the concrete dated flight.' }),
-    destinationIata: Schema.string({ description: 'Three-letter destination IATA code, or empty string if not safely verified.' }),
-    relevantLocation: Schema.string({ description: 'For arrival: origin city. For departure: destination city. Empty if unsafe.' }),
-    relevantIata: Schema.string({ description: 'For arrival: origin IATA. For departure: destination IATA. Empty if unsafe.' }),
-    status: Schema.enumString({ enum: ['verified', 'needs_manual_check'] }),
-    confidence: Schema.enumString({ enum: ['high', 'medium', 'low'] }),
-    conflict: Schema.boolean({ description: 'True if the safely verified route conflicts with locationFromPlan.' }),
-    sourceNote: Schema.string({ description: 'Short German explanation of the dated verification result.' })
-  }
-});
+// Gemini 2.5 Flash supports Google Search grounding and structured output separately,
+// but strict responseSchema + built-in tools in the same request is a Gemini 3 feature.
+// CORE-004D therefore uses grounded text generation and validates/parses the JSON locally.
+
 
 let initPromise = null;
 let model = null;
@@ -72,6 +61,30 @@ function isRealFlightNumber(value) {
 
 function safeHost(uri) {
   try { return new URL(uri).hostname.replace(/^www\./, ''); } catch (_) { return ''; }
+}
+
+function parseJsonObject(raw) {
+  const source = text(raw);
+  if (!source) return {};
+  const attempts = [
+    source,
+    source.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+  ];
+  const first = source.indexOf('{');
+  const last = source.lastIndexOf('}');
+  if (first >= 0 && last > first) attempts.push(source.slice(first, last + 1));
+  for (const candidate of attempts) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch (_) {}
+  }
+  return {};
+}
+
+function sameText(a, b) {
+  return text(a).toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '') ===
+         text(b).toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 }
 
 function extractGrounding(response) {
@@ -149,11 +162,7 @@ async function ensureReady() {
     const ai = getAI(app, { backend: new GoogleAIBackend() });
     model = getGenerativeModel(ai, {
       model: MODEL_NAME,
-      tools: [{ googleSearch: {} }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema
-      }
+      tools: [{ googleSearch: {} }]
     });
     return true;
   })();
@@ -182,7 +191,10 @@ function buildPrompt(item) {
 `Nach Möglichkeit soll mindestens eine Quelle Flughafen/Airline-Primärquelle sein.\n` +
 `6. Eine einzelne Quelle, widersprüchliche Quellen, unklare DUS-Verbindung oder fehlende Datumsbestätigung => needs_manual_check. Nicht raten.\n` +
 `7. locationFromPlan ist nur Vergleichswert, keine Quelle. Bei sicherem Widerspruch conflict=true.\n` +
-`8. Erfinde keine Städte oder IATA-Codes. Bei Unsicherheit leere relevante Felder und needs_manual_check.\n\n` +
+`8. Erfinde keine Städte oder IATA-Codes. Bei Unsicherheit leere relevante Felder und needs_manual_check.\n` +
+`9. Antworte AUSSCHLIESSLICH mit genau einem JSON-Objekt, ohne Markdown, ohne Codeblock und ohne Text davor oder danach.\n` +
+`Verwende exakt diese Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, sourceNote.\n` +
+`status ist nur verified oder needs_manual_check; confidence ist nur high, medium oder low; conflict ist true oder false.\n\n` +
 `Prüfdaten:\n${JSON.stringify(payload, null, 2)}`;
 }
 
@@ -216,24 +228,32 @@ async function verifyOne(item) {
   const result = await model.generateContent(buildPrompt(item));
   const response = result?.response;
   const grounding = extractGrounding(response);
-  let parsed;
-  try {
-    parsed = JSON.parse(response?.text?.() || '{}');
-  } catch (_) {
-    parsed = {};
-  }
+  const rawText = response?.text?.() || '';
+  const parsed = parseJsonObject(rawText);
 
-  const relevantLocation = text(parsed?.relevantLocation);
-  const relevantIata = upper(parsed?.relevantIata);
+  const originCity = text(parsed?.originCity);
+  const originIata = upper(parsed?.originIata);
+  const destinationCity = text(parsed?.destinationCity);
+  const destinationIata = upper(parsed?.destinationIata);
+  const relevantLocation = item.direction === 'arrival' ? originCity : destinationCity;
+  const relevantIata = item.direction === 'arrival' ? originIata : destinationIata;
+  const modelRelevantLocation = text(parsed?.relevantLocation);
+  const modelRelevantIata = upper(parsed?.relevantIata);
   const modelStatus = text(parsed?.status).toLowerCase();
   const modelConfidence = text(parsed?.confidence).toLowerCase();
-  const conflict = Boolean(parsed?.conflict);
+  const semanticMismatch = Boolean(modelRelevantLocation && relevantLocation && !sameText(modelRelevantLocation, relevantLocation)) ||
+    Boolean(modelRelevantIata && relevantIata && modelRelevantIata !== relevantIata);
+  const conflict = Boolean(parsed?.conflict) || semanticMismatch;
   const sourceCount = grounding.sources.length;
-  const claimedVerified = modelStatus === 'verified' && modelConfidence === 'high' && relevantLocation && !conflict;
+  const routeComplete = Boolean(originCity && destinationCity && /^[A-Z]{3}$/.test(originIata) && /^[A-Z]{3}$/.test(destinationIata));
+  const claimedVerified = modelStatus === 'verified' && modelConfidence === 'high' && routeComplete && relevantLocation && !conflict;
   const verified = claimedVerified && sourceCount >= 2;
   const webCheckedAt = new Date().toISOString();
 
-  const noteBase = text(parsed?.sourceNote) || (verified ? 'Aktuelle Webprüfung bestätigt.' : 'Aktuelle Webprüfung nicht eindeutig genug.');
+  const parseOk = Object.keys(parsed).length > 0;
+  const noteBase = text(parsed?.sourceNote) || (verified
+    ? 'Aktuelle Webprüfung bestätigt.'
+    : parseOk ? 'Aktuelle Webprüfung nicht eindeutig genug.' : 'Google-Suche erfolgreich, Antwortformat konnte lokal nicht sicher ausgewertet werden.');
   const note = `${noteBase} · Google Search: ${sourceCount} unabhängige Quelle(n).`;
 
   return {
