@@ -1,5 +1,5 @@
-// ATMS PRO · CORE-004B · FLIGHT-009
-// 12.08.2026 13:58 Uhr (Europe/Berlin)
+// ATMS PRO · CORE-004C · FLIGHT-010
+// 12.08.2026 14:38 Uhr (Europe/Berlin)
 // Firebase AI Logic + App Check + Gemini Developer API + Google Search grounding.
 // Dieses Modul sendet niemals die vollständige Planliste oder das Planlistenbild an Gemini.
 // Pro Request werden nur Flugnummer, Datum, Richtung, ggf. Flugzeit und ein vorhandener
@@ -17,8 +17,8 @@ import {
   Schema
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js';
 
-const VERSION = 'CORE-004B-FLIGHT-009';
-const MODEL_NAME = 'gemini-3.6-flash';
+const VERSION = 'CORE-004C-FLIGHT-010';
+const MODEL_NAME = 'gemini-2.5-flash';
 
 // Firebase-Web-Konfiguration: öffentliche App-Kennungen, keine Server-Secrets.
 const firebaseConfig = {
@@ -279,12 +279,27 @@ async function verifyFlights(rides, options = {}) {
       checked.push(one.checked);
       grounding.push(one.grounding);
     } catch (error) {
+      const errorMessage = text(error?.message) || 'unbekannter Fehler';
+      const errorCode = text(error?.code);
       const g = { renderedContent: '', sources: [], webSearchQueries: [], flightNumber: item.flightNumber, date: item.date, direction: item.direction };
-      checked.push(checkedManual(item, `Webprüfung fehlgeschlagen: ${text(error?.message) || 'unbekannter Fehler'}`, g));
+      const manual = checkedManual(item, `Webprüfung technisch fehlgeschlagen: ${errorCode ? `${errorCode} · ` : ''}${errorMessage}`, g);
+      manual.technicalFailure = true;
+      manual.technicalErrorCode = errorCode;
+      manual.technicalErrorMessage = errorMessage;
+      checked.push(manual);
       grounding.push(g);
     }
   }
-  return { version: VERSION, model: MODEL_NAME, checked, grounding, completedAt: new Date().toISOString() };
+  const technicalFailures = checked.filter(item => item?.technicalFailure);
+  return {
+    version: VERSION,
+    model: MODEL_NAME,
+    checked,
+    grounding,
+    technicalFailureCount: technicalFailures.length,
+    firstTechnicalError: technicalFailures[0]?.technicalErrorMessage || '',
+    completedAt: new Date().toISOString()
+  };
 }
 
 function escapeHtml(value) {

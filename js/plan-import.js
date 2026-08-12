@@ -1484,7 +1484,7 @@
 
 
 
-  // CORE-004B · 12.08.2026 13:58 Uhr (Europe/Berlin)
+  // CORE-004C · 12.08.2026 14:38 Uhr (Europe/Berlin)
   // Automatische aktuelle Flugprüfung über Firebase AI Logic + App Check.
   // An Gemini gehen ausschließlich minimale Flugdaten aus dem staged Plan:
   // Flugnummer, Datum, Richtung, ggf. Flugzeit und vorhandener Flugort als Vergleich.
@@ -1525,6 +1525,11 @@
       });
 
       const checked = Array.isArray(result?.checked) ? result.checked : [];
+      const technicalFailureCount = Number(result?.technicalFailureCount || 0);
+      if (technicalFailureCount) {
+        const firstError = cellText(result?.firstTechnicalError);
+        throw new Error(`${technicalFailureCount} KI-Anfrage(n) technisch fehlgeschlagen${firstError ? ` · ${firstError}` : ''}`);
+      }
       const atmsAppliedAt = new Date().toISOString();
       const staged = applyGeminiResultsToStagedPlan(checked, atmsAppliedAt);
       if (!staged?.handled) throw new Error('Die aktuelle Planliste konnte nicht aktualisiert werden.');
