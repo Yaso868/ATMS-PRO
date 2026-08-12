@@ -1482,6 +1482,82 @@
     }
   }
 
+
+
+  // CORE-004B · 12.08.2026 13:58 Uhr (Europe/Berlin)
+  // Automatische aktuelle Flugprüfung über Firebase AI Logic + App Check.
+  // An Gemini gehen ausschließlich minimale Flugdaten aus dem staged Plan:
+  // Flugnummer, Datum, Richtung, ggf. Flugzeit und vorhandener Flugort als Vergleich.
+  // Fahrer, Telefonnummern, GPS, Disponenten-, WhatsApp- und sonstige Kundendaten
+  // werden hier nicht übermittelt. Sichere Treffer werden direkt auf DIESE aktuell
+  // analysierte Planliste angewendet; bei Unsicherheit bleibt needs_manual_check.
+  async function runAutomaticFlightCheck() {
+    if (!state.rides.length || !window.ATMSFlight) return;
+    const btn = $('copyFlightCheckBtn');
+    const fallback = $('copyFlightCheckFallbackBtn');
+    const status = $('flightCheckStatus');
+    if (fallback) fallback.style.display = 'none';
+
+    const service = window.ATMSAutoFlight;
+    if (!service || typeof service.verifyFlights !== 'function') {
+      if (status) status.textContent = 'Automatische Flugprüfung ist noch nicht bereit. App einmal neu laden.';
+      if (fallback) fallback.style.display = '';
+      if (typeof window.showToast === 'function') window.showToast('Firebase AI Logic noch nicht bereit', 'warn');
+      return;
+    }
+    if (!navigator.onLine) {
+      if (status) status.textContent = 'Offline – aktuelle Flugprüfung benötigt Internet. Gespeicherte Fahrten bleiben verfügbar.';
+      if (fallback) fallback.style.display = '';
+      if (typeof window.showToast === 'function') window.showToast('Flugprüfung benötigt Internet', 'warn');
+      return;
+    }
+
+    try {
+      if (btn) { btn.disabled = true; btn.textContent = '🔎 Flugprüfung läuft …'; }
+      if (status) status.textContent = 'Firebase AI Logic wird vorbereitet …';
+      const result = await service.verifyFlights(state.rides, {
+        onProgress(info) {
+          if (!status) return;
+          const current = Number(info?.current || 0), total = Number(info?.total || 0);
+          const flight = cellText(info?.flightNumber);
+          status.textContent = total ? `Aktuelle Webprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …` : 'Aktuelle Webprüfung läuft …';
+        }
+      });
+
+      const checked = Array.isArray(result?.checked) ? result.checked : [];
+      const atmsAppliedAt = new Date().toISOString();
+      const staged = applyGeminiResultsToStagedPlan(checked, atmsAppliedAt);
+      if (!staged?.handled) throw new Error('Die aktuelle Planliste konnte nicht aktualisiert werden.');
+
+      try {
+        window.dispatchEvent(new CustomEvent('atms:gemini-flight-result', {
+          detail: { checked, scope: 'staged-plan-auto', appliedAt: atmsAppliedAt, provider: 'firebase-ai-logic' }
+        }));
+      } catch (_) {}
+
+      if (typeof service.renderGrounding === 'function') service.renderGrounding(result?.grounding || []);
+
+      const applied = Number(staged.appliedFlights || 0);
+      const manual = Number(staged.manualFlights || 0);
+      const matched = Number(staged.matchedFlights || 0);
+      if (status) status.textContent = `${matched} Flug/Flüge aktuell geprüft · ${applied} Flugort(e) automatisch übernommen${manual ? ` · ${manual} manuell prüfen` : ''}.`;
+      $('importStatus').textContent = manual
+        ? `${applied} Flugort(e) sicher übernommen · ${manual} Flug/Flüge bleiben zur manuellen Prüfung offen.`
+        : `${applied} Flugort(e) aktuell geprüft und sicher übernommen.`;
+      if (typeof window.showToast === 'function') {
+        window.showToast(manual ? `${applied} übernommen · ${manual} manuell prüfen` : `${applied} Flugorte automatisch übernommen`, manual ? 'warn' : 'ok');
+      }
+    } catch (error) {
+      const message = cellText(error?.message) || 'Automatische Flugprüfung fehlgeschlagen.';
+      if (status) status.textContent = `Automatische Flugprüfung fehlgeschlagen: ${message}`;
+      $('importStatus').textContent = 'ATMS bleibt nutzbar. Die ungeprüften Flüge bleiben zur manuellen Prüfung offen.';
+      if (fallback) fallback.style.display = '';
+      if (typeof window.showToast === 'function') window.showToast('Flugprüfung fehlgeschlagen – manueller Fallback verfügbar', 'warn');
+    } finally {
+      if (btn) { btn.disabled = !state.rides.some(ride => ride.flightNumber); btn.textContent = '🔎 Flugorte automatisch prüfen'; }
+    }
+  }
+
   async function copyFlightCheckPrompt() {
     if (!state.rides.length || !window.ATMSFlight) return;
     const prompt = window.ATMSFlight.buildGeminiPrompt(state.rides);
@@ -1510,7 +1586,8 @@
     input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
-    $('copyFlightCheckBtn')?.addEventListener('click', copyFlightCheckPrompt);
+    $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
+    $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
     if (drop) {
       ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('over'); }));
       ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
