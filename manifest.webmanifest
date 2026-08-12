@@ -2,7 +2,7 @@
   "id": "./",
   "name": "ATMS PRO",
   "short_name": "ATMS PRO",
-  "description": "ATMS PRO PWA DEV 14.5.7 – mobile Fahrtenverwaltung und Live-Disposition",
+  "description": "ATMS PRO · CORE-004A · lokaler Import-/PWA-Hardening-Stand",
   "lang": "de-DE",
   "start_url": "./index.html",
   "scope": "./",
