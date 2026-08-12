@@ -1,4 +1,4 @@
-const CACHE_NAME = "atms-pro-pwa-2026-08-12-core-004c";
+const CACHE_NAME = "atms-pro-pwa-2026-08-12-core-004d";
 // CORE-004C · 12.08.2026:
 // Firebase AI Logic wird als eigenes lokales Modul geladen; die externen Firebase-CDN-Module
 // werden online per ESM nachgeladen. Offline bleibt die ATMS-App nutzbar, nur die aktuelle Flugprüfung ist dann nicht verfügbar.
@@ -14,7 +14,7 @@ const APP_SHELL = [
   "./js/flight-engine.js?v=CORE-004C",
   "./js/plan-import.js?v=CORE-004C",
   "./js/pwa.js?v=CORE-004C",
-  "./js/firebase-ai.js?v=CORE-004C",
+  "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
