@@ -1,4 +1,4 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ATMS PRO · CORE-004A</title>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>ATMS PRO · CORE-004B</title>
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#00121d">
 <meta name="mobile-web-app-capable" content="yes">
@@ -49,7 +49,9 @@
     <div id="planProfileInfo" class="plan-profile-info"><b>Importprofil wird erkannt …</b></div>
     <div class="plan-stats plan-stats-extended"><div><b id="planRideCount">0</b><span>Fahrten</span></div><div><b id="planDriverCount">0</b><span>Fahrer</span></div><div><b id="planFlightCount">0</b><span>Flüge</span></div><div><b id="planWarningCount">0</b><span>Hinweise</span></div><div><b id="planErrorCount">0</b><span>Fehler</span></div><div><b id="planSheetName">–</b><span>Tabellenblatt</span></div></div>
     <div id="planIssues" class="plan-issues"></div>
-    <div class="actions2"><button id="copyFlightCheckBtn" class="act dark" type="button">🤖 Gemini-Flugprüfung kopieren</button><div id="flightCheckStatus" class="sub" style="align-self:center">Flugprüfung noch nicht vorbereitet.</div></div>
+    <div class="actions2"><button id="copyFlightCheckBtn" class="act dark" type="button">🔎 Flugorte automatisch prüfen</button><div id="flightCheckStatus" class="sub" style="align-self:center">Flugprüfung noch nicht vorbereitet.</div></div>
+    <button id="copyFlightCheckFallbackBtn" class="act dark" type="button" style="display:none;margin-top:8px">Fallback: Prüfauftrag kopieren</button>
+    <div id="aiGroundingPanel" style="display:none;margin-top:10px"></div>
     <div class="plan-preview-wrap"><table class="plan-preview"><thead><tr><th>Zeit</th><th>Fahrer</th><th>Abholung</th><th>Ziel</th><th>Flug</th><th>Flugort</th><th>Typ</th><th>Preis</th><th>Status</th></tr></thead><tbody id="planPreviewBody"></tbody></table></div>
   </div>
   <div class="actions2"><button id="analyzePlanBtn" class="act blue" disabled>Planliste analysieren</button><button id="importPlanBtn" class="act green" disabled>Geprüfte Fahrten übernehmen</button></div>
@@ -110,7 +112,7 @@
   <div class="info-slogan">Smart Dispatch. Simple Workflow.</div>
 </div>
 <div class="info-details">
-  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-004A · FLIGHT-008</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-004B · FLIGHT-009</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Plus unten · kompakte Navigation</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">♙</div><div><div class="info-detail-label">Entwickelt von</div><div class="info-detail-value">Yaser Tatli</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">✓</div><div><div class="info-detail-label">Status</div><div class="info-detail-value status">● Produktiv</div></div></div>
@@ -123,8 +125,9 @@
 <div id="driverDialog" class="overlay hidden" role="dialog" aria-modal="true"><div class="sheet" id="driverSheet"><div class="row"><h2>Fahrten anzeigen</h2><button id="closeDrivers" class="icon x" type="button">×</button></div><div id="driverChoices"></div></div></div>
 <div id="atmsToast" class="atms-toast" role="status" aria-live="polite"></div><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="./js/flight-engine.js?v=CORE-004A" defer></script>
-<script src="./js/plan-import.js?v=CORE-004A" defer></script>
-<script src="./js/app.js?v=CORE-004A" defer></script>
-<script src="./js/pwa.js?v=CORE-004A" defer></script>
+<script type="module" src="./js/firebase-ai.js?v=CORE-004B"></script>
+<script src="./js/flight-engine.js?v=CORE-004B" defer></script>
+<script src="./js/plan-import.js?v=CORE-004B" defer></script>
+<script src="./js/app.js?v=CORE-004B" defer></script>
+<script src="./js/pwa.js?v=CORE-004B" defer></script>
 </body></html>
