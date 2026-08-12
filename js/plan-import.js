@@ -288,13 +288,26 @@
     return text;
   }
 
+  // CORE-003D · 12.08.2026: OCR-Randzeichen an Flugnummern sicher entfernen.
+  // Beispiele aus realen Planlisten: "-EW9574", "LH2006-", "[EW9559".
+  // Es werden ausschließlich typische Satz-/OCR-Zeichen AM ANFANG ODER ENDE entfernt.
+  // Zeichen innerhalb einer Flugnummer bleiben unverändert und werden weiterhin als
+  // auffällig gemeldet, damit ATMS keine unsichere OCR-Korrektur errät.
   function normalizeFlightNumber(value) {
     const raw = cellText(value).trim();
-    if (!raw || /^[-–—]+$/.test(raw)) return '';
+    if (!raw) return '';
+
     let normalized = raw.toUpperCase().replace(/\s+/g, '');
+    const edgeNoise = /^[\[\(\{<"'`´’‘“”|_.,;:\/\\+\-–—]+|[\]\)\}>"'`´’‘“”|_.,;:\/\\+\-–—]+$/g;
+    normalized = normalized.replace(edgeNoise, '');
+
+    // Leere Tabellen-Platzhalter wie "-", "--", "_" sind keine Flugnummer.
+    if (!normalized) return '';
+
     // Häufiger OCR-Fehler bei Austrian Airlines: 0S162 -> OS162
     if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
-    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden
+
+    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden.
     if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)$/.test(normalized)) return '';
     return normalized;
   }
@@ -1041,11 +1054,7 @@
     } catch (_) {}
     if (!saved.length) return 0;
 
-    const normalizeFlight = value => {
-      let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
-      if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
-      return v;
-    };
+    const normalizeFlight = value => normalizeFlightNumber(value);
     const keyText = value => String(value || '').trim().toLowerCase();
 
     let changed = 0;
@@ -1094,9 +1103,7 @@
   }
 
   function normalizeFlightForCurrentCheck(value) {
-    let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
-    if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
-    return v;
+    return normalizeFlightNumber(value);
   }
 
   function stagedPlanIsActive() {
