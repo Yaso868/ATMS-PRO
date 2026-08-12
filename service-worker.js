@@ -1,16 +1,16 @@
-const CACHE_NAME = "atms-pro-pwa-2026-08-11-core-003c";
-// CORE-003C · 11.08.2026 21:13 Uhr (Europe/Berlin):
-// CORE-003C: Sortierung + plantagsbezogene Ride-IDs; Cache-Version erhöht, damit
-// die korrigierte app.js sofort geladen wird.
+const CACHE_NAME = "atms-pro-pwa-2026-08-12-core-003d";
+// CORE-003D · 12.08.2026:
+// CORE-003D: OCR-Randzeichen an Flugnummern werden sicher normalisiert; Cache-Version
+// erhöht, damit plan-import.js sofort neu geladen wird.
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./css/main.css",
-  "./js/app.js?v=CORE-003C",
-  "./js/flight-engine.js?v=CORE-003C",
-  "./js/plan-import.js?v=CORE-003C",
-  "./js/pwa.js?v=CORE-003C",
+  "./js/app.js?v=CORE-003D",
+  "./js/flight-engine.js?v=CORE-003D",
+  "./js/plan-import.js?v=CORE-003D",
+  "./js/pwa.js?v=CORE-003D",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
