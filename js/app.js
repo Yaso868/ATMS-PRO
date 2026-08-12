@@ -1,4 +1,6 @@
-// CORE-001A 11.08.2026 14:41 Uhr (Europe/Berlin): New-import isolation + conflict safety + staged flight apply.
+// CORE-004A · 12.08.2026 10:23 Uhr (Europe/Berlin): LOCAL HARDENING
+// Gemeinsame lokale Import-/Bündel-/PWA-Sicherheitsstufe vor der automatischen Backend-Flugprüfung.
+// Keine historischen Einzelfall-Reparaturen, kein Binärtext im JSON-Import und kein stilles 0-Euro-JSON.
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -67,21 +69,13 @@ function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return
 function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [String(r.date||r.datum||'').trim(),normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),dir].join('|')}
 function sameBundleGroup(a,b){const ka=bundleGroupKey(a),kb=bundleGroupKey(b);return Boolean(ka&&ka===kb)}
 function hotelLabel(name){const n=String(name||'').trim();if(/nh\s*nord/i.test(n))return 'NH Nord DUS';if(/holiday\s*inn/i.test(n))return 'Holiday Inn DUS';return n}
-function knownBundleRepair(r){
-  const flight=normKey(r.flightNumber),driver=normKey(r.driver),time=planTimeOf(r),dir=directionOf(r);
-  if(driver==='yannik'&&dir==='hotels_to_airport'&&((flight==='ew9344'&&time==='17:05')||(flight==='ew9422'&&time==='16:05'))){
-    const total=Number(r.persons)||0;
-    const holiday=flight==='ew9344'?3:Math.max(1,total-2);
-    const nh=Math.max(1,total-holiday);
-    return [{name:'Holiday Inn DUS',persons:holiday,order:1,type:'pickup'},{name:'NH Nord DUS',persons:nh,order:2,type:'pickup'},{name:'DUS Airport',persons:total,order:3,type:'destination'}];
-  }
-  return null
-}
 function routeFromMembers(members,explicitStops){
   const firstRide=members[0],dir=directionOf(firstRide),total=members.reduce((a,x)=>a+(Number(x.persons)||0),0);
-  const repaired=knownBundleRepair(firstRide);if(repaired)return repaired;
   if(explicitStops&&firstRide.bundleStops.length){
-    const raw=[...firstRide.bundleStops].sort((a,b)=>a.order-b.order).map((s,i)=>({name:hotelLabel(s.name),persons:Number(s.persons)||0,order:i+1,type:s.type||''}));
+    const rawInput=[...firstRide.bundleStops].sort((a,b)=>a.order-b.order).map((st,i)=>({name:hotelLabel(st.name),persons:Number(st.persons)||0,order:i+1,type:st.type||''}));
+    const rawMap=new Map();
+    rawInput.forEach(st=>{const key=normKey(st.name);if(!key)return;const prev=rawMap.get(key);if(prev){prev.persons+=(Number(st.persons)||0)}else rawMap.set(key,{...st})});
+    const raw=[...rawMap.values()];
     if(dir==='hotels_to_airport'){
       const hotels=raw.filter(s=>!isAirport(s.name));
       return [...hotels.map((s,i)=>({...s,order:i+1,type:'pickup'})),{name:firstRide.destination||'DUS Airport',persons:total||Number(firstRide.persons)||0,order:hotels.length+1,type:'destination'}]
@@ -92,12 +86,16 @@ function routeFromMembers(members,explicitStops){
     }
   }
   if(dir==='hotels_to_airport'){
-    const hotels=[];members.forEach(x=>{if(x.pickup&&!hotels.some(z=>normKey(z.name)===normKey(x.pickup)))hotels.push({name:hotelLabel(x.pickup),persons:Number(x.persons)||0})});
-    return [...hotels.map((s,i)=>({...s,order:i+1,type:'pickup'})),{name:firstRide.destination||'DUS Airport',persons:total,order:hotels.length+1,type:'destination'}]
+    const hotelMap=new Map();
+    members.forEach(x=>{const name=hotelLabel(x.pickup);if(!name)return;const key=normKey(name);const prev=hotelMap.get(key)||{name,persons:0};prev.persons+=(Number(x.persons)||0);hotelMap.set(key,prev)});
+    const hotels=[...hotelMap.values()];
+    return [...hotels.map((st,i)=>({...st,order:i+1,type:'pickup'})),{name:firstRide.destination||'DUS Airport',persons:total,order:hotels.length+1,type:'destination'}]
   }
   if(dir==='airport_to_hotels'){
-    const hotels=[];members.forEach(x=>{if(x.destination&&!hotels.some(z=>normKey(z.name)===normKey(x.destination)))hotels.push({name:hotelLabel(x.destination),persons:Number(x.persons)||0})});
-    return [{name:firstRide.pickup||'DUS Airport',persons:total,order:1,type:'start'},...hotels.map((s,i)=>({...s,order:i+2,type:'destination'}))]
+    const hotelMap=new Map();
+    members.forEach(x=>{const name=hotelLabel(x.destination);if(!name)return;const key=normKey(name);const prev=hotelMap.get(key)||{name,persons:0};prev.persons+=(Number(x.persons)||0);hotelMap.set(key,prev)});
+    const hotels=[...hotelMap.values()];
+    return [{name:firstRide.pickup||'DUS Airport',persons:total,order:1,type:'start'},...hotels.map((st,i)=>({...st,order:i+2,type:'destination'}))]
   }
   return []
 }
@@ -123,8 +121,7 @@ function visualRides(source){
     const key=bundleGroupKey(r);
     const group=key?source.filter(x=>!used.has(x.id)&&sameBundleGroup(r,x)):[r];
     const explicitStops=Array.isArray(r.bundleStops)&&r.bundleStops.length>1;
-    const repair=knownBundleRepair(r);
-    if(group.length>1||explicitStops||repair){
+    if(group.length>1||explicitStops){
       const members=group.length>1?group:[r];members.forEach(x=>used.add(x.id));
       const routeStops=routeFromMembers(members,explicitStops);
       const firstRide=members[0],dir=directionOf(firstRide),total=members.reduce((a,x)=>a+(Number(x.persons)||0),0)||Number(firstRide.persons)||0;
@@ -224,7 +221,25 @@ function compareRidesChronologically(a,b){
   const ra=Number(a?.sourceRow||0),rb=Number(b?.sourceRow||0);
   if(ra!==rb)return ra-rb;
   return String(a?.id||'').localeCompare(String(b?.id||''),'de');
-}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
+}
+function legacyPriceNumber(value){
+  let raw=String(value??'').trim().replace(/[€\s]/g,'');
+  if(!raw)return NaN;
+  if(/^-?\d{1,3}(?:\.\d{3})*,\d+$/.test(raw))raw=raw.replace(/\./g,'').replace(',','.');
+  else raw=raw.replace(',','.');
+  return Number(raw);
+}
+function assertLegacyImportPrices(list){
+  const invalid=[];
+  (Array.isArray(list)?list:[]).forEach((r,i)=>{
+    const value=legacyPriceNumber(r?.price??r?.preis);
+    const status=String(r?.priceStatus||'').trim().toLowerCase();
+    const explicitZero=value===0&&status==='confirmed_zero';
+    if(!(Number.isFinite(value)&&value>0)&&!explicitZero)invalid.push(i+1);
+  });
+  if(invalid.length)throw Error(`JSON-Import blockiert: ${invalid.length} Fahrt(en) ohne bestätigten Preis. Bitte den Planlisten-Import mit Preisprüfung verwenden oder 0,00 € ausdrücklich als priceStatus=confirmed_zero kennzeichnen.`);
+}
+function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');assertLegacyImportPrices(p);return p.map(norm)}function save(){
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
   localStorage.setItem(KEY,JSON.stringify(rides));
@@ -482,7 +497,7 @@ function backupPayload(){
     format:'ATMS_BACKUP',
     formatVersion:1,
     app:'ATMS PRO',
-    appVersion:'14.6.8 CR-004.3',
+    appVersion:'2026-08-12 CORE-004A',
     createdAt:new Date().toISOString(),
     storage:atmsStorageSnapshot()
   };
@@ -671,6 +686,7 @@ function flightCheckItems(source=rides){
   return [...map.values()];
 }
 function buildGeminiFlightPrompt(){
+  if(window.ATMSFlight&&typeof window.ATMSFlight.buildGeminiPrompt==='function')return window.ATMSFlight.buildGeminiPrompt(rides);
   const items=flightCheckItems();
   if(!items.length)throw new Error('Keine Flugnummern in der aktuellen Planliste gefunden.');
   return `ATMS PRO – FLIGHT-007 DAY-002 strikte aktuelle Flugprüfung
@@ -922,7 +938,9 @@ function applyGeminiFlightResult(){
       if(!hit)return r;
 
       const verified=hit.confidence==='verified'&&!hit.conflict&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
-      const checkedAt=atmsCheckedAt;
+      const webCheckedAt=String(hit.geminiReportedCheckedAt||'').trim();
+      const appliedAt=atmsCheckedAt;
+      const checkedAt=webCheckedAt||appliedAt;
       updated++;if(!verified)uncertain++;if(hit.verificationDowngraded)downgraded++;
 
       cacheEntries.push({
@@ -937,6 +955,8 @@ function applyGeminiFlightResult(){
         verified:Boolean(verified),
         conflict:Boolean(hit.conflict),
         checkedAt,
+        webCheckedAt,
+        appliedAt,
         sourceFile:String(r.sourceFile||''),
         sourceRow:Number(r.sourceRow||0)||0
       });
@@ -947,7 +967,9 @@ function applyGeminiFlightResult(){
           flightLocation:hit.flightLocation,
           iata:hit.iata||'',
           flightNeedsManualCheck:false,
-          flightCheckedAt:checkedAt
+          flightCheckedAt:checkedAt,
+          flightWebCheckedAt:webCheckedAt,
+          flightAppliedAt:appliedAt
         });
       }
 
@@ -961,7 +983,9 @@ function applyGeminiFlightResult(){
         flightCheckConfidence:verified?'verified':'uncertain',
         flightNeedsManualCheck:!verified,
         flightCheckSourceNote:String(hit.sourceNote||'').trim(),
-        flightCheckedAt:checkedAt
+        flightCheckedAt:checkedAt,
+        flightWebCheckedAt:webCheckedAt,
+        flightAppliedAt:appliedAt
       };
     });
     upsertFlightCache(cacheEntries);
@@ -1317,7 +1341,7 @@ function initApp(){
     const search=safeEl('search');if(search)search.addEventListener('input',render);
     bindClick('mapBtn',()=>{if(active){const rs=active.isBundle&&Array.isArray(active.routeStops)?active.routeStops:[];const origin=rs.length?rs[0].name:(active.pickup||'');const destination=rs.length?rs[rs.length-1].name:(active.destination||'');const waypoints=rs.length>2?rs.slice(1,-1).map(s=>s.name).join('|'):'';window.open(`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}${waypoints?'&waypoints='+encodeURIComponent(waypoints):''}`,'_blank')}});
     bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));save();openCockpit(active.id)});
-    const fileInput=safeEl('fileInput');if(fileInput)fileInput.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;safeEl('jsonInput').value=await f.text();safeEl('importStatus').textContent='Datei geladen. Jetzt „Fahrten laden“ tippen.'});
+    const fileInput=safeEl('fileInput');if(fileInput)fileInput.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const name=String(f.name||'').toLowerCase();const isJson=/\.json$/i.test(name)||/application\/json/i.test(f.type||'');if(!isJson)return;safeEl('jsonInput').value=await f.text();safeEl('importStatus').textContent='JSON-Datei geladen. Jetzt „Fahrten laden“ tippen.'});
     bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}const multiDay=result.mode==='replace-days';safeEl('importStatus').textContent=multiDay?`${result.count} Fahrten übernommen · ${result.total} Fahrten aus mehreren Plantagen gespeichert.`:`${result.count} Fahrten übernommen.`;showToast(multiDay?`${result.count} Fahrten übernommen · ${result.total} insgesamt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
     document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));showView('import');safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));

@@ -582,22 +582,17 @@
   }
 
 
+  // CORE-004A: Fahrzeug und Personen ausschließlich über die dynamisch erkannte
+  // Spaltenzuordnung lesen. Keine festen Index-8/9-Fallbacks mehr.
   function getVehicleValue(row, mapping) {
     const mapped = cellText(valueAt(row, mapping, 'vehicle'));
     if (mapped && !/^\d+(?:[.,]\d+)?$/.test(mapped)) return mapped;
-
-    // ATMS Standard Planliste: erste Wg-Spalte = Spalte 9 (Index 8)
-    const fixedVehicle = cellText(row[8]);
-    if (fixedVehicle && !/^\d+(?:[.,]\d+)?$/.test(fixedVehicle)) return fixedVehicle;
-    return mapped || 'Pkw';
+    return '';
   }
 
   function getPersonsValue(row, mapping) {
     const mapped = parseNumber(valueAt(row, mapping, 'persons'));
-    if (mapped > 0) return mapped;
-    // ATMS Standard Planliste: Pers = Spalte 10 (Index 9)
-    const fixedPersons = parseNumber(row[9]);
-    return fixedPersons > 0 ? fixedPersons : 0;
+    return mapped > 0 ? mapped : 0;
   }
 
   function makeRide(row, rowNumber, mapping, fileName) {
@@ -632,6 +627,8 @@
       vehicle: getVehicleValue(row, mapping),
       persons: getPersonsValue(row, mapping),
       price: findPriceValue(row, mapping),
+      priceStatus: findPriceValue(row, mapping) > 0 ? 'recognized' : 'missing',
+      priceConfirmedAt: '',
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
       notes: cellText(valueAt(row, mapping, 'notes')),
@@ -660,6 +657,8 @@
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      if (!ride.vehicle) issues.push({ level: 'warning', row, text: 'Fahrzeug wurde nicht sicher erkannt – bitte prüfen' });
+      if (!(Number(ride.persons) > 0)) issues.push({ level: 'warning', row, text: 'Personenzahl wurde nicht sicher erkannt – bitte prüfen' });
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
 
       if (ride.flightNumber && !ride.flightLocation) {
@@ -1131,7 +1130,7 @@
     const matchedFlightKeys = new Set();
     const appliedFlightKeys = new Set();
     const manualFlightKeys = new Set();
-    const checkTime = cellText(appliedAt) || new Date().toISOString();
+    const applyTime = cellText(appliedAt) || new Date().toISOString();
 
     state.rides = state.rides.map(ride => {
       const flight = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
@@ -1164,6 +1163,8 @@
       matchedFlightKeys.add(flightKey);
 
       const location = cellText(hit?.flightLocation || hit?.relevantLocation);
+      const webCheckedAt = cellText(hit?.geminiReportedCheckedAt);
+      const checkTime = webCheckedAt || applyTime;
       const verified = hit?.status === 'verified' && hit?.confidence === 'verified' && !Boolean(hit?.conflict) && Boolean(location && location !== 'Flugort prüfen');
       if (hit?.verificationDowngraded) downgraded++;
 
@@ -1175,7 +1176,9 @@
           flightCheckConfidence: 'uncertain',
           flightNeedsManualCheck: true,
           flightCheckSourceNote: cellText(hit?.sourceNote) || ride?.flightCheckSourceNote || '',
-          flightCheckedAt: checkTime
+          flightCheckedAt: checkTime,
+          flightWebCheckedAt: webCheckedAt,
+          flightAppliedAt: applyTime
         };
       }
 
@@ -1188,7 +1191,9 @@
         flightCheckConfidence: 'verified',
         flightNeedsManualCheck: false,
         flightCheckSourceNote: cellText(hit?.sourceNote),
-        flightCheckedAt: checkTime
+        flightCheckedAt: checkTime,
+        flightWebCheckedAt: webCheckedAt,
+        flightAppliedAt: applyTime
       };
     });
 
@@ -1221,6 +1226,8 @@
         return;
       }
       ride.price = value;
+      ride.priceStatus = 'confirmed_value';
+      ride.priceConfirmedAt = new Date().toISOString();
       state.priceDecisions[String(rideId)] = action;
       if (typeof window.ATMSPersistPriceOverride === 'function') {
         window.ATMSPersistPriceOverride(ride, value);
@@ -1229,10 +1236,14 @@
         window.showToast(`${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value)} übernommen`, 'ok');
       }
     } else if (action === 'original') {
+      ride.priceStatus = 'confirmed_original';
+      ride.priceConfirmedAt = new Date().toISOString();
       state.priceDecisions[String(rideId)] = 'original';
       if (typeof window.showToast === 'function') window.showToast('Originalpreis bestätigt', 'ok');
     } else if (action === 'zero') {
       ride.price = 0;
+      ride.priceStatus = 'confirmed_zero';
+      ride.priceConfirmedAt = new Date().toISOString();
       state.priceDecisions[String(rideId)] = 'zero_confirmed';
       if (typeof window.showToast === 'function') window.showToast('0,00 € ausdrücklich bestätigt', 'ok');
     }
