@@ -1,5 +1,7 @@
-const CACHE_NAME = "atms-pro-pwa-2026-08-12-core-004d";
-// CORE-004C · 12.08.2026:
+const CACHE_NAME = "atms-pro-pwa-2026-09-05-core-004e";
+// CORE-004E · 05.09.2026:
+// Frischer PWA-Cache fuer den konsolidierten Fix. Die URLs bleiben absichtlich identisch
+// zu index.html, damit keinerlei Layout-/HTML-Aenderung notwendig ist.
 // Firebase AI Logic wird als eigenes lokales Modul geladen; die externen Firebase-CDN-Module
 // werden online per ESM nachgeladen. Offline bleibt die ATMS-App nutzbar, nur die aktuelle Flugprüfung ist dann nicht verfügbar.
 //
