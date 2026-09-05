@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  // CORE-004G · 05.09.2026: gezielte lokale Zweit-OCR für fehlende Flugnummern bei vorhandenem Flugort.
+
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
@@ -690,7 +692,13 @@
           text: `Flugort „${normalizeFlightLocation(ride.flightLocation)}“ vorhanden, aber Flugnummer fehlt – Original-Planliste prüfen; Ort bleibt erhalten`
         });
       }
-      if (ride.flightRecoveredFromRow && ride.flightNumber) {
+      if (ride.flightRecoveredFromTargetedOcr && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugnummer ${ride.flightNumber} durch lokale zweite OCR aus der Flugzelle erkannt – aktuelle Flugprüfung empfohlen`
+        });
+      } else if (ride.flightRecoveredFromRow && ride.flightNumber) {
         issues.push({
           level: 'warning',
           row,
@@ -1001,6 +1009,7 @@
     const { sorted: anchors, boundaries } = anchorsToBoundaries(header.anchors, width);
     const headerRow = anchors.map(anchor => anchor.label);
     const rows = [headerRow];
+    const rowMetaByMatrixIndex = {};
 
     lines.slice(header.index + 1).forEach(line => {
       const cells = Array(anchors.length).fill('').map(()=>[]);
@@ -1016,10 +1025,98 @@
       const nonEmpty = row.filter(Boolean).length;
       const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
       const hasFlight = row.some(value => looksLikeFlight(value));
-      if (nonEmpty >= 3 && (hasTime || hasFlight)) rows.push(row);
+      if (nonEmpty >= 3 && (hasTime || hasFlight)) {
+        rows.push(row);
+        const ys0 = (line.words || []).map(word => Number(word.y0 || 0)).filter(Number.isFinite);
+        const ys1 = (line.words || []).map(word => Number(word.y1 || 0)).filter(Number.isFinite);
+        rowMetaByMatrixIndex[rows.length - 1] = {
+          y0: ys0.length ? Math.min(...ys0) : Math.max(0, Number(line.cy || 0) - 16),
+          y1: ys1.length ? Math.max(...ys1) : Number(line.cy || 0) + 16,
+          cy: Number(line.cy || 0)
+        };
+      }
     });
 
+    rows._atmsImageMeta = { anchors, boundaries, rowMetaByMatrixIndex, width };
     return rows;
+  }
+
+  // CORE-004G · 05.09.2026: zweite, rein lokale OCR nur für die konkrete
+  // Flugzelle, wenn Ort vorhanden ist, aber die erste OCR keine Flugnummer geliefert hat.
+  // Es wird niemals geraten: nur genau EIN formal plausibler Kandidat wird übernommen
+  // und anschließend als manuell/aktuell zu prüfen markiert.
+  function cropCanvasRegion(source, x0, y0, x1, y1, scale = 3) {
+    const sx = Math.max(0, Math.floor(x0));
+    const sy = Math.max(0, Math.floor(y0));
+    const sw = Math.max(1, Math.min(source.width - sx, Math.ceil(x1 - x0)));
+    const sh = Math.max(1, Math.min(source.height - sy, Math.ceil(y1 - y0)));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(sw * scale));
+    out.height = Math.max(1, Math.round(sh * scale));
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    return out;
+  }
+
+  function flightCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts.join(' ');
+    return flightCandidatesFromRow([joined]);
+  }
+
+  async function recoverMissingFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.flightNumber || !ride.flightLocation) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, '', '');
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) continue;
+
+      const left = Number(imageMeta.boundaries?.[colIndex]);
+      const right = Number(imageMeta.boundaries?.[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const rowHeight = Math.max(18, Number(rowMeta.y1 || 0) - Number(rowMeta.y0 || 0));
+      const padY = Math.max(10, rowHeight * 0.9);
+      const padX = Math.max(4, (right - left) * 0.05);
+      const crop = cropCanvasRegion(
+        imageCanvas,
+        left + padX,
+        Number(rowMeta.y0 || 0) - padY,
+        right - padX,
+        Number(rowMeta.y1 || 0) + padY,
+        3
+      );
+
+      if (status) status.textContent = `Flugzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      try {
+        const second = await Tesseract.recognize(crop, 'eng');
+        const candidates = flightCandidatesFromOcrResult(second);
+        if (candidates.length !== 1) continue;
+        const recovered = candidates[0];
+        ride.flightNumber = recovered;
+        if (routeType === 'arrival') ride.arrivalFlight = recovered;
+        if (routeType === 'departure') ride.departureFlight = recovered;
+        ride.flightDirection = routeType;
+        ride.flightRecoveredFromTargetedOcr = true;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      } catch (_) {
+        // Zweit-OCR ist nur Sicherheitsnetz. Bei Fehler bleibt die bestehende Warnung erhalten.
+      }
+    }
+    return out;
   }
 
   async function readImagePlan(file) {
@@ -1039,7 +1136,14 @@
     const words = result?.data?.words || [];
     const matrix = imageWordsToMatrix(words, canvas.width);
     if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
-    return { kind: 'matrix', matrix, sheetName: 'Bild / WhatsApp', imageOcr: true };
+    return {
+      kind: 'matrix',
+      matrix,
+      sheetName: 'Bild / WhatsApp',
+      imageOcr: true,
+      imageCanvas: canvas,
+      imageMeta: matrix._atmsImageMeta || null
+    };
   }
 
   async function readFile(file) {
@@ -1307,8 +1411,18 @@
       });
       if (!rides.length) throw new Error('Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
+      let preparedRides = rides;
+      if (result.imageOcr && result.imageCanvas && result.imageMeta) {
+        preparedRides = await recoverMissingFlightNumbersTargeted(
+          rides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+      }
+
       state.matrix = matrix;
-      state.rides = assignRideDates(rides);
+      state.rides = assignRideDates(preparedRides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
