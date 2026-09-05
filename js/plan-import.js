@@ -1,8 +1,9 @@
 (() => {
   'use strict';
 
-  // CORE-004H · 05.09.2026: eng begrenzte lokale Zweit-OCR für fehlende Flugnummern.
-  // Verhindert, dass Nachbarzeilen in den Flugzellen-Crop geraten und dadurch mehrere Kandidaten entstehen.
+  // CORE-004I · 05.09.2026: sichere lokale Zweit-OCR ohne blockige Übervergrößerung.
+  // CORE-004H begrenzte den Flugzellen-Crop korrekt, vergrößerte ihn aber bis 5x ohne Glättung.
+  // Dadurch konnten Ziffern (z. B. 7) als Schrägstrich gelesen werden. Jetzt 1x/2x mit sauberer Glättung.
 
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
@@ -1055,7 +1056,8 @@
     out.width = Math.max(1, Math.round(sw * scale));
     out.height = Math.max(1, Math.round(sh * scale));
     const ctx = out.getContext('2d', { willReadFrequently: true });
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = scale > 1;
+    if (scale > 1 && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
     return out;
   }
@@ -1101,8 +1103,10 @@
       const tightPadX = Math.max(2, cellWidth * 0.03);
 
       const regions = [
-        [left + tightPadX, y0 - tightPadY, right - tightPadX, y1 + tightPadY, 5],
-        [left - cellWidth * 0.08, y0 - tightPadY, right + cellWidth * 0.08, y1 + tightPadY, 5]
+        // Die vorverarbeitete Planliste ist bereits auf bis zu 3200 px Breite skaliert.
+        // Deshalb zuerst 1x lesen; 2x nur als geglätteten Sicherheitsversuch.
+        [left + tightPadX, y0 - tightPadY, right - tightPadX, y1 + tightPadY, 1],
+        [left - cellWidth * 0.08, y0 - tightPadY, right + cellWidth * 0.08, y1 + tightPadY, 2]
       ];
 
       // Als dritter Versuch beide Flugspalten gemeinsam, aber weiterhin nur dieselbe Zeile.
@@ -1112,7 +1116,7 @@
         const a0 = Number(boundaries[Math.min(arrivalIndex, departureIndex)]);
         const a1 = Number(boundaries[Math.max(arrivalIndex, departureIndex) + 1]);
         if (Number.isFinite(a0) && Number.isFinite(a1) && a1 > a0) {
-          regions.push([a0, y0 - tightPadY, a1, y1 + tightPadY, 4]);
+          regions.push([a0, y0 - tightPadY, a1, y1 + tightPadY, 1]);
         }
       }
 
