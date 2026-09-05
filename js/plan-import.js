@@ -2,8 +2,6 @@
   'use strict';
 
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
-  // PRICE-001 10.08.2026 23:18 Uhr: Fehlender/unsicherer OCR-Preis darf nicht mehr still als 0,00 € durchlaufen; manuelle Bestätigung erforderlich.
-  // CORE-001A 11.08.2026 14:41 Uhr: Neue Planlisten übernehmen keine alten Flugprüfungen mehr aus localStorage; Ergebnisse werden direkt auf die aktuell analysierte Liste angewendet.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
   const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {} };
@@ -267,17 +265,14 @@
   }
 
   function pricePlausibility(value) {
-    const numeric = Number(value);
-    if (!Number.isFinite(numeric) || numeric <= 0) {
-      return { suspicious: true, missing: true, suggestion: null };
-    }
-    const price = numeric;
+    const price = Number(value) || 0;
+    if (price <= 0) return { suspicious: false, suggestion: null };
     if (price >= 1000) {
       const decimalSuggestion = price / 100;
       const suggestion = decimalSuggestion >= 10 && decimalSuggestion < 1000 ? decimalSuggestion : null;
-      return { suspicious: true, missing: false, suggestion };
+      return { suspicious: true, suggestion };
     }
-    return { suspicious: false, missing: false, suggestion: null };
+    return { suspicious: false, suggestion: null };
   }
 
   function normalizeFlightLocation(value) {
@@ -288,32 +283,38 @@
     return text;
   }
 
-  // CORE-003D · 12.08.2026: OCR-Randzeichen an Flugnummern sicher entfernen.
-  // Beispiele aus realen Planlisten: "-EW9574", "LH2006-", "[EW9559".
-  // Es werden ausschließlich typische Satz-/OCR-Zeichen AM ANFANG ODER ENDE entfernt.
-  // Zeichen innerhalb einer Flugnummer bleiben unverändert und werden weiterhin als
-  // auffällig gemeldet, damit ATMS keine unsichere OCR-Korrektur errät.
   function normalizeFlightNumber(value) {
     const raw = cellText(value).trim();
-    if (!raw) return '';
-
+    if (!raw || /^[-–—]+$/.test(raw)) return '';
     let normalized = raw.toUpperCase().replace(/\s+/g, '');
-    const edgeNoise = /^[\[\(\{<"'`´’‘“”|_.,;:\/\\+\-–—]+|[\]\)\}>"'`´’‘“”|_.,;:\/\\+\-–—]+$/g;
-    normalized = normalized.replace(edgeNoise, '');
-
-    // Leere Tabellen-Platzhalter wie "-", "--", "_" sind keine Flugnummer.
-    if (!normalized) return '';
-
     // Häufiger OCR-Fehler bei Austrian Airlines: 0S162 -> OS162
     if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
-
-    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden.
+    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden
     if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)$/.test(normalized)) return '';
     return normalized;
   }
 
   function looksLikeFlight(value) {
     return /^[A-Z0-9]{2,4}\s?\d{1,4}[A-Z]?$/.test(normalizeFlightNumber(value));
+  }
+
+  // CORE-004F · 05.09.2026: Sicherheitsnetz fuer Flugnummern, die OCR zwar
+  // innerhalb derselben Tabellenzeile liest, aber nicht sauber in "Flug ang./ausg."
+  // einsortiert. Es wird nur ein EINDEUTIGER Kandidat mit mindestens einem
+  // Buchstaben akzeptiert; bei 0 oder mehreren Kandidaten wird nichts geraten.
+  function flightCandidatesFromRow(row) {
+    const found = new Set();
+    (Array.isArray(row) ? row : []).forEach(cell => {
+      const raw = cellText(cell).toUpperCase().replace(/\s+/g, '');
+      if (!raw) return;
+      const tokens = raw.match(/[A-Z0-9]{2,4}\d{1,4}[A-Z]?/g) || [];
+      tokens.forEach(token => {
+        const normalized = normalizeFlightNumber(token);
+        if (!normalized || !/[A-Z]/.test(normalized) || !looksLikeFlight(normalized)) return;
+        found.add(normalized);
+      });
+    });
+    return [...found];
   }
 
   function looksLikeTime(value) {
@@ -582,27 +583,47 @@
   }
 
 
-  // CORE-004A: Fahrzeug und Personen ausschließlich über die dynamisch erkannte
-  // Spaltenzuordnung lesen. Keine festen Index-8/9-Fallbacks mehr.
   function getVehicleValue(row, mapping) {
     const mapped = cellText(valueAt(row, mapping, 'vehicle'));
     if (mapped && !/^\d+(?:[.,]\d+)?$/.test(mapped)) return mapped;
-    return '';
+
+    // ATMS Standard Planliste: erste Wg-Spalte = Spalte 9 (Index 8)
+    const fixedVehicle = cellText(row[8]);
+    if (fixedVehicle && !/^\d+(?:[.,]\d+)?$/.test(fixedVehicle)) return fixedVehicle;
+    return mapped || 'Pkw';
   }
 
   function getPersonsValue(row, mapping) {
     const mapped = parseNumber(valueAt(row, mapping, 'persons'));
-    return mapped > 0 ? mapped : 0;
+    if (mapped > 0) return mapped;
+    // ATMS Standard Planliste: Pers = Spalte 10 (Index 9)
+    const fixedPersons = parseNumber(row[9]);
+    return fixedPersons > 0 ? fixedPersons : 0;
   }
 
   function makeRide(row, rowNumber, mapping, fileName) {
-    const arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
-    const departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
-    const flightNumber = arrivalFlight || departureFlight;
+    let arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
+    let departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
     const pickup = cellText(valueAt(row, mapping, 'pickup'));
     const destination = cellText(valueAt(row, mapping, 'destination'));
     const customer = cellText(valueAt(row, mapping, 'customer'));
     const company = cellText(valueAt(row, mapping, 'company')) || customer || 'WT';
+
+    let recoveredFlight = '';
+    let flightRecoveryAmbiguous = false;
+    if (!arrivalFlight && !departureFlight) {
+      const candidates = flightCandidatesFromRow(row);
+      if (candidates.length === 1) {
+        recoveredFlight = candidates[0];
+        const routeType = classifyRide(pickup, destination, '', '');
+        if (routeType === 'arrival') arrivalFlight = recoveredFlight;
+        else if (routeType === 'departure') departureFlight = recoveredFlight;
+      } else if (candidates.length > 1) {
+        flightRecoveryAmbiguous = true;
+      }
+    }
+
+    const flightNumber = arrivalFlight || departureFlight || recoveredFlight;
     const rideType = classifyRide(pickup, destination, arrivalFlight, departureFlight);
     return {
       id: `import-${Date.now()}-${rowNumber}`,
@@ -624,11 +645,12 @@
       flightNumber,
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
       flightLocation: normalizeFlightLocation(valueAt(row, mapping, 'flightLocation')),
+      flightRecoveredFromRow: Boolean(recoveredFlight),
+      flightRecoveryAmbiguous,
+      flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
       vehicle: getVehicleValue(row, mapping),
       persons: getPersonsValue(row, mapping),
       price: findPriceValue(row, mapping),
-      priceStatus: findPriceValue(row, mapping) > 0 ? 'recognized' : 'missing',
-      priceConfirmedAt: '',
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
       notes: cellText(valueAt(row, mapping, 'notes')),
@@ -657,9 +679,30 @@
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
-      if (!ride.vehicle) issues.push({ level: 'warning', row, text: 'Fahrzeug wurde nicht sicher erkannt – bitte prüfen' });
-      if (!(Number(ride.persons) > 0)) issues.push({ level: 'warning', row, text: 'Personenzahl wurde nicht sicher erkannt – bitte prüfen' });
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
+
+      // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
+      // Das verhindert genau den heute beobachteten Fall "Palma vorhanden, EW9577 weg".
+      if (!ride.flightNumber && ride.flightLocation) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugort „${normalizeFlightLocation(ride.flightLocation)}“ vorhanden, aber Flugnummer fehlt – Original-Planliste prüfen; Ort bleibt erhalten`
+        });
+      }
+      if (ride.flightRecoveredFromRow && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugnummer ${ride.flightNumber} außerhalb der erwarteten Flugspalte erkannt und gesichert – bitte einmal prüfen`
+        });
+      } else if (ride.flightRecoveryAmbiguous) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: 'Mehrere mögliche Flugnummern in derselben Zeile erkannt – nicht automatisch zugeordnet'
+        });
+      }
 
       if (ride.flightNumber && !ride.flightLocation) {
         const flightNumber = normalizeFlightNumber(ride.flightNumber);
@@ -698,31 +741,19 @@
       const priceCheck = pricePlausibility(ride.price);
       const priceDecision = state.priceDecisions[String(ride.id || row)] || '';
       if (priceCheck.suspicious && !priceDecision) {
-        if (priceCheck.missing) {
-          issues.push({
-            level: 'warning',
-            kind: 'price_missing',
-            row,
-            rideId: String(ride.id || row),
-            originalPrice: Number(ride.price) || 0,
-            suggestedPrice: null,
-            text: 'Preis fehlt oder wurde beim OCR nicht sicher erkannt – bitte mit der Original-Planliste prüfen. Keine automatische Preiskorrektur.'
-          });
-        } else {
-          const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
-          const suggestionText = priceCheck.suggestion !== null
-            ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
-            : '';
-          issues.push({
-            level: 'warning',
-            kind: 'price',
-            row,
-            rideId: String(ride.id || row),
-            originalPrice: Number(ride.price) || 0,
-            suggestedPrice: priceCheck.suggestion,
-            text: `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
-          });
-        }
+        const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
+        const suggestionText = priceCheck.suggestion !== null
+          ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
+          : '';
+        issues.push({
+          level: 'warning',
+          kind: 'price',
+          row,
+          rideId: String(ride.id || row),
+          originalPrice: Number(ride.price) || 0,
+          suggestedPrice: priceCheck.suggestion,
+          text: `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
+        });
       }
 
       const fingerprint = [ride.time, cleanKey(ride.pickup), cleanKey(ride.destination), cleanKey(ride.driver), ride.flightNumber].join('|');
@@ -1053,7 +1084,11 @@
     } catch (_) {}
     if (!saved.length) return 0;
 
-    const normalizeFlight = value => normalizeFlightNumber(value);
+    const normalizeFlight = value => {
+      let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+      if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
+      return v;
+    };
     const keyText = value => String(value || '').trim().toLowerCase();
 
     let changed = 0;
@@ -1096,140 +1131,20 @@
   }
 
   function refreshIssuesAfterFlightSync() {
-    // CORE-001A: Kein Rückweg über bereits gespeicherte Fahrten/localStorage.
-    // Nur der aktuelle staged Plan wird neu validiert.
+    syncFlightLocationsFromSavedRides();
     state.issues = validate(state.rides);
   }
-
-  function normalizeFlightForCurrentCheck(value) {
-    return normalizeFlightNumber(value);
-  }
-
-  function stagedPlanIsActive() {
-    return Boolean(state.rides.length && !$('planAnalysis')?.classList.contains('hidden'));
-  }
-
-  // CORE-001B 11.08.2026 19:10 Uhr: Übernahme-Zähler trennt jetzt sauber
-  // zwischen geprüften Fahrten, wirklich übernommenen Flugorten und manuellen Fällen.
-  // Dadurch kann die UI nicht mehr "0 übernommen" melden, obwohl ein Flugort gesetzt wurde.
-  function applyGeminiResultsToStagedPlan(checked, appliedAt) {
-    if (!stagedPlanIsActive() || !Array.isArray(checked)) {
-      return {
-        handled: false,
-        matchedRides: 0,
-        appliedRides: 0,
-        manualRides: 0,
-        matchedFlights: 0,
-        appliedFlights: 0,
-        manualFlights: 0,
-        downgraded: 0
-      };
-    }
-
-    let matchedRides = 0, appliedRides = 0, manualRides = 0, downgraded = 0;
-    const matchedFlightKeys = new Set();
-    const appliedFlightKeys = new Set();
-    const manualFlightKeys = new Set();
-    const applyTime = cellText(appliedAt) || new Date().toISOString();
-
-    state.rides = state.rides.map(ride => {
-      const flight = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
-      if (!flight) return ride;
-
-      const date = cellText(ride?.date);
-      const direction = cellText(ride?.flightDirection || (ride?.arrivalFlight ? 'arrival' : ride?.departureFlight ? 'departure' : '')).toLowerCase() || 'unknown';
-      const flightTime = cellText(ride?.flightTime);
-      const flightKey = `${flight}|${date}|${direction}|${flightTime}`;
-
-      const candidates = checked.filter(item => {
-        if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
-        if (cellText(item?.date) !== date) return false;
-        const itemDirection = cellText(item?.direction).toLowerCase() || 'unknown';
-        if (itemDirection !== direction) return false;
-        return true;
-      });
-
-      let hit = null;
-      if (flightTime) {
-        const exact = candidates.filter(item => cellText(item?.flightTime) === flightTime);
-        if (exact.length === 1) hit = exact[0];
-        else if (!exact.length && candidates.length === 1 && !cellText(candidates[0]?.flightTime)) hit = candidates[0];
-      } else if (candidates.length === 1) {
-        hit = candidates[0];
-      }
-      if (!hit) return ride;
-
-      matchedRides++;
-      const resultFlightKey = `${flight}|${date}|${direction}|${cellText(hit?.flightTime)}`;
-      matchedFlightKeys.add(resultFlightKey);
-
-      const location = cellText(hit?.flightLocation || hit?.relevantLocation);
-      const webCheckedAt = cellText(hit?.geminiReportedCheckedAt);
-      const checkTime = webCheckedAt || applyTime;
-      const verified = hit?.status === 'verified' && hit?.confidence === 'verified' && !Boolean(hit?.conflict) && Boolean(location && location !== 'Flugort prüfen');
-      if (hit?.verificationDowngraded) downgraded++;
-
-      if (!verified) {
-        manualRides++;
-        manualFlightKeys.add(resultFlightKey);
-        return {
-          ...ride,
-          flightCheckConfidence: 'uncertain',
-          flightNeedsManualCheck: true,
-          flightCheckSourceNote: cellText(hit?.sourceNote) || ride?.flightCheckSourceNote || '',
-          flightCheckedAt: checkTime,
-          flightWebCheckedAt: webCheckedAt,
-          flightAppliedAt: applyTime
-        };
-      }
-
-      appliedRides++;
-      appliedFlightKeys.add(resultFlightKey);
-      return {
-        ...ride,
-        flightLocation: normalizeFlightLocation(location),
-        iata: cellText(hit?.iata).toUpperCase() || ride?.iata || '',
-        flightCheckConfidence: 'verified',
-        flightNeedsManualCheck: false,
-        flightCheckSourceNote: cellText(hit?.sourceNote),
-        flightCheckedAt: checkTime,
-        flightWebCheckedAt: webCheckedAt,
-        flightAppliedAt: applyTime
-      };
-    });
-
-    state.issues = validate(state.rides);
-    render();
-    return {
-      handled: true,
-      matchedRides,
-      appliedRides,
-      manualRides,
-      matchedFlights: matchedFlightKeys.size,
-      appliedFlights: appliedFlightKeys.size,
-      manualFlights: manualFlightKeys.size,
-      downgraded
-    };
-  }
-
-  window.ATMSPlanImportHasStagedRides = stagedPlanIsActive;
-  window.ATMSPlanImportApplyGeminiFlightResults = applyGeminiResultsToStagedPlan;
 
 
   function resolvePriceIssue(rideId, action, suggestedPrice) {
     const ride = state.rides.find(item => String(item.id) === String(rideId));
     if (!ride) return;
 
-    if (action === 'suggestion' || action === 'manual') {
-      const value = Number(String(suggestedPrice ?? '').replace(',', '.'));
-      if (!Number.isFinite(value) || value <= 0) {
-        if (typeof window.showToast === 'function') window.showToast('Bitte einen gültigen Preis größer 0 eingeben', 'warn');
-        return;
-      }
+    if (action === 'suggestion') {
+      const value = Number(suggestedPrice);
+      if (!Number.isFinite(value) || value <= 0) return;
       ride.price = value;
-      ride.priceStatus = 'confirmed_value';
-      ride.priceConfirmedAt = new Date().toISOString();
-      state.priceDecisions[String(rideId)] = action;
+      state.priceDecisions[String(rideId)] = 'suggestion';
       if (typeof window.ATMSPersistPriceOverride === 'function') {
         window.ATMSPersistPriceOverride(ride, value);
       }
@@ -1237,16 +1152,8 @@
         window.showToast(`${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value)} übernommen`, 'ok');
       }
     } else if (action === 'original') {
-      ride.priceStatus = 'confirmed_original';
-      ride.priceConfirmedAt = new Date().toISOString();
       state.priceDecisions[String(rideId)] = 'original';
       if (typeof window.showToast === 'function') window.showToast('Originalpreis bestätigt', 'ok');
-    } else if (action === 'zero') {
-      ride.price = 0;
-      ride.priceStatus = 'confirmed_zero';
-      ride.priceConfirmedAt = new Date().toISOString();
-      state.priceDecisions[String(rideId)] = 'zero_confirmed';
-      if (typeof window.showToast === 'function') window.showToast('0,00 € ausdrücklich bestätigt', 'ok');
     }
 
     state.issues = validate(state.rides);
@@ -1290,17 +1197,6 @@
             </div>`;
           }
 
-          if (issue.kind === 'price_missing') {
-            return `<div class="plan-issue warning" style="padding-bottom:12px">
-              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-                <input type="text" inputmode="decimal" class="price-manual-input" data-ride-id="${escapeHtml(issue.rideId)}" placeholder="Preis z. B. 47,60" style="flex:1;min-width:145px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:#071a2b;color:#fff">
-                <button type="button" class="price-review-btn" data-price-action="manual" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">Preis übernehmen</button>
-                <button type="button" class="price-review-btn" data-price-action="zero" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">0,00 € ist korrekt</button>
-              </div>
-            </div>`;
-          }
-
           if (issue.kind === 'price') {
             const suggestion = Number(issue.suggestedPrice);
             const suggestionLabel = Number.isFinite(suggestion) && suggestion > 0
@@ -1328,17 +1224,10 @@
 
     $('planIssues').querySelectorAll('.price-review-btn').forEach(button => {
       button.addEventListener('click', () => {
-        const action = button.dataset.priceAction;
-        let value = button.dataset.suggestedPrice;
-        if (action === 'manual') {
-          const input = [...$('planIssues').querySelectorAll('.price-manual-input')]
-            .find(el => String(el.dataset.rideId) === String(button.dataset.rideId));
-          value = input?.value || '';
-        }
         resolvePriceIssue(
           button.dataset.rideId,
-          action,
-          value
+          button.dataset.priceAction,
+          button.dataset.suggestedPrice
         );
       });
     });
@@ -1360,8 +1249,8 @@
       </tr>`;
     }).join('');
 
-    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || issues.some(issue => issue.kind === 'price' || issue.kind === 'price_missing');
-    const unresolvedPriceIssues = issues.filter(issue => issue.kind === 'price' || issue.kind === 'price_missing').length;
+    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || issues.some(issue => issue.kind === 'price');
+    const unresolvedPriceIssues = issues.filter(issue => issue.kind === 'price').length;
     $('importStatus').textContent = errors
       ? `${rides.length} Fahrten erkannt. ${errors} Fehler müssen vor dem Import behoben werden.`
       : unresolvedPriceIssues
@@ -1450,10 +1339,8 @@
     $('importStatus').textContent = file ? `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
   }
 
-  window.addEventListener('atms:gemini-flight-result', event => {
+  window.addEventListener('atms:gemini-flight-result', () => {
     if (!state.rides.length) return;
-    // Bei scope=staged-plan wurde das Ergebnis bereits direkt auf state.rides angewendet.
-    if (event?.detail?.scope === 'staged-plan') return;
     try {
       refreshIssuesAfterFlightSync();
       render();
@@ -1465,102 +1352,17 @@
     try {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
       if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
-      // CORE-003A: bestehende Plantage nicht vorab aus localStorage löschen.
-      // applyImportedRides ersetzt nur den neu importierten Plantag und bewahrt andere Tage.
-      const result = window.applyImportedRides(normalized);
+      localStorage.removeItem('atms_beta_14_3_1_rides');
+       localStorage.removeItem('atms_beta_14_3_1_done');
+
+       const result = window.applyImportedRides(normalized);
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
-      $('importStatus').textContent = result.mode === 'replace-days'
-        ? `${result.count} Fahrten übernommen · ${result.total} Fahrten aus mehreren Plantagen gespeichert.`
-        : `${result.count} Fahrten übernommen.`;
-      if (typeof window.showToast === 'function') window.showToast(
-        result.mode === 'replace-days' ? `${result.count} Fahrten übernommen · ${result.total} insgesamt` : `${result.count} Fahrten importiert`,
-        'ok'
-      );
+      $('importStatus').textContent = result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`;
+      if (typeof window.showToast === 'function') window.showToast(`${result.count} Fahrten importiert`, 'ok');
       if (typeof window.render === 'function') window.render();
     } catch (error) {
       $('importStatus').textContent = `Importfehler: ${error.message}`;
-    }
-  }
-
-
-
-  // CORE-004D · 12.08.2026 14:54 Uhr (Europe/Berlin)
-  // Automatische aktuelle Flugprüfung über Firebase AI Logic + App Check.
-  // An Gemini gehen ausschließlich minimale Flugdaten aus dem staged Plan:
-  // Flugnummer, Datum, Richtung, ggf. Flugzeit und vorhandener Flugort als Vergleich.
-  // Fahrer, Telefonnummern, GPS, Disponenten-, WhatsApp- und sonstige Kundendaten
-  // werden hier nicht übermittelt. Sichere Treffer werden direkt auf DIESE aktuell
-  // analysierte Planliste angewendet; bei Unsicherheit bleibt needs_manual_check.
-  async function runAutomaticFlightCheck() {
-    if (!state.rides.length || !window.ATMSFlight) return;
-    const btn = $('copyFlightCheckBtn');
-    const fallback = $('copyFlightCheckFallbackBtn');
-    const status = $('flightCheckStatus');
-    if (fallback) fallback.style.display = 'none';
-
-    const service = window.ATMSAutoFlight;
-    if (!service || typeof service.verifyFlights !== 'function') {
-      if (status) status.textContent = 'Automatische Flugprüfung ist noch nicht bereit. App einmal neu laden.';
-      if (fallback) fallback.style.display = '';
-      if (typeof window.showToast === 'function') window.showToast('Firebase AI Logic noch nicht bereit', 'warn');
-      return;
-    }
-    if (!navigator.onLine) {
-      if (status) status.textContent = 'Offline – aktuelle Flugprüfung benötigt Internet. Gespeicherte Fahrten bleiben verfügbar.';
-      if (fallback) fallback.style.display = '';
-      if (typeof window.showToast === 'function') window.showToast('Flugprüfung benötigt Internet', 'warn');
-      return;
-    }
-
-    try {
-      if (btn) { btn.disabled = true; btn.textContent = '🔎 Flugprüfung läuft …'; }
-      if (status) status.textContent = 'Firebase AI Logic wird vorbereitet …';
-      const result = await service.verifyFlights(state.rides, {
-        onProgress(info) {
-          if (!status) return;
-          const current = Number(info?.current || 0), total = Number(info?.total || 0);
-          const flight = cellText(info?.flightNumber);
-          status.textContent = total ? `Aktuelle Webprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …` : 'Aktuelle Webprüfung läuft …';
-        }
-      });
-
-      const checked = Array.isArray(result?.checked) ? result.checked : [];
-      const technicalFailureCount = Number(result?.technicalFailureCount || 0);
-      if (technicalFailureCount) {
-        const firstError = cellText(result?.firstTechnicalError);
-        throw new Error(`${technicalFailureCount} KI-Anfrage(n) technisch fehlgeschlagen${firstError ? ` · ${firstError}` : ''}`);
-      }
-      const atmsAppliedAt = new Date().toISOString();
-      const staged = applyGeminiResultsToStagedPlan(checked, atmsAppliedAt);
-      if (!staged?.handled) throw new Error('Die aktuelle Planliste konnte nicht aktualisiert werden.');
-
-      try {
-        window.dispatchEvent(new CustomEvent('atms:gemini-flight-result', {
-          detail: { checked, scope: 'staged-plan-auto', appliedAt: atmsAppliedAt, provider: 'firebase-ai-logic' }
-        }));
-      } catch (_) {}
-
-      if (typeof service.renderGrounding === 'function') service.renderGrounding(result?.grounding || []);
-
-      const applied = Number(staged.appliedFlights || 0);
-      const manual = Number(staged.manualFlights || 0);
-      const matched = Number(staged.matchedFlights || 0);
-      if (status) status.textContent = `${matched} Flug/Flüge aktuell geprüft · ${applied} Flugort(e) automatisch übernommen${manual ? ` · ${manual} manuell prüfen` : ''}.`;
-      $('importStatus').textContent = manual
-        ? `${applied} Flugort(e) sicher übernommen · ${manual} Flug/Flüge bleiben zur manuellen Prüfung offen.`
-        : `${applied} Flugort(e) aktuell geprüft und sicher übernommen.`;
-      if (typeof window.showToast === 'function') {
-        window.showToast(manual ? `${applied} übernommen · ${manual} manuell prüfen` : `${applied} Flugorte automatisch übernommen`, manual ? 'warn' : 'ok');
-      }
-    } catch (error) {
-      const message = cellText(error?.message) || 'Automatische Flugprüfung fehlgeschlagen.';
-      if (status) status.textContent = `Automatische Flugprüfung fehlgeschlagen: ${message}`;
-      $('importStatus').textContent = 'ATMS bleibt nutzbar. Die ungeprüften Flüge bleiben zur manuellen Prüfung offen.';
-      if (fallback) fallback.style.display = '';
-      if (typeof window.showToast === 'function') window.showToast('Flugprüfung fehlgeschlagen – manueller Fallback verfügbar', 'warn');
-    } finally {
-      if (btn) { btn.disabled = !state.rides.some(ride => ride.flightNumber); btn.textContent = '🔎 Flugorte automatisch prüfen'; }
     }
   }
 
@@ -1592,8 +1394,7 @@
     input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
-    $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
-    $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
+    $('copyFlightCheckBtn')?.addEventListener('click', copyFlightCheckPrompt);
     if (drop) {
       ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('over'); }));
       ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
