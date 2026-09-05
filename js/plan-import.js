@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  // CORE-004G · 05.09.2026: gezielte lokale Zweit-OCR für fehlende Flugnummern bei vorhandenem Flugort.
+  // CORE-004H · 05.09.2026: eng begrenzte lokale Zweit-OCR für fehlende Flugnummern.
+  // Verhindert, dass Nachbarzeilen in den Flugzellen-Crop geraten und dadurch mehrere Kandidaten entstehen.
 
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
@@ -1083,26 +1084,48 @@
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
       if (colIndex === undefined || !rowMeta) continue;
 
-      const left = Number(imageMeta.boundaries?.[colIndex]);
-      const right = Number(imageMeta.boundaries?.[colIndex + 1]);
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
       if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
 
-      const rowHeight = Math.max(18, Number(rowMeta.y1 || 0) - Number(rowMeta.y0 || 0));
-      const padY = Math.max(10, rowHeight * 0.9);
-      const padX = Math.max(4, (right - left) * 0.05);
-      const crop = cropCanvasRegion(
-        imageCanvas,
-        left + padX,
-        Number(rowMeta.y0 || 0) - padY,
-        right - padX,
-        Number(rowMeta.y1 || 0) + padY,
-        3
-      );
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
 
-      if (status) status.textContent = `Flugzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      // CORE-004H: bewusst ENG in Y-Richtung bleiben. CORE-004G nutzte fast eine
+      // ganze Zeilenhöhe als Padding und konnte dadurch Flugnummern der Nachbarzeilen
+      // mitlesen. Dann gab es mehrere Kandidaten und aus Sicherheitsgründen keine Übernahme.
+      const tightPadY = Math.max(2, rowHeight * 0.22);
+      const cellWidth = Math.max(8, right - left);
+      const tightPadX = Math.max(2, cellWidth * 0.03);
+
+      const regions = [
+        [left + tightPadX, y0 - tightPadY, right - tightPadX, y1 + tightPadY, 5],
+        [left - cellWidth * 0.08, y0 - tightPadY, right + cellWidth * 0.08, y1 + tightPadY, 5]
+      ];
+
+      // Als dritter Versuch beide Flugspalten gemeinsam, aber weiterhin nur dieselbe Zeile.
+      const arrivalIndex = mapping?.arrivalFlight;
+      const departureIndex = mapping?.departureFlight;
+      if (arrivalIndex !== undefined && departureIndex !== undefined) {
+        const a0 = Number(boundaries[Math.min(arrivalIndex, departureIndex)]);
+        const a1 = Number(boundaries[Math.max(arrivalIndex, departureIndex) + 1]);
+        if (Number.isFinite(a0) && Number.isFinite(a1) && a1 > a0) {
+          regions.push([a0, y0 - tightPadY, a1, y1 + tightPadY, 4]);
+        }
+      }
+
+      if (status) status.textContent = `Flugzelle Zeile ${ride.sourceRow} wird lokal eng nachgelesen …`;
       try {
-        const second = await Tesseract.recognize(crop, 'eng');
-        const candidates = flightCandidatesFromOcrResult(second);
+        const found = new Set();
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          flightCandidatesFromOcrResult(second).forEach(candidate => found.add(candidate));
+        }
+
+        const candidates = [...found];
         if (candidates.length !== 1) continue;
         const recovered = candidates[0];
         ride.flightNumber = recovered;
