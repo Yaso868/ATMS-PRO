@@ -1,16 +1,23 @@
-const CACHE_NAME = "atms-pro-pwa-2026-08-11-core-003a";
-// CORE-003A · 11.08.2026 20:44 Uhr (Europe/Berlin):
-// Mehrtages-Import aktiviert; Cache-Version erhöht, damit app.js und plan-import.js
-// sofort gemeinsam als CORE-003A geladen werden.
+const CACHE_NAME = "atms-pro-pwa-2026-09-06-core-004n-cache-refresh";
+// CORE-004N · 06.09.2026: erzwingt einen frischen App-Shell-Cache, damit auf dem Handy
+// nicht mehr eine alte plan-import.js-Version mit dem manuellen Kopier-Fallback läuft.
+// Keine Fahrten-, Preis-, Zeit- oder Fluglogik wird hier geändert.
+//
+// Firebase AI Logic wird als eigenes lokales Modul geladen; die externen Firebase-CDN-Module
+// werden online per ESM nachgeladen. Offline bleibt die ATMS-App nutzbar, nur die aktuelle Flugprüfung ist dann nicht verfügbar.
+//
+// Asset-Fehler erhalten nie mehr index.html als JS/CSS-Ersatz. Offline-Fallback auf
+// index.html gilt ausschließlich für Navigation.
 const APP_SHELL = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
   "./css/main.css",
-  "./js/app.js?v=CORE-003A",
-  "./js/flight-engine.js?v=CORE-003A",
-  "./js/plan-import.js?v=CORE-003A",
-  "./js/pwa.js?v=CORE-003A",
+  "./js/app.js?v=CORE-004C",
+  "./js/flight-engine.js?v=CORE-004C",
+  "./js/plan-import.js?v=CORE-004C",
+  "./js/pwa.js?v=CORE-004C",
+  "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
@@ -24,11 +31,21 @@ self.addEventListener("activate", event => {
 });
 self.addEventListener("fetch", event => {
   if(event.request.method !== "GET") return;
-  event.respondWith(
-    fetch(event.request).then(response => {
-      const copy=response.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+  event.respondWith((async()=>{
+    try{
+      const response=await fetch(event.request);
+      if(response && response.ok){
+        const copy=response.clone();
+        caches.open(CACHE_NAME).then(cache=>cache.put(event.request,copy));
+      }
       return response;
-    }).catch(() => caches.match(event.request).then(cached => cached || caches.match("./index.html")))
-  );
+    }catch(_){
+      const cached=await caches.match(event.request);
+      if(cached)return cached;
+      if(event.request.mode==="navigate"){
+        return (await caches.match("./index.html")) || Response.error();
+      }
+      return Response.error();
+    }
+  })());
 });
