@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  // CORE-004I · 05.09.2026: sichere lokale Zweit-OCR ohne blockige Übervergrößerung.
+  // CORE-004J · 05.09.2026: lokale Flugzellen-Zweit-OCR mit Konsens statt Set-Blockade.
+  // Mehrere lokale Leseversuche stimmen ab; nur eindeutiger Konsens wird übernommen. Layout/Preis/Zeitlogik unverändert.
   // CORE-004H begrenzte den Flugzellen-Crop korrekt, vergrößerte ihn aber bis 5x ohne Glättung.
   // Dadurch konnten Ziffern (z. B. 7) als Schrägstrich gelesen werden. Jetzt 1x/2x mit sauberer Glättung.
 
@@ -1122,16 +1123,33 @@
 
       if (status) status.textContent = `Flugzelle Zeile ${ride.sourceRow} wird lokal eng nachgelesen …`;
       try {
-        const found = new Set();
+        // CORE-004J: CORE-004I sammelte alle Varianten in einem Set. Schon ein einzelner
+        // abweichender OCR-Versuch blockierte dadurch einen ansonsten stabil erkannten Flug.
+        // Jetzt zählt jeder Crop höchstens eine Stimme. Übernommen wird nur:
+        // 1) derselbe Kandidat aus mindestens zwei unabhängigen Crops oder
+        // 2) genau ein Kandidat insgesamt, wenn alle übrigen Crops gar keinen Kandidaten liefern.
+        const votes = new Map();
+        const attempts = [];
         for (const [x0, cy0, x1, cy1, scale] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           const second = await Tesseract.recognize(crop, 'eng');
-          flightCandidatesFromOcrResult(second).forEach(candidate => found.add(candidate));
+          const candidates = flightCandidatesFromOcrResult(second);
+          attempts.push(candidates.slice());
+          if (candidates.length === 1) {
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
         }
 
-        const candidates = [...found];
-        if (candidates.length !== 1) continue;
-        const recovered = candidates[0];
+        const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        let recovered = '';
+        if (ranked.length === 1) {
+          recovered = ranked[0][0];
+        } else if (ranked.length > 1 && ranked[0][1] >= 2 && ranked[0][1] > ranked[1][1]) {
+          recovered = ranked[0][0];
+        }
+        ride.flightTargetedOcrAttempts = attempts;
+        if (!recovered) continue;
         ride.flightNumber = recovered;
         if (routeType === 'arrival') ride.arrivalFlight = recovered;
         if (routeType === 'departure') ride.departureFlight = recovered;
