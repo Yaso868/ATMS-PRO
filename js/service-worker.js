@@ -1,6 +1,6 @@
-const CACHE_NAME = "atms-pro-pwa-2026-09-06-core-004n-cache-refresh";
-// CORE-004N · 06.09.2026: erzwingt einen frischen App-Shell-Cache, damit auf dem Handy
-// nicht mehr eine alte plan-import.js-Version mit dem manuellen Kopier-Fallback läuft.
+const CACHE_NAME = "atms-pro-pwa-2026-09-06-core-004o-cache-bypass";
+// CORE-004O · 06.09.2026: Browser-HTTP-Cache fuer lokale ATMS-Dateien bewusst umgehen.
+// Hintergrund: trotz neuem PWA-Cache lieferte Chrome weiter eine alte plan-import.js-Version.
 // Keine Fahrten-, Preis-, Zeit- oder Fluglogik wird hier geändert.
 //
 // Firebase AI Logic wird als eigenes lokales Modul geladen; die externen Firebase-CDN-Module
@@ -13,11 +13,11 @@ const APP_SHELL = [
   "./index.html",
   "./manifest.webmanifest",
   "./css/main.css",
-  "./js/app.js?v=CORE-004C",
-  "./js/flight-engine.js?v=CORE-004C",
-  "./js/plan-import.js?v=CORE-004C",
-  "./js/pwa.js?v=CORE-004C",
-  "./js/firebase-ai.js?v=CORE-004D",
+  "./js/app.js?v=CORE-004O",
+  "./js/flight-engine.js?v=CORE-004O",
+  "./js/plan-import.js?v=CORE-004O",
+  "./js/pwa.js?v=CORE-004O",
+  "./js/firebase-ai.js?v=CORE-004O",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
@@ -33,7 +33,10 @@ self.addEventListener("fetch", event => {
   if(event.request.method !== "GET") return;
   event.respondWith((async()=>{
     try{
-      const response=await fetch(event.request);
+      const url=new URL(event.request.url);
+      const sameOrigin=url.origin===self.location.origin;
+      const request=sameOrigin ? new Request(event.request,{cache:"no-store"}) : event.request;
+      const response=await fetch(request);
       if(response && response.ok){
         const copy=response.clone();
         caches.open(CACHE_NAME).then(cache=>cache.put(event.request,copy));
