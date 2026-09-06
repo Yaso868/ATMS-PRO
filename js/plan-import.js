@@ -1,6 +1,10 @@
 (() => {
   'use strict';
 
+  // CORE-004P · 06.09.2026: Der sichtbare Button „Flugorte automatisch prüfen“ startet jetzt wirklich
+  // window.ATMSAutoFlight (Firebase AI Logic). Der manuelle Gemini-Kopierweg bleibt nur als Fallback.
+  // Frische Prüfergebnisse werden direkt auf die aktuell analysierte Planliste angewendet; unsichere
+  // Ergebnisse überschreiben vorhandene Flugorte niemals.
   // CORE-004K · 06.09.2026: Null-/fehlende Preise dürfen den Import nicht mehr still als 0,00 € passieren.
   // Solche Preise müssen vor der Übernahme manuell bestätigt/eingegeben werden. Keine automatische Preiskorrektur.
   // CORE-004J · 05.09.2026: lokale Flugzellen-Zweit-OCR mit Konsens statt Set-Blockade.
@@ -1286,8 +1290,98 @@
     return changed;
   }
 
+  function normalizeFlightForCurrentCheck(value) {
+    let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
+    return v;
+  }
+
+  function stagedFlightDirection(ride) {
+    const explicit = String(ride?.flightDirection || '').trim().toLowerCase();
+    if (explicit === 'arrival' || explicit === 'departure') return explicit;
+    if (ride?.arrivalFlight) return 'arrival';
+    if (ride?.departureFlight) return 'departure';
+    const inferred = classifyRide(ride?.pickup, ride?.destination, ride?.arrivalFlight, ride?.departureFlight);
+    return inferred === 'arrival' || inferred === 'departure' ? inferred : 'unknown';
+  }
+
+  function checkedSourceCount(item) {
+    const declared = Number(item?.sourceCount);
+    if (Number.isFinite(declared) && declared >= 0) return declared;
+    const sources = Array.isArray(item?.sources) ? item.sources : [];
+    const keys = new Set(sources.map(source => {
+      if (typeof source === 'string') return source.trim().toLowerCase();
+      return String(source?.url || source?.name || '').trim().toLowerCase();
+    }).filter(Boolean));
+    return keys.size;
+  }
+
+  function findCheckedFlightForRide(ride, checked) {
+    const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
+    if (!flight) return null;
+    const date = cellText(ride?.date);
+    const direction = stagedFlightDirection(ride);
+    const flightTime = cellText(ride?.flightTime);
+    const candidates = (Array.isArray(checked) ? checked : []).filter(item => {
+      if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
+      const checkedDate = cellText(item?.date);
+      if (date ? checkedDate !== date : Boolean(checkedDate)) return false;
+      const checkedDirection = String(item?.direction || 'unknown').trim().toLowerCase();
+      if (direction !== 'unknown' ? checkedDirection !== direction : checkedDirection !== 'unknown') return false;
+      return true;
+    });
+    if (!candidates.length) return null;
+    if (flightTime) {
+      const exact = candidates.filter(item => cellText(item?.flightTime) === flightTime);
+      if (exact.length === 1) return exact[0];
+      if (exact.length > 1) return null;
+      if (candidates.length === 1 && !cellText(candidates[0]?.flightTime)) return candidates[0];
+      return null;
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  function stagedPlanIsActive() {
+    return Boolean(state.rides.length && $('planAnalysis') && !$('planAnalysis').classList.contains('hidden'));
+  }
+
+  function applyGeminiResultsToStagedPlan(checked, appliedAt = new Date().toISOString()) {
+    if (!Array.isArray(checked) || !checked.length || !state.rides.length) {
+      return { matchedRides: 0, verifiedRides: 0, uncertainRides: 0 };
+    }
+    let matchedRides = 0, verifiedRides = 0, uncertainRides = 0;
+    state.rides = state.rides.map(ride => {
+      const hit = findCheckedFlightForRide(ride, checked);
+      if (!hit) return ride;
+      matchedRides++;
+      const location = cellText(hit?.flightLocation || hit?.relevantLocation);
+      const iata = String(hit?.iata || hit?.relevantIata || '').trim().toUpperCase();
+      const confidence = String(hit?.confidence || '').trim().toLowerCase();
+      const status = String(hit?.status || '').trim().toLowerCase();
+      const verified = status === 'verified' && (confidence === 'verified' || confidence === 'high') && Boolean(location) && !Boolean(hit?.conflict) && checkedSourceCount(hit) >= 2;
+      if (verified) verifiedRides++; else uncertainRides++;
+      return {
+        ...ride,
+        flightLocation: verified ? normalizeFlightLocation(location) : ride.flightLocation,
+        iata: verified && /^[A-Z]{3}$/.test(iata) ? iata : (ride.iata || ''),
+        flightCheckConfidence: verified ? 'verified' : 'uncertain',
+        flightNeedsManualCheck: !verified,
+        flightCheckSourceNote: cellText(hit?.sourceNote) || ride.flightCheckSourceNote || '',
+        flightCheckedAt: appliedAt,
+        flightAutoModel: cellText(hit?.modelUsed)
+      };
+    });
+    state.issues = validate(state.rides);
+    render();
+    return { matchedRides, verifiedRides, uncertainRides };
+  }
+
+  window.ATMSPlanImportHasStagedRides = stagedPlanIsActive;
+  window.ATMSPlanImportApplyGeminiFlightResults = applyGeminiResultsToStagedPlan;
+
   function refreshIssuesAfterFlightSync() {
-    syncFlightLocationsFromSavedRides();
+    // CORE-004P: Bei einem neuen Import keine alten gespeicherten Flugorte automatisch
+    // als aktuelle Wahrheit zurück in die Planliste schreiben. Jede neue Liste wird neu geprüft.
     state.issues = validate(state.rides);
   }
 
@@ -1528,11 +1622,17 @@
     $('importStatus').textContent = file ? `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
   }
 
-  window.addEventListener('atms:gemini-flight-result', () => {
+  window.addEventListener('atms:gemini-flight-result', event => {
     if (!state.rides.length) return;
+    if (event?.detail?.scope === 'staged-auto') return;
     try {
-      refreshIssuesAfterFlightSync();
-      render();
+      const checked = event?.detail?.checked;
+      if (Array.isArray(checked) && checked.length) {
+        applyGeminiResultsToStagedPlan(checked, new Date().toISOString());
+      } else {
+        state.issues = validate(state.rides);
+        render();
+      }
     } catch (_) {}
   });
 
@@ -1552,6 +1652,71 @@
       if (typeof window.render === 'function') window.render();
     } catch (error) {
       $('importStatus').textContent = `Importfehler: ${error.message}`;
+    }
+  }
+
+  async function runAutomaticFlightCheck() {
+    if (!state.rides.length) return;
+    const status = $('importStatus');
+    const button = $('copyFlightCheckBtn');
+    const fallbackButton = $('copyFlightCheckFallbackBtn');
+    const service = window.ATMSAutoFlight;
+
+    if (!service || typeof service.verifyFlights !== 'function') {
+      if (status) status.textContent = 'Automatische Flugprüfung ist noch nicht verfügbar. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.';
+      if (fallbackButton) fallbackButton.style.display = '';
+      if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung nicht verfügbar', 'warn');
+      return;
+    }
+
+    if (button) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+    }
+    if (fallbackButton) fallbackButton.style.display = 'none';
+
+    try {
+      if (status) status.textContent = 'Automatische aktuelle Flugprüfung wird gestartet …';
+      const result = await service.verifyFlights(state.rides, {
+        onProgress: progress => {
+          if (!status) return;
+          const current = Number(progress?.current || 0);
+          const total = Number(progress?.total || 0);
+          const flight = cellText(progress?.flightNumber);
+          status.textContent = `Aktuelle Flugprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+        }
+      });
+
+      const checked = Array.isArray(result?.checked) ? result.checked : [];
+      if (!checked.length) throw new Error('Die automatische Flugprüfung hat kein auswertbares Ergebnis zurückgegeben.');
+
+      const applied = applyGeminiResultsToStagedPlan(checked, cellText(result?.completedAt) || new Date().toISOString());
+      if (typeof service.renderGrounding === 'function') service.renderGrounding(result?.grounding || []);
+
+      const technicalFailures = Number(result?.technicalFailureCount || 0);
+      const firstTechnicalError = cellText(result?.firstTechnicalError);
+      if (technicalFailures > 0) {
+        if (fallbackButton) fallbackButton.style.display = '';
+        if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Technischer Fehler bei ${technicalFailures} Flug/Flügen${firstTechnicalError ? `: ${firstTechnicalError}` : ''}. Vorhandene Flugorte bleiben bei Unsicherheit erhalten.`;
+        if (typeof window.showToast === 'function') window.showToast('Flugprüfung teilweise technisch fehlgeschlagen', 'warn');
+      } else {
+        if (status) status.textContent = `Automatische Flugprüfung abgeschlossen: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher → vorhandener Flugort bleibt.`;
+        if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung abgeschlossen', applied.uncertainRides ? 'warn' : 'ok');
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent('atms:gemini-flight-result', { detail: { checked, scope: 'staged-auto' } }));
+      } catch (_) {}
+    } catch (error) {
+      if (fallbackButton) fallbackButton.style.display = '';
+      const message = cellText(error?.message) || 'unbekannter technischer Fehler';
+      if (status) status.textContent = `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
+      if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
+    } finally {
+      if (button) {
+        button.disabled = !state.rides.some(ride => ride.flightNumber);
+        button.removeAttribute('aria-busy');
+      }
     }
   }
 
@@ -1583,7 +1748,8 @@
     input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
-    $('copyFlightCheckBtn')?.addEventListener('click', copyFlightCheckPrompt);
+    $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
+    $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
     if (drop) {
       ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('over'); }));
       ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
