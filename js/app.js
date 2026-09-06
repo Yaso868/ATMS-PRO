@@ -1247,8 +1247,63 @@ function showAppError(error){
   const box=safeEl('appError');
   if(box){box.hidden=false;box.textContent='ATMS-Fehler: '+(error&&error.message?error.message:String(error));}
 }
+
+// CORE-004M · 06.09.2026: Ergebnis der automatischen Flugprüfung dauerhaft sichtbar halten.
+// Die bestehende kurze Toast-Meldung bleibt unverändert. Zusätzlich merkt ATMS das letzte
+// aussagekräftige Ergebnis/den letzten technischen Fehler und zeigt ihn direkt unter dem
+// Flugprüf-Status an, auch wenn plan-import.js danach den normalen Flugzähler neu rendert.
+function initPersistentFlightCheckStatus(){
+  const STORAGE_KEY='atms_flight_check_last_status_v1';
+  const isImportant=text=>/fehlgeschlagen|fehler|nicht bereit|offline|benötigt internet|technisch|ki-anfrage|aktuell geprüft|automatisch übernommen|manuell prüfen/i.test(String(text||''));
+  const paint=(box,text,at='')=>{
+    if(!box||!text)return;
+    const isError=/fehlgeschlagen|fehler|nicht bereit|offline|technisch|ki-anfrage/i.test(text);
+    box.style.display='block';
+    box.style.marginTop='10px';
+    box.style.padding='10px 12px';
+    box.style.borderRadius='10px';
+    box.style.border=`1px solid ${isError?'rgba(255,113,137,.65)':'rgba(89,239,139,.5)'}`;
+    box.style.background=isError?'rgba(95,20,36,.35)':'rgba(20,85,48,.28)';
+    box.style.color=isError?'#ffd5dd':'#c9ffda';
+    box.style.fontSize='12px';
+    box.style.lineHeight='1.45';
+    box.style.whiteSpace='pre-wrap';
+    box.textContent=`Letztes Ergebnis${at?` · ${at}`:''}: ${text}`;
+  };
+  const attach=()=>{
+    const source=document.getElementById('flightCheckStatus');
+    if(!source||source.dataset.atmsPersistentWatched==='1')return false;
+    source.dataset.atmsPersistentWatched='1';
+    let box=document.getElementById('atmsPersistentFlightCheckStatus');
+    if(!box){
+      box=document.createElement('div');
+      box.id='atmsPersistentFlightCheckStatus';
+      box.style.display='none';
+      source.insertAdjacentElement('afterend',box);
+    }
+    try{
+      const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'null');
+      if(saved?.text)paint(box,String(saved.text),String(saved.at||''));
+    }catch(_){ }
+    const remember=()=>{
+      const value=String(source.textContent||'').trim();
+      if(!value||!isImportant(value))return;
+      const at=new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      try{localStorage.setItem(STORAGE_KEY,JSON.stringify({text:value,at,createdAt:new Date().toISOString()}));}catch(_){ }
+      paint(box,value,at);
+    };
+    new MutationObserver(remember).observe(source,{childList:true,subtree:true,characterData:true});
+    remember();
+    return true;
+  };
+  if(attach())return;
+  const rootObserver=new MutationObserver(()=>{if(attach())rootObserver.disconnect()});
+  rootObserver.observe(document.documentElement,{childList:true,subtree:true});
+}
+
 function initApp(){
   try{
+    initPersistentFlightCheckStatus();
     bindClick('driverBtn',openDrivers);
     bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
     bindClick('cockpitDriverMessageBtn',openDriverMessage);
