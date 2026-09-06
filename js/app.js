@@ -479,6 +479,15 @@ function openInfoStatus(){
 }
 function whatsappMessage(r){return infoStatusMessage(r)}
 function openWhatsapp(){openInfoStatus()}
+// CORE-004L BACKUP HOTFIX 06.09.2026: alle lokalen ATMS-Bereiche sicher in das Backup übernehmen.
+function atmsStorageSnapshot(){
+  const snapshot={};
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);
+    if(key&&key.startsWith('atms_')) snapshot[key]=localStorage.getItem(key)??'';
+  }
+  return snapshot;
+}
 function backupPayload(){
   return {
     format:'ATMS_BACKUP',
