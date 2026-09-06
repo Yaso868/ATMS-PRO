@@ -1,8 +1,10 @@
 (() => {
   'use strict';
 
+  // CORE-004K · 06.09.2026: Null-/fehlende Preise dürfen den Import nicht mehr still als 0,00 € passieren.
+  // Solche Preise müssen vor der Übernahme manuell bestätigt/eingegeben werden. Keine automatische Preiskorrektur.
   // CORE-004J · 05.09.2026: lokale Flugzellen-Zweit-OCR mit Konsens statt Set-Blockade.
-  // Mehrere lokale Leseversuche stimmen ab; nur eindeutiger Konsens wird übernommen. Layout/Preis/Zeitlogik unverändert.
+  // Mehrere lokale Leseversuche stimmen ab; nur eindeutiger Konsens wird übernommen. Flug-/Layout-/Zeitlogik bleibt unverändert.
   // CORE-004H begrenzte den Flugzellen-Crop korrekt, vergrößerte ihn aber bis 5x ohne Glättung.
   // Dadurch konnten Ziffern (z. B. 7) als Schrägstrich gelesen werden. Jetzt 1x/2x mit sauberer Glättung.
 
@@ -271,13 +273,15 @@
 
   function pricePlausibility(value) {
     const price = Number(value) || 0;
-    if (price <= 0) return { suspicious: false, suggestion: null };
+    // CORE-004K: 0/leer ist NICHT automatisch plausibel. Ein fehlender OCR-Preis
+    // muss vor dem Import ausdrücklich eingegeben oder als 0,00 € bestätigt werden.
+    if (price <= 0) return { suspicious: true, suggestion: null, missing: true };
     if (price >= 1000) {
       const decimalSuggestion = price / 100;
       const suggestion = decimalSuggestion >= 10 && decimalSuggestion < 1000 ? decimalSuggestion : null;
-      return { suspicious: true, suggestion };
+      return { suspicious: true, suggestion, missing: false };
     }
-    return { suspicious: false, suggestion: null };
+    return { suspicious: false, suggestion: null, missing: false };
   }
 
   function normalizeFlightLocation(value) {
@@ -759,11 +763,14 @@
         issues.push({
           level: 'warning',
           kind: 'price',
+          missingPrice: Boolean(priceCheck.missing),
           row,
           rideId: String(ride.id || row),
           originalPrice: Number(ride.price) || 0,
           suggestedPrice: priceCheck.suggestion,
-          text: `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
+          text: priceCheck.missing
+            ? 'Preis fehlt oder wurde beim OCR nicht sicher erkannt – bitte mit der Original-Planliste prüfen. Keine automatische Preiskorrektur.'
+            : `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
         });
       }
 
@@ -1285,21 +1292,28 @@
   }
 
 
-  function resolvePriceIssue(rideId, action, suggestedPrice) {
+  function resolvePriceIssue(rideId, action, priceValue) {
     const ride = state.rides.find(item => String(item.id) === String(rideId));
     if (!ride) return;
 
-    if (action === 'suggestion') {
-      const value = Number(suggestedPrice);
-      if (!Number.isFinite(value) || value <= 0) return;
+    if (action === 'suggestion' || action === 'manual') {
+      const value = Number(priceValue);
+      if (!Number.isFinite(value) || value <= 0) {
+        if (typeof window.showToast === 'function') window.showToast('Bitte einen gültigen Preis eingeben', 'warn');
+        return;
+      }
       ride.price = value;
-      state.priceDecisions[String(rideId)] = 'suggestion';
+      state.priceDecisions[String(rideId)] = action;
       if (typeof window.ATMSPersistPriceOverride === 'function') {
         window.ATMSPersistPriceOverride(ride, value);
       }
       if (typeof window.showToast === 'function') {
         window.showToast(`${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value)} übernommen`, 'ok');
       }
+    } else if (action === 'zero') {
+      ride.price = 0;
+      state.priceDecisions[String(rideId)] = 'zero';
+      if (typeof window.showToast === 'function') window.showToast('0,00 € als korrekt bestätigt', 'ok');
     } else if (action === 'original') {
       state.priceDecisions[String(rideId)] = 'original';
       if (typeof window.showToast === 'function') window.showToast('Originalpreis bestätigt', 'ok');
@@ -1352,6 +1366,16 @@
               ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(suggestion)
               : '';
             const originalLabel = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(Number(issue.originalPrice) || 0);
+            if (issue.missingPrice) {
+              return `<div class="plan-issue ${issue.level}" style="padding-bottom:12px">
+                <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+                <input type="text" inputmode="decimal" class="price-manual-input" data-ride-id="${escapeHtml(issue.rideId)}" placeholder="Preis z. B. 47,60" style="width:100%;box-sizing:border-box;margin-top:10px;padding:11px;border-radius:10px">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                  <button type="button" class="price-review-btn" data-price-action="manual" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">Preis übernehmen</button>
+                  <button type="button" class="price-review-btn" data-price-action="zero" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">0,00 € ist korrekt</button>
+                </div>
+              </div>`;
+            }
             return `<div class="plan-issue ${issue.level}" style="padding-bottom:12px">
               <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -1373,10 +1397,16 @@
 
     $('planIssues').querySelectorAll('.price-review-btn').forEach(button => {
       button.addEventListener('click', () => {
+        let value = button.dataset.suggestedPrice;
+        if (button.dataset.priceAction === 'manual') {
+          const input = Array.from($('planIssues').querySelectorAll('.price-manual-input'))
+            .find(item => String(item.dataset.rideId) === String(button.dataset.rideId));
+          value = parseNumber(input?.value || '');
+        }
         resolvePriceIssue(
           button.dataset.rideId,
           button.dataset.priceAction,
-          button.dataset.suggestedPrice
+          value
         );
       });
     });
