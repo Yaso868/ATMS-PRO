@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
+  // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
   // CORE-004P · 06.09.2026: Der sichtbare Button „Flugorte automatisch prüfen“ startet jetzt wirklich
   // window.ATMSAutoFlight (Firebase AI Logic). Der manuelle Gemini-Kopierweg bleibt nur als Fallback.
   // Frische Prüfergebnisse werden direkt auf die aktuell analysierte Planliste angewendet; unsichere
@@ -38,6 +40,69 @@
   function formatPlanDate(value) {
     const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return m ? `${m[3]}.${m[2]}.${m[1]}` : String(value || '');
+  }
+
+  function validIsoPlanDate(year, month, day) {
+    const y = Number(year), m = Number(month), d = Number(day);
+    if (y < 2020 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+    const probe = new Date(Date.UTC(y, m - 1, d));
+    if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m - 1 || probe.getUTCDate() !== d) return '';
+    return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  function extractPlanDateCandidates(value) {
+    const text = String(value || '');
+    const out = [];
+    const add = iso => { if (iso && !out.includes(iso)) out.push(iso); };
+    let match;
+    const ymd = /(?:^|\D)(20\d{2})[.\-_/ ](0?[1-9]|1[0-2])[.\-_/ ](0?[1-9]|[12]\d|3[01])(?:\D|$)/g;
+    while ((match = ymd.exec(text))) add(validIsoPlanDate(match[1], match[2], match[3]));
+    const dmy = /(?:^|\D)(0?[1-9]|[12]\d|3[01])[.\-_/ ](0?[1-9]|1[0-2])[.\-_/ ](20\d{2})(?:\D|$)/g;
+    while ((match = dmy.exec(text))) add(validIsoPlanDate(match[3], match[2], match[1]));
+    const compactYmd = /(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:\D|$)/g;
+    while ((match = compactYmd.exec(text))) add(validIsoPlanDate(match[1], match[2], match[3]));
+    const compactDmy = /(?:^|\D)(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])(20\d{2})(?:\D|$)/g;
+    while ((match = compactDmy.exec(text))) add(validIsoPlanDate(match[3], match[2], match[1]));
+    return out;
+  }
+
+  function setDetectedPlanDate(date, source = '') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return false;
+    state.planDate = date;
+    const input = $('planDateInput');
+    if (input) input.value = date;
+    const status = $('planDateStatus');
+    if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(date)}${source ? ` · automatisch aus ${source}` : ''}`;
+    return true;
+  }
+
+  function detectPlanDateFromFile(file) {
+    const candidates = extractPlanDateCandidates(file?.name || '');
+    return candidates.length === 1 ? candidates[0] : '';
+  }
+
+  function detectPlanDateFromMatrix(matrix) {
+    const counts = new Map();
+    (Array.isArray(matrix) ? matrix.slice(0, 40) : []).forEach(row => {
+      (Array.isArray(row) ? row : [row]).forEach(cell => {
+        extractPlanDateCandidates(cell).forEach(date => counts.set(date, (counts.get(date) || 0) + 1));
+      });
+    });
+    if (!counts.size) return '';
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (ranked.length === 1 || ranked[0][1] > ranked[1][1]) return ranked[0][0];
+    return '';
+  }
+
+  function detectPlanDateFromJsonRows(rows) {
+    const counts = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(ride => {
+      const direct = cellText(ride?.planDate || ride?.date);
+      const dates = /^\d{4}-\d{2}-\d{2}$/.test(direct) ? [direct] : extractPlanDateCandidates(direct);
+      dates.forEach(date => counts.set(date, (counts.get(date) || 0) + 1));
+    });
+    if (!counts.size) return '';
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
   }
 
 
@@ -1538,6 +1603,8 @@
       $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
       const result = await readFile(state.file);
       if (result.kind === 'json') {
+        const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
+        if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
         const planDate = currentPlanDate();
         state.rides = result.rows.map((ride, index) => {
           const withDate = { ...ride, planDate: cellText(ride?.planDate) || planDate, date: cellText(ride?.date) || planDate };
@@ -1554,6 +1621,8 @@
 
       const matrix = result.matrix || [];
       if (!matrix.length) throw new Error('Keine Datenzeilen gefunden.');
+      const detectedMatrixDate = detectPlanDateFromMatrix(matrix);
+      if (detectedMatrixDate) setDetectedPlanDate(detectedMatrixDate, result.imageOcr ? 'Bildinhalt' : 'Planliste');
       const headerDetection = detectHeader(matrix);
       if (headerDetection.score < 3) throw new Error('Die Überschriften der Planliste wurden nicht eindeutig erkannt. Erwartet werden unter anderem Uhrzeit, Von und Nach.');
       const headers = uniqueHeaders(matrix[headerDetection.index]);
@@ -1615,6 +1684,10 @@
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
     state.dateInfo = {};
+    if (file) {
+      const detectedFileDate = detectPlanDateFromFile(file);
+      if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
+    }
     $('analyzePlanBtn').disabled = !file;
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
@@ -1661,6 +1734,14 @@
     const button = $('copyFlightCheckBtn');
     const fallbackButton = $('copyFlightCheckFallbackBtn');
     const service = window.ATMSAutoFlight;
+    const quotaSessionKey = 'atms_auto_flight_quota_blocked_session';
+
+    if (sessionStorage.getItem(quotaSessionKey) === '1') {
+      if (fallbackButton) fallbackButton.style.display = '';
+      if (status) status.textContent = 'Automatische Flugprüfung ist in dieser Sitzung wegen erreichtem Gemini-Kontingent pausiert. Es werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
+      if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+      return;
+    }
 
     if (!service || typeof service.verifyFlights !== 'function') {
       if (status) status.textContent = 'Automatische Flugprüfung ist noch nicht verfügbar. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.';
@@ -1695,10 +1776,17 @@
 
       const technicalFailures = Number(result?.technicalFailureCount || 0);
       const firstTechnicalError = cellText(result?.firstTechnicalError);
+      const quotaFailure = technicalFailures > 0 && /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(firstTechnicalError);
       if (technicalFailures > 0) {
         if (fallbackButton) fallbackButton.style.display = '';
-        if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Technischer Fehler bei ${technicalFailures} Flug/Flügen${firstTechnicalError ? `: ${firstTechnicalError}` : ''}. Vorhandene Flugorte bleiben bei Unsicherheit erhalten.`;
-        if (typeof window.showToast === 'function') window.showToast('Flugprüfung teilweise technisch fehlgeschlagen', 'warn');
+        if (quotaFailure) {
+          sessionStorage.setItem(quotaSessionKey, '1');
+          if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Gemini-Kontingent ist derzeit erreicht; weitere automatische Aufrufe werden in dieser Sitzung gestoppt. Vorhandene Flugorte bleiben erhalten. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.`;
+          if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+        } else {
+          if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Technischer Fehler bei ${technicalFailures} Flug/Flügen. Vorhandene Flugorte bleiben bei Unsicherheit erhalten.`;
+          if (typeof window.showToast === 'function') window.showToast('Flugprüfung teilweise technisch fehlgeschlagen', 'warn');
+        }
       } else {
         if (status) status.textContent = `Automatische Flugprüfung abgeschlossen: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher → vorhandener Flugort bleibt.`;
         if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung abgeschlossen', applied.uncertainRides ? 'warn' : 'ok');
@@ -1710,8 +1798,15 @@
     } catch (error) {
       if (fallbackButton) fallbackButton.style.display = '';
       const message = cellText(error?.message) || 'unbekannter technischer Fehler';
-      if (status) status.textContent = `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
-      if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
+      const quotaFailure = /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(message);
+      if (quotaFailure) {
+        sessionStorage.setItem(quotaSessionKey, '1');
+        if (status) status.textContent = 'Automatische Flugprüfung derzeit wegen erreichtem Gemini-Kontingent nicht verfügbar. Es wurden keine Fahrtdaten überschrieben und in dieser Sitzung werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
+        if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+      } else {
+        if (status) status.textContent = `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
+        if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
+      }
     } finally {
       if (button) {
         button.disabled = !state.rides.some(ride => ride.flightNumber);
