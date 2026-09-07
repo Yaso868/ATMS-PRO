@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // CORE-005A · 07.09.2026: Bildimport-Struktur stabilisiert (12 Spalten, sichere OCR-Zuordnung, keine Fremd-Fallbacks).
+  // CORE-005B · 07.09.2026: CORE-005A + verlorene Bildzeilen retten und ungueltige OCR-Flugwerte gezielt nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
   // CORE-004P · 06.09.2026: Der sichtbare Button „Flugorte automatisch prüfen“ startet jetzt wirklich
@@ -364,12 +364,17 @@
 
   function normalizeFlightNumber(value) {
     const raw = cellText(value).trim();
-    if (!raw || /^[-–—]+$/.test(raw)) return '';
+    if (!raw || /^[-–—~_.\s]+$/.test(raw)) return '';
     let normalized = raw.toUpperCase().replace(/\s+/g, '');
     // Häufiger OCR-Fehler bei Austrian Airlines: 0S162 -> OS162
     if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
-    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden
+    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden.
     if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)\d*$/.test(normalized)) return '';
+    // CORE-005B: OCR-Reste wie "~~-" oder reine Satzzeichen sind KEINE Flugnummer.
+    // Nur formal plausible Flugnummern mit mindestens einem Buchstaben und einer Ziffer
+    // bleiben erhalten. Dadurch kann die gezielte Flugzellen-Zweit-OCR danach greifen.
+    if (!/[A-Z]/.test(normalized) || !/\d/.test(normalized)) return '';
+    if (!/^[A-Z0-9]{2,4}\d{1,4}[A-Z]?$/.test(normalized)) return '';
     return normalized;
   }
 
@@ -1231,14 +1236,22 @@
       const firstRaw = cellText(row[0]);
       const firstNormalized = firstRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
       const firstCellTime = looksLikeTime(firstNormalized) || /^\d{3,4}$/.test(firstNormalized.replace(/\D/g,''));
+      const secondTimeRaw = cellText(row[9]);
+      const secondTimeNormalized = secondTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const secondCellTime = looksLikeTime(secondTimeNormalized) || /^\d{3,4}$/.test(secondTimeNormalized.replace(/\D/g,''));
       const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
       const hasFlight = row.some(value => looksLikeFlight(value));
+      const hasRoute = Boolean(cellText(row[1]) && cellText(row[2]));
+      const hasIdentity = Boolean(cellText(row[3]) || cellText(row[4]) || cellText(row[11]));
+      const strongOrphanRow = hasRoute && hasIdentity && nonEmpty >= 5 && (secondCellTime || hasFlight || cellText(row[5]) || cellText(row[6]));
 
-      // Im bekannten 12-Spalten-Bildformat ist die linke Uhrzeit der Zeilenanker.
-      // So werden farbige/schwache Zeilen nicht mehr ueber Flug-/Nachbarwerte gerettet
-      // und zwei physische Spalten koennen nicht zu einer vermeintlichen Fahrt verschmelzen.
+      // CORE-005B: Die linke Uhrzeit bleibt der primaere Zeilenanker. Wenn Tesseract
+      // aber genau diese eine Zelle verliert, darf eine ansonsten eindeutig erkannte
+      // physische Tabellenzeile nicht komplett verschwinden. Solche "orphan rows"
+      // bleiben erhalten und ihre linke Uhrzeit wird danach NUR in dieser Zelle lokal
+      // nachgelesen. Die zweite Uhrzeit wird dabei nie als Planzeit uebernommen.
       const keep = completed.standard
-        ? (firstCellTime && nonEmpty >= 2)
+        ? ((firstCellTime && nonEmpty >= 2) || strongOrphanRow)
         : (nonEmpty >= 3 && (hasTime || hasFlight));
 
       if (!keep) return;
@@ -1292,6 +1305,81 @@
     (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
     const joined = parts.join(' ');
     return flightCandidatesFromRow([joined]);
+  }
+
+  function rideTimeCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts.join(' ').replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const found = new Set();
+    const colonMatches = joined.match(/(?:^|\D)([0-2]?\d[:.]?[0-5]\d)(?!\d)/g) || [];
+    colonMatches.forEach(token => {
+      const digits = token.replace(/\D/g, '');
+      if (digits.length < 3 || digits.length > 4) return;
+      const padded = digits.padStart(4, '0');
+      const hh = Number(padded.slice(0, 2));
+      const mm = Number(padded.slice(2));
+      if (hh <= 23 && mm <= 59) found.add(`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
+    });
+    return [...found];
+  }
+
+  async function recoverMissingRideTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const timeCol = mapping?.time;
+    if (timeCol === undefined) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[timeCol]);
+    const right = Number(boundaries[timeCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.time) continue;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const cellWidth = Math.max(8, right - left);
+      const padX = Math.max(1, cellWidth * 0.04);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - padY, right, y1 + padY, 3]
+      ];
+
+      if (status) status.textContent = `Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = rideTimeCandidatesFromOcrResult(second);
+          if (candidates.length === 1) {
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        continue;
+      }
+
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      if (!ranked.length) continue;
+      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+      const recovered = ranked[0][0];
+      ride.time = recovered;
+      ride.planTime = recovered;
+      ride.timeRecoveredFromTargetedOcr = true;
+    }
+    return out;
   }
 
   async function recoverMissingFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
@@ -1805,8 +1893,14 @@
 
       let preparedRides = rides;
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
+        preparedRides = await recoverMissingRideTimesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
         preparedRides = await recoverMissingFlightNumbersTargeted(
-          rides,
+          preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
