@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  // CORE-005B · 07.09.2026: CORE-005A + verlorene Bildzeilen retten und ungueltige OCR-Flugwerte gezielt nachlesen.
+  // CORE-005D · 07.09.2026: CORE-005C + eindeutige Uhrzeit in Ort als separate Disponentenzeit erhalten, nicht als Flugort.
+  // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
   // CORE-004P · 06.09.2026: Der sichtbare Button „Flugorte automatisch prüfen“ startet jetzt wirklich
@@ -721,6 +722,18 @@
 
     const flightNumber = arrivalFlight || departureFlight || recoveredFlight;
     const rideType = classifyRide(pickup, destination, arrivalFlight, departureFlight);
+
+    // CORE-005D: Disponenten tragen mangels Bemerkungsspalte vereinzelt eine
+    // Abholzeit in die Ort-Spalte ein. Eine eindeutige Uhrzeit ist kein Flugort.
+    // Planzeit, Disponentenzeit und spaetere Live-Zeit bleiben getrennte Werte.
+    const sourceFlightLocationRaw = cellText(valueAt(row, mapping, 'flightLocation'));
+    const dispatcherTime = looksLikeTime(sourceFlightLocationRaw)
+      ? normalizeTime(sourceFlightLocationRaw)
+      : '';
+    const flightLocation = dispatcherTime
+      ? ''
+      : normalizeFlightLocation(sourceFlightLocationRaw);
+
     return {
       id: `import-${Date.now()}-${rowNumber}`,
       sourceRow: rowNumber,
@@ -740,7 +753,10 @@
       departureFlight,
       flightNumber,
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
-      flightLocation: normalizeFlightLocation(valueAt(row, mapping, 'flightLocation')),
+      flightLocation,
+      dispatcherTime,
+      dispatcherNote: dispatcherTime ? `Disponentenzeit aus Ort-Spalte: ${sourceFlightLocationRaw}` : '',
+      sourceFlightLocationRaw,
       flightRecoveredFromRow: Boolean(recoveredFlight),
       flightRecoveryAmbiguous,
       flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
@@ -1269,6 +1285,79 @@
       };
     });
 
+    // CORE-005C: Wenn Tesseract eine komplette physische Tabellenzeile gar nicht
+    // als brauchbare OCR-Zeile liefert, kann CORE-005B sie nicht als "orphan row"
+    // retten. Deshalb pruefen wir die vertikalen Abstaende der bereits erkannten
+    // Tabellenzeilen. Ein annähernd doppelter Abstand bedeutet sehr wahrscheinlich,
+    // dass dazwischen genau eine physische Zeile fehlt. Diese wird als leere
+    // synthetische Tabellenzeile eingefuegt und anschliessend NUR in diesem schmalen
+    // Bereich lokal erneut OCR-gelesen. Keine feste Fahrtenanzahl und keine
+    // Sonderregel fuer 05:05/EW9782/FreeNow.
+    if (completed.standard && rows.length >= 5) {
+      const records = [];
+      for (let matrixIndex = 1; matrixIndex < rows.length; matrixIndex++) {
+        const meta = rowMetaByMatrixIndex[matrixIndex];
+        if (!meta) continue;
+        records.push({ row: rows[matrixIndex], meta: { ...meta } });
+      }
+
+      const positiveGaps = [];
+      for (let i = 1; i < records.length; i++) {
+        const gap = Number(records[i].meta.cy) - Number(records[i - 1].meta.cy);
+        if (Number.isFinite(gap) && gap > 4) positiveGaps.push(gap);
+      }
+
+      if (positiveGaps.length >= 3) {
+        const sortedGaps = positiveGaps.slice().sort((a, b) => a - b);
+        // Oberes Viertel bewusst ausblenden, damit bereits vorhandene grosse Luecken
+        // die normale Zeilenhoehe nicht nach oben ziehen.
+        const basePool = sortedGaps.slice(0, Math.max(3, Math.ceil(sortedGaps.length * 0.75)));
+        const medianGap = basePool[Math.floor(basePool.length / 2)];
+
+        if (Number.isFinite(medianGap) && medianGap > 6) {
+          const expanded = [];
+          for (let i = 0; i < records.length; i++) {
+            const current = records[i];
+            expanded.push(current);
+            if (i >= records.length - 1) continue;
+
+            const next = records[i + 1];
+            const gap = Number(next.meta.cy) - Number(current.meta.cy);
+            const estimatedMissing = Math.round(gap / medianGap) - 1;
+
+            // Nur klar erkennbare 1-2 fehlende physische Zeilen einsetzen.
+            // So reagieren wir nicht auf kleine OCR-Schwankungen.
+            if (estimatedMissing < 1 || estimatedMissing > 2) continue;
+            const ratio = gap / medianGap;
+            if (ratio < 1.55 || ratio > 3.35) continue;
+
+            for (let missing = 1; missing <= estimatedMissing; missing++) {
+              const cy = Number(current.meta.cy) + (gap * missing) / (estimatedMissing + 1);
+              const halfBand = Math.max(8, medianGap * 0.38);
+              expanded.push({
+                row: Array(anchors.length).fill(''),
+                meta: {
+                  y0: cy - halfBand,
+                  y1: cy + halfBand,
+                  cy,
+                  syntheticGap: true
+                }
+              });
+            }
+          }
+
+          if (expanded.length > records.length) {
+            rows.length = 1;
+            Object.keys(rowMetaByMatrixIndex).forEach(key => delete rowMetaByMatrixIndex[key]);
+            expanded.forEach(record => {
+              rows.push(record.row);
+              rowMetaByMatrixIndex[rows.length - 1] = record.meta;
+            });
+          }
+        }
+      }
+    }
+
     rows._atmsImageMeta = {
       anchors,
       boundaries,
@@ -1296,6 +1385,88 @@
     ctx.imageSmoothingEnabled = scale > 1;
     if (scale > 1 && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    return out;
+  }
+
+  async function recoverSyntheticImageRowsTargeted(matrix, imageCanvas, imageMeta) {
+    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) return matrix;
+    const boundaries = imageMeta.boundaries || [];
+    const metaByIndex = imageMeta.rowMetaByMatrixIndex || {};
+    if (boundaries.length < 2) return matrix;
+
+    const out = matrix.map(row => Array.isArray(row) ? row.slice() : row);
+    const status = $('importStatus');
+
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const meta = metaByIndex[matrixIndex];
+      if (!meta?.syntheticGap) continue;
+
+      const x0 = Number(boundaries[0]);
+      const x1 = Number(boundaries[boundaries.length - 1]);
+      const y0 = Number(meta.y0);
+      const y1 = Number(meta.y1);
+      if (![x0, x1, y0, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) continue;
+
+      if (status) status.textContent = `Fehlende Tabellenzeile ${matrixIndex + 1} wird lokal nachgelesen …`;
+
+      let bestRow = null;
+      let bestScore = -1;
+
+      for (const scale of [1, 2]) {
+        try {
+          const sx = Math.max(0, Math.floor(x0));
+          const crop = cropCanvasRegion(imageCanvas, x0, y0, x1, y1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const cells = Array(boundaries.length - 1).fill('').map(() => []);
+
+          (second?.data?.words || []).forEach(word => {
+            const value = cellText(word?.text);
+            const conf = Number(word?.confidence ?? word?.conf ?? 0);
+            if (!value || !word?.bbox || conf < 5) return;
+            const localCx = (Number(word.bbox.x0 || 0) + Number(word.bbox.x1 || 0)) / 2;
+            const sourceCx = sx + localCx / scale;
+            let col = boundaries.findIndex((right, i) => i > 0 && sourceCx < right) - 1;
+            if (col < 0) col = 0;
+            if (col >= cells.length) col = cells.length - 1;
+            cells[col].push(value);
+          });
+
+          const candidate = cells.map(parts => parts.join(' ').replace(/\s+/g, ' ').trim());
+          const firstRaw = cellText(candidate[0]);
+          const firstNormalized = firstRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+          const firstTime = looksLikeTime(firstNormalized) || /^\d{3,4}$/.test(firstNormalized.replace(/\D/g, ''));
+          if (firstTime && firstNormalized !== firstRaw) candidate[0] = firstNormalized;
+
+          const nonEmpty = candidate.filter(Boolean).length;
+          const routeScore = (cellText(candidate[1]) ? 1 : 0) + (cellText(candidate[2]) ? 1 : 0);
+          const identityScore = (cellText(candidate[3]) ? 1 : 0) + (cellText(candidate[4]) ? 1 : 0) + (cellText(candidate[11]) ? 1 : 0);
+          const score = nonEmpty + (firstTime ? 8 : 0) + routeScore * 2 + identityScore;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestRow = candidate;
+          }
+
+          if (firstTime && nonEmpty >= 5 && routeScore >= 1) break;
+        } catch (_) {
+          // Nur Sicherheitsnetz; der naechste Versuch darf weiterlaufen.
+        }
+      }
+
+      if (!bestRow) continue;
+      const first = cellText(bestRow[0]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const firstTime = looksLikeTime(first) || /^\d{3,4}$/.test(first.replace(/\D/g, ''));
+      const nonEmpty = bestRow.filter(Boolean).length;
+
+      // Nur eine wirklich plausibel erneut gelesene Fahrtzeile aktivieren.
+      if (firstTime && nonEmpty >= 4) {
+        bestRow[0] = first;
+        out[matrixIndex] = bestRow;
+        meta.syntheticGapRecovered = true;
+      }
+    }
+
+    out._atmsImageMeta = imageMeta;
     return out;
   }
 
@@ -1490,8 +1661,11 @@
       }
     });
     const words = result?.data?.words || [];
-    const matrix = imageWordsToMatrix(words, canvas.width);
+    let matrix = imageWordsToMatrix(words, canvas.width);
     if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
+    if (matrix._atmsImageMeta) {
+      matrix = await recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta);
+    }
     return {
       kind: 'matrix',
       matrix,
