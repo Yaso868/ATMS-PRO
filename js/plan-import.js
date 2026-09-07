@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // CORE-005I · 07.09.2026: CORE-005H + robuste Unicode-/Text-Erkennung für Dispo/Live-Anzeige.
+  // CORE-005J · 07.09.2026: CORE-005I + nachträgliche UI-Korrektur entfernt; app.js/pwa.js rendern Preis und PLAN/DISPO/LIVE direkt an der Quelle.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
@@ -2281,156 +2281,9 @@
   }
 
 
-  // CORE-005F – Preis fehlt sichtbar machen, ohne app.js zu ersetzen.
-  // Der Bildimport darf bei einer Planliste ohne Preis-Spalte weiterlaufen.
-  // price=0 bleibt intern neutral; priceMissingFromSource kennzeichnet, dass KEIN Preis aus der Quelle vorlag.
-  let core005fActiveRideId = '';
-
-  function core005fStoredRides() {
-    try {
-      const raw = localStorage.getItem('atms_beta_14_3_1_rides');
-      const parsed = JSON.parse(raw || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  function core005fPriceMissing(ride) {
-    return Boolean(
-      ride &&
-      ride.priceMissingFromSource &&
-      !(Number(ride.price) > 0)
-    );
-  }
-
-
-  function core005gNormalizeUiText(value) {
-    return String(value || '')
-      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function core005gDispatcherTime(ride) {
-    const value = String(
-      ride?.dispatcherTime
-      || ride?.dispo_abholzeit
-      || ride?.dispoAbholzeit
-      || ''
-    ).trim();
-    return /^\d{2}:\d{2}$/.test(value) ? value : '';
-  }
-
-  function core005gPatchDispatcherCard(card, ride) {
-    const dispatcherTime = core005gDispatcherTime(ride);
-    if (!card || !dispatcherTime) return;
-
-    // Nur wenn wirklich keine Live-Daten vorliegen:
-    // Dispo-Zeit darf niemals als "Aktuell"/Live-Zeit erscheinen.
-    const cardText = core005gNormalizeUiText(card.textContent).toUpperCase();
-    const noLive = /KEINE\s+LIVE\s*-?\s*DATEN/.test(cardText);
-
-    if (!noLive) return;
-
-    // CORE-005H:
-    // Die vorhandene Kartenstruktur enthält teilweise Icons/Spans als Kinder.
-    // Deshalb nicht nur "leaf elements" prüfen, sondern echte Textknoten.
-    const walker = document.createTreeWalker(
-      card,
-      NodeFilter.SHOW_TEXT
-    );
-
-    const textNodes = [];
-    let node;
-    while ((node = walker.nextNode())) textNodes.push(node);
-
-    textNodes.forEach(textNode => {
-      const value = core005gNormalizeUiText(textNode.nodeValue);
-
-      // Rechte Beschriftung: auch "Aktuell 05:30" oder verschachtelte Varianten
-      // zuverlässig in "Dispo 05:30" ändern.
-      if (/\bAktuell\b/i.test(value)) {
-        textNode.nodeValue = textNode.nodeValue.replace(/\bAktuell\b/i, 'Dispo');
-      }
-
-      // Mittlere Differenz ist keine Live-Verspätung. Führende Punkte/Icons
-      // können in separaten oder gemeinsamen Textknoten liegen.
-      if (/[+\-\u2212]\s*\d+\s*MIN/i.test(value)) {
-        textNode.nodeValue = textNode.nodeValue.replace(
-          /[+\-\u2212]\s*\d+\s*MIN/i,
-          'Live --:--'
-        );
-      }
-    });
-  }
-
-  function core005fPatchPriceUi() {
-    const rides = core005fStoredRides();
-    if (!rides.length) return;
-
-    const byId = new Map(
-      rides.map(ride => [String(ride.id || ''), ride])
-    );
-
-    document.querySelectorAll('.ride[data-id]').forEach(card => {
-      const ride = byId.get(String(card.dataset.id || ''));
-
-      if (core005fPriceMissing(ride)) {
-        const price = card.querySelector('.price');
-        if (price && price.textContent.trim() !== 'Preis fehlt') {
-          price.textContent = 'Preis fehlt';
-          price.dataset.atmsPriceMissing = '1';
-        }
-      }
-
-      core005gPatchDispatcherCard(card, ride);
-    });
-
-    if (core005fActiveRideId) {
-      const ride = byId.get(String(core005fActiveRideId));
-      if (core005fPriceMissing(ride)) {
-        const cockpitPrice = document.getElementById('price');
-        if (cockpitPrice && cockpitPrice.textContent.trim() !== 'Preis fehlt') {
-          cockpitPrice.textContent = 'Preis fehlt';
-          cockpitPrice.dataset.atmsPriceMissing = '1';
-        }
-      }
-    }
-  }
-
-  document.addEventListener('click', event => {
-    const card = event.target && event.target.closest
-      ? event.target.closest('.ride[data-id]')
-      : null;
-
-    if (card) {
-      core005fActiveRideId = String(card.dataset.id || '');
-      setTimeout(core005fPatchPriceUi, 0);
-    }
-  }, true);
-
-  document.addEventListener('DOMContentLoaded', () => {
-    core005fPatchPriceUi();
-
-    const target = document.body;
-    if (!target || typeof MutationObserver === 'undefined') return;
-
-    let scheduled = false;
-    const observer = new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
-        core005fPatchPriceUi();
-      });
-    });
-
-    observer.observe(target, {
-      childList: true,
-      subtree: true
-    });
-  });
+  // CORE-005J:
+  // Preis und PLAN/DISPO/LIVE werden jetzt nativ in app.js / pwa.js gerendert.
+  // Kein MutationObserver-/Textknoten-Hack mehr in plan-import.js.
 
   document.addEventListener('DOMContentLoaded', init);
 })();

@@ -38,6 +38,7 @@
     if(installBox) installBox.classList.add('hidden');
   });
 })();
+/* CORE-005J · 07.09.2026: Statuszeile rendert PLAN/DISPO/LIVE nativ und stabil; kein Selbst-Render-Loop. */
 /* ==========================================================
    ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 6
    Statuszeile pro Fahrtenkarte + bessere mobile Lesbarkeit.
@@ -162,40 +163,78 @@
     return {plan,current,key,label};
   }
   function timingInfo(card,ride){
-    if(!ride) return cardFallback(card);
-    const plan=(typeof planTimeOf==='function' ? planTimeOf(ride) : (ride.planTime||ride.time||'')) || '--:--';
-    let source='plan';
-    try{ if(typeof effectiveSource==='function') source=effectiveSource(ride)||'plan'; }catch(_){ }
-    let current='';
-    if(source==='live' || source==='dispo'){
-      try{ current=typeof effectiveTime==='function' ? effectiveTime(ride) : ''; }catch(_){ current=''; }
+    if(!ride){
+      const fallback=cardFallback(card);
+      return {...fallback,sideLabel:'Live'};
     }
+    const plan=(typeof planTimeOf==='function' ? planTimeOf(ride) : (ride.planTime||ride.time||'')) || '--:--';
+
+    let live='';
+    let dispo='';
+    try{
+      live=typeof liveTimeOf==='function'
+        ? (liveTimeOf(ride)||'')
+        : String(ride.liveTime||ride.live_time||'').trim();
+    }catch(_){ live=''; }
+    try{
+      dispo=typeof dispoTimeOf==='function'
+        ? (dispoTimeOf(ride)||'')
+        : String(ride.dispoTime||ride.dispo_time||ride.dispo_abholzeit||'').trim();
+    }catch(_){ dispo=''; }
+
     let existing={key:'unknown',label:'Keine Live-Daten'};
     try{ if(typeof flightStatusInfo==='function') existing=flightStatusInfo(ride)||existing; }catch(_){ }
     const explicitDelay=Number(ride.delayMinutes??ride.delay_minutes??ride.verspaetungMinuten??ride.verspätung_minuten??ride.delay??0)||0;
-    const diff=current ? minuteDiff(plan,current) : null;
-    if(diff!==null){
-      if(diff>0) return {plan,current,key:'delayed',label:`+${diff} MIN`};
-      return {plan,current,key:'on-time',label:'PÜNKTLICH'};
+
+    // LIVE ist die einzige Zeit, aus der die rote/grüne Abweichung zur PLAN-Zeit berechnet wird.
+    if(live){
+      const diff=minuteDiff(plan,live);
+      if(diff!==null){
+        if(diff>0) return {plan,current:live,sideLabel:'Live',key:'delayed',label:`+${diff} MIN`};
+        return {plan,current:live,sideLabel:'Live',key:'on-time',label:'PÜNKTLICH'};
+      }
+      if(explicitDelay>0) return {plan,current:live,sideLabel:'Live',key:'delayed',label:`+${explicitDelay} MIN`};
+      if(existing.key==='landed') return {plan,current:live,sideLabel:'Live',key:'landed',label:'GELANDET'};
+      return {plan,current:live,sideLabel:'Live',key:'unknown',label:'LIVE'};
     }
-    if(explicitDelay>0) return {plan,current,key:'delayed',label:`+${explicitDelay} MIN`};
-    if(existing.key==='on-time') return {plan,current,key:'on-time',label:'PÜNKTLICH'};
-    if(existing.key==='landed') return {plan,current,key:'landed',label:'GELANDET'};
-    if(existing.key==='delayed') return {plan,current,key:'delayed',label:String(existing.label||'VERSPÄTET').toUpperCase().replace(/\.$/,'')};
-    return {plan,current,key:'unknown',label:'KEINE LIVE-DATEN'};
+
+    // DISPO ist eine eigene operative Vorgabe und ausdrücklich KEINE Live-Verspätung.
+    if(dispo){
+      return {plan,current:dispo,sideLabel:'Dispo',key:'unknown',label:'LIVE --:--'};
+    }
+
+    if(explicitDelay>0) return {plan,current:'',sideLabel:'Live',key:'delayed',label:`+${explicitDelay} MIN`};
+    if(existing.key==='on-time') return {plan,current:'',sideLabel:'Live',key:'on-time',label:'PÜNKTLICH'};
+    if(existing.key==='landed') return {plan,current:'',sideLabel:'Live',key:'landed',label:'GELANDET'};
+    if(existing.key==='delayed') return {plan,current:'',sideLabel:'Live',key:'delayed',label:String(existing.label||'VERSPÄTET').toUpperCase().replace(/\.$/,'')};
+    return {plan,current:'',sideLabel:'Live',key:'unknown',label:'KEINE LIVE-DATEN'};
   }
+
+  function statusSignature(info){
+    return JSON.stringify([
+      info.plan||'',
+      info.current||'',
+      info.sideLabel||'',
+      info.key||'',
+      info.label||''
+    ]);
+  }
+
   function createStatusLine(info){
     const line=document.createElement('div');
     line.className=STATUS_CLASS;
+    line.dataset.atmsSignature=statusSignature(info);
     const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
     const current=info.current||'--:--';
+    const sideLabel=info.sideLabel||'Live';
     line.innerHTML=`
       <span class="${STATUS_CLASS}-side">Geplant <b>${safe(info.plan||'--:--')}</b></span>
       <span class="${STATUS_CLASS}-state ${safe(info.key||'unknown')}"><i class="${STATUS_CLASS}-dot"></i>${safe(info.label||'KEINE LIVE-DATEN')}</span>
-      <span class="${STATUS_CLASS}-side">Aktuell <b>${safe(current)}</b></span>
+      <span class="${STATUS_CLASS}-side">${safe(sideLabel)} <b>${safe(current)}</b></span>
     `;
     return line;
   }
+
   function refreshCards(){
     ensureStyle();
     const lookup=rideLookup();
@@ -203,9 +242,18 @@
       const id=String(card.dataset.id||'');
       const ride=lookup.get(id);
       const info=timingInfo(card,ride);
+      const signature=statusSignature(info);
       const old=card.querySelector(':scope > .'+STATUS_CLASS);
-      if(old) old.remove();
-      card.appendChild(createStatusLine(info));
+
+      // Wichtig: Die alte Version entfernte/erzeugte die Statuszeile bei JEDEM
+      // MutationObserver-Lauf neu und löste dadurch ihren eigenen nächsten Lauf aus.
+      // Jetzt wird nur noch verändert, wenn sich der Inhalt wirklich geändert hat.
+      if(!old){
+        card.appendChild(createStatusLine(info));
+      }else if(old.dataset.atmsSignature!==signature){
+        old.replaceWith(createStatusLine(info));
+      }
+
       card.classList.add(STATUS_CLASS+'-ready');
     });
   }
