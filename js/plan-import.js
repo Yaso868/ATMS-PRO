@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // CORE-005E · 07.09.2026: CORE-005D + Disponentenzeit an bestehende Dispo-Zeitlogik anbinden + fehlende Preise wieder verpflichtend prüfen.
+  // CORE-005F · 07.09.2026: CORE-005E + fehlende Preis-Spalte blockiert Import nicht; UI zeigt „Preis fehlt“ statt erfundener 0,00 €.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
@@ -765,7 +765,7 @@
       vehicle: getVehicleValue(row, mapping, options),
       persons: getPersonsValue(row, mapping, options),
       price: findPriceValue(row, mapping, options),
-      priceRequired: true,
+      priceRequired: !(options.imageOcr && mapping.price === undefined),
       priceMissingFromSource: Boolean(options.imageOcr && mapping.price === undefined),
       sourceImageOcr: Boolean(options.imageOcr),
       currency: 'EUR',
@@ -2279,6 +2279,94 @@
       });
     }
   }
+
+
+  // CORE-005F – Preis fehlt sichtbar machen, ohne app.js zu ersetzen.
+  // Der Bildimport darf bei einer Planliste ohne Preis-Spalte weiterlaufen.
+  // price=0 bleibt intern neutral; priceMissingFromSource kennzeichnet, dass KEIN Preis aus der Quelle vorlag.
+  let core005fActiveRideId = '';
+
+  function core005fStoredRides() {
+    try {
+      const raw = localStorage.getItem('atms_beta_14_3_1_rides');
+      const parsed = JSON.parse(raw || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function core005fPriceMissing(ride) {
+    return Boolean(
+      ride &&
+      ride.priceMissingFromSource &&
+      !(Number(ride.price) > 0)
+    );
+  }
+
+  function core005fPatchPriceUi() {
+    const rides = core005fStoredRides();
+    if (!rides.length) return;
+
+    const byId = new Map(
+      rides.map(ride => [String(ride.id || ''), ride])
+    );
+
+    document.querySelectorAll('.ride[data-id]').forEach(card => {
+      const ride = byId.get(String(card.dataset.id || ''));
+      if (!core005fPriceMissing(ride)) return;
+
+      const price = card.querySelector('.price');
+      if (price && price.textContent.trim() !== 'Preis fehlt') {
+        price.textContent = 'Preis fehlt';
+        price.dataset.atmsPriceMissing = '1';
+      }
+    });
+
+    if (core005fActiveRideId) {
+      const ride = byId.get(String(core005fActiveRideId));
+      if (core005fPriceMissing(ride)) {
+        const cockpitPrice = document.getElementById('price');
+        if (cockpitPrice && cockpitPrice.textContent.trim() !== 'Preis fehlt') {
+          cockpitPrice.textContent = 'Preis fehlt';
+          cockpitPrice.dataset.atmsPriceMissing = '1';
+        }
+      }
+    }
+  }
+
+  document.addEventListener('click', event => {
+    const card = event.target && event.target.closest
+      ? event.target.closest('.ride[data-id]')
+      : null;
+
+    if (card) {
+      core005fActiveRideId = String(card.dataset.id || '');
+      setTimeout(core005fPatchPriceUi, 0);
+    }
+  }, true);
+
+  document.addEventListener('DOMContentLoaded', () => {
+    core005fPatchPriceUi();
+
+    const target = document.body;
+    if (!target || typeof MutationObserver === 'undefined') return;
+
+    let scheduled = false;
+    const observer = new MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        core005fPatchPriceUi();
+      });
+    });
+
+    observer.observe(target, {
+      childList: true,
+      subtree: true
+    });
+  });
 
   document.addEventListener('DOMContentLoaded', init);
 })();
