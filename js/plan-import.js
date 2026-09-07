@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  // CORE-005K · 07.09.2026: OCR-Flugnummern-Härtung. ATMS akzeptiert im Bildimport nur kompakte IATA-Flugnummern
+  // mit exakt zweistelligem Airline-Code. Verdächtige OCR-Werte wie EWS500 werden nicht übernommen, sondern lokal nachgelesen.
+  // Wenn keine eindeutige Zweit-OCR gelingt, bleibt die Flugnummer leer und wird ausdrücklich zur Prüfung markiert.
   // CORE-005J · 07.09.2026: CORE-005I + nachträgliche UI-Korrektur entfernt; app.js/pwa.js rendern Preis und PLAN/DISPO/LIVE direkt an der Quelle.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
@@ -363,6 +366,8 @@
     return text;
   }
 
+  const FLIGHT_NUMBER_PATTERN = /^[A-Z0-9]{2}\d{1,4}[A-Z]?$/;
+
   function normalizeFlightNumber(value) {
     const raw = cellText(value).trim();
     if (!raw || /^[-–—~_.\s]+$/.test(raw)) return '';
@@ -371,33 +376,43 @@
     if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
     // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden.
     if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)\d*$/.test(normalized)) return '';
-    // CORE-005B: OCR-Reste wie "~~-" oder reine Satzzeichen sind KEINE Flugnummer.
-    // Nur formal plausible Flugnummern mit mindestens einem Buchstaben und einer Ziffer
-    // bleiben erhalten. Dadurch kann die gezielte Flugzellen-Zweit-OCR danach greifen.
-    if (!/[A-Z]/.test(normalized) || !/\d/.test(normalized)) return '';
-    if (!/^[A-Z0-9]{2,4}\d{1,4}[A-Z]?$/.test(normalized)) return '';
+
+    // CORE-005K: Die ATMS-Planliste nutzt kompakte IATA-Flugnummern: exakt
+    // zweistelliger Airline-Code + 1-4 Ziffern (+ optionaler Suffixbuchstabe).
+    // Dadurch ist z. B. EW9500 gültig, EWS500 aber bewusst NICHT gültig.
+    if (!FLIGHT_NUMBER_PATTERN.test(normalized)) return '';
+    if (!/[A-Z]/.test(normalized.slice(0, 2))) return '';
     return normalized;
   }
 
   function looksLikeFlight(value) {
-    return /^[A-Z0-9]{2,4}\s?\d{1,4}[A-Z]?$/.test(normalizeFlightNumber(value));
+    return Boolean(normalizeFlightNumber(value));
   }
 
-  // CORE-004F · 05.09.2026: Sicherheitsnetz fuer Flugnummern, die OCR zwar
-  // innerhalb derselben Tabellenzeile liest, aber nicht sauber in "Flug ang./ausg."
-  // einsortiert. Es wird nur ein EINDEUTIGER Kandidat mit mindestens einem
-  // Buchstaben akzeptiert; bei 0 oder mehreren Kandidaten wird nichts geraten.
+  function suspiciousFlightOcrToken(value) {
+    const raw = cellText(value).trim();
+    if (!raw || /^[-–—~_.\s]+$/.test(raw)) return '';
+    if (normalizeFlightNumber(raw)) return '';
+    const compact = raw.toUpperCase().replace(/\s+/g, '').replace(/[^A-Z0-9]/g, '');
+    if (compact.length < 3 || compact.length > 8) return '';
+    if (!/[A-Z]/.test(compact) || !/\d/.test(compact)) return '';
+    return compact;
+  }
+
+  // CORE-004F/CORE-005K: Nur ein ganzer, eindeutig abgegrenzter Flugnummern-Token
+  // darf Kandidat werden. So darf EWS500 NICHT als Teiltreffer WS500 durchrutschen.
   function flightCandidatesFromRow(row) {
     const found = new Set();
     (Array.isArray(row) ? row : []).forEach(cell => {
-      const raw = cellText(cell).toUpperCase().replace(/\s+/g, '');
+      const raw = cellText(cell).toUpperCase();
       if (!raw) return;
-      const tokens = raw.match(/[A-Z0-9]{2,4}\d{1,4}[A-Z]?/g) || [];
-      tokens.forEach(token => {
-        const normalized = normalizeFlightNumber(token);
-        if (!normalized || !/[A-Z]/.test(normalized) || !looksLikeFlight(normalized)) return;
+      const pattern = /(?:^|[^A-Z0-9])([A-Z0-9]{2}\s*\d{1,4}[A-Z]?)(?=$|[^A-Z0-9])/g;
+      let match;
+      while ((match = pattern.exec(raw))) {
+        const normalized = normalizeFlightNumber(match[1]);
+        if (!normalized || !looksLikeFlight(normalized)) continue;
         found.add(normalized);
-      });
+      }
     });
     return [...found];
   }
@@ -699,8 +714,13 @@
   }
 
   function makeRide(row, rowNumber, mapping, fileName, options = {}) {
-    let arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
-    let departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
+    const sourceArrivalFlightRaw = cellText(valueAt(row, mapping, 'arrivalFlight'));
+    const sourceDepartureFlightRaw = cellText(valueAt(row, mapping, 'departureFlight'));
+    let arrivalFlight = normalizeFlightNumber(sourceArrivalFlightRaw);
+    let departureFlight = normalizeFlightNumber(sourceDepartureFlightRaw);
+    const suspiciousArrivalFlight = options.imageOcr ? suspiciousFlightOcrToken(sourceArrivalFlightRaw) : '';
+    const suspiciousDepartureFlight = options.imageOcr ? suspiciousFlightOcrToken(sourceDepartureFlightRaw) : '';
+    const flightOcrSuspiciousRaw = suspiciousArrivalFlight || suspiciousDepartureFlight;
     const pickup = cellText(valueAt(row, mapping, 'pickup'));
     const destination = cellText(valueAt(row, mapping, 'destination'));
     const customer = cellText(valueAt(row, mapping, 'customer'));
@@ -759,9 +779,13 @@
       dispoAbholzeit: dispatcherTime,
       dispatcherNote: dispatcherTime ? `Disponentenzeit aus Ort-Spalte: ${sourceFlightLocationRaw}` : '',
       sourceFlightLocationRaw,
+      sourceArrivalFlightRaw,
+      sourceDepartureFlightRaw,
+      flightOcrSuspicious: Boolean(flightOcrSuspiciousRaw),
+      flightOcrSuspiciousRaw,
       flightRecoveredFromRow: Boolean(recoveredFlight),
       flightRecoveryAmbiguous,
-      flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
+      flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous || flightOcrSuspiciousRaw),
       vehicle: getVehicleValue(row, mapping, options),
       persons: getPersonsValue(row, mapping, options),
       price: findPriceValue(row, mapping, options),
@@ -797,6 +821,13 @@
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
+      if (ride.flightOcrSuspicious && !ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugnummer-OCR „${cellText(ride.flightOcrSuspiciousRaw)}“ ist unplausibel – Original-Planliste prüfen; keine automatische Übernahme`
+        });
+      }
 
       // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
       // Das verhindert genau den heute beobachteten Fall "Palma vorhanden, EW9577 weg".
@@ -998,7 +1029,7 @@
       const normalized = value.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
       const plausibleTime = /^\d{1,2}[:.]\d{2}$/.test(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g, ''));
       // CORE-005A: Farbige Planzeilen koennen einzelne schwach erkannte Woerter liefern.
-      // Mit fester Tabellenstruktur ist 18 als Grundschwelle sicherer; Zeitanker duerfen
+// Mit fester Tabellenstruktur ist 18 als Grundschwelle sicherer; Zeitanker duerfen
       // noch etwas schwaecher sein, damit keine komplette Fahrtzeile verschwindet.
       return value && w.bbox && (conf >= 18 || (plausibleTime && conf >= 10));
     }).map(w => ({
@@ -1998,7 +2029,7 @@
         <td>${escapeHtml(ride.flightNumber || '–')}</td>
         <td>${escapeHtml(ride.flightLocation || '–')}</td>
         <td>${escapeHtml(typeLabels[ride.rideType] || ride.rideType)}</td>
-        <td>${ride.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
+<td>${ride.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
         <td><span class="plan-status ${status === 'OK' ? 'ok' : status === 'Fehler' ? 'error' : 'warning'}">${status}</span></td>
       </tr>`;
     }).join('');
