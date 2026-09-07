@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // CORE-005F · 07.09.2026: CORE-005E + fehlende Preis-Spalte blockiert Import nicht; UI zeigt „Preis fehlt“ statt erfundener 0,00 €.
+  // CORE-005G · 07.09.2026: CORE-005F + Dispo-Zeit in Fahrtenkarte klar von Live-Zeit trennen.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
@@ -2304,6 +2304,56 @@
     );
   }
 
+
+  function core005gNormalizeUiText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function core005gDispatcherTime(ride) {
+    const value = String(
+      ride?.dispatcherTime
+      || ride?.dispo_abholzeit
+      || ride?.dispoAbholzeit
+      || ''
+    ).trim();
+    return /^\d{2}:\d{2}$/.test(value) ? value : '';
+  }
+
+  function core005gPatchDispatcherCard(card, ride) {
+    const dispatcherTime = core005gDispatcherTime(ride);
+    if (!card || !dispatcherTime) return;
+
+    // Nur wenn wirklich keine Live-Daten vorliegen:
+    // Dispo-Zeit darf niemals als "Aktuell"/Live-Zeit erscheinen.
+    const cardText = core005gNormalizeUiText(card.textContent).toUpperCase();
+    const noLive = cardText.includes('KEINE LIVE-DATEN')
+      || cardText.includes('KEINE LIVE DATEN');
+
+    if (!noLive) return;
+
+    const elements = Array.from(card.querySelectorAll('*'));
+
+    elements.forEach(el => {
+      if (el.children && el.children.length) return;
+
+      const value = core005gNormalizeUiText(el.textContent);
+
+      // Rechte Beschriftung: "Aktuell" -> "Dispo".
+      if (/^Aktuell$/i.test(value)) {
+        el.textContent = 'Dispo';
+        el.dataset.atmsDispoLabel = '1';
+        return;
+      }
+
+      // Mittlere "+50 MIN"-Anzeige ist keine Live-Verspätung,
+      // sondern nur die Differenz zwischen Plan und Dispo.
+      if (/^[+-]\s*\d+\s*MIN$/i.test(value)) {
+        el.textContent = 'Live --:--';
+        el.dataset.atmsLiveMissing = '1';
+      }
+    });
+  }
+
   function core005fPatchPriceUi() {
     const rides = core005fStoredRides();
     if (!rides.length) return;
@@ -2314,13 +2364,16 @@
 
     document.querySelectorAll('.ride[data-id]').forEach(card => {
       const ride = byId.get(String(card.dataset.id || ''));
-      if (!core005fPriceMissing(ride)) return;
 
-      const price = card.querySelector('.price');
-      if (price && price.textContent.trim() !== 'Preis fehlt') {
-        price.textContent = 'Preis fehlt';
-        price.dataset.atmsPriceMissing = '1';
+      if (core005fPriceMissing(ride)) {
+        const price = card.querySelector('.price');
+        if (price && price.textContent.trim() !== 'Preis fehlt') {
+          price.textContent = 'Preis fehlt';
+          price.dataset.atmsPriceMissing = '1';
+        }
       }
+
+      core005gPatchDispatcherCard(card, ride);
     });
 
     if (core005fActiveRideId) {
