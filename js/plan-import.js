@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-005A · 07.09.2026: Bildimport-Struktur stabilisiert (12 Spalten, sichere OCR-Zuordnung, keine Fremd-Fallbacks).
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
   // CORE-004P · 06.09.2026: Der sichtbare Button „Flugorte automatisch prüfen“ startet jetzt wirklich
@@ -368,7 +369,7 @@
     // Häufiger OCR-Fehler bei Austrian Airlines: 0S162 -> OS162
     if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
     // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden
-    if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)$/.test(normalized)) return '';
+    if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)\d*$/.test(normalized)) return '';
     return normalized;
   }
 
@@ -401,7 +402,7 @@
 
   function classifyRide(pickup, destination, arrivalFlight, departureFlight) {
     const p = cleanKey(pickup), d = cleanKey(destination);
-    const airport = value => /airport|flughafen|vorfeld|terminal|dus|cgn/.test(value);
+    const airport = value => /airport|flughafen|vorfeld|terminal/.test(value);
     if (arrivalFlight || (airport(p) && !airport(d))) return 'arrival';
     if (departureFlight || (!airport(p) && airport(d))) return 'departure';
     if (/hotel|marriott|holidayinn|nhnord|adagio|plaza|asahi/.test(p + d)) return 'hotel';
@@ -642,9 +643,13 @@
 
 
 
-  function findPriceValue(row, mapping) {
+  function findPriceValue(row, mapping, options = {}) {
     const mapped = parseNumber(valueAt(row, mapping, 'price'));
     if (mapped > 0) return mapped;
+
+    // CORE-005A: Bei Bild-/WhatsApp-Planlisten ohne erkannte Preis-Spalte
+    // darf niemals eine Uhrzeit oder irgendeine andere Zelle als Preis dienen.
+    if (options.imageOcr) return 0;
 
     const first = parseNumber(row[0]);
     if (first > 0) return first;
@@ -661,25 +666,33 @@
   }
 
 
-  function getVehicleValue(row, mapping) {
+  function getVehicleValue(row, mapping, options = {}) {
     const mapped = cellText(valueAt(row, mapping, 'vehicle'));
     if (mapped && !/^\d+(?:[.,]\d+)?$/.test(mapped)) return mapped;
 
-    // ATMS Standard Planliste: erste Wg-Spalte = Spalte 9 (Index 8)
+    // CORE-005A: Beim Bildimport keine festen Nachbarspalten als Fallback.
+    // Die sichtbare erste Wg-Spalte ist die einzige Fahrzeugquelle.
+    if (options.imageOcr) return '';
+
+    // Legacy-Fallback nur fuer bereits strukturierte Altimporte.
     const fixedVehicle = cellText(row[8]);
     if (fixedVehicle && !/^\d+(?:[.,]\d+)?$/.test(fixedVehicle)) return fixedVehicle;
     return mapped || 'Pkw';
   }
 
-  function getPersonsValue(row, mapping) {
+  function getPersonsValue(row, mapping, options = {}) {
     const mapped = parseNumber(valueAt(row, mapping, 'persons'));
     if (mapped > 0) return mapped;
-    // ATMS Standard Planliste: Pers = Spalte 10 (Index 9)
+
+    // CORE-005A: Beim Bildimport Pers niemals aus einer Nachbarspalte ableiten.
+    if (options.imageOcr) return 0;
+
+    // Legacy-Fallback nur fuer bereits strukturierte Altimporte.
     const fixedPersons = parseNumber(row[9]);
     return fixedPersons > 0 ? fixedPersons : 0;
   }
 
-  function makeRide(row, rowNumber, mapping, fileName) {
+  function makeRide(row, rowNumber, mapping, fileName, options = {}) {
     let arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
     let departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
     const pickup = cellText(valueAt(row, mapping, 'pickup'));
@@ -689,7 +702,7 @@
 
     let recoveredFlight = '';
     let flightRecoveryAmbiguous = false;
-    if (!arrivalFlight && !departureFlight) {
+    if (!arrivalFlight && !departureFlight && !options.imageOcr) {
       const candidates = flightCandidatesFromRow(row);
       if (candidates.length === 1) {
         recoveredFlight = candidates[0];
@@ -726,9 +739,11 @@
       flightRecoveredFromRow: Boolean(recoveredFlight),
       flightRecoveryAmbiguous,
       flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
-      vehicle: getVehicleValue(row, mapping),
-      persons: getPersonsValue(row, mapping),
-      price: findPriceValue(row, mapping),
+      vehicle: getVehicleValue(row, mapping, options),
+      persons: getPersonsValue(row, mapping, options),
+      price: findPriceValue(row, mapping, options),
+      priceRequired: !(options.imageOcr && mapping.price === undefined),
+      sourceImageOcr: Boolean(options.imageOcr),
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
       notes: cellText(valueAt(row, mapping, 'notes')),
@@ -824,7 +839,7 @@
 
       const priceCheck = pricePlausibility(ride.price);
       const priceDecision = state.priceDecisions[String(ride.id || row)] || '';
-      if (priceCheck.suspicious && !priceDecision) {
+      if (ride.priceRequired !== false && priceCheck.suspicious && !priceDecision) {
         const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
         const suggestionText = priceCheck.suggestion !== null
           ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
@@ -956,7 +971,12 @@
     const usable = (words || []).filter(w => {
       const value = cellText(w.text);
       const conf = Number(w.confidence ?? w.conf ?? 0);
-      return value && conf >= 28 && w.bbox;
+      const normalized = value.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const plausibleTime = /^\d{1,2}[:.]\d{2}$/.test(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g, ''));
+      // CORE-005A: Farbige Planzeilen koennen einzelne schwach erkannte Woerter liefern.
+      // Mit fester Tabellenstruktur ist 18 als Grundschwelle sicherer; Zeitanker duerfen
+      // noch etwas schwaecher sein, damit keine komplette Fahrtzeile verschwindet.
+      return value && w.bbox && (conf >= 18 || (plausibleTime && conf >= 10));
     }).map(w => ({
       text: cellText(w.text),
       key: cleanKey(w.text),
@@ -1077,6 +1097,111 @@
     return { sorted, boundaries };
   }
 
+  // CORE-005A: Das bekannte ATMS-Bildformat besitzt physisch 12 Spalten.
+  // Eine schlecht gelesene Ueberschrift darf nicht mehr dazu fuehren, dass die
+  // betreffende Spalte verschwindet und alle folgenden Werte verrutschen.
+  const ATMS_IMAGE_SCHEMA_12 = [
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  function completeAtmsImageAnchors(observed, width) {
+    const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
+
+    // Layouts mit echter Preis-Spalte sind nicht dieses 12-Spalten-Format.
+    if (input.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) {
+      return { anchors: input, standard: false, syntheticCount: 0 };
+    }
+
+    const slots = Array(ATMS_IMAGE_SCHEMA_12.length).fill(null);
+    let cursor = 0;
+    let matched = 0;
+
+    const compatible = (schemaIndex, anchor) => {
+      const expected = ATMS_IMAGE_SCHEMA_12[schemaIndex].key;
+      const actual = anchor.key;
+      if (expected === actual) return true;
+      // Eine explizite Fahrer-Ueberschrift darf die letzte Wg-Spalte ersetzen.
+      if (schemaIndex === 11 && actual === 'fahrer') return true;
+      return false;
+    };
+
+    for (const anchor of input) {
+      let hit = -1;
+      for (let i = cursor; i < ATMS_IMAGE_SCHEMA_12.length; i++) {
+        if (compatible(i, anchor)) {
+          hit = i;
+          break;
+        }
+      }
+      if (hit < 0) continue;
+
+      slots[hit] = {
+        ...anchor,
+        label: ATMS_IMAGE_SCHEMA_12[hit].label,
+        key: ATMS_IMAGE_SCHEMA_12[hit].key,
+        synthetic: false
+      };
+      cursor = hit + 1;
+      matched++;
+    }
+
+    // Nur anwenden, wenn die Grundstruktur (Von/Nach + mehrere weitere Header)
+    // wirklich erkannt wurde. Andernfalls bleibt der flexible Altweg aktiv.
+    if (matched < 7 || !slots[1] || !slots[2]) {
+      return { anchors: input, standard: false, syntheticCount: 0 };
+    }
+
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i]) continue;
+
+      let left = i - 1;
+      while (left >= 0 && !slots[left]) left--;
+      let right = i + 1;
+      while (right < slots.length && !slots[right]) right++;
+
+      let x;
+      if (left >= 0 && right < slots.length) {
+        const ratio = (i - left) / (right - left);
+        x = slots[left].x + (slots[right].x - slots[left].x) * ratio;
+      } else if (right < slots.length) {
+        x = slots[right].x * ((i + 1) / (right + 1));
+      } else if (left >= 0) {
+        x = slots[left].x + (width - slots[left].x) * ((i - left) / (slots.length - left));
+      } else {
+        x = width * ((i + 0.5) / slots.length);
+      }
+
+      slots[i] = {
+        label: ATMS_IMAGE_SCHEMA_12[i].label,
+        key: ATMS_IMAGE_SCHEMA_12[i].key,
+        x,
+        synthetic: true
+      };
+    }
+
+    // Monotone X-Positionen erzwingen; niemals Spalten kreuzen.
+    for (let i = 1; i < slots.length; i++) {
+      if (slots[i].x <= slots[i - 1].x + 2) slots[i].x = slots[i - 1].x + 3;
+    }
+
+    return {
+      anchors: slots,
+      standard: true,
+      syntheticCount: slots.filter(anchor => anchor.synthetic).length
+    };
+  }
+
   function imageWordsToMatrix(words, width) {
     const lines = groupOcrLines(words);
     const header = detectImageHeaderLine(lines);
@@ -1085,7 +1210,8 @@
       throw new Error('Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden. Bitte vollständige Kopfzeile mit hochladen.');
     }
 
-    const { sorted: anchors, boundaries } = anchorsToBoundaries(header.anchors, width);
+    const completed = completeAtmsImageAnchors(header.anchors, width);
+    const { sorted: anchors, boundaries } = anchorsToBoundaries(completed.anchors, width);
     const headerRow = anchors.map(anchor => anchor.label);
     const rows = [headerRow];
     const rowMetaByMatrixIndex = {};
@@ -1102,21 +1228,42 @@
 
       const row = cells.map(parts => parts.join(' ').replace(/\s+/g,' ').trim());
       const nonEmpty = row.filter(Boolean).length;
+      const firstRaw = cellText(row[0]);
+      const firstNormalized = firstRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const firstCellTime = looksLikeTime(firstNormalized) || /^\d{3,4}$/.test(firstNormalized.replace(/\D/g,''));
       const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
       const hasFlight = row.some(value => looksLikeFlight(value));
-      if (nonEmpty >= 3 && (hasTime || hasFlight)) {
-        rows.push(row);
-        const ys0 = (line.words || []).map(word => Number(word.y0 || 0)).filter(Number.isFinite);
-        const ys1 = (line.words || []).map(word => Number(word.y1 || 0)).filter(Number.isFinite);
-        rowMetaByMatrixIndex[rows.length - 1] = {
-          y0: ys0.length ? Math.min(...ys0) : Math.max(0, Number(line.cy || 0) - 16),
-          y1: ys1.length ? Math.max(...ys1) : Number(line.cy || 0) + 16,
-          cy: Number(line.cy || 0)
-        };
-      }
+
+      // Im bekannten 12-Spalten-Bildformat ist die linke Uhrzeit der Zeilenanker.
+      // So werden farbige/schwache Zeilen nicht mehr ueber Flug-/Nachbarwerte gerettet
+      // und zwei physische Spalten koennen nicht zu einer vermeintlichen Fahrt verschmelzen.
+      const keep = completed.standard
+        ? (firstCellTime && nonEmpty >= 2)
+        : (nonEmpty >= 3 && (hasTime || hasFlight));
+
+      if (!keep) return;
+
+      // Leichte OCR-Verwechslungen nur in der ersten Uhrzeitzelle normalisieren.
+      if (completed.standard && firstCellTime && firstNormalized !== firstRaw) row[0] = firstNormalized;
+
+      rows.push(row);
+      const ys0 = (line.words || []).map(word => Number(word.y0 || 0)).filter(Number.isFinite);
+      const ys1 = (line.words || []).map(word => Number(word.y1 || 0)).filter(Number.isFinite);
+      rowMetaByMatrixIndex[rows.length - 1] = {
+        y0: ys0.length ? Math.min(...ys0) : Math.max(0, Number(line.cy || 0) - 16),
+        y1: ys1.length ? Math.max(...ys1) : Number(line.cy || 0) + 16,
+        cy: Number(line.cy || 0)
+      };
     });
 
-    rows._atmsImageMeta = { anchors, boundaries, rowMetaByMatrixIndex, width };
+    rows._atmsImageMeta = {
+      anchors,
+      boundaries,
+      rowMetaByMatrixIndex,
+      width,
+      standardAtms: completed.standard,
+      syntheticAnchorCount: completed.syntheticCount
+    };
     return rows;
   }
 
@@ -1154,7 +1301,7 @@
 
     for (let i = 0; i < out.length; i++) {
       const ride = out[i];
-      if (ride.flightNumber || !ride.flightLocation) continue;
+      if (ride.flightNumber) continue;
 
       const routeType = classifyRide(ride.pickup, ride.destination, '', '');
       const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
@@ -1297,7 +1444,11 @@
   function renderMapping(headers, mappingInfo) {
     const labels = Object.entries(mappingInfo.mapping).map(([field, index]) => `${field}: ${headers[index]?.label || `Spalte ${index + 1}`}`);
     const el = $('planProfileInfo');
-    if (el) el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(mappingInfo.confidence * 100)} % Erkennung</span><small>${escapeHtml(labels.join(' · '))}</small>`;
+    const imageMode = Boolean(state.file && isImageFile(state.file));
+    // CORE-005A: Mapping-Konfidenz allein kann bei OCR nicht beweisen, dass jede
+    // Datenzeile vorhanden ist. Deshalb Bildimport nie pauschal als 100 % ausgeben.
+    const shownConfidence = imageMode ? Math.min(Number(mappingInfo.confidence || 0), 0.99) : Number(mappingInfo.confidence || 0);
+    if (el) el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(shownConfidence * 100)} % Erkennung</span><small>${escapeHtml(labels.join(' · '))}</small>`;
   }
 
   function syncFlightLocationsFromSavedRides() {
@@ -1629,8 +1780,11 @@
       let mappingInfo = detectAtmsMapping(headers);
       if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
       if (result.imageOcr) {
+        const syntheticCount = Number(result.imageMeta?.syntheticAnchorCount || 0);
+        const structuralCap = syntheticCount ? Math.max(0.80, 0.98 - syntheticCount * 0.03) : 0.99;
         mappingInfo = {
           ...mappingInfo,
+          confidence: Math.min(Number(mappingInfo.confidence || 0), structuralCap),
           profile: mappingInfo.confidence >= 0.85 ? 'ATMS Bildimport Flex' : 'ATMS Bildimport – Prüfung nötig'
         };
       }
@@ -1645,7 +1799,7 @@
       dataRows.forEach((row, offset) => {
         const sourceRow = headerDetection.index + offset + 2;
         if (!isDataRow(row, mappingInfo.mapping)) return;
-        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name));
+        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: Boolean(result.imageOcr) }));
       });
       if (!rides.length) throw new Error('Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
