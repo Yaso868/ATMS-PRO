@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // CORE-005G · 07.09.2026: CORE-005F + Dispo-Zeit in Fahrtenkarte klar von Live-Zeit trennen.
+  // CORE-005H · 07.09.2026: CORE-005G + robuste Textknoten-Ersetzung für Dispo/Live-Anzeige in Fahrtenkarten.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
@@ -2331,25 +2331,33 @@
 
     if (!noLive) return;
 
-    const elements = Array.from(card.querySelectorAll('*'));
+    // CORE-005H:
+    // Die vorhandene Kartenstruktur enthält teilweise Icons/Spans als Kinder.
+    // Deshalb nicht nur "leaf elements" prüfen, sondern echte Textknoten.
+    const walker = document.createTreeWalker(
+      card,
+      NodeFilter.SHOW_TEXT
+    );
 
-    elements.forEach(el => {
-      if (el.children && el.children.length) return;
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) textNodes.push(node);
 
-      const value = core005gNormalizeUiText(el.textContent);
+    textNodes.forEach(textNode => {
+      const value = core005gNormalizeUiText(textNode.nodeValue);
 
       // Rechte Beschriftung: "Aktuell" -> "Dispo".
       if (/^Aktuell$/i.test(value)) {
-        el.textContent = 'Dispo';
-        el.dataset.atmsDispoLabel = '1';
+        textNode.nodeValue = textNode.nodeValue.replace(/Aktuell/i, 'Dispo');
         return;
       }
 
-      // Mittlere "+50 MIN"-Anzeige ist keine Live-Verspätung,
-      // sondern nur die Differenz zwischen Plan und Dispo.
+      // Mittlere "+50 MIN"-Anzeige ist keine Live-Verspätung.
       if (/^[+-]\s*\d+\s*MIN$/i.test(value)) {
-        el.textContent = 'Live --:--';
-        el.dataset.atmsLiveMissing = '1';
+        textNode.nodeValue = textNode.nodeValue.replace(
+          /[+-]\s*\d+\s*MIN/i,
+          'Live --:--'
+        );
       }
     });
   }
