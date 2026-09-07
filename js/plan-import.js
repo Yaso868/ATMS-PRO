@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // CORE-005D · 07.09.2026: CORE-005C + eindeutige Uhrzeit in Ort als separate Disponentenzeit erhalten, nicht als Flugort.
+  // CORE-005E · 07.09.2026: CORE-005D + Disponentenzeit an bestehende Dispo-Zeitlogik anbinden + fehlende Preise wieder verpflichtend prüfen.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
@@ -755,6 +755,8 @@
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
       flightLocation,
       dispatcherTime,
+      dispo_abholzeit: dispatcherTime,
+      dispoAbholzeit: dispatcherTime,
       dispatcherNote: dispatcherTime ? `Disponentenzeit aus Ort-Spalte: ${sourceFlightLocationRaw}` : '',
       sourceFlightLocationRaw,
       flightRecoveredFromRow: Boolean(recoveredFlight),
@@ -763,7 +765,8 @@
       vehicle: getVehicleValue(row, mapping, options),
       persons: getPersonsValue(row, mapping, options),
       price: findPriceValue(row, mapping, options),
-      priceRequired: !(options.imageOcr && mapping.price === undefined),
+      priceRequired: true,
+      priceMissingFromSource: Boolean(options.imageOcr && mapping.price === undefined),
       sourceImageOcr: Boolean(options.imageOcr),
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
