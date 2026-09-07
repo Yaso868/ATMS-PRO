@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  // CORE-005H · 07.09.2026: CORE-005G + robuste Textknoten-Ersetzung für Dispo/Live-Anzeige in Fahrtenkarten.
+  // CORE-005I · 07.09.2026: CORE-005H + robuste Unicode-/Text-Erkennung für Dispo/Live-Anzeige.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
   // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
   // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
@@ -2306,7 +2306,10 @@
 
 
   function core005gNormalizeUiText(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim();
+    return String(value || '')
+      .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function core005gDispatcherTime(ride) {
@@ -2326,8 +2329,7 @@
     // Nur wenn wirklich keine Live-Daten vorliegen:
     // Dispo-Zeit darf niemals als "Aktuell"/Live-Zeit erscheinen.
     const cardText = core005gNormalizeUiText(card.textContent).toUpperCase();
-    const noLive = cardText.includes('KEINE LIVE-DATEN')
-      || cardText.includes('KEINE LIVE DATEN');
+    const noLive = /KEINE\s+LIVE\s*-?\s*DATEN/.test(cardText);
 
     if (!noLive) return;
 
@@ -2346,16 +2348,17 @@
     textNodes.forEach(textNode => {
       const value = core005gNormalizeUiText(textNode.nodeValue);
 
-      // Rechte Beschriftung: "Aktuell" -> "Dispo".
-      if (/^Aktuell$/i.test(value)) {
-        textNode.nodeValue = textNode.nodeValue.replace(/Aktuell/i, 'Dispo');
-        return;
+      // Rechte Beschriftung: auch "Aktuell 05:30" oder verschachtelte Varianten
+      // zuverlässig in "Dispo 05:30" ändern.
+      if (/\bAktuell\b/i.test(value)) {
+        textNode.nodeValue = textNode.nodeValue.replace(/\bAktuell\b/i, 'Dispo');
       }
 
-      // Mittlere "+50 MIN"-Anzeige ist keine Live-Verspätung.
-      if (/^[+-]\s*\d+\s*MIN$/i.test(value)) {
+      // Mittlere Differenz ist keine Live-Verspätung. Führende Punkte/Icons
+      // können in separaten oder gemeinsamen Textknoten liegen.
+      if (/[+\-\u2212]\s*\d+\s*MIN/i.test(value)) {
         textNode.nodeValue = textNode.nodeValue.replace(
-          /[+-]\s*\d+\s*MIN/i,
+          /[+\-\u2212]\s*\d+\s*MIN/i,
           'Live --:--'
         );
       }
