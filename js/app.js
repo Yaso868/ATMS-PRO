@@ -1,3 +1,4 @@
+// CORE-005Q 08.09.2026: Flugpruef-Persistenz nach Neuimport: exakter Match Flugnummer+Datum+Richtung+Flugzeit; verifizierte Orte und manuelle Hinweise werden sofort wiederhergestellt.
 // CORE-005P 08.09.2026: Globaler Arrival-Abholpuffer + manuell bestätigte Landungszeit im Live-Panel; PLAN/DISPO bleiben unverändert.
 // CORE-005O 08.09.2026: Sichere OCR-Ortsnormalisierung für München-Fehllesungen; Originalwert bleibt intern erhalten.
 // CORE-005N 08.09.2026: Live-Flugdaten-Fallback: aktueller Web-Prüfauftrag + sichere JSON-Übernahme, ohne PLAN/DISPO zu überschreiben.
@@ -623,53 +624,67 @@ function upsertFlightCache(entries){
   }
   saveFlightCache(cache);
 }
-function findFlightCacheForRide(r){
+function flightCacheMatchTuple(r){
   const flight=flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight);
-  if(!flight)return null;
-  const direction=flightDirectionForGemini(r);
-  const fingerprint=flightRideFingerprint(r);
-  const rideId=String(r?.id||'');
-  const rideDate=String(r?.date||'').trim();
-  const today=berlinDate();
+  const date=String(r?.date||'').trim();
+  const direction=String(flightDirectionForGemini(r)||'unknown').trim().toLowerCase();
+  const flightTime=String(first(r?.flightTime,r?.flugzeit,r?.flight_time)||'').trim();
+  return {flight,date,direction,flightTime};
+}
+function findFlightCacheForRide(r){
+  const key=flightCacheMatchTuple(r);
+  // CORE-005Q: Ohne konkreten Plantag wird bewusst KEIN persistenter Treffer angewendet.
+  // Dadurch kann niemals eine Pruefung eines anderen Tages in einen neuen Import rutschen.
+  if(!key.flight||!key.date)return null;
   const candidates=getFlightCache().filter(x=>{
-    if(!x||x.verified!==true)return false;
-    if(flightCacheNumber(x.flightNumber)!==flight)return false;
-    if(x.direction&&direction!=='unknown'&&x.direction!=='unknown'&&x.direction!==direction)return false;
-    const exactRide=rideId&&String(x.rideId||'')===rideId;
-    const exactFingerprint=fingerprint&&String(x.fingerprint||'')===fingerprint;
-    if(!exactRide&&!exactFingerprint)return false;
-    if(rideDate)return !x.date||String(x.date)===rideDate;
-    const cacheDay=String(x.date||'').trim()||berlinDate(x.checkedAt||new Date());
-    return cacheDay===today;
+    if(!x)return false;
+    const cacheFlight=flightCacheNumber(x.flightNumber);
+    const cacheDate=String(x.date||'').trim();
+    const cacheDirection=String(x.direction||'unknown').trim().toLowerCase();
+    const cacheFlightTime=String(x.flightTime||'').trim();
+    return cacheFlight===key.flight
+      && cacheDate===key.date
+      && cacheDirection===key.direction
+      && cacheFlightTime===key.flightTime;
   });
   candidates.sort((a,b)=>new Date(b.checkedAt||0)-new Date(a.checkedAt||0));
   return candidates[0]||null;
 }
 function applyFlightCacheToRides(source){
-  let changed=0;
+  let changed=0,verifiedRestored=0,manualRestored=0;
   const out=(Array.isArray(source)?source:[]).map(r=>{
     const hit=findFlightCacheForRide(r);
     if(!hit)return r;
+    const verified=hit.verified===true && Boolean(String(hit.flightLocation||'').trim());
     const nextLocation=String(hit.flightLocation||'').trim();
     const nextIata=String(hit.iata||'').trim().toUpperCase();
-    if(!nextLocation)return r;
-    const nextDate=String(r.date||'').trim() || String(hit.date||'').trim();
-    const sameLocation=String(r.flightLocation||'').trim()===nextLocation;
-    const sameIata=String(r.iata||'').trim().toUpperCase()===nextIata;
-    const sameCheck=String(r.flightCheckedAt||'')===String(hit.checkedAt||'');
-    const sameDate=String(r.date||'').trim()===nextDate;
-    if(sameLocation&&sameIata&&sameCheck&&sameDate)return r;
-    changed++;
-    return {
-      ...r,
-      date:nextDate,
-      flightLocation:nextLocation,
-      iata:nextIata,
-      flightCheckConfidence:'verified',
-      flightCheckedAt:hit.checkedAt||r.flightCheckedAt||''
-    };
+    const next={...r};
+    let rowChanged=false;
+
+    if(verified){
+      if(String(next.flightLocation||'').trim()!==nextLocation){next.flightLocation=nextLocation;rowChanged=true;}
+      if(String(next.iata||'').trim().toUpperCase()!==nextIata){next.iata=nextIata;rowChanged=true;}
+      if(next.flightCheckConfidence!=='verified'){next.flightCheckConfidence='verified';rowChanged=true;}
+      if(next.flightNeedsManualCheck!==false){next.flightNeedsManualCheck=false;rowChanged=true;}
+      if(Boolean(next.flightConflict)!==Boolean(hit.conflict)){next.flightConflict=Boolean(hit.conflict);rowChanged=true;}
+      verifiedRestored++;
+    }else{
+      // Unsichere Pruefungen duerfen den vorhandenen Planort niemals loeschen oder ersetzen.
+      // Der manuelle Hinweis wird aber sofort wiederhergestellt, damit der Zaehler nach Neuimport stimmt.
+      if(next.flightCheckConfidence!=='uncertain'){next.flightCheckConfidence='uncertain';rowChanged=true;}
+      if(next.flightNeedsManualCheck!==true){next.flightNeedsManualCheck=true;rowChanged=true;}
+      if(Boolean(next.flightConflict)!==Boolean(hit.conflict)){next.flightConflict=Boolean(hit.conflict);rowChanged=true;}
+      manualRestored++;
+    }
+
+    const checkedAt=String(hit.checkedAt||'');
+    if(checkedAt&&String(next.flightCheckedAt||'')!==checkedAt){next.flightCheckedAt=checkedAt;rowChanged=true;}
+    const sourceNote=String(hit.sourceNote||'').trim();
+    if(sourceNote&&String(next.flightCheckSourceNote||'')!==sourceNote){next.flightCheckSourceNote=sourceNote;rowChanged=true;}
+    if(rowChanged)changed++;
+    return rowChanged?next:r;
   });
-  return {rides:out,changed};
+  return {rides:out,changed,verifiedRestored,manualRestored};
 }
 function flightCheckItems(source=rides){
   const map=new Map();
@@ -927,6 +942,8 @@ function applyGeminiFlightResult(){
         iata:verified?hit.iata:'',
         verified:Boolean(verified),
         conflict:Boolean(hit.conflict),
+        sourceNote:String(hit.sourceNote||'').trim(),
+        sourceCount:Number(hit.sourceCount||0)||0,
         checkedAt,
         sourceFile:String(r.sourceFile||''),
         sourceRow:Number(r.sourceRow||0)||0
@@ -1198,13 +1215,21 @@ function applyImportedRides(newRides){
   rides=newRides;
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
+  // CORE-005Q: Flugpruefungen des EXAKT gleichen konkreten Fluges werden direkt
+  // beim Neuimport wieder angewendet. Match: Flugnummer + Datum + Richtung + Flugzeit.
+  // Andere Plantage oder nur aehnliche Flugnummern werden niemals uebernommen.
+  const restored=applyFlightCacheToRides(rides);
+  rides=restored.rides;
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
   save();
 
   return {
     cancelled:false,
     mode:'replace',
-    count:rides.length
+    count:rides.length,
+    restoredFlightChecks:restored.changed,
+    restoredVerifiedFlights:restored.verifiedRestored,
+    restoredManualChecks:restored.manualRestored
   };
 }
 
