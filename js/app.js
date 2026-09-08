@@ -981,7 +981,53 @@ function applyGeminiFlightResult(){
     render();
   }catch(e){const status=$('geminiFlightStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Gemini-Ergebnis ungültig','warn');}
 }
+// CORE-005Q2 – Import/Gemini auf Smartphones immer einspaltig und vollständig erreichbar.
+function ensureMobileImportLayoutFix(){
+  const load=$('loadBtn'),view=$('importView');
+  const host=load?.parentElement||view;
+  if(!host)return;
+  host.classList.add('atms-import-mobile-stack');
+  if($('atmsMobileImportLayoutFix'))return;
+  const style=document.createElement('style');
+  style.id='atmsMobileImportLayoutFix';
+  style.textContent=`
+    @media (max-width: 900px){
+      .atms-import-mobile-stack{
+        grid-template-columns:minmax(0,1fr)!important;
+        grid-auto-columns:minmax(0,1fr)!important;
+        width:100%!important;
+        max-width:100%!important;
+        min-width:0!important;
+      }
+      .atms-import-mobile-stack > *{
+        max-width:100%!important;
+        min-width:0!important;
+        box-sizing:border-box!important;
+      }
+      .atms-import-mobile-stack > #loadBtn,
+      .atms-import-mobile-stack > #geminiFlightPanel,
+      .atms-import-mobile-stack > #liveFlightPanel{
+        grid-column:1 / -1!important;
+        width:100%!important;
+        max-width:100%!important;
+        min-width:0!important;
+        box-sizing:border-box!important;
+      }
+      #geminiFlightPanel textarea,
+      #liveFlightPanel textarea,
+      #geminiFlightPanel input,
+      #liveFlightPanel input,
+      #geminiFlightPanel button,
+      #liveFlightPanel button{
+        max-width:100%!important;
+        box-sizing:border-box!important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
 function ensureGeminiFlightPanel(){
+  ensureMobileImportLayoutFix();
   if($('geminiFlightPanel'))return;
   const load=$('loadBtn'),view=$('importView');if(!load||!view)return;
   const panel=document.createElement('section');panel.id='geminiFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(255,255,255,.04)';
@@ -1167,6 +1213,7 @@ function applyManualArrivalLanding(){
   }catch(e){const status=$('manualArrivalStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Manuelle Landungszeit nicht übernommen','warn')}
 }
 function ensureLiveFlightPanel(){
+  ensureMobileImportLayoutFix();
   if($('liveFlightPanel'))return;
   const view=$('importView');if(!view)return;
   const panel=document.createElement('section');panel.id='liveFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,199,255,.32);border-radius:14px;background:rgba(10,80,110,.10)';
@@ -1574,6 +1621,7 @@ function initApp(){
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
     try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){alert('Nachrichten sind für eine spätere Version vorbereitet.')}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
 
+    ensureMobileImportLayoutFix();
     ensureGeminiFlightPanel();
     ensureLiveFlightPanel();
     try{
