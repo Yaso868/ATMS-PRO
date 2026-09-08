@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-005O · 08.09.2026: Sichere OCR-Ortsnormalisierung: Miinchen/Mienchen/Munchen/Muenchen → München; Rohwert bleibt in sourceFlightLocationRaw erhalten.
   // CORE-005L · 08.09.2026: Bildimport mit Preis-Spalte auf 13-Spalten-ATMS-Schema gehärtet; fehlend gelesene 'Flug ausg.'-Überschrift wird geometrisch rekonstruiert.
   // CORE-005J · 07.09.2026: CORE-005I + nachträgliche UI-Korrektur entfernt; app.js/pwa.js rendern Preis und PLAN/DISPO/LIVE direkt an der Quelle.
   // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
@@ -359,6 +360,7 @@
   function normalizeFlightLocation(value) {
     const text = cellText(value).trim();
     if (!text) return '';
+    if (/^(miinchen|mienchen|munchen|muenchen)$/i.test(text)) return 'München';
     if (/^zirich$/i.test(text) || /^zurich$/i.test(text)) return 'Zürich';
     if (/^milan$/i.test(text)) return 'Mailand';
     return text;
