@@ -1642,6 +1642,33 @@ window.addEventListener('error',e=>showAppError(e.error||e.message));
 window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
+
+
+/* CORE-005S DIAG 08.09.2026 – READ ONLY: Flight-Cache vs. aktuelle EW9580-Fahrt. */
+function atmsFlightCacheDiagnostic(flightNumber='EW9580'){
+  const target=flightCacheNumber(flightNumber);
+  const current=(Array.isArray(rides)?rides:[]).filter(r=>flightCacheNumber(r?.flightNumber)===target);
+  const cached=getFlightCache().filter(x=>flightCacheNumber(x?.flightNumber)===target);
+  const rideRows=current.map(r=>{
+    const tuple=flightCacheMatchTuple(r);
+    const matches=cached.filter(x=>flightCacheNumber(x?.flightNumber)===tuple.flight&&String(x?.date||'').trim()===tuple.date&&String(x?.direction||'unknown').trim().toLowerCase()===tuple.direction&&String(x?.flightTime||'').trim()===tuple.flightTime);
+    return {id:String(r?.id||''),tuple,flightLocation:String(r?.flightLocation||''),iata:String(r?.iata||''),matches:matches.map(x=>({rideId:String(x?.rideId||''),date:String(x?.date||''),direction:String(x?.direction||''),flightTime:String(x?.flightTime||''),flightLocation:String(x?.flightLocation||''),iata:String(x?.iata||''),verified:x?.verified===true,checkedAt:String(x?.checkedAt||'')}))};
+  });
+  const report={flightNumber:target,cacheKey:FLIGHT_CACHE,currentRides:rideRows,cacheEntries:cached.map(x=>({rideId:String(x?.rideId||''),date:String(x?.date||''),direction:String(x?.direction||''),flightTime:String(x?.flightTime||''),flightLocation:String(x?.flightLocation||''),iata:String(x?.iata||''),verified:x?.verified===true,checkedAt:String(x?.checkedAt||'')}))};
+  const text=JSON.stringify(report,null,2);
+  let box=document.getElementById('atmsCore005sDiag');
+  if(!box){box=document.createElement('div');box.id='atmsCore005sDiag';box.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,10,16,.94);padding:14px;overflow:auto;color:#fff;font-family:system-ui,sans-serif';document.body.appendChild(box)}
+  box.innerHTML=`<div style="max-width:720px;margin:auto"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:20px">CORE-005S Diagnose · ${esc(target)}</b><span style="flex:1"></span><button id="atmsDiagClose" type="button" style="padding:9px 12px">Schließen</button></div><div style="margin:10px 0;font-size:13px;color:#b8d4df">Nur Lesen · keine Datenänderung · keine Gemini-Prüfung</div><textarea readonly style="width:100%;min-height:70vh;box-sizing:border-box;background:#031923;color:#fff;border:1px solid #2b6077;border-radius:10px;padding:10px">${esc(text)}</textarea></div>`;
+  box.querySelector('#atmsDiagClose').onclick=()=>box.remove();
+  return report;
+}
+function ensureCore005sDiagButton(){
+  if(document.getElementById('atmsCore005sDiagBtn'))return;
+  const btn=document.createElement('button');btn.id='atmsCore005sDiagBtn';btn.type='button';btn.textContent='🔎 EW9580 Flight-Cache prüfen';btn.style.cssText='position:fixed;right:12px;bottom:82px;z-index:99990;padding:11px 13px;border-radius:12px;border:1px solid #22c96f;background:#075f38;color:#fff;font-weight:900;box-shadow:0 8px 24px rgba(0,0,0,.35)';btn.onclick=()=>atmsFlightCacheDiagnostic('EW9580');document.body.appendChild(btn);
+}
+window.atmsFlightCacheDiagnostic=atmsFlightCacheDiagnostic;
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureCore005sDiagButton);else ensureCore005sDiagButton();
+
 window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
