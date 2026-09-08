@@ -1069,7 +1069,8 @@ function ensureMobileImportLayoutFix(){
       }
       .atms-import-mobile-stack > #loadBtn,
       .atms-import-mobile-stack > #geminiFlightPanel,
-      .atms-import-mobile-stack > #liveFlightPanel{
+      .atms-import-mobile-stack > #liveFlightPanel,
+      .atms-import-mobile-stack > #ew9580Diag2Panel{
         grid-column:1 / -1!important;
         width:100%!important;
         max-width:100%!important;
@@ -1081,7 +1082,9 @@ function ensureMobileImportLayoutFix(){
       #geminiFlightPanel input,
       #liveFlightPanel input,
       #geminiFlightPanel button,
-      #liveFlightPanel button{
+      #liveFlightPanel button,
+      #ew9580Diag2Panel button,
+      #ew9580Diag2Panel pre{
         max-width:100%!important;
         box-sizing:border-box!important;
       }
@@ -1288,6 +1291,120 @@ function ensureLiveFlightPanel(){
   $('saveLiveArrivalBufferBtn')?.addEventListener('click',saveArrivalBufferSetting);
   $('applyManualArrivalBtn')?.addEventListener('click',applyManualArrivalLanding);
   renderArrivalBufferSetting();
+}
+
+
+// CORE-005U 08.09.2026: read-only Diagnose fuer EW9580.
+// Vergleicht Haupt-Flight-Cache, Verified-Backup, Ride-Overrides und aktuelle Fahrten.
+// Diese Diagnose schreibt/loescht KEINE ATMS-Daten und startet KEINE Gemini-Pruefung.
+function flightCacheDiagStorage(key){
+  const raw=localStorage.getItem(key);
+  let parsed=null,parseError='';
+  if(raw!==null){
+    try{parsed=JSON.parse(raw)}catch(e){parseError=String(e?.message||e)}
+  }
+  return {
+    key,
+    present:raw!==null,
+    rawLength:raw===null?0:raw.length,
+    parseOk:raw===null?true:!parseError,
+    parseError,
+    count:Array.isArray(parsed)?parsed.length:null,
+    entries:Array.isArray(parsed)?parsed:[]
+  };
+}
+function ew9580DiagEntry(x){
+  return {
+    rideId:String(x?.rideId||''),
+    fingerprint:String(x?.fingerprint||''),
+    flightNumber:flightCacheNumber(x?.flightNumber),
+    date:String(x?.date||'').trim(),
+    direction:String(x?.direction||'unknown').trim().toLowerCase(),
+    flightTime:String(x?.flightTime||'').trim(),
+    flightLocation:String(x?.flightLocation||'').trim(),
+    iata:String(x?.iata||'').trim().toUpperCase(),
+    verified:x?.verified===true,
+    sourceCount:Number(x?.sourceCount||0)||0,
+    checkedAt:String(x?.checkedAt||'').trim()
+  };
+}
+function buildEW9580FlightCacheDiagnosis2(){
+  const target='EW9580';
+  const main=flightCacheDiagStorage(FLIGHT_CACHE);
+  const backup=flightCacheDiagStorage(FLIGHT_CACHE_BACKUP);
+  const overrideStore=flightCacheDiagStorage(RIDE_OVERRIDE_KEY);
+  const current=(Array.isArray(rides)?rides:[]).filter(r=>flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight)===target);
+  const mainHits=main.entries.filter(x=>flightCacheNumber(x?.flightNumber)===target).map(ew9580DiagEntry);
+  const backupHits=backup.entries.filter(x=>flightCacheNumber(x?.flightNumber)===target).map(ew9580DiagEntry);
+  const overrides=Array.isArray(overrideStore.entries)?overrideStore.entries:[];
+  const rideIds=new Set(current.map(r=>String(r?.id||'')));
+  const overrideHits=overrides.filter(x=>rideIds.has(String(x?.rideId||''))).map(x=>({
+    rideId:String(x?.rideId||''),
+    flightVerified:Boolean(x?.flightVerified),
+    flightLocation:String(x?.flightLocation||'').trim(),
+    iata:String(x?.iata||'').trim().toUpperCase(),
+    flightNeedsManualCheck:x?.flightNeedsManualCheck,
+    flightCheckedAt:String(x?.flightCheckedAt||'').trim(),
+    updatedAt:String(x?.updatedAt||'').trim()
+  }));
+  const currentRides=current.map(r=>{
+    const tuple=flightCacheMatchTuple(r);
+    const tupleKey=[tuple.flight,tuple.date,tuple.direction,tuple.flightTime].join('|');
+    const exactMain=mainHits.filter(x=>[x.flightNumber,x.date,x.direction,x.flightTime].join('|')===tupleKey);
+    const exactBackup=backupHits.filter(x=>[x.flightNumber,x.date,x.direction,x.flightTime].join('|')===tupleKey);
+    return {
+      id:String(r?.id||''),
+      tuple,
+      flightLocation:String(r?.flightLocation||'').trim(),
+      iata:String(r?.iata||'').trim().toUpperCase(),
+      flightCheckConfidence:String(r?.flightCheckConfidence||''),
+      flightNeedsManualCheck:r?.flightNeedsManualCheck,
+      exactMainMatches:exactMain.length,
+      exactBackupMatches:exactBackup.length,
+      overrideForCurrentRideId:overrideHits.filter(x=>x.rideId===String(r?.id||''))
+    };
+  });
+  return {
+    diagnosis:'CORE-005U EW9580 Flight-Cache Diagnose 2',
+    flightNumber:target,
+    generatedAt:new Date().toISOString(),
+    storage:{
+      mainCache:{key:main.key,present:main.present,rawLength:main.rawLength,parseOk:main.parseOk,parseError:main.parseError,count:main.count},
+      verifiedBackup:{key:backup.key,present:backup.present,rawLength:backup.rawLength,parseOk:backup.parseOk,parseError:backup.parseError,count:backup.count},
+      rideOverrides:{key:overrideStore.key,present:overrideStore.present,rawLength:overrideStore.rawLength,parseOk:overrideStore.parseOk,parseError:overrideStore.parseError,count:overrideStore.count}
+    },
+    currentRides,
+    mainCacheEntries:mainHits,
+    verifiedBackupEntries:backupHits,
+    currentRideOverrideEntries:overrideHits
+  };
+}
+function renderEW9580FlightCacheDiagnosis2(){
+  const out=$('ew9580Diag2Output');if(!out)return;
+  try{
+    out.textContent=JSON.stringify(buildEW9580FlightCacheDiagnosis2(),null,2);
+  }catch(e){out.textContent='Diagnosefehler: '+String(e?.message||e)}
+}
+async function copyEW9580FlightCacheDiagnosis2(){
+  const out=$('ew9580Diag2Output');
+  if(!out?.textContent?.trim())renderEW9580FlightCacheDiagnosis2();
+  const text=String(out?.textContent||'').trim();
+  if(!text)return;
+  try{await navigator.clipboard.writeText(text);showToast('EW9580 Diagnose kopiert','ok')}
+  catch(_){showToast('Diagnose bitte manuell markieren und kopieren','warn')}
+}
+function ensureEW9580FlightCacheDiagnosis2Panel(){
+  ensureMobileImportLayoutFix();
+  if($('ew9580Diag2Panel'))return;
+  const view=$('importView');if(!view)return;
+  const panel=document.createElement('section');
+  panel.id='ew9580Diag2Panel';
+  panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,255,130,.35);border-radius:14px;background:rgba(20,100,55,.10);width:100%;max-width:100%;box-sizing:border-box';
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🔎 CORE-005U · EW9580 Cache-Diagnose 2</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Nur lesen: Haupt-Cache + Verified-Backup + Ride-Overrides + aktuelle EW9580-Fahrten. Keine Gemini-Prüfung, kein Löschen, keine Datenänderung.</div><button type="button" id="ew9580Diag2Btn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🔎 EW9580 Cache 2 prüfen</button><button type="button" id="ew9580Diag2CopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Diagnose kopieren</button><pre id="ew9580Diag2Output" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:55vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Noch nicht geprüft.</pre>`;
+  const anchor=$('liveFlightPanel')||$('geminiFlightPanel');
+  if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
+  $('ew9580Diag2Btn')?.addEventListener('click',renderEW9580FlightCacheDiagnosis2);
+  $('ew9580Diag2CopyBtn')?.addEventListener('click',copyEW9580FlightCacheDiagnosis2);
 }
 
 function importChoice(newRides){
@@ -1689,6 +1806,7 @@ function initApp(){
     ensureMobileImportLayoutFix();
     ensureGeminiFlightPanel();
     ensureLiveFlightPanel();
+    ensureEW9580FlightCacheDiagnosis2Panel();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
       const overrideRestore=applyRideOverrides(rides);
