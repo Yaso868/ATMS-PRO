@@ -1,3 +1,4 @@
+// CORE-005N 08.09.2026: Live-Flugdaten-Fallback: aktueller Web-Prüfauftrag + sichere JSON-Übernahme, ohne PLAN/DISPO zu überschreiben.
 // CORE-005M 08.09.2026: Dashboard-Hinweiszähler zählt echte manuelle/unsichere Flugprüfungen statt beliebiger flightStatus-Werte.
 // CORE-005K 07.09.2026: Cockpit-Status ohne Live-Daten neutral; PÜNKTLICH nur bei bestätigtem On-Time-Status.
 // CORE-005J 07.09.2026: Preis-fehlt nativ anzeigen; PWA rendert PLAN/DISPO/LIVE ohne nachträgliche DOM-Korrektur.
@@ -248,7 +249,7 @@ function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r
   localStorage.setItem(KEY,JSON.stringify(rides));
   localStorage.setItem(DONE,JSON.stringify([...done]));
 }function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
-function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time|scheduled/.test(raw))return{key:'on-time',label:'Pünktlich'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
+function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(/storniert|cancelled|canceled/.test(raw))return{key:'cancelled',label:'Storniert'};if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time|scheduled/.test(raw))return{key:'on-time',label:'Pünktlich'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
 function timeMarkup(r){const plan=planTimeOf(r);const current=effectiveTime(r);if(current&&plan&&current!==plan)return `<div class="time-stack"><div class="plan-small">${esc(plan)}</div><div class="current-large">${esc(current)}</div></div>`;return `<div class="time-single">${esc(current||plan||'--:--')}</div>`}
 function ridePartnerLabel(r){
   const left=String(r.partner||r.airline||r.customer||'').trim();
@@ -320,7 +321,7 @@ function openDrivers(){
   dialog.classList.remove('hidden');
 }
 
-function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitPlan=planTimeOf(active)||'--:--';const cockpitCurrent=effectiveTime(active)||'--:--';$('planTime').textContent=cockpitPlan;$('planTime').classList.toggle('plan-replaced',Boolean(cockpitPlan&&cockpitCurrent&&cockpitPlan!=='--:--'&&cockpitCurrent!==cockpitPlan));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=source==='live'?'LIVE-ABHOLZEIT':source==='dispo'?'DISPO-ABHOLZEIT':'AKTUELLE ABHOLZEIT';$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=ridePriceLabel(active);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';const statusBadge=$('statusBadge');if(statusBadge){let badgeText='KEINE LIVE-DATEN';let badgeTone='neutral';if(activeDone){badgeText='ERLEDIGT';badgeTone='done'}else if(fsi.key==='on-time'){badgeText='PÜNKTLICH';badgeTone='ok'}else if(fsi.key==='delayed'){badgeText=String(fsi.label||'VERSPÄTET').toUpperCase();badgeTone='warn'}else if(fsi.key==='landed'){badgeText='GELANDET';badgeTone='landed'}statusBadge.textContent=badgeText;statusBadge.dataset.atmsTone=badgeTone;if(badgeTone==='neutral'){statusBadge.style.color='#aebfc9';statusBadge.style.borderColor='rgba(174,191,201,.45)';statusBadge.style.background='rgba(174,191,201,.08)'}else{statusBadge.style.removeProperty('color');statusBadge.style.removeProperty('border-color');statusBadge.style.removeProperty('background')}}renderDispatcherControls();renderDriverControls();const editFlightBtn=document.querySelector('#cockpitView .edit');if(editFlightBtn)editFlightBtn.onclick=openManualFlightEditor}
+function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitPlan=planTimeOf(active)||'--:--';const cockpitCurrent=effectiveTime(active)||'--:--';$('planTime').textContent=cockpitPlan;$('planTime').classList.toggle('plan-replaced',Boolean(cockpitPlan&&cockpitCurrent&&cockpitPlan!=='--:--'&&cockpitCurrent!==cockpitPlan));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=source==='live'?'LIVE-ABHOLZEIT':source==='dispo'?'DISPO-ABHOLZEIT':'AKTUELLE ABHOLZEIT';$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=ridePriceLabel(active);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';const statusBadge=$('statusBadge');if(statusBadge){let badgeText='KEINE LIVE-DATEN';let badgeTone='neutral';if(activeDone){badgeText='ERLEDIGT';badgeTone='done'}else if(fsi.key==='on-time'){badgeText='PÜNKTLICH';badgeTone='ok'}else if(fsi.key==='delayed'){badgeText=String(fsi.label||'VERSPÄTET').toUpperCase();badgeTone='warn'}else if(fsi.key==='landed'){badgeText='GELANDET';badgeTone='landed'}else if(fsi.key==='cancelled'){badgeText='STORNIERT';badgeTone='warn'}statusBadge.textContent=badgeText;statusBadge.dataset.atmsTone=badgeTone;if(badgeTone==='neutral'){statusBadge.style.color='#aebfc9';statusBadge.style.borderColor='rgba(174,191,201,.45)';statusBadge.style.background='rgba(174,191,201,.08)'}else{statusBadge.style.removeProperty('color');statusBadge.style.removeProperty('border-color');statusBadge.style.removeProperty('background')}}renderDispatcherControls();renderDriverControls();const editFlightBtn=document.querySelector('#cockpitView .edit');if(editFlightBtn)editFlightBtn.onclick=openManualFlightEditor}
 
 function fullMessagePlace(name){
   const raw=String(name||'').trim();
@@ -968,6 +969,134 @@ function ensureGeminiFlightPanel(){
   $('applyGeminiFlightBtn')?.addEventListener('click',applyGeminiFlightResult);
 }
 
+
+// CORE-005N – Live-Flugdaten werden getrennt von PLAN/DISPO gespeichert.
+function liveFlightCheckItems(source=rides){
+  const map=new Map();
+  for(const r of (Array.isArray(source)?source:[])){
+    const flight=flightCacheNumber(r.flightNumber||r.arrivalFlight||r.departureFlight);
+    if(!flight)continue;
+    const date=String(r.date||'').trim()||berlinDate();
+    const direction=flightDirectionForGemini(r);
+    const key=[flight,date,direction].join('|');
+    if(!map.has(key))map.set(key,{flightNumber:flight,date,direction,flightLocation:String(r.flightLocation||'').trim()||null,planPickupTime:planTimeOf(r)||null});
+  }
+  return [...map.values()];
+}
+function buildLiveFlightPrompt(){
+  const items=liveFlightCheckItems();
+  if(!items.length)throw new Error('Keine Flüge in den aktuell gespeicherten Fahrten gefunden.');
+  return `ATMS PRO – LIVE-FLIGHT-001 strikte aktuelle Live-Flugprüfung\n\nPrüfe JEDE unten aufgeführte Flugnummer für den angegebenen Tag anhand AKTUELLER öffentlicher Webdaten. Keine historischen/typischen Routen als Live-Status verwenden.\n\nVERBINDLICHE REGELN:\n1. direction=departure: DUS ist Abflugairport. relevant sind aktueller Status und die aktuelle DUS-Abflugzeit.\n2. direction=arrival: DUS ist Zielairport. relevant sind aktueller Status und die aktuelle DUS-Ankunftszeit.\n3. date exakt verwenden. Keine Daten eines anderen Tages übernehmen.\n4. confirmed=true nur mit mindestens ZWEI voneinander unabhängigen, aktuellen/datumsspezifischen Quellen. Mindestens eine Quelle nach Möglichkeit DUS, Airline oder ein etablierter Live-Tracker.\n5. Wenn der Flug noch nicht gestartet ist und keine belastbare Schätzung existiert, Status scheduled/on_time ist erlaubt, aber Zeiten nur aus tatsächlich angezeigten aktuellen Daten übernehmen.\n6. Bei Widerspruch, unklarer Zuordnung oder weniger als 2 geeigneten Quellen: confirmed=false, status=unknown. Nicht raten.\n7. dusScheduledTime, dusEstimatedTime und dusActualTime immer als lokale DUS-Zeit HH:MM zurückgeben oder null.\n8. delayMinutes ist die aktuelle Abweichung am DUS-Ereignis in ganzen Minuten; wenn nicht belastbar bestimmbar, null.\n9. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden.\n10. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.\n11. Antworte ausschließlich mit EINEM gültigen JSON-Objekt. Kein Markdown.\n\nJSON-SCHEMA:\n{\n  "checkedAt":"ISO-8601",\n  "flights":[{\n    "flightNumber":"EW0000",\n    "date":"YYYY-MM-DD",\n    "direction":"arrival|departure|unknown",\n    "status":"scheduled|on_time|delayed|landed|cancelled|unknown",\n    "dusScheduledTime":"HH:MM|null",\n    "dusEstimatedTime":"HH:MM|null",\n    "dusActualTime":"HH:MM|null",\n    "delayMinutes":null,\n    "confirmed":false,\n    "sources":[{"name":"","url":""}],\n    "sourceNote":""\n  }]\n}\n\nZu prüfen:\n${JSON.stringify(items,null,2)}`;
+}
+async function copyLiveFlightPrompt(){
+  try{
+    const text=buildLiveFlightPrompt();
+    await navigator.clipboard.writeText(text);
+    const status=$('liveFlightImportStatus');if(status)status.textContent=`${liveFlightCheckItems().length} Live-Flugprüfung(en) kopiert. Ergebnis danach unten einfügen.`;
+    showToast('Live-Flugprüfauftrag kopiert','ok');
+  }catch(e){
+    const text=(()=>{try{return buildLiveFlightPrompt()}catch{return''}})();
+    const box=$('liveFlightPromptFallback');if(box){box.value=text;box.classList.remove('hidden');box.select();}
+    const status=$('liveFlightImportStatus');if(status)status.textContent='Prompt anzeigen und manuell kopieren.';
+    showToast('Live-Prüfauftrag anzeigen','warn');
+  }
+}
+function strictClockOrNull(value){
+  if(value===null||value===undefined||value==='')return null;
+  const v=String(value).trim();
+  return /^([01]?\d|2[0-3]):[0-5]\d$/.test(v)?v:null;
+}
+function minuteDeltaClock(from,to){
+  const a=strictClockOrNull(from),b=strictClockOrNull(to);if(!a||!b)return null;
+  const [ah,am]=a.split(':').map(Number),[bh,bm]=b.split(':').map(Number);
+  let d=bh*60+bm-(ah*60+am);if(d<-720)d+=1440;if(d>720)d-=1440;return d;
+}
+function parseLiveFlightResult(text){
+  const obj=JSON.parse(clean(String(text||'')));
+  if(!obj||Array.isArray(obj)||typeof obj!=='object'||!Array.isArray(obj.flights)||!obj.flights.length)throw new Error('LIVE-FLIGHT-001 erwartet ein JSON-Objekt mit dem Feld "flights".');
+  return obj.flights.map((x,index)=>{
+    if(!x||typeof x!=='object'||Array.isArray(x))throw new Error(`Live-Flug ${index+1} ist ungültig.`);
+    const flightNumber=flightCacheNumber(x.flightNumber);if(!flightNumber)throw new Error(`flightNumber bei Live-Flug ${index+1} fehlt.`);
+    const date=String(x.date||'').trim();
+    const direction=String(x.direction||'unknown').trim().toLowerCase();
+    const allowedStatus=new Set(['scheduled','on_time','delayed','landed','cancelled','unknown']);
+    const status=allowedStatus.has(String(x.status||'unknown').trim().toLowerCase())?String(x.status||'unknown').trim().toLowerCase():'unknown';
+    const sources=Array.isArray(x.sources)?x.sources.map(src=>({name:String(src?.name||'').trim(),url:String(src?.url||'').trim()})).filter(src=>src.name&&src.url):[];
+    const uniqueSources=new Set(sources.map(src=>src.url.toLowerCase())).size;
+    const confirmed=Boolean(x.confirmed)&&uniqueSources>=2&&status!=='unknown';
+    const scheduled=strictClockOrNull(x.dusScheduledTime);
+    const estimated=strictClockOrNull(x.dusEstimatedTime);
+    const actual=strictClockOrNull(x.dusActualTime);
+    let delay=x.delayMinutes===null||x.delayMinutes===undefined||x.delayMinutes===''?null:Number(x.delayMinutes);
+    if(!Number.isFinite(delay))delay=null;
+    if(delay===null){const current=actual||estimated;if(scheduled&&current)delay=minuteDeltaClock(scheduled,current);}
+    return {flightNumber,date,direction,status,dusScheduledTime:scheduled,dusEstimatedTime:estimated,dusActualTime:actual,delayMinutes:delay,confirmed,sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
+  });
+}
+function livePickupFromCheck(ride,hit){
+  if(!ride||!hit||!hit.confirmed)return'';
+  if(hit.status==='cancelled')return'';
+  if(hit.direction==='arrival'){
+    const arrival=hit.dusActualTime||hit.dusEstimatedTime;
+    return arrival?clockPlusMinutes(arrival,liveBufferMinutesOf(ride)):'';
+  }
+  if(hit.direction==='departure'){
+    const plan=planTimeOf(ride);if(!plan)return'';
+    const delay=Number(hit.delayMinutes);
+    if(Number.isFinite(delay))return clockPlusMinutes(plan,delay);
+    return hit.status==='on_time'||hit.status==='scheduled'?plan:'';
+  }
+  return'';
+}
+function applyLiveFlightResult(){
+  try{
+    const box=$('liveFlightResult');
+    const checked=parseLiveFlightResult(box?.value||'');
+    const checkedAt=new Date().toISOString();
+    let updated=0,uncertain=0;
+    rides=rides.map(r=>{
+      const flight=flightCacheNumber(r.flightNumber);if(!flight)return r;
+      const date=String(r.date||'').trim();
+      const direction=flightDirectionForGemini(r);
+      const candidates=checked.filter(x=>flightCacheNumber(x.flightNumber)===flight&&(!date||x.date===date)&&x.direction===direction);
+      if(candidates.length!==1)return r;
+      const hit=candidates[0];
+      if(!hit.confirmed){uncertain++;return r;}
+      const nextLive=livePickupFromCheck(r,hit);
+      const rawStatus=hit.status==='landed'?'landed':hit.status==='delayed'?'delayed':hit.status==='cancelled'?'cancelled':(hit.status==='on_time'||hit.status==='scheduled')?'on-time':'unknown';
+      updated++;
+      return norm({...r,
+        liveTime:nextLive||r.liveTime||'',
+        live_time:nextLive||r.live_time||'',
+        flightStatus:rawStatus,
+        delayMinutes:Number.isFinite(Number(hit.delayMinutes))?Number(hit.delayMinutes):0,
+        landed:hit.status==='landed',
+        liveFlightStatus:hit.status,
+        liveFlightScheduledTime:hit.dusScheduledTime||'',
+        liveFlightEstimatedTime:hit.dusEstimatedTime||'',
+        liveFlightActualTime:hit.dusActualTime||'',
+        liveCheckedAt:checkedAt,
+        liveSourceNote:hit.sourceNote,
+        liveSources:hit.sources
+      },0);
+    });
+    save();render();
+    if(box)box.value='';
+    const status=$('liveFlightImportStatus');if(status)status.textContent=`${updated} Fahrt(en) mit bestätigten Live-Flugdaten aktualisiert${uncertain?` · ${uncertain} unsicher nicht verändert`:''}.`;
+    showToast(`${updated} Live-Flugdaten übernommen`,'ok');
+  }catch(e){const status=$('liveFlightImportStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Live-Flugergebnis ungültig','warn');}
+}
+function ensureLiveFlightPanel(){
+  if($('liveFlightPanel'))return;
+  const view=$('importView');if(!view)return;
+  const panel=document.createElement('section');panel.id='liveFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,199,255,.32);border-radius:14px;background:rgba(10,80,110,.10)';
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div>`;
+  const anchor=$('geminiFlightPanel');
+  if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
+  $('copyLiveFlightBtn')?.addEventListener('click',copyLiveFlightPrompt);
+  $('applyLiveFlightBtn')?.addEventListener('click',applyLiveFlightResult);
+}
+
 function importChoice(newRides){
   if(!Array.isArray(newRides)||!newRides.length)throw Error('Keine Fahrten gefunden');
   if(!rides.length)return 'replace';
@@ -1346,6 +1475,7 @@ function initApp(){
     try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){alert('Nachrichten sind für eine spätere Version vorbereitet.')}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
 
     ensureGeminiFlightPanel();
+    ensureLiveFlightPanel();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
       const overrideRestore=applyRideOverrides(rides);
@@ -1367,3 +1497,4 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
+window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;
