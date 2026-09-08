@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-005R · 08.09.2026: Verdächtige/fehlende Preiszellen im Bild-/WhatsApp-Import werden gezielt lokal erneut OCR-gelesen. Nur eindeutiger plausibler Mehrfach-Konsens wird automatisch übernommen; sonst bleibt die bestehende manuelle Preis-Sicherheitsabfrage erhalten. Keine feste Sonderregel für 47,60 €.
   // CORE-005O · 08.09.2026: Sichere OCR-Ortsnormalisierung: Miinchen/Mienchen/Munchen/Muenchen → München; Rohwert bleibt in sourceFlightLocationRaw erhalten.
   // CORE-005L · 08.09.2026: Bildimport mit Preis-Spalte auf 13-Spalten-ATMS-Schema gehärtet; fehlend gelesene 'Flug ausg.'-Überschrift wird geometrisch rekonstruiert.
   // CORE-005J · 07.09.2026: CORE-005I + nachträgliche UI-Korrektur entfernt; app.js/pwa.js rendern Preis und PLAN/DISPO/LIVE direkt an der Quelle.
@@ -1518,6 +1519,106 @@
     return [...found];
   }
 
+  // CORE-005R: Preis-Kandidaten werden nur aus expliziten Dezimaldarstellungen
+  // der gezielt ausgeschnittenen Preiszelle gewonnen. Eine verlorene Dezimalstelle
+  // (z. B. reines "4760") wird NICHT erraten oder automatisch verschoben.
+  function priceCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts
+      .join(' ')
+      .replace(/[Oo]/g, '0')
+      .replace(/([,.])\s+(?=\d{2}(?:\D|$))/g, '$1');
+    const found = new Set();
+    const pattern = /(?:^|[^0-9])(\d{1,4}(?:[.,]\d{3})*[.,]\d{2})(?!\d)/g;
+    let match;
+    while ((match = pattern.exec(joined))) {
+      const token = match[1];
+      const value = parseNumber(token);
+      const check = pricePlausibility(value);
+      if (!Number.isFinite(value) || value <= 0 || check.suspicious) continue;
+      found.add((Math.round(value * 100) / 100).toFixed(2));
+    }
+    return [...found].map(Number);
+  }
+
+  async function recoverSuspiciousPricesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const priceCol = mapping?.price;
+    if (priceCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[priceCol]);
+    const right = Number(boundaries[priceCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.priceRequired === false) continue;
+      const initialCheck = pricePlausibility(ride.price);
+      if (!initialCheck.suspicious) continue;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(1, cellWidth * 0.04);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 2]
+      ];
+
+      if (status) status.textContent = `Preiszelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = priceCandidatesFromOcrResult(second);
+          attempts.push(candidates.slice());
+          if (candidates.length !== 1) continue;
+          const candidate = Number(candidates[0]);
+          const key = candidate.toFixed(2);
+          votes.set(key, (votes.get(key) || 0) + 1);
+        }
+      } catch (_) {
+        ride.priceTargetedOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.priceTargetedOcrAttempts = attempts;
+      const ranked = [...votes.entries()]
+        .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
+
+      // Sicherheitsregel: mindestens zwei gezielte OCR-Crops muessen denselben
+      // plausiblen Preis liefern. Bei Gleichstand oder Einzel-Treffer bleibt CORE-004K aktiv.
+      if (!ranked.length || ranked[0][1] < 2) continue;
+      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+
+      const recovered = Number(ranked[0][0]);
+      if (pricePlausibility(recovered).suspicious) continue;
+
+      ride.priceOcrInitial = Number(ride.price) || 0;
+      ride.price = recovered;
+      ride.priceRecoveredFromTargetedOcr = true;
+      ride.priceRecoverySource = 'targeted_price_cell_consensus';
+    }
+
+    return out;
+  }
+
   async function recoverMissingRideTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const timeCol = mapping?.time;
@@ -2090,6 +2191,12 @@
       let preparedRides = rides;
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
         preparedRides = await recoverMissingRideTimesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverSuspiciousPricesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
