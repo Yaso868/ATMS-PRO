@@ -1,3 +1,4 @@
+// CORE-005M 08.09.2026: Dashboard-Hinweiszähler zählt echte manuelle/unsichere Flugprüfungen statt beliebiger flightStatus-Werte.
 // CORE-005K 07.09.2026: Cockpit-Status ohne Live-Daten neutral; PÜNKTLICH nur bei bestätigtem On-Time-Status.
 // CORE-005J 07.09.2026: Preis-fehlt nativ anzeigen; PWA rendert PLAN/DISPO/LIVE ohne nachträgliche DOM-Korrektur.
 // CORE-004L 06.09.2026: Zeitlogik gehärtet. PLAN, DISPO und LIVE bleiben getrennt; Priorität LIVE > DISPO > PLAN.
@@ -273,6 +274,10 @@ const stats=$('dashboardStats');
 if(stats){
  const drivers=[...new Set(rides.map(r=>r.driver).filter(Boolean))];
  const flights=[...new Set(rides.map(r=>r.flightNumber).filter(Boolean))];
+ const notices=rides.filter(r=>{
+   const confidence=String(r?.flightCheckConfidence||'').trim().toLowerCase();
+   return Boolean(r?.flightNeedsManualCheck || confidence==='uncertain' || r?.flightConflict===true || r?.conflict===true);
+ }).length;
 
  stats.innerHTML=`
  <div class="dashboard-stat">
@@ -291,7 +296,7 @@ if(stats){
  </div>
 
  <div class="dashboard-stat">
- <b>${rides.filter(r=>r.flightStatus).length}</b>
+ <b>${notices}</b>
  <span>Hinweise</span>
  </div>`;
 }
