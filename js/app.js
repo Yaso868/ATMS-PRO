@@ -1210,9 +1210,18 @@ function applyImportedRides(newRides){
     }));
   }catch(_){}
 
-  // Planlisten-Import: neue Liste ersetzt alte Liste vollständig.
-  // Alte Bestätigungen werden NICHT auf neue Fahrten übertragen, da neue Importe neue IDs besitzen.
-  rides=newRides;
+  // CORE-005Q1: Ein Plan ohne eigenes Datum bekommt beim Import einmalig den
+  // konkreten Plantag (Europe/Berlin). Dadurch kann der Flug-Cache sicher mit
+  // Flugnummer + Plantag + Richtung + Flugzeit matchen, ohne morgen versehentlich
+  // die heutige Pruefung auf einen neuen Plan anzuwenden. Ein im Plan vorhandenes
+  // Datum bleibt unveraendert.
+  const importedAt=new Date().toISOString();
+  const assumedPlantDay=berlinDate();
+  rides=newRides.map(r=>{
+    const explicitDate=String(first(r?.date,r?.datum)||'').trim();
+    if(explicitDate)return r;
+    return {...r,date:assumedPlantDay,dateAssumed:true,planDateAssumed:true,planImportedAt:importedAt};
+  });
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
   // CORE-005Q: Flugpruefungen des EXAKT gleichen konkreten Fluges werden direkt
