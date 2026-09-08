@@ -9,6 +9,7 @@
 // LIVE kann aus einer ausdrücklich gelieferten tatsächlichen Landezeit + 15 Min. Abholpuffer abgeleitet werden.
 // CORE-004C HOTFIX 05.09.2026: Flugdaten-aendern-Button repariert; manuelle Korrekturen werden lokal pro Fahrt gespeichert.
 // CORE-005V 08.09.2026: additive Persistenz-Sicherheitslage (Snapshot, Write-Read-Check, Recovery, Self-Test).
+// CORE-005V1 08.09.2026: Persistenz-Panel bleibt nach dynamischem Import-UI-Render sichtbar (additiv, keine Importlogik geändert).
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -146,15 +147,29 @@ function persistenceDiagnosis(){
   };
 }
 function ensurePersistenceSafetyPanel(){
-  const view=$('importView');if(!view||$('atmsPersistenceSafetyPanel'))return;
-  const panel=document.createElement('div');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin-top:14px;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;';
+  const view=$('importView');if(!view)return false;
+  if($('atmsPersistenceSafetyPanel'))return true;
+  const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
   panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: lokaler Sicherheits-Snapshot, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
-  view.appendChild(panel);
+  const anchor=$('liveFlightPanel')||$('geminiFlightPanel');
+  if(anchor&&anchor.parentElement===view)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
   const paint=obj=>{const out=$('atmsPersistenceOutput');if(out)out.textContent=JSON.stringify(obj,null,2)};
   $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
   $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
+  return true;
 }
+function initPersistenceSafetyPanelObserver(){
+  if(window.__atmsPersistenceSafetyPanelObserver)return;
+  const attach=()=>{try{ensurePersistenceSafetyPanel()}catch(_){ }};
+  attach();
+  const observer=new MutationObserver(()=>{if(!$('atmsPersistenceSafetyPanel'))attach()});
+  observer.observe(document.documentElement,{childList:true,subtree:true});
+  window.__atmsPersistenceSafetyPanelObserver=observer;
+  window.addEventListener('focus',attach);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)attach()});
+}
+
 
 function getRideOverrides(){
   try{
@@ -1820,6 +1835,7 @@ function initApp(){
     ensureGeminiFlightPanel();
     ensureLiveFlightPanel();
     ensurePersistenceSafetyPanel();
+    initPersistenceSafetyPanelObserver();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
       const overrideRestore=applyRideOverrides(rides);
