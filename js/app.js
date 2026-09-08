@@ -8,7 +8,7 @@
 // CORE-004L 06.09.2026: Zeitlogik gehärtet. PLAN, DISPO und LIVE bleiben getrennt; Priorität LIVE > DISPO > PLAN.
 // LIVE kann aus einer ausdrücklich gelieferten tatsächlichen Landezeit + 15 Min. Abholpuffer abgeleitet werden.
 // CORE-004C HOTFIX 05.09.2026: Flugdaten-aendern-Button repariert; manuelle Korrekturen werden lokal pro Fahrt gespeichert.
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -606,8 +606,56 @@ function getFlightCache(){
     return Array.isArray(list)?list:[];
   }catch(_){return[]}
 }
+function getVerifiedFlightCacheBackup(){
+  try{
+    const list=JSON.parse(localStorage.getItem(FLIGHT_CACHE_BACKUP)||'[]');
+    return Array.isArray(list)?list:[];
+  }catch(_){return[]}
+}
+function flightCacheEntryTuple(x){
+  return {
+    flight:flightCacheNumber(x?.flightNumber),
+    date:String(x?.date||'').trim(),
+    direction:String(x?.direction||'unknown').trim().toLowerCase(),
+    flightTime:String(x?.flightTime||'').trim()
+  };
+}
+function flightCacheTupleKey(x){
+  const t=flightCacheEntryTuple(x);
+  return [t.flight,t.date,t.direction,t.flightTime].join('|');
+}
+function isVerifiedFlightCacheEntry(x){
+  return x?.verified===true&&Boolean(String(x?.flightLocation||'').trim());
+}
+function saveVerifiedFlightCacheBackup(list){
+  const verified=(Array.isArray(list)?list:[]).filter(isVerifiedFlightCacheEntry);
+  const byTuple=new Map();
+  verified
+    .slice()
+    .sort((a,b)=>new Date(b?.checkedAt||0)-new Date(a?.checkedAt||0))
+    .forEach(entry=>{const key=flightCacheTupleKey(entry);if(key&&!byTuple.has(key))byTuple.set(key,entry)});
+  localStorage.setItem(FLIGHT_CACHE_BACKUP,JSON.stringify(Array.from(byTuple.values()).slice(0,400)));
+}
 function saveFlightCache(list){
-  localStorage.setItem(FLIGHT_CACHE,JSON.stringify((Array.isArray(list)?list:[]).slice(0,400)));
+  const safe=(Array.isArray(list)?list:[]).slice(0,400);
+  localStorage.setItem(FLIGHT_CACHE,JSON.stringify(safe));
+  const merged=[...getVerifiedFlightCacheBackup(),...safe.filter(isVerifiedFlightCacheEntry)];
+  saveVerifiedFlightCacheBackup(merged);
+}
+function recoverVerifiedFlightCache(){
+  const backup=getVerifiedFlightCacheBackup();
+  if(!backup.length)return 0;
+  let cache=getFlightCache(),changed=0;
+  for(const entry of backup){
+    if(!isVerifiedFlightCacheEntry(entry))continue;
+    const key=flightCacheTupleKey(entry);
+    const already=cache.some(x=>flightCacheTupleKey(x)===key&&isVerifiedFlightCacheEntry(x));
+    if(!already){cache.unshift(entry);changed++;}
+  }
+  if(changed){
+    localStorage.setItem(FLIGHT_CACHE,JSON.stringify(cache.slice(0,400)));
+  }
+  return changed;
 }
 function upsertFlightCache(entries){
   if(!Array.isArray(entries)||!entries.length)return;
@@ -615,7 +663,22 @@ function upsertFlightCache(entries){
   for(const entry of entries){
     const fp=String(entry.fingerprint||'');
     const rideId=String(entry.rideId||'');
+    const incomingTuple=flightCacheTupleKey(entry);
+    const incomingVerified=isVerifiedFlightCacheEntry(entry);
+
+    // CORE-005T: Ein unsicherer/leerer Treffer darf einen bereits verifizierten
+    // Eintrag desselben konkreten Fluges niemals verdrängen. Außerdem werden
+    // gleiche rideId/fingerprint-Werte nur innerhalb desselben Datum/Richtung/Zeit-Tupels ersetzt.
+    const protectedVerified=cache.some(x=>{
+      if(!isVerifiedFlightCacheEntry(x)||flightCacheTupleKey(x)!==incomingTuple)return false;
+      const sameFingerprint=fp&&String(x.fingerprint||'')===fp;
+      const sameRide=rideId&&String(x.rideId||'')===rideId;
+      return sameFingerprint||sameRide;
+    });
+    if(!incomingVerified&&protectedVerified)continue;
+
     cache=cache.filter(x=>{
+      if(flightCacheTupleKey(x)!==incomingTuple)return true;
       const sameFingerprint=fp&&String(x.fingerprint||'')===fp;
       const sameRide=rideId&&String(x.rideId||'')===rideId;
       return !(sameFingerprint||sameRide);
@@ -1586,6 +1649,8 @@ function initPersistentFlightCheckStatus(){
 
 function initApp(){
   try{
+    // CORE-005T 08.09.2026: verifizierte Flight-Cache-Eintraege redundant schuetzen und ggf. wiederherstellen.
+    recoverVerifiedFlightCache();
     initPersistentFlightCheckStatus();
     bindClick('driverBtn',openDrivers);
     bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
@@ -1641,33 +1706,6 @@ function initApp(){
 window.addEventListener('error',e=>showAppError(e.error||e.message));
 window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
-
-
-
-/* CORE-005S DIAG 08.09.2026 – READ ONLY: Flight-Cache vs. aktuelle EW9580-Fahrt. */
-function atmsFlightCacheDiagnostic(flightNumber='EW9580'){
-  const target=flightCacheNumber(flightNumber);
-  const current=(Array.isArray(rides)?rides:[]).filter(r=>flightCacheNumber(r?.flightNumber)===target);
-  const cached=getFlightCache().filter(x=>flightCacheNumber(x?.flightNumber)===target);
-  const rideRows=current.map(r=>{
-    const tuple=flightCacheMatchTuple(r);
-    const matches=cached.filter(x=>flightCacheNumber(x?.flightNumber)===tuple.flight&&String(x?.date||'').trim()===tuple.date&&String(x?.direction||'unknown').trim().toLowerCase()===tuple.direction&&String(x?.flightTime||'').trim()===tuple.flightTime);
-    return {id:String(r?.id||''),tuple,flightLocation:String(r?.flightLocation||''),iata:String(r?.iata||''),matches:matches.map(x=>({rideId:String(x?.rideId||''),date:String(x?.date||''),direction:String(x?.direction||''),flightTime:String(x?.flightTime||''),flightLocation:String(x?.flightLocation||''),iata:String(x?.iata||''),verified:x?.verified===true,checkedAt:String(x?.checkedAt||'')}))};
-  });
-  const report={flightNumber:target,cacheKey:FLIGHT_CACHE,currentRides:rideRows,cacheEntries:cached.map(x=>({rideId:String(x?.rideId||''),date:String(x?.date||''),direction:String(x?.direction||''),flightTime:String(x?.flightTime||''),flightLocation:String(x?.flightLocation||''),iata:String(x?.iata||''),verified:x?.verified===true,checkedAt:String(x?.checkedAt||'')}))};
-  const text=JSON.stringify(report,null,2);
-  let box=document.getElementById('atmsCore005sDiag');
-  if(!box){box=document.createElement('div');box.id='atmsCore005sDiag';box.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,10,16,.94);padding:14px;overflow:auto;color:#fff;font-family:system-ui,sans-serif';document.body.appendChild(box)}
-  box.innerHTML=`<div style="max-width:720px;margin:auto"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:20px">CORE-005S Diagnose · ${esc(target)}</b><span style="flex:1"></span><button id="atmsDiagClose" type="button" style="padding:9px 12px">Schließen</button></div><div style="margin:10px 0;font-size:13px;color:#b8d4df">Nur Lesen · keine Datenänderung · keine Gemini-Prüfung</div><textarea readonly style="width:100%;min-height:70vh;box-sizing:border-box;background:#031923;color:#fff;border:1px solid #2b6077;border-radius:10px;padding:10px">${esc(text)}</textarea></div>`;
-  box.querySelector('#atmsDiagClose').onclick=()=>box.remove();
-  return report;
-}
-function ensureCore005sDiagButton(){
-  if(document.getElementById('atmsCore005sDiagBtn'))return;
-  const btn=document.createElement('button');btn.id='atmsCore005sDiagBtn';btn.type='button';btn.textContent='🔎 EW9580 Flight-Cache prüfen';btn.style.cssText='position:fixed;right:12px;bottom:82px;z-index:99990;padding:11px 13px;border-radius:12px;border:1px solid #22c96f;background:#075f38;color:#fff;font-weight:900;box-shadow:0 8px 24px rgba(0,0,0,.35)';btn.onclick=()=>atmsFlightCacheDiagnostic('EW9580');document.body.appendChild(btn);
-}
-window.atmsFlightCacheDiagnostic=atmsFlightCacheDiagnostic;
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureCore005sDiagButton);else ensureCore005sDiagButton();
 
 window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
