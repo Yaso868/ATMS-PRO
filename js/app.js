@@ -8,7 +8,8 @@
 // CORE-004L 06.09.2026: Zeitlogik gehärtet. PLAN, DISPO und LIVE bleiben getrennt; Priorität LIVE > DISPO > PLAN.
 // LIVE kann aus einer ausdrücklich gelieferten tatsächlichen Landezeit + 15 Min. Abholpuffer abgeleitet werden.
 // CORE-004C HOTFIX 05.09.2026: Flugdaten-aendern-Button repariert; manuelle Korrekturen werden lokal pro Fahrt gespeichert.
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+// CORE-005V 08.09.2026: additive Persistenz-Sicherheitslage (Snapshot, Write-Read-Check, Recovery, Self-Test).
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -37,6 +38,124 @@ function isBundleRide(r){return Boolean(r.bundle||r.isBundle||r.bundelfahrt||r.i
 function normalizeFlightLocationOcr(value){const raw=String(value||'').trim();if(!raw)return'';const key=raw.toLowerCase().replace(/\s+/g,' ');if(['miinchen','mienchen','munchen','muenchen'].includes(key))return'München';return raw}
 function norm(r,i){const plan=planTimeOf(r),dispo=dispoTimeOf(r),landing=actualLandingTimeOf(r),buffer=liveBufferMinutesOf(r),live=liveTimeOf(r),rawFlightLocation=first(r.flightLocation,r.flugort,r.ort),normalizedFlightLocation=normalizeFlightLocationOcr(rawFlightLocation);return{...r,id:first(r.id,'ride-'+(i+1)),date:first(r.date,r.datum),time:plan,planTime:plan,dispoTime:dispo,liveTime:live,actualLandingTime:landing,liveBufferMinutes:buffer,liveTimeDerivedFromLanding:Boolean(!explicitLiveTimeOf(r)&&landing&&live),driver:first(r.driver,r.fahrer),pickup:first(r.pickup,r.abholort,r.start),destination:first(r.destination,r.zielort,r.ziel),flightNumber:first(r.flightNumber,r.flugnummer).toUpperCase(),flightLocationRaw:first(r.flightLocationRaw,r.sourceFlightLocationRaw,rawFlightLocation),flightLocation:normalizedFlightLocation,iata:first(r.iata),airline:first(r.airline),partner:first(r.partner,r.airline),company:first(r.company,r.firma,'WT'),vehicle:first(r.vehicle,r.fahrzeug,'Pkw'),persons:Number(r.persons||r.personen||0),price:Number(r.price||r.preis||0),currency:first(r.currency,'EUR'),notes:first(r.notes,r.hinweis),flightStatus:first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status),delayMinutes:Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0),landed:Boolean(r.landed||r.gelandet),isBundle:isBundleRide(r),bundleStops:normalizeStops(r)}}
 function normKey(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
+
+// CORE-005V – additive Persistenz-Sicherheitslage. Bewusst außerhalb des atms_-Präfixes,
+// damit ein versehentliches Prefix-Cleanup den letzten Snapshot nicht mitlöscht.
+// Der absichtliche "ATMS-Daten zurücksetzen"-Ablauf löscht diese Sicherheitsdaten explizit mit.
+function persistAudit(event,detail={}){
+  try{
+    const list=JSON.parse(localStorage.getItem(PERSIST_AUDIT_KEY)||'[]');
+    const next=Array.isArray(list)?list:[];
+    next.unshift({at:new Date().toISOString(),event:String(event||''),...detail});
+    localStorage.setItem(PERSIST_AUDIT_KEY,JSON.stringify(next.slice(0,120)));
+  }catch(_){ }
+}
+function readPersistenceSafety(){
+  try{
+    const obj=JSON.parse(localStorage.getItem(PERSIST_SAFETY_KEY)||'null');
+    return obj&&typeof obj==='object'&&obj.storage&&typeof obj.storage==='object'?obj:null;
+  }catch(_){return null}
+}
+function writePersistenceSafety(storage,reason='snapshot'){
+  const payload={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:String(reason||''),storage:{...(storage||{})}};
+  localStorage.setItem(PERSIST_SAFETY_KEY,JSON.stringify(payload));
+  return payload;
+}
+function updatePersistenceSafetyKey(key,rawValue,reason='write'){
+  try{
+    const prev=readPersistenceSafety();
+    const storage={...(prev?.storage||{})};
+    if(rawValue===null||rawValue===undefined)delete storage[key];else storage[key]=String(rawValue);
+    writePersistenceSafety(storage,reason);
+  }catch(_){ }
+}
+function capturePersistenceSafety(reason='snapshot'){
+  try{
+    const storage={};
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(!k||!k.startsWith('atms_'))continue;
+      const raw=localStorage.getItem(k);
+      if(raw!==null)storage[k]=raw;
+    }
+    const payload=writePersistenceSafety(storage,reason);
+    persistAudit('snapshot',{reason:String(reason||''),keys:Object.keys(storage).length});
+    return payload;
+  }catch(e){persistAudit('snapshot_failed',{reason:String(reason||''),message:String(e?.message||e)});return null}
+}
+function safePersistentSetItem(key,rawValue,reason='write'){
+  const value=String(rawValue??'');
+  const before=localStorage.getItem(key);
+  // Vor dem kritischen Schreibvorgang den letzten bekannten guten Wert sichern.
+  if(before!==null)updatePersistenceSafetyKey(key,before,'prewrite:'+reason);
+  try{
+    localStorage.setItem(key,value);
+    const readBack=localStorage.getItem(key);
+    if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
+    updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
+    persistAudit('write_ok',{key,reason:String(reason||''),length:value.length});
+    return true;
+  }catch(e){
+    try{if(before===null)localStorage.removeItem(key);else localStorage.setItem(key,before);}catch(_){ }
+    persistAudit('write_failed',{key,reason:String(reason||''),message:String(e?.message||e)});
+    return false;
+  }
+}
+function restoreMissingCriticalPersistence(reason='auto-recovery'){
+  const snap=readPersistenceSafety();
+  if(!snap)return {restored:0,keys:[]};
+  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+  const restored=[];
+  for(const key of critical){
+    if(localStorage.getItem(key)!==null)continue;
+    const raw=snap.storage?.[key];
+    if(typeof raw!=='string'||!raw.length)continue;
+    try{
+      localStorage.setItem(key,raw);
+      if(localStorage.getItem(key)===raw)restored.push(key);
+    }catch(_){ }
+  }
+  if(restored.length)persistAudit('critical_recovery',{reason:String(reason||''),keys:restored});
+  return {restored:restored.length,keys:restored};
+}
+function persistenceSelfTest(){
+  const key='ATMSPRO_PERSISTENCE_SELFTEST_TMP';
+  const token='ok-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+  try{
+    localStorage.setItem(key,token);
+    const ok=localStorage.getItem(key)===token;
+    localStorage.removeItem(key);
+    return {ok,storageWritable:ok,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString()};
+  }catch(e){try{localStorage.removeItem(key)}catch(_){ }return {ok:false,storageWritable:false,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString(),error:String(e?.message||e)}}
+}
+function persistenceDiagnosis(){
+  const snap=readPersistenceSafety();
+  let audit=[];try{audit=JSON.parse(localStorage.getItem(PERSIST_AUDIT_KEY)||'[]');if(!Array.isArray(audit))audit=[]}catch(_){audit=[]}
+  const inspect=key=>{
+    const raw=localStorage.getItem(key),shadow=snap?.storage?.[key];
+    let count=null,parseOk=true;
+    if(raw!==null){try{const v=JSON.parse(raw);count=Array.isArray(v)?v.length:(v&&typeof v==='object'?Object.keys(v).length:null)}catch(_){parseOk=false}}
+    return {key,present:raw!==null,rawLength:raw?.length||0,parseOk,count,shadowPresent:typeof shadow==='string',shadowLength:typeof shadow==='string'?shadow.length:0};
+  };
+  return {
+    diagnosis:'CORE-005V Persistent Data Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
+    selfTest:persistenceSelfTest(),
+    safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
+    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
+    recentAudit:audit.slice(0,30)
+  };
+}
+function ensurePersistenceSafetyPanel(){
+  const view=$('importView');if(!view||$('atmsPersistenceSafetyPanel'))return;
+  const panel=document.createElement('div');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin-top:14px;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;';
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: lokaler Sicherheits-Snapshot, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  view.appendChild(panel);
+  const paint=obj=>{const out=$('atmsPersistenceOutput');if(out)out.textContent=JSON.stringify(obj,null,2)};
+  $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
+  $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
+  $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
+}
+
 function getRideOverrides(){
   try{
     const list=JSON.parse(localStorage.getItem(RIDE_OVERRIDE_KEY)||'[]');
@@ -44,7 +163,7 @@ function getRideOverrides(){
   }catch(_){return[]}
 }
 function saveRideOverrides(list){
-  localStorage.setItem(RIDE_OVERRIDE_KEY,JSON.stringify((Array.isArray(list)?list:[]).slice(0,500)));
+  return safePersistentSetItem(RIDE_OVERRIDE_KEY,JSON.stringify((Array.isArray(list)?list:[]).slice(0,500)),'ride-overrides');
 }
 function upsertRideOverride(rideId,patch){
   const id=String(rideId||'').trim();
@@ -252,8 +371,8 @@ window.ATMSTimeSnapshot=function(rideId){const r=rides.find(x=>String(x?.id||'')
 function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
-  localStorage.setItem(KEY,JSON.stringify(rides));
-  localStorage.setItem(DONE,JSON.stringify([...done]));
+  safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
+  safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
 }function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
 function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(/storniert|cancelled|canceled/.test(raw))return{key:'cancelled',label:'Storniert'};if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time|scheduled/.test(raw))return{key:'on-time',label:'Pünktlich'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
 function timeMarkup(r){const plan=planTimeOf(r);const current=effectiveTime(r);if(current&&plan&&current!==plan)return `<div class="time-stack"><div class="plan-small">${esc(plan)}</div><div class="current-large">${esc(current)}</div></div>`;return `<div class="time-single">${esc(current||plan||'--:--')}</div>`}
@@ -559,6 +678,7 @@ function resetAtmsData(){
   if(!confirm('Wirklich alle lokal gespeicherten ATMS-Daten löschen?\n\nDisponenten, Fahrten, Erledigt-Status und Einstellungen werden entfernt.'))return;
   if(!confirm('Letzte Sicherheitsabfrage: Daten endgültig zurücksetzen?'))return;
   const keys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('atms_'))keys.push(k)}keys.forEach(k=>localStorage.removeItem(k));
+  localStorage.removeItem(PERSIST_SAFETY_KEY);localStorage.removeItem(PERSIST_AUDIT_KEY);
   alert('ATMS-Daten wurden zurückgesetzt.');location.reload();
 }
 
@@ -634,11 +754,11 @@ function saveVerifiedFlightCacheBackup(list){
     .slice()
     .sort((a,b)=>new Date(b?.checkedAt||0)-new Date(a?.checkedAt||0))
     .forEach(entry=>{const key=flightCacheTupleKey(entry);if(key&&!byTuple.has(key))byTuple.set(key,entry)});
-  localStorage.setItem(FLIGHT_CACHE_BACKUP,JSON.stringify(Array.from(byTuple.values()).slice(0,400)));
+  safePersistentSetItem(FLIGHT_CACHE_BACKUP,JSON.stringify(Array.from(byTuple.values()).slice(0,400)),'verified-flight-backup');
 }
 function saveFlightCache(list){
   const safe=(Array.isArray(list)?list:[]).slice(0,400);
-  localStorage.setItem(FLIGHT_CACHE,JSON.stringify(safe));
+  safePersistentSetItem(FLIGHT_CACHE,JSON.stringify(safe),'flight-cache');
   const merged=[...getVerifiedFlightCacheBackup(),...safe.filter(isVerifiedFlightCacheEntry)];
   saveVerifiedFlightCacheBackup(merged);
 }
@@ -653,7 +773,7 @@ function recoverVerifiedFlightCache(){
     if(!already){cache.unshift(entry);changed++;}
   }
   if(changed){
-    localStorage.setItem(FLIGHT_CACHE,JSON.stringify(cache.slice(0,400)));
+    safePersistentSetItem(FLIGHT_CACHE,JSON.stringify(cache.slice(0,400)),'flight-cache-recovery');
   }
   return changed;
 }
@@ -937,6 +1057,7 @@ function parseGeminiFlightResult(text){
 }
 function applyGeminiFlightResult(){
   try{
+    capturePersistenceSafety('before-gemini-flight-apply');
     const box=$('geminiFlightResult');
     const checked=parseGeminiFlightResult(box?.value||'');
     // ATMS setzt den tatsächlichen lokalen Übernahme-/Prüfzeitpunkt selbst.
@@ -1037,6 +1158,7 @@ function applyGeminiFlightResult(){
     });
     upsertFlightCache(cacheEntries);
     save();
+    capturePersistenceSafety('after-gemini-flight-apply');
     try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked}}));}catch(_){}
     if(box)box.value='';
     const status=$('geminiFlightStatus');if(status)status.textContent=`${updated} Fahrt(en) geprüft${uncertain?` · ${uncertain} unsicher → vorhandener Flugort bleibt · manuell prüfen`:''}${downgraded?` · ${downgraded} wegen <2 Quellen heruntergestuft`:''}.`;
@@ -1069,8 +1191,7 @@ function ensureMobileImportLayoutFix(){
       }
       .atms-import-mobile-stack > #loadBtn,
       .atms-import-mobile-stack > #geminiFlightPanel,
-      .atms-import-mobile-stack > #liveFlightPanel,
-      .atms-import-mobile-stack > #ew9580Diag2Panel{
+      .atms-import-mobile-stack > #liveFlightPanel{
         grid-column:1 / -1!important;
         width:100%!important;
         max-width:100%!important;
@@ -1082,9 +1203,7 @@ function ensureMobileImportLayoutFix(){
       #geminiFlightPanel input,
       #liveFlightPanel input,
       #geminiFlightPanel button,
-      #liveFlightPanel button,
-      #ew9580Diag2Panel button,
-      #ew9580Diag2Panel pre{
+      #liveFlightPanel button{
         max-width:100%!important;
         box-sizing:border-box!important;
       }
@@ -1293,120 +1412,6 @@ function ensureLiveFlightPanel(){
   renderArrivalBufferSetting();
 }
 
-
-// CORE-005U 08.09.2026: read-only Diagnose fuer EW9580.
-// Vergleicht Haupt-Flight-Cache, Verified-Backup, Ride-Overrides und aktuelle Fahrten.
-// Diese Diagnose schreibt/loescht KEINE ATMS-Daten und startet KEINE Gemini-Pruefung.
-function flightCacheDiagStorage(key){
-  const raw=localStorage.getItem(key);
-  let parsed=null,parseError='';
-  if(raw!==null){
-    try{parsed=JSON.parse(raw)}catch(e){parseError=String(e?.message||e)}
-  }
-  return {
-    key,
-    present:raw!==null,
-    rawLength:raw===null?0:raw.length,
-    parseOk:raw===null?true:!parseError,
-    parseError,
-    count:Array.isArray(parsed)?parsed.length:null,
-    entries:Array.isArray(parsed)?parsed:[]
-  };
-}
-function ew9580DiagEntry(x){
-  return {
-    rideId:String(x?.rideId||''),
-    fingerprint:String(x?.fingerprint||''),
-    flightNumber:flightCacheNumber(x?.flightNumber),
-    date:String(x?.date||'').trim(),
-    direction:String(x?.direction||'unknown').trim().toLowerCase(),
-    flightTime:String(x?.flightTime||'').trim(),
-    flightLocation:String(x?.flightLocation||'').trim(),
-    iata:String(x?.iata||'').trim().toUpperCase(),
-    verified:x?.verified===true,
-    sourceCount:Number(x?.sourceCount||0)||0,
-    checkedAt:String(x?.checkedAt||'').trim()
-  };
-}
-function buildEW9580FlightCacheDiagnosis2(){
-  const target='EW9580';
-  const main=flightCacheDiagStorage(FLIGHT_CACHE);
-  const backup=flightCacheDiagStorage(FLIGHT_CACHE_BACKUP);
-  const overrideStore=flightCacheDiagStorage(RIDE_OVERRIDE_KEY);
-  const current=(Array.isArray(rides)?rides:[]).filter(r=>flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight)===target);
-  const mainHits=main.entries.filter(x=>flightCacheNumber(x?.flightNumber)===target).map(ew9580DiagEntry);
-  const backupHits=backup.entries.filter(x=>flightCacheNumber(x?.flightNumber)===target).map(ew9580DiagEntry);
-  const overrides=Array.isArray(overrideStore.entries)?overrideStore.entries:[];
-  const rideIds=new Set(current.map(r=>String(r?.id||'')));
-  const overrideHits=overrides.filter(x=>rideIds.has(String(x?.rideId||''))).map(x=>({
-    rideId:String(x?.rideId||''),
-    flightVerified:Boolean(x?.flightVerified),
-    flightLocation:String(x?.flightLocation||'').trim(),
-    iata:String(x?.iata||'').trim().toUpperCase(),
-    flightNeedsManualCheck:x?.flightNeedsManualCheck,
-    flightCheckedAt:String(x?.flightCheckedAt||'').trim(),
-    updatedAt:String(x?.updatedAt||'').trim()
-  }));
-  const currentRides=current.map(r=>{
-    const tuple=flightCacheMatchTuple(r);
-    const tupleKey=[tuple.flight,tuple.date,tuple.direction,tuple.flightTime].join('|');
-    const exactMain=mainHits.filter(x=>[x.flightNumber,x.date,x.direction,x.flightTime].join('|')===tupleKey);
-    const exactBackup=backupHits.filter(x=>[x.flightNumber,x.date,x.direction,x.flightTime].join('|')===tupleKey);
-    return {
-      id:String(r?.id||''),
-      tuple,
-      flightLocation:String(r?.flightLocation||'').trim(),
-      iata:String(r?.iata||'').trim().toUpperCase(),
-      flightCheckConfidence:String(r?.flightCheckConfidence||''),
-      flightNeedsManualCheck:r?.flightNeedsManualCheck,
-      exactMainMatches:exactMain.length,
-      exactBackupMatches:exactBackup.length,
-      overrideForCurrentRideId:overrideHits.filter(x=>x.rideId===String(r?.id||''))
-    };
-  });
-  return {
-    diagnosis:'CORE-005U EW9580 Flight-Cache Diagnose 2',
-    flightNumber:target,
-    generatedAt:new Date().toISOString(),
-    storage:{
-      mainCache:{key:main.key,present:main.present,rawLength:main.rawLength,parseOk:main.parseOk,parseError:main.parseError,count:main.count},
-      verifiedBackup:{key:backup.key,present:backup.present,rawLength:backup.rawLength,parseOk:backup.parseOk,parseError:backup.parseError,count:backup.count},
-      rideOverrides:{key:overrideStore.key,present:overrideStore.present,rawLength:overrideStore.rawLength,parseOk:overrideStore.parseOk,parseError:overrideStore.parseError,count:overrideStore.count}
-    },
-    currentRides,
-    mainCacheEntries:mainHits,
-    verifiedBackupEntries:backupHits,
-    currentRideOverrideEntries:overrideHits
-  };
-}
-function renderEW9580FlightCacheDiagnosis2(){
-  const out=$('ew9580Diag2Output');if(!out)return;
-  try{
-    out.textContent=JSON.stringify(buildEW9580FlightCacheDiagnosis2(),null,2);
-  }catch(e){out.textContent='Diagnosefehler: '+String(e?.message||e)}
-}
-async function copyEW9580FlightCacheDiagnosis2(){
-  const out=$('ew9580Diag2Output');
-  if(!out?.textContent?.trim())renderEW9580FlightCacheDiagnosis2();
-  const text=String(out?.textContent||'').trim();
-  if(!text)return;
-  try{await navigator.clipboard.writeText(text);showToast('EW9580 Diagnose kopiert','ok')}
-  catch(_){showToast('Diagnose bitte manuell markieren und kopieren','warn')}
-}
-function ensureEW9580FlightCacheDiagnosis2Panel(){
-  ensureMobileImportLayoutFix();
-  if($('ew9580Diag2Panel'))return;
-  const view=$('importView');if(!view)return;
-  const panel=document.createElement('section');
-  panel.id='ew9580Diag2Panel';
-  panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,255,130,.35);border-radius:14px;background:rgba(20,100,55,.10);width:100%;max-width:100%;box-sizing:border-box';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🔎 CORE-005U · EW9580 Cache-Diagnose 2</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Nur lesen: Haupt-Cache + Verified-Backup + Ride-Overrides + aktuelle EW9580-Fahrten. Keine Gemini-Prüfung, kein Löschen, keine Datenänderung.</div><button type="button" id="ew9580Diag2Btn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🔎 EW9580 Cache 2 prüfen</button><button type="button" id="ew9580Diag2CopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Diagnose kopieren</button><pre id="ew9580Diag2Output" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:55vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Noch nicht geprüft.</pre>`;
-  const anchor=$('liveFlightPanel')||$('geminiFlightPanel');
-  if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
-  $('ew9580Diag2Btn')?.addEventListener('click',renderEW9580FlightCacheDiagnosis2);
-  $('ew9580Diag2CopyBtn')?.addEventListener('click',copyEW9580FlightCacheDiagnosis2);
-}
-
 function importChoice(newRides){
   if(!Array.isArray(newRides)||!newRides.length)throw Error('Keine Fahrten gefunden');
   if(!rides.length)return 'replace';
@@ -1429,6 +1434,11 @@ function mergeImportedRides(current,incoming){
 }
 function applyImportedRides(newRides){
   if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
+
+  // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
+  // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
+  restoreMissingCriticalPersistence('before-plan-import');
+  capturePersistenceSafety('before-plan-import');
 
   try{
     localStorage.setItem('atms_import_previous_v1',JSON.stringify({
@@ -1458,6 +1468,7 @@ function applyImportedRides(newRides){
   rides=restored.rides;
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
   save();
+  capturePersistenceSafety('after-plan-import');
 
   return {
     cancelled:false,
@@ -1767,7 +1778,9 @@ function initPersistentFlightCheckStatus(){
 function initApp(){
   try{
     // CORE-005T 08.09.2026: verifizierte Flight-Cache-Eintraege redundant schuetzen und ggf. wiederherstellen.
+    restoreMissingCriticalPersistence('startup');
     recoverVerifiedFlightCache();
+    capturePersistenceSafety('startup');
     initPersistentFlightCheckStatus();
     bindClick('driverBtn',openDrivers);
     bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
@@ -1806,7 +1819,7 @@ function initApp(){
     ensureMobileImportLayoutFix();
     ensureGeminiFlightPanel();
     ensureLiveFlightPanel();
-    ensureEW9580FlightCacheDiagnosis2Panel();
+    ensurePersistenceSafetyPanel();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
       const overrideRestore=applyRideOverrides(rides);
@@ -1825,7 +1838,7 @@ window.addEventListener('error',e=>showAppError(e.error||e.message));
 window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
-window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;
