@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006F · 09.09.2026: Fehlende Fahrerzellen werden bei Bildimport gezielt nur in der konkreten rechten Fahrerzelle lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
   // CORE-006D · 09.09.2026: No-Price-Mirror-Fallback nutzt Datenzeilen-Geometrie, wenn die mittlere Uhrzeit in der Kopfzeile vom OCR fehlt; gezielte Flug-OCR entfernt Minutenreste nur bei exakter Übereinstimmung mit der Planzeit. Keine Flugnummern-Hardcodes.
   // CORE-006C · 09.09.2026: 13-Spalten-Bildschema OHNE Preis mit zusätzlicher gespiegelter Uhrzeit nach Firma; verhindert, dass Minutenreste der Planzeit vor Flugnummern geraten. Bestehende 12-/13-Preis-/14-Preis-Schemata bleiben erhalten.
   // CORE-006B · 09.09.2026: 14-Spalten-Bildschema mit zusätzlicher mittlerer Uhrzeit zwischen Firma und Flug ang./ausg.; geometrische Zeilenprüfung auf dynamische Spaltenindizes umgestellt. Bestehende 12-/13-Spalten-Layouts bleiben erhalten.
@@ -805,7 +806,11 @@
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
-      if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      if (!ride.driver) {
+        issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      } else if (ride.driverRecoveredFromTargetedOcr) {
+        issues.push({ level: 'warning', row, text: `Fahrer ${ride.driver} durch lokale zweite OCR aus der Fahrerzelle erkannt – Original bitte einmal prüfen` });
+      }
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
         issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
@@ -1710,6 +1715,123 @@
     return [...found];
   }
 
+  function normalizeDriverCandidate(value) {
+    const text = cellText(value)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ\- ]+|[^A-Za-zÄÖÜäöüßÀ-ÿ\- ]+$/g, '')
+      .trim();
+    if (!text || text.length < 2 || text.length > 40) return '';
+    if (!looksLikeDriverName(text)) return '';
+    if (/^(wg|fahrer|driver|chauffeur|van|pkw|bus|sprinter|taxi)$/i.test(text)) return '';
+    return text;
+  }
+
+  function driverCandidatesFromOcrResult(result) {
+    const raw = [];
+    if (result?.data?.text) raw.push(result.data.text);
+    (result?.data?.words || []).forEach(word => {
+      if (word?.text) raw.push(word.text);
+    });
+
+    const found = new Map();
+    raw.forEach(value => {
+      const candidate = normalizeDriverCandidate(value);
+      if (!candidate) return;
+      const key = cleanKey(candidate);
+      if (!key) return;
+      if (!found.has(key)) found.set(key, candidate);
+    });
+    return [...found.values()];
+  }
+
+  async function recoverMissingDriversTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const driverCol = mapping?.driver;
+    if (driverCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[driverCol]);
+    const right = Number(boundaries[driverCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (cellText(ride.driver)) continue;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(1, cellWidth * 0.04);
+
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 3]
+      ];
+      const ocrModes = [
+        { name: 'default', options: {} },
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8' } }
+      ];
+
+      if (status) status.textContent = `Fahrerzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+
+      const votes = new Map();
+      const displayByKey = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = driverCandidatesFromOcrResult(second);
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+
+            const candidate = candidates[0];
+            const key = cleanKey(candidate);
+            if (!key) continue;
+            displayByKey.set(key, displayByKey.get(key) || candidate);
+            votes.set(key, (votes.get(key) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.driverTargetedOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.driverTargetedOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Sicherheitsregel: kein Einzel-Treffer. Mindestens zwei getrennte enge
+      // OCR-Versuche müssen denselben Namen lesen, und der Kandidat muss eindeutig gewinnen.
+      if (!winner || winner[1] < 2) continue;
+      if (runner && winner[1] === runner[1]) continue;
+
+      const recovered = normalizeDriverCandidate(displayByKey.get(winner[0]) || '');
+      if (!recovered) continue;
+
+      ride.driver = recovered;
+      ride.driverRecoveredFromTargetedOcr = true;
+      ride.driverRecoverySource = 'targeted_driver_cell_consensus';
+    }
+
+    return out;
+  }
+
   // CORE-005R: Preis-Kandidaten werden nur aus expliziten Dezimaldarstellungen
   // der gezielt ausgeschnittenen Preiszelle gewonnen. Eine verlorene Dezimalstelle
   // (z. B. reines "4760") wird NICHT erraten oder automatisch verschoben.
@@ -2526,6 +2648,12 @@
           mappingInfo.mapping
         );
         preparedRides = await recoverSuspiciousPricesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverMissingDriversTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
