@@ -12,6 +12,7 @@
 // CORE-005V1 08.09.2026: Persistenz-Panel bleibt nach dynamischem Import-UI-Render sichtbar (additiv, keine Importlogik geändert).
 // CORE-005V2 08.09.2026: Persistenz-Panel im selben Import-Host direkt hinter Live-Flugdaten verankert; Mobile-Stack erweitert.
 // CORE-005V3 08.09.2026: Persistenz-Panel wird direkt IN das sichtbare Live-Flugdaten-Panel gemountet; vorhandene Fehlplatzierung wird automatisch verschoben.
+// CORE-005V4 08.09.2026: Kritische Safety-Schattenwerte werden bei normalen Snapshots niemals durch bloß fehlende localStorage-Keys verworfen; Startup/Import kann dadurch verlorene Flugdaten wiederherstellen.
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -74,6 +75,7 @@ function updatePersistenceSafetyKey(key,rawValue,reason='write'){
 }
 function capturePersistenceSafety(reason='snapshot'){
   try{
+    const previous=readPersistenceSafety();
     const storage={};
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
@@ -81,8 +83,25 @@ function capturePersistenceSafety(reason='snapshot'){
       const raw=localStorage.getItem(k);
       if(raw!==null)storage[k]=raw;
     }
+
+    // CORE-005V4: Ein normaler Snapshot darf den letzten verifizierten Schutzwert
+    // eines kritischen Bereichs NICHT verlieren, nur weil dieser Key im aktuellen
+    // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
+    // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
+    // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
+    const protectedCritical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+    const preserved=[];
+    for(const key of protectedCritical){
+      if(Object.prototype.hasOwnProperty.call(storage,key))continue;
+      const oldRaw=previous?.storage?.[key];
+      if(typeof oldRaw==='string'&&oldRaw.length){
+        storage[key]=oldRaw;
+        preserved.push(key);
+      }
+    }
+
     const payload=writePersistenceSafety(storage,reason);
-    persistAudit('snapshot',{reason:String(reason||''),keys:Object.keys(storage).length});
+    persistAudit('snapshot',{reason:String(reason||''),keys:Object.keys(storage).length,preservedCritical:preserved});
     return payload;
   }catch(e){persistAudit('snapshot_failed',{reason:String(reason||''),message:String(e?.message||e)});return null}
 }
@@ -141,7 +160,7 @@ function persistenceDiagnosis(){
     return {key,present:raw!==null,rawLength:raw?.length||0,parseOk,count,shadowPresent:typeof shadow==='string',shadowLength:typeof shadow==='string'?shadow.length:0};
   };
   return {
-    diagnosis:'CORE-005V Persistent Data Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
+    diagnosis:'CORE-005V4 Persistent Data Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
     selfTest:persistenceSelfTest(),
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
