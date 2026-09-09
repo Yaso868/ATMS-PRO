@@ -1,6 +1,20 @@
 (() => {
   'use strict';
 
+  // CORE-006F · 09.09.2026: Fehlende Fahrerzellen werden bei Bildimport gezielt nur in der konkreten rechten Fahrerzelle lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
+  // CORE-006D · 09.09.2026: No-Price-Mirror-Fallback nutzt Datenzeilen-Geometrie, wenn die mittlere Uhrzeit in der Kopfzeile vom OCR fehlt; gezielte Flug-OCR entfernt Minutenreste nur bei exakter Übereinstimmung mit der Planzeit. Keine Flugnummern-Hardcodes.
+  // CORE-006C · 09.09.2026: 13-Spalten-Bildschema OHNE Preis mit zusätzlicher gespiegelter Uhrzeit nach Firma; verhindert, dass Minutenreste der Planzeit vor Flugnummern geraten. Bestehende 12-/13-Preis-/14-Preis-Schemata bleiben erhalten.
+  // CORE-006B · 09.09.2026: 14-Spalten-Bildschema mit zusätzlicher mittlerer Uhrzeit zwischen Firma und Flug ang./ausg.; geometrische Zeilenprüfung auf dynamische Spaltenindizes umgestellt. Bestehende 12-/13-Spalten-Layouts bleiben erhalten.
+
+  // CORE-005W1 · 09.09.2026: Mehrdeutige Flugzellen werden zusätzlich mit Single-Line/Single-Word OCR-Modi nachgelesen; weiterhin nur eindeutiger Mehrfach-Konsens.
+  // CORE-005W · 09.09.2026: OCR-mehrdeutige Flugpräfixe (z. B. I/1/L oder O/0) werden bei Bildimport gezielt nur in der konkreten Flugzelle erneut gelesen. Automatische Korrektur nur bei eindeutigem Mehrfach-Konsens; sonst Warnung statt Raten.
+  // CORE-005R · 08.09.2026: Verdächtige/fehlende Preiszellen im Bild-/WhatsApp-Import werden gezielt lokal erneut OCR-gelesen. Nur eindeutiger plausibler Mehrfach-Konsens wird automatisch übernommen; sonst bleibt die bestehende manuelle Preis-Sicherheitsabfrage erhalten. Keine feste Sonderregel für 47,60 €.
+  // CORE-005O · 08.09.2026: Sichere OCR-Ortsnormalisierung: Miinchen/Mienchen/Munchen/Muenchen → München; Rohwert bleibt in sourceFlightLocationRaw erhalten.
+  // CORE-005L · 08.09.2026: Bildimport mit Preis-Spalte auf 13-Spalten-ATMS-Schema gehärtet; fehlend gelesene 'Flug ausg.'-Überschrift wird geometrisch rekonstruiert.
+  // CORE-005J · 07.09.2026: CORE-005I + nachträgliche UI-Korrektur entfernt; app.js/pwa.js rendern Preis und PLAN/DISPO/LIVE direkt an der Quelle.
+  // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
+  // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
+  // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
   // CORE-004P · 06.09.2026: Der sichtbare Button „Flugorte automatisch prüfen“ startet jetzt wirklich
   // window.ATMSAutoFlight (Firebase AI Logic). Der manuelle Gemini-Kopierweg bleibt nur als Fallback.
   // Frische Prüfergebnisse werden direkt auf die aktuell analysierte Planliste angewendet; unsichere
@@ -38,6 +52,69 @@
   function formatPlanDate(value) {
     const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return m ? `${m[3]}.${m[2]}.${m[1]}` : String(value || '');
+  }
+
+  function validIsoPlanDate(year, month, day) {
+    const y = Number(year), m = Number(month), d = Number(day);
+    if (y < 2020 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+    const probe = new Date(Date.UTC(y, m - 1, d));
+    if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m - 1 || probe.getUTCDate() !== d) return '';
+    return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  function extractPlanDateCandidates(value) {
+    const text = String(value || '');
+    const out = [];
+    const add = iso => { if (iso && !out.includes(iso)) out.push(iso); };
+    let match;
+    const ymd = /(?:^|\D)(20\d{2})[.\-_/ ](0?[1-9]|1[0-2])[.\-_/ ](0?[1-9]|[12]\d|3[01])(?:\D|$)/g;
+    while ((match = ymd.exec(text))) add(validIsoPlanDate(match[1], match[2], match[3]));
+    const dmy = /(?:^|\D)(0?[1-9]|[12]\d|3[01])[.\-_/ ](0?[1-9]|1[0-2])[.\-_/ ](20\d{2})(?:\D|$)/g;
+    while ((match = dmy.exec(text))) add(validIsoPlanDate(match[3], match[2], match[1]));
+    const compactYmd = /(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:\D|$)/g;
+    while ((match = compactYmd.exec(text))) add(validIsoPlanDate(match[1], match[2], match[3]));
+    const compactDmy = /(?:^|\D)(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])(20\d{2})(?:\D|$)/g;
+    while ((match = compactDmy.exec(text))) add(validIsoPlanDate(match[3], match[2], match[1]));
+    return out;
+  }
+
+  function setDetectedPlanDate(date, source = '') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return false;
+    state.planDate = date;
+    const input = $('planDateInput');
+    if (input) input.value = date;
+    const status = $('planDateStatus');
+    if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(date)}${source ? ` · automatisch aus ${source}` : ''}`;
+    return true;
+  }
+
+  function detectPlanDateFromFile(file) {
+    const candidates = extractPlanDateCandidates(file?.name || '');
+    return candidates.length === 1 ? candidates[0] : '';
+  }
+
+  function detectPlanDateFromMatrix(matrix) {
+    const counts = new Map();
+    (Array.isArray(matrix) ? matrix.slice(0, 40) : []).forEach(row => {
+      (Array.isArray(row) ? row : [row]).forEach(cell => {
+        extractPlanDateCandidates(cell).forEach(date => counts.set(date, (counts.get(date) || 0) + 1));
+      });
+    });
+    if (!counts.size) return '';
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (ranked.length === 1 || ranked[0][1] > ranked[1][1]) return ranked[0][0];
+    return '';
+  }
+
+  function detectPlanDateFromJsonRows(rows) {
+    const counts = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(ride => {
+      const direct = cellText(ride?.planDate || ride?.date);
+      const dates = /^\d{4}-\d{2}-\d{2}$/.test(direct) ? [direct] : extractPlanDateCandidates(direct);
+      dates.forEach(date => counts.set(date, (counts.get(date) || 0) + 1));
+    });
+    if (!counts.size) return '';
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
   }
 
 
@@ -290,7 +367,8 @@
 
   function normalizeFlightLocation(value) {
     const text = cellText(value).trim();
-    if (!text) return '';
+    if (!text || /^[-–—~_.\s]+$/.test(text)) return '';
+    if (/^(miinchen|mienchen|munchen|muenchen)$/i.test(text)) return 'München';
     if (/^zirich$/i.test(text) || /^zurich$/i.test(text)) return 'Zürich';
     if (/^milan$/i.test(text)) return 'Mailand';
     return text;
@@ -298,12 +376,17 @@
 
   function normalizeFlightNumber(value) {
     const raw = cellText(value).trim();
-    if (!raw || /^[-–—]+$/.test(raw)) return '';
+    if (!raw || /^[-–—~_.\s]+$/.test(raw)) return '';
     let normalized = raw.toUpperCase().replace(/\s+/g, '');
     // Häufiger OCR-Fehler bei Austrian Airlines: 0S162 -> OS162
     if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
-    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden
-    if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)$/.test(normalized)) return '';
+    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden.
+    if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)\d*$/.test(normalized)) return '';
+    // CORE-005B: OCR-Reste wie "~~-" oder reine Satzzeichen sind KEINE Flugnummer.
+    // Nur formal plausible Flugnummern mit mindestens einem Buchstaben und einer Ziffer
+    // bleiben erhalten. Dadurch kann die gezielte Flugzellen-Zweit-OCR danach greifen.
+    if (!/[A-Z]/.test(normalized) || !/\d/.test(normalized)) return '';
+    if (!/^[A-Z0-9]{2,4}\d{1,4}[A-Z]?$/.test(normalized)) return '';
     return normalized;
   }
 
@@ -336,7 +419,7 @@
 
   function classifyRide(pickup, destination, arrivalFlight, departureFlight) {
     const p = cleanKey(pickup), d = cleanKey(destination);
-    const airport = value => /airport|flughafen|vorfeld|terminal|dus|cgn/.test(value);
+    const airport = value => /airport|flughafen|vorfeld|terminal/.test(value);
     if (arrivalFlight || (airport(p) && !airport(d))) return 'arrival';
     if (departureFlight || (!airport(p) && airport(d))) return 'departure';
     if (/hotel|marriott|holidayinn|nhnord|adagio|plaza|asahi/.test(p + d)) return 'hotel';
@@ -577,9 +660,13 @@
 
 
 
-  function findPriceValue(row, mapping) {
+  function findPriceValue(row, mapping, options = {}) {
     const mapped = parseNumber(valueAt(row, mapping, 'price'));
     if (mapped > 0) return mapped;
+
+    // CORE-005A: Bei Bild-/WhatsApp-Planlisten ohne erkannte Preis-Spalte
+    // darf niemals eine Uhrzeit oder irgendeine andere Zelle als Preis dienen.
+    if (options.imageOcr) return 0;
 
     const first = parseNumber(row[0]);
     if (first > 0) return first;
@@ -596,25 +683,33 @@
   }
 
 
-  function getVehicleValue(row, mapping) {
+  function getVehicleValue(row, mapping, options = {}) {
     const mapped = cellText(valueAt(row, mapping, 'vehicle'));
     if (mapped && !/^\d+(?:[.,]\d+)?$/.test(mapped)) return mapped;
 
-    // ATMS Standard Planliste: erste Wg-Spalte = Spalte 9 (Index 8)
+    // CORE-005A: Beim Bildimport keine festen Nachbarspalten als Fallback.
+    // Die sichtbare erste Wg-Spalte ist die einzige Fahrzeugquelle.
+    if (options.imageOcr) return '';
+
+    // Legacy-Fallback nur fuer bereits strukturierte Altimporte.
     const fixedVehicle = cellText(row[8]);
     if (fixedVehicle && !/^\d+(?:[.,]\d+)?$/.test(fixedVehicle)) return fixedVehicle;
     return mapped || 'Pkw';
   }
 
-  function getPersonsValue(row, mapping) {
+  function getPersonsValue(row, mapping, options = {}) {
     const mapped = parseNumber(valueAt(row, mapping, 'persons'));
     if (mapped > 0) return mapped;
-    // ATMS Standard Planliste: Pers = Spalte 10 (Index 9)
+
+    // CORE-005A: Beim Bildimport Pers niemals aus einer Nachbarspalte ableiten.
+    if (options.imageOcr) return 0;
+
+    // Legacy-Fallback nur fuer bereits strukturierte Altimporte.
     const fixedPersons = parseNumber(row[9]);
     return fixedPersons > 0 ? fixedPersons : 0;
   }
 
-  function makeRide(row, rowNumber, mapping, fileName) {
+  function makeRide(row, rowNumber, mapping, fileName, options = {}) {
     let arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
     let departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
     const pickup = cellText(valueAt(row, mapping, 'pickup'));
@@ -624,7 +719,7 @@
 
     let recoveredFlight = '';
     let flightRecoveryAmbiguous = false;
-    if (!arrivalFlight && !departureFlight) {
+    if (!arrivalFlight && !departureFlight && !options.imageOcr) {
       const candidates = flightCandidatesFromRow(row);
       if (candidates.length === 1) {
         recoveredFlight = candidates[0];
@@ -638,6 +733,18 @@
 
     const flightNumber = arrivalFlight || departureFlight || recoveredFlight;
     const rideType = classifyRide(pickup, destination, arrivalFlight, departureFlight);
+
+    // CORE-005D: Disponenten tragen mangels Bemerkungsspalte vereinzelt eine
+    // Abholzeit in die Ort-Spalte ein. Eine eindeutige Uhrzeit ist kein Flugort.
+    // Planzeit, Disponentenzeit und spaetere Live-Zeit bleiben getrennte Werte.
+    const sourceFlightLocationRaw = cellText(valueAt(row, mapping, 'flightLocation'));
+    const dispatcherTime = looksLikeTime(sourceFlightLocationRaw)
+      ? normalizeTime(sourceFlightLocationRaw)
+      : '';
+    const flightLocation = dispatcherTime
+      ? ''
+      : normalizeFlightLocation(sourceFlightLocationRaw);
+
     return {
       id: `import-${Date.now()}-${rowNumber}`,
       sourceRow: rowNumber,
@@ -657,13 +764,21 @@
       departureFlight,
       flightNumber,
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
-      flightLocation: normalizeFlightLocation(valueAt(row, mapping, 'flightLocation')),
+      flightLocation,
+      dispatcherTime,
+      dispo_abholzeit: dispatcherTime,
+      dispoAbholzeit: dispatcherTime,
+      dispatcherNote: dispatcherTime ? `Disponentenzeit aus Ort-Spalte: ${sourceFlightLocationRaw}` : '',
+      sourceFlightLocationRaw,
       flightRecoveredFromRow: Boolean(recoveredFlight),
       flightRecoveryAmbiguous,
       flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
-      vehicle: getVehicleValue(row, mapping),
-      persons: getPersonsValue(row, mapping),
-      price: findPriceValue(row, mapping),
+      vehicle: getVehicleValue(row, mapping, options),
+      persons: getPersonsValue(row, mapping, options),
+      price: findPriceValue(row, mapping, options),
+      priceRequired: !(options.imageOcr && mapping.price === undefined),
+      priceMissingFromSource: Boolean(options.imageOcr && mapping.price === undefined),
+      sourceImageOcr: Boolean(options.imageOcr),
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
       notes: cellText(valueAt(row, mapping, 'notes')),
@@ -691,8 +806,15 @@
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
-      if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      if (!ride.driver) {
+        issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      } else if (ride.driverRecoveredFromTargetedOcr) {
+        issues.push({ level: 'warning', row, text: `Fahrer ${ride.driver} durch lokale zweite OCR aus der Fahrerzelle erkannt – Original bitte einmal prüfen` });
+      }
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
+      if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
+        issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
+      }
 
       // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
       // Das verhindert genau den heute beobachteten Fall "Palma vorhanden, EW9577 weg".
@@ -703,7 +825,13 @@
           text: `Flugort „${normalizeFlightLocation(ride.flightLocation)}“ vorhanden, aber Flugnummer fehlt – Original-Planliste prüfen; Ort bleibt erhalten`
         });
       }
-      if (ride.flightRecoveredFromTargetedOcr && ride.flightNumber) {
+      if (ride.flightRecoveredFromAmbiguousOcr && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugnummer ${ride.flightOcrInitialAmbiguous} durch lokalen OCR-Konsens als ${ride.flightNumber} korrigiert – aktuelle Flugprüfung empfohlen`
+        });
+      } else if (ride.flightRecoveredFromTargetedOcr && ride.flightNumber) {
         issues.push({
           level: 'warning',
           row,
@@ -759,7 +887,7 @@
 
       const priceCheck = pricePlausibility(ride.price);
       const priceDecision = state.priceDecisions[String(ride.id || row)] || '';
-      if (priceCheck.suspicious && !priceDecision) {
+      if (ride.priceRequired !== false && priceCheck.suspicious && !priceDecision) {
         const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
         const suggestionText = priceCheck.suggestion !== null
           ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
@@ -891,7 +1019,12 @@
     const usable = (words || []).filter(w => {
       const value = cellText(w.text);
       const conf = Number(w.confidence ?? w.conf ?? 0);
-      return value && conf >= 28 && w.bbox;
+      const normalized = value.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const plausibleTime = /^\d{1,2}[:.]\d{2}$/.test(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g, ''));
+      // CORE-005A: Farbige Planzeilen koennen einzelne schwach erkannte Woerter liefern.
+      // Mit fester Tabellenstruktur ist 18 als Grundschwelle sicherer; Zeitanker duerfen
+      // noch etwas schwaecher sein, damit keine komplette Fahrtzeile verschwindet.
+      return value && w.bbox && (conf >= 18 || (plausibleTime && conf >= 10));
     }).map(w => ({
       text: cellText(w.text),
       key: cleanKey(w.text),
@@ -1012,6 +1145,264 @@
     return { sorted, boundaries };
   }
 
+  // CORE-005A/005L: Bekannte ATMS-Bildformate besitzen 12 Spalten ohne Preis
+  // bzw. 13 Spalten mit Preis. Eine schlecht gelesene Ueberschrift darf nicht mehr
+  // dazu fuehren, dass z. B. 'Flug ausg.' verschwindet und alle folgenden Zellen
+  // in die falsche Spalte rutschen.
+  const ATMS_IMAGE_SCHEMA_12 = [
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  const ATMS_IMAGE_SCHEMA_13_MIRROR = [
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  const ATMS_IMAGE_SCHEMA_13_PRICE = [
+    { label: 'Preis', key: 'preis' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  const ATMS_IMAGE_SCHEMA_14_PRICE = [
+    { label: 'Preis', key: 'preis' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  function chooseAtmsImageSchema(observed) {
+    const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
+    const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
+    const timeAnchors = input.filter(anchor => anchor.key === 'uhrzeit' || anchor.key === 'zeit');
+
+    // CORE-006C: Auch Listen OHNE Preis können eine zusätzliche gespiegelte
+    // Planzeit direkt nach "Firma" besitzen. Drei erkannte Uhrzeit-Header sind
+    // dafür ein starkes, layoutunabhängiges Signal.
+    if (!hasPrice && timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_13_MIRROR;
+    if (hasPrice && timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_14_PRICE;
+
+    // Falls genau die mittlere "Uhrzeit" vom OCR fehlt, wird nur bei klarer
+    // Kopfzeilen-Geometrie ein Mirror-Schema rekonstruiert.
+    const firma = input.find(anchor => anchor.key === 'firma');
+    const firstFlight = input.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    let mirrorGap = false;
+    if (firma && firstFlight && firstFlight.x > firma.x) {
+      const gaps = [];
+      for (let i = 1; i < input.length; i++) {
+        const gap = Number(input[i].x) - Number(input[i - 1].x);
+        if (Number.isFinite(gap) && gap > 3) gaps.push(gap);
+      }
+      const sorted = gaps.slice().sort((a,b)=>a-b);
+      const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+      // Ohne Preis etwas konservativer, damit echte 12-Spalten-Listen nicht
+      // wegen einer breiten Firma-Spalte fälschlich erweitert werden.
+      const factor = hasPrice ? 1.55 : 1.80;
+      mirrorGap = median > 0 && (firstFlight.x - firma.x) >= median * factor;
+    }
+
+    if (!hasPrice) return mirrorGap ? ATMS_IMAGE_SCHEMA_13_MIRROR : ATMS_IMAGE_SCHEMA_12;
+    return mirrorGap ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_PRICE;
+  }
+
+  function hasNoPriceMirrorDataEvidence(lines, header) {
+    const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
+    if (!anchors.length) return false;
+    if (anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) return false;
+
+    const firma = anchors.find(anchor => anchor.key === 'firma');
+    const firstFlight = anchors.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    if (!firma || !firstFlight || !(firstFlight.x > firma.x)) return false;
+
+    const left = Number(firma.x);
+    const right = Number(firstFlight.x);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right - left < 8) return false;
+
+    let evidenceRows = 0;
+    for (const line of (lines || []).slice((header.index || 0) + 1)) {
+      const regionWords = (line.words || []).filter(word => {
+        const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+        return cx > left && cx < right;
+      });
+      if (!regionWords.length) continue;
+
+      const joined = regionWords
+        .map(word => cellText(word.text))
+        .join('')
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il]/g, '1');
+
+      const matches = joined.match(/(?:^|\D)([0-2]?\d[:.]?[0-5]\d)(?!\d)/g) || [];
+      const plausible = matches.some(token => {
+        const digits = token.replace(/\D/g, '');
+        if (digits.length < 3 || digits.length > 4) return false;
+        const padded = digits.padStart(4, '0');
+        const hh = Number(padded.slice(0, 2));
+        const mm = Number(padded.slice(2));
+        return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
+      });
+
+      if (plausible) evidenceRows++;
+      if (evidenceRows >= 2) return true;
+    }
+    return false;
+  }
+
+  function completeAtmsImageAnchors(observed, width, forcedSchema = null) {
+    const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
+    const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
+    const schema = forcedSchema || chooseAtmsImageSchema(input);
+    const slots = Array(schema.length).fill(null);
+    let cursor = 0;
+    let matched = 0;
+
+    const compatible = (schemaIndex, anchor) => {
+      const expected = schema[schemaIndex].key;
+      const actual = anchor.key;
+      if (expected === actual) return true;
+      // Eine explizite Fahrer-Ueberschrift darf die letzte Wg-Spalte ersetzen.
+      if (schemaIndex === schema.length - 1 && actual === 'fahrer') return true;
+      return false;
+    };
+
+    for (const anchor of input) {
+      let hit = -1;
+      for (let i = cursor; i < schema.length; i++) {
+        if (compatible(i, anchor)) {
+          hit = i;
+          break;
+        }
+      }
+      if (hit < 0) continue;
+
+      slots[hit] = {
+        ...anchor,
+        label: schema[hit].label,
+        key: schema[hit].key,
+        synthetic: false
+      };
+      cursor = hit + 1;
+      matched++;
+    }
+
+    // Nur anwenden, wenn die Grundstruktur wirklich erkannt wurde.
+    // Bei Preis-Layout muessen Preis/Von/Nach vorhanden sein; ohne Preis Von/Nach.
+    const pickupIndex = hasPrice ? 2 : 1;
+    const destinationIndex = hasPrice ? 3 : 2;
+    const priceOk = !hasPrice || Boolean(slots[0]);
+    if (matched < 7 || !slots[pickupIndex] || !slots[destinationIndex] || !priceOk) {
+      return { anchors: input, standard: false, syntheticCount: 0 };
+    }
+
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i]) continue;
+
+      let left = i - 1;
+      while (left >= 0 && !slots[left]) left--;
+      let right = i + 1;
+      while (right < slots.length && !slots[right]) right++;
+
+      let x;
+      if (left >= 0 && right < slots.length) {
+        const ratio = (i - left) / (right - left);
+        x = slots[left].x + (slots[right].x - slots[left].x) * ratio;
+      } else if (right < slots.length) {
+        x = slots[right].x * ((i + 1) / (right + 1));
+      } else if (left >= 0) {
+        x = slots[left].x + (width - slots[left].x) * ((i - left) / (slots.length - left));
+      } else {
+        x = width * ((i + 0.5) / slots.length);
+      }
+
+      slots[i] = {
+        label: schema[i].label,
+        key: schema[i].key,
+        x,
+        synthetic: true
+      };
+    }
+
+    // Monotone X-Positionen erzwingen; niemals Spalten kreuzen.
+    for (let i = 1; i < slots.length; i++) {
+      if (slots[i].x <= slots[i - 1].x + 2) slots[i].x = slots[i - 1].x + 3;
+    }
+
+    return {
+      anchors: slots,
+      standard: true,
+      syntheticCount: slots.filter(anchor => anchor.synthetic).length
+    };
+  }
+
+  function imageSemanticColumns(anchors) {
+    const list = Array.isArray(anchors) ? anchors : [];
+    const indexesOf = key => list.map((anchor,index)=>anchor?.key===key?index:-1).filter(index=>index>=0);
+    const firstOf = key => {
+      const index = list.findIndex(anchor => anchor?.key === key);
+      return index >= 0 ? index : undefined;
+    };
+    const times = indexesOf('uhrzeit');
+    const wg = indexesOf('wg');
+    return {
+      price: firstOf('preis'),
+      rideTime: times.length ? times[0] : undefined,
+      timeMirror: times.length >= 3 ? times[1] : undefined,
+      flightTime: times.length >= 2 ? times[times.length - 1] : undefined,
+      pickup: firstOf('von'),
+      destination: firstOf('nach'),
+      customer: firstOf('name'),
+      company: firstOf('firma'),
+      arrivalFlight: firstOf('flugang'),
+      departureFlight: firstOf('flugausg'),
+      vehicle: wg.length ? wg[0] : undefined,
+      persons: firstOf('pers'),
+      location: firstOf('ort'),
+      driver: wg.length >= 2 ? wg[wg.length - 1] : firstOf('fahrer')
+    };
+  }
+
   function imageWordsToMatrix(words, width) {
     const lines = groupOcrLines(words);
     const header = detectImageHeaderLine(lines);
@@ -1020,7 +1411,14 @@
       throw new Error('Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden. Bitte vollständige Kopfzeile mit hochladen.');
     }
 
-    const { sorted: anchors, boundaries } = anchorsToBoundaries(header.anchors, width);
+    const forceNoPriceMirror = hasNoPriceMirrorDataEvidence(lines, header);
+    const completed = completeAtmsImageAnchors(
+      header.anchors,
+      width,
+      forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null
+    );
+    const { sorted: anchors, boundaries } = anchorsToBoundaries(completed.anchors, width);
+    const semantic = imageSemanticColumns(anchors);
     const headerRow = anchors.map(anchor => anchor.label);
     const rows = [headerRow];
     const rowMetaByMatrixIndex = {};
@@ -1037,21 +1435,146 @@
 
       const row = cells.map(parts => parts.join(' ').replace(/\s+/g,' ').trim());
       const nonEmpty = row.filter(Boolean).length;
+
+      const rideTimeIndex = semantic.rideTime;
+      const rideTimeRaw = rideTimeIndex === undefined ? '' : cellText(row[rideTimeIndex]);
+      const rideTimeNormalized = rideTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const rideTimeValid = looksLikeTime(rideTimeNormalized) || /^\d{3,4}$/.test(rideTimeNormalized.replace(/\D/g,''));
+
+      const secondaryTimes = [semantic.timeMirror, semantic.flightTime]
+        .filter(index => index !== undefined && index !== rideTimeIndex);
+      const secondaryTimeValid = secondaryTimes.some(index => {
+        const raw = cellText(row[index]);
+        const normalized = raw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+        return looksLikeTime(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g,''));
+      });
+
       const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
-      const hasFlight = row.some(value => looksLikeFlight(value));
-      if (nonEmpty >= 3 && (hasTime || hasFlight)) {
-        rows.push(row);
-        const ys0 = (line.words || []).map(word => Number(word.y0 || 0)).filter(Number.isFinite);
-        const ys1 = (line.words || []).map(word => Number(word.y1 || 0)).filter(Number.isFinite);
-        rowMetaByMatrixIndex[rows.length - 1] = {
-          y0: ys0.length ? Math.min(...ys0) : Math.max(0, Number(line.cy || 0) - 16),
-          y1: ys1.length ? Math.max(...ys1) : Number(line.cy || 0) + 16,
-          cy: Number(line.cy || 0)
-        };
+      const hasFlight = [semantic.arrivalFlight, semantic.departureFlight]
+        .filter(index => index !== undefined)
+        .some(index => looksLikeFlight(row[index]));
+      const hasRoute = Boolean(
+        semantic.pickup !== undefined &&
+        semantic.destination !== undefined &&
+        cellText(row[semantic.pickup]) &&
+        cellText(row[semantic.destination])
+      );
+      const hasIdentity = [semantic.customer, semantic.company, semantic.driver]
+        .filter(index => index !== undefined)
+        .some(index => Boolean(cellText(row[index])));
+      const hasFlightCells = [semantic.arrivalFlight, semantic.departureFlight]
+        .filter(index => index !== undefined)
+        .some(index => Boolean(cellText(row[index])));
+      const strongOrphanRow = hasRoute && hasIdentity && nonEmpty >= 5 &&
+        (secondaryTimeValid || hasFlight || hasFlightCells);
+
+      // CORE-005B/006B: Planzeit dynamisch aus der Kopfzeile bestimmen.
+      // Eine Preis-Spalte vor der Planzeit verändert den Zeilenanker nicht.
+      const keep = completed.standard
+        ? ((rideTimeValid && nonEmpty >= 2) || strongOrphanRow)
+        : (nonEmpty >= 3 && (hasTime || hasFlight));
+
+      if (!keep) return;
+
+      if (completed.standard && rideTimeValid && rideTimeIndex !== undefined &&
+          rideTimeNormalized !== rideTimeRaw) {
+        row[rideTimeIndex] = rideTimeNormalized;
       }
+
+      rows.push(row);
+      const ys0 = (line.words || []).map(word => Number(word.y0 || 0)).filter(Number.isFinite);
+      const ys1 = (line.words || []).map(word => Number(word.y1 || 0)).filter(Number.isFinite);
+      rowMetaByMatrixIndex[rows.length - 1] = {
+        y0: ys0.length ? Math.min(...ys0) : Math.max(0, Number(line.cy || 0) - 16),
+        y1: ys1.length ? Math.max(...ys1) : Number(line.cy || 0) + 16,
+        cy: Number(line.cy || 0)
+      };
     });
 
-    rows._atmsImageMeta = { anchors, boundaries, rowMetaByMatrixIndex, width };
+    // CORE-005C: Wenn Tesseract eine komplette physische Tabellenzeile gar nicht
+    // als brauchbare OCR-Zeile liefert, kann CORE-005B sie nicht als "orphan row"
+    // retten. Deshalb pruefen wir die vertikalen Abstaende der bereits erkannten
+    // Tabellenzeilen. Ein annähernd doppelter Abstand bedeutet sehr wahrscheinlich,
+    // dass dazwischen genau eine physische Zeile fehlt. Diese wird als leere
+    // synthetische Tabellenzeile eingefuegt und anschliessend NUR in diesem schmalen
+    // Bereich lokal erneut OCR-gelesen. Keine feste Fahrtenanzahl und keine
+    // Sonderregel fuer 05:05/EW9782/FreeNow.
+    if (completed.standard && rows.length >= 5) {
+      const records = [];
+      for (let matrixIndex = 1; matrixIndex < rows.length; matrixIndex++) {
+        const meta = rowMetaByMatrixIndex[matrixIndex];
+        if (!meta) continue;
+        records.push({ row: rows[matrixIndex], meta: { ...meta } });
+      }
+
+      const positiveGaps = [];
+      for (let i = 1; i < records.length; i++) {
+        const gap = Number(records[i].meta.cy) - Number(records[i - 1].meta.cy);
+        if (Number.isFinite(gap) && gap > 4) positiveGaps.push(gap);
+      }
+
+      if (positiveGaps.length >= 3) {
+        const sortedGaps = positiveGaps.slice().sort((a, b) => a - b);
+        // Oberes Viertel bewusst ausblenden, damit bereits vorhandene grosse Luecken
+        // die normale Zeilenhoehe nicht nach oben ziehen.
+        const basePool = sortedGaps.slice(0, Math.max(3, Math.ceil(sortedGaps.length * 0.75)));
+        const medianGap = basePool[Math.floor(basePool.length / 2)];
+
+        if (Number.isFinite(medianGap) && medianGap > 6) {
+          const expanded = [];
+          for (let i = 0; i < records.length; i++) {
+            const current = records[i];
+            expanded.push(current);
+            if (i >= records.length - 1) continue;
+
+            const next = records[i + 1];
+            const gap = Number(next.meta.cy) - Number(current.meta.cy);
+            const estimatedMissing = Math.round(gap / medianGap) - 1;
+
+            // Nur klar erkennbare 1-2 fehlende physische Zeilen einsetzen.
+            // So reagieren wir nicht auf kleine OCR-Schwankungen.
+            if (estimatedMissing < 1 || estimatedMissing > 2) continue;
+            const ratio = gap / medianGap;
+            if (ratio < 1.55 || ratio > 3.35) continue;
+
+            for (let missing = 1; missing <= estimatedMissing; missing++) {
+              const cy = Number(current.meta.cy) + (gap * missing) / (estimatedMissing + 1);
+              const halfBand = Math.max(8, medianGap * 0.38);
+              expanded.push({
+                row: Array(anchors.length).fill(''),
+                meta: {
+                  y0: cy - halfBand,
+                  y1: cy + halfBand,
+                  cy,
+                  syntheticGap: true
+                }
+              });
+            }
+          }
+
+          if (expanded.length > records.length) {
+            rows.length = 1;
+            Object.keys(rowMetaByMatrixIndex).forEach(key => delete rowMetaByMatrixIndex[key]);
+            expanded.forEach(record => {
+              rows.push(record.row);
+              rowMetaByMatrixIndex[rows.length - 1] = record.meta;
+            });
+          }
+        }
+      }
+    }
+
+    rows._atmsImageMeta = {
+      anchors,
+      boundaries,
+      semantic,
+      rowMetaByMatrixIndex,
+      width,
+      standardAtms: completed.standard,
+      schemaColumns: anchors.length,
+      forcedNoPriceMirror: Boolean(forceNoPriceMirror),
+      syntheticAnchorCount: completed.syntheticCount
+    };
     return rows;
   }
 
@@ -1074,12 +1597,410 @@
     return out;
   }
 
+  async function recoverSyntheticImageRowsTargeted(matrix, imageCanvas, imageMeta) {
+    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) return matrix;
+    const boundaries = imageMeta.boundaries || [];
+    const metaByIndex = imageMeta.rowMetaByMatrixIndex || {};
+    if (boundaries.length < 2) return matrix;
+
+    const out = matrix.map(row => Array.isArray(row) ? row.slice() : row);
+    const status = $('importStatus');
+
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const meta = metaByIndex[matrixIndex];
+      if (!meta?.syntheticGap) continue;
+
+      const x0 = Number(boundaries[0]);
+      const x1 = Number(boundaries[boundaries.length - 1]);
+      const y0 = Number(meta.y0);
+      const y1 = Number(meta.y1);
+      if (![x0, x1, y0, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) continue;
+
+      if (status) status.textContent = `Fehlende Tabellenzeile ${matrixIndex + 1} wird lokal nachgelesen …`;
+
+      let bestRow = null;
+      let bestScore = -1;
+
+      for (const scale of [1, 2]) {
+        try {
+          const sx = Math.max(0, Math.floor(x0));
+          const crop = cropCanvasRegion(imageCanvas, x0, y0, x1, y1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const cells = Array(boundaries.length - 1).fill('').map(() => []);
+
+          (second?.data?.words || []).forEach(word => {
+            const value = cellText(word?.text);
+            const conf = Number(word?.confidence ?? word?.conf ?? 0);
+            if (!value || !word?.bbox || conf < 5) return;
+            const localCx = (Number(word.bbox.x0 || 0) + Number(word.bbox.x1 || 0)) / 2;
+            const sourceCx = sx + localCx / scale;
+            let col = boundaries.findIndex((right, i) => i > 0 && sourceCx < right) - 1;
+            if (col < 0) col = 0;
+            if (col >= cells.length) col = cells.length - 1;
+            cells[col].push(value);
+          });
+
+          const candidate = cells.map(parts => parts.join(' ').replace(/\s+/g, ' ').trim());
+          const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+          const rideTimeIndex = semantic.rideTime;
+          const rideTimeRaw = rideTimeIndex === undefined ? '' : cellText(candidate[rideTimeIndex]);
+          const rideTimeNormalized = rideTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+          const rideTimeValid = looksLikeTime(rideTimeNormalized) || /^\d{3,4}$/.test(rideTimeNormalized.replace(/\D/g, ''));
+          if (rideTimeValid && rideTimeIndex !== undefined && rideTimeNormalized !== rideTimeRaw) {
+            candidate[rideTimeIndex] = rideTimeNormalized;
+          }
+
+          const nonEmpty = candidate.filter(Boolean).length;
+          const routeScore = [semantic.pickup, semantic.destination]
+            .filter(index => index !== undefined)
+            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+          const identityScore = [semantic.customer, semantic.company, semantic.driver]
+            .filter(index => index !== undefined)
+            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+          const score = nonEmpty + (rideTimeValid ? 8 : 0) + routeScore * 2 + identityScore;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestRow = candidate;
+          }
+
+          if (rideTimeValid && nonEmpty >= 5 && routeScore >= 1) break;
+        } catch (_) {
+          // Nur Sicherheitsnetz; der naechste Versuch darf weiterlaufen.
+        }
+      }
+
+      if (!bestRow) continue;
+      const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+      const rideTimeIndex = semantic.rideTime;
+      const rideTime = rideTimeIndex === undefined ? '' : cellText(bestRow[rideTimeIndex]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const rideTimeValid = looksLikeTime(rideTime) || /^\d{3,4}$/.test(rideTime.replace(/\D/g, ''));
+      const nonEmpty = bestRow.filter(Boolean).length;
+
+      // Nur eine wirklich plausibel erneut gelesene Fahrtzeile aktivieren.
+      if (rideTimeValid && nonEmpty >= 4) {
+        bestRow[rideTimeIndex] = rideTime;
+        out[matrixIndex] = bestRow;
+        meta.syntheticGapRecovered = true;
+      }
+    }
+
+    out._atmsImageMeta = imageMeta;
+    return out;
+  }
+
   function flightCandidatesFromOcrResult(result) {
     const parts = [];
     if (result?.data?.text) parts.push(result.data.text);
     (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
     const joined = parts.join(' ');
     return flightCandidatesFromRow([joined]);
+  }
+
+  function rideTimeCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts.join(' ').replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const found = new Set();
+    const colonMatches = joined.match(/(?:^|\D)([0-2]?\d[:.]?[0-5]\d)(?!\d)/g) || [];
+    colonMatches.forEach(token => {
+      const digits = token.replace(/\D/g, '');
+      if (digits.length < 3 || digits.length > 4) return;
+      const padded = digits.padStart(4, '0');
+      const hh = Number(padded.slice(0, 2));
+      const mm = Number(padded.slice(2));
+      if (hh <= 23 && mm <= 59) found.add(`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
+    });
+    return [...found];
+  }
+
+  function normalizeDriverCandidate(value) {
+    const text = cellText(value)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ\- ]+|[^A-Za-zÄÖÜäöüßÀ-ÿ\- ]+$/g, '')
+      .trim();
+    if (!text || text.length < 2 || text.length > 40) return '';
+    if (!looksLikeDriverName(text)) return '';
+    if (/^(wg|fahrer|driver|chauffeur|van|pkw|bus|sprinter|taxi)$/i.test(text)) return '';
+    return text;
+  }
+
+  function driverCandidatesFromOcrResult(result) {
+    const raw = [];
+    if (result?.data?.text) raw.push(result.data.text);
+    (result?.data?.words || []).forEach(word => {
+      if (word?.text) raw.push(word.text);
+    });
+
+    const found = new Map();
+    raw.forEach(value => {
+      const candidate = normalizeDriverCandidate(value);
+      if (!candidate) return;
+      const key = cleanKey(candidate);
+      if (!key) return;
+      if (!found.has(key)) found.set(key, candidate);
+    });
+    return [...found.values()];
+  }
+
+  async function recoverMissingDriversTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const driverCol = mapping?.driver;
+    if (driverCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[driverCol]);
+    const right = Number(boundaries[driverCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (cellText(ride.driver)) continue;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(1, cellWidth * 0.04);
+
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 3]
+      ];
+      const ocrModes = [
+        { name: 'default', options: {} },
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8' } }
+      ];
+
+      if (status) status.textContent = `Fahrerzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+
+      const votes = new Map();
+      const displayByKey = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = driverCandidatesFromOcrResult(second);
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+
+            const candidate = candidates[0];
+            const key = cleanKey(candidate);
+            if (!key) continue;
+            displayByKey.set(key, displayByKey.get(key) || candidate);
+            votes.set(key, (votes.get(key) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.driverTargetedOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.driverTargetedOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Sicherheitsregel: kein Einzel-Treffer. Mindestens zwei getrennte enge
+      // OCR-Versuche müssen denselben Namen lesen, und der Kandidat muss eindeutig gewinnen.
+      if (!winner || winner[1] < 2) continue;
+      if (runner && winner[1] === runner[1]) continue;
+
+      const recovered = normalizeDriverCandidate(displayByKey.get(winner[0]) || '');
+      if (!recovered) continue;
+
+      ride.driver = recovered;
+      ride.driverRecoveredFromTargetedOcr = true;
+      ride.driverRecoverySource = 'targeted_driver_cell_consensus';
+    }
+
+    return out;
+  }
+
+  // CORE-005R: Preis-Kandidaten werden nur aus expliziten Dezimaldarstellungen
+  // der gezielt ausgeschnittenen Preiszelle gewonnen. Eine verlorene Dezimalstelle
+  // (z. B. reines "4760") wird NICHT erraten oder automatisch verschoben.
+  function priceCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts
+      .join(' ')
+      .replace(/[Oo]/g, '0')
+      .replace(/([,.])\s+(?=\d{2}(?:\D|$))/g, '$1');
+    const found = new Set();
+    const pattern = /(?:^|[^0-9])(\d{1,4}(?:[.,]\d{3})*[.,]\d{2})(?!\d)/g;
+    let match;
+    while ((match = pattern.exec(joined))) {
+      const token = match[1];
+      const value = parseNumber(token);
+      const check = pricePlausibility(value);
+      if (!Number.isFinite(value) || value <= 0 || check.suspicious) continue;
+      found.add((Math.round(value * 100) / 100).toFixed(2));
+    }
+    return [...found].map(Number);
+  }
+
+  async function recoverSuspiciousPricesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const priceCol = mapping?.price;
+    if (priceCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[priceCol]);
+    const right = Number(boundaries[priceCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.priceRequired === false) continue;
+      const initialCheck = pricePlausibility(ride.price);
+      if (!initialCheck.suspicious) continue;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(1, cellWidth * 0.04);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 2]
+      ];
+
+      if (status) status.textContent = `Preiszelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = priceCandidatesFromOcrResult(second);
+          attempts.push(candidates.slice());
+          if (candidates.length !== 1) continue;
+          const candidate = Number(candidates[0]);
+          const key = candidate.toFixed(2);
+          votes.set(key, (votes.get(key) || 0) + 1);
+        }
+      } catch (_) {
+        ride.priceTargetedOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.priceTargetedOcrAttempts = attempts;
+      const ranked = [...votes.entries()]
+        .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
+
+      // Sicherheitsregel: mindestens zwei gezielte OCR-Crops muessen denselben
+      // plausiblen Preis liefern. Bei Gleichstand oder Einzel-Treffer bleibt CORE-004K aktiv.
+      if (!ranked.length || ranked[0][1] < 2) continue;
+      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+
+      const recovered = Number(ranked[0][0]);
+      if (pricePlausibility(recovered).suspicious) continue;
+
+      ride.priceOcrInitial = Number(ride.price) || 0;
+      ride.price = recovered;
+      ride.priceRecoveredFromTargetedOcr = true;
+      ride.priceRecoverySource = 'targeted_price_cell_consensus';
+    }
+
+    return out;
+  }
+
+  async function recoverMissingRideTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const timeCol = mapping?.time;
+    if (timeCol === undefined) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[timeCol]);
+    const right = Number(boundaries[timeCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.time) continue;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const cellWidth = Math.max(8, right - left);
+      const padX = Math.max(1, cellWidth * 0.04);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - padY, right, y1 + padY, 3]
+      ];
+
+      if (status) status.textContent = `Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = rideTimeCandidatesFromOcrResult(second);
+          if (candidates.length === 1) {
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        continue;
+      }
+
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      if (!ranked.length) continue;
+      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+      const recovered = ranked[0][0];
+      ride.time = recovered;
+      ride.planTime = recovered;
+      ride.timeRecoveredFromTargetedOcr = true;
+    }
+    return out;
+  }
+
+  function sanitizeTargetedFlightCandidate(candidate, rideTime) {
+    const normalized = normalizeFlightNumber(candidate);
+    const time = normalizeTime(rideTime);
+    if (!normalized || !time) return normalized;
+
+    const minute = time.slice(3, 5);
+    const match = normalized.match(/^(\d{2})([A-Z][A-Z0-9]\d{1,4}[A-Z]?)$/);
+    if (!match || match[1] !== minute) return normalized;
+
+    const remainder = normalizeFlightNumber(match[2]);
+    if (!remainder || !looksLikeFlight(remainder)) return normalized;
+    return remainder;
   }
 
   async function recoverMissingFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
@@ -1089,7 +2010,7 @@
 
     for (let i = 0; i < out.length; i++) {
       const ride = out[i];
-      if (ride.flightNumber || !ride.flightLocation) continue;
+      if (ride.flightNumber) continue;
 
       const routeType = classifyRide(ride.pickup, ride.destination, '', '');
       const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
@@ -1144,7 +2065,11 @@
         for (const [x0, cy0, x1, cy1, scale] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           const second = await Tesseract.recognize(crop, 'eng');
-          const candidates = flightCandidatesFromOcrResult(second);
+          const candidates = [...new Set(
+            flightCandidatesFromOcrResult(second)
+              .map(candidate => sanitizeTargetedFlightCandidate(candidate, ride.planTime || ride.time))
+              .filter(Boolean)
+          )];
           attempts.push(candidates.slice());
           if (candidates.length === 1) {
             const candidate = candidates[0];
@@ -1175,6 +2100,126 @@
     return out;
   }
 
+  function hasAmbiguousFlightPrefix(value) {
+    const flight = normalizeFlightNumber(value);
+    if (!flight) return false;
+    // Flugdesignator ist in den ATMS-Listen in der Regel die ersten zwei Zeichen.
+    // Nur 0/1 in diesem Prefix sind OCR-mehrdeutig; andere Ziffern bleiben unangetastet.
+    return /^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(flight) && /[01]/.test(flight.slice(0, 2));
+  }
+
+  function ambiguityEquivalentFlight(a, b) {
+    const left = normalizeFlightNumber(a);
+    const right = normalizeFlightNumber(b);
+    if (!left || !right || left.length !== right.length || left === right) return false;
+    const sameOrAmbiguous = (x, y) => {
+      if (x === y) return true;
+      const group1 = new Set(['I', '1', 'L']);
+      const group0 = new Set(['O', '0']);
+      return (group1.has(x) && group1.has(y)) || (group0.has(x) && group0.has(y));
+    };
+    for (let i = 0; i < left.length; i++) {
+      if (!sameOrAmbiguous(left[i], right[i])) return false;
+    }
+    return true;
+  }
+
+  async function recoverAmbiguousFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeFlightNumber(ride.flightNumber);
+      if (!initial || !hasAmbiguousFlightPrefix(initial)) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) {
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) {
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(2, cellWidth * 0.03);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left + cellWidth * 0.08, y0 - rowHeight * 0.12, right - cellWidth * 0.08, y1 + rowHeight * 0.12, 3]
+      ];
+
+      if (status) status.textContent = `Mehrdeutige Flugzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      const attempts = [];
+      try {
+        // CORE-005W1: Eine Tabellenzelle wird von Tesseract im Standard-Seitenmodus
+        // bei I/1/L teils stabil falsch gelesen. Deshalb dieselben ENGEN Zell-Crops
+        // zusätzlich als einzelne Textzeile bzw. einzelnes Wort lesen. Die Modi zählen
+        // als getrennte OCR-Versuche; eine Korrektur braucht weiterhin >=2 Stimmen.
+        const ocrModes = [
+          { name: 'default', options: {} },
+          { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
+          { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+        ];
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = flightCandidatesFromOcrResult(second)
+              .filter(candidate => candidate === initial || ambiguityEquivalentFlight(initial, candidate));
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.flightAmbiguousOcrAttempts = attempts;
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      ride.flightAmbiguousOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Nie aufgrund eines Einzel-Treffers korrigieren. Mindestens zwei enge Crops
+      // muessen dieselbe alternative Lesart liefern und sie muss eindeutig gewinnen.
+      if (winner && winner[0] !== initial && winner[1] >= 2 && (!runner || winner[1] > runner[1]) && ambiguityEquivalentFlight(initial, winner[0])) {
+        const recovered = winner[0];
+        ride.flightNumber = recovered;
+        if (routeType === 'arrival') ride.arrivalFlight = recovered;
+        if (routeType === 'departure') ride.departureFlight = recovered;
+        ride.flightDirection = routeType;
+        ride.flightOcrInitialAmbiguous = initial;
+        ride.flightRecoveredFromAmbiguousOcr = true;
+        ride.flightOcrAmbiguityNeedsReview = false;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      } else {
+        ride.flightOcrAmbiguityNeedsReview = true;
+      }
+    }
+    return out;
+  }
+
   async function readImagePlan(file) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
     const canvas = await preprocessImage(file);
@@ -1190,8 +2235,11 @@
       }
     });
     const words = result?.data?.words || [];
-    const matrix = imageWordsToMatrix(words, canvas.width);
+    let matrix = imageWordsToMatrix(words, canvas.width);
     if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
+    if (matrix._atmsImageMeta) {
+      matrix = await recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta);
+    }
     return {
       kind: 'matrix',
       matrix,
@@ -1232,7 +2280,11 @@
   function renderMapping(headers, mappingInfo) {
     const labels = Object.entries(mappingInfo.mapping).map(([field, index]) => `${field}: ${headers[index]?.label || `Spalte ${index + 1}`}`);
     const el = $('planProfileInfo');
-    if (el) el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(mappingInfo.confidence * 100)} % Erkennung</span><small>${escapeHtml(labels.join(' · '))}</small>`;
+    const imageMode = Boolean(state.file && isImageFile(state.file));
+    // CORE-005A: Mapping-Konfidenz allein kann bei OCR nicht beweisen, dass jede
+    // Datenzeile vorhanden ist. Deshalb Bildimport nie pauschal als 100 % ausgeben.
+    const shownConfidence = imageMode ? Math.min(Number(mappingInfo.confidence || 0), 0.99) : Number(mappingInfo.confidence || 0);
+    if (el) el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(shownConfidence * 100)} % Erkennung</span><small>${escapeHtml(labels.join(' · '))}</small>`;
   }
 
   function syncFlightLocationsFromSavedRides() {
@@ -1538,6 +2590,8 @@
       $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
       const result = await readFile(state.file);
       if (result.kind === 'json') {
+        const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
+        if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
         const planDate = currentPlanDate();
         state.rides = result.rows.map((ride, index) => {
           const withDate = { ...ride, planDate: cellText(ride?.planDate) || planDate, date: cellText(ride?.date) || planDate };
@@ -1554,14 +2608,19 @@
 
       const matrix = result.matrix || [];
       if (!matrix.length) throw new Error('Keine Datenzeilen gefunden.');
+      const detectedMatrixDate = detectPlanDateFromMatrix(matrix);
+      if (detectedMatrixDate) setDetectedPlanDate(detectedMatrixDate, result.imageOcr ? 'Bildinhalt' : 'Planliste');
       const headerDetection = detectHeader(matrix);
       if (headerDetection.score < 3) throw new Error('Die Überschriften der Planliste wurden nicht eindeutig erkannt. Erwartet werden unter anderem Uhrzeit, Von und Nach.');
       const headers = uniqueHeaders(matrix[headerDetection.index]);
       let mappingInfo = detectAtmsMapping(headers);
       if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
       if (result.imageOcr) {
+        const syntheticCount = Number(result.imageMeta?.syntheticAnchorCount || 0);
+        const structuralCap = syntheticCount ? Math.max(0.80, 0.98 - syntheticCount * 0.03) : 0.99;
         mappingInfo = {
           ...mappingInfo,
+          confidence: Math.min(Number(mappingInfo.confidence || 0), structuralCap),
           profile: mappingInfo.confidence >= 0.85 ? 'ATMS Bildimport Flex' : 'ATMS Bildimport – Prüfung nötig'
         };
       }
@@ -1576,14 +2635,38 @@
       dataRows.forEach((row, offset) => {
         const sourceRow = headerDetection.index + offset + 2;
         if (!isDataRow(row, mappingInfo.mapping)) return;
-        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name));
+        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: Boolean(result.imageOcr) }));
       });
       if (!rides.length) throw new Error('Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
       let preparedRides = rides;
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
+        preparedRides = await recoverMissingRideTimesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverSuspiciousPricesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverMissingDriversTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
         preparedRides = await recoverMissingFlightNumbersTargeted(
-          rides,
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverAmbiguousFlightNumbersTargeted(
+          preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
@@ -1615,6 +2698,10 @@
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
     state.dateInfo = {};
+    if (file) {
+      const detectedFileDate = detectPlanDateFromFile(file);
+      if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
+    }
     $('analyzePlanBtn').disabled = !file;
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
@@ -1661,6 +2748,14 @@
     const button = $('copyFlightCheckBtn');
     const fallbackButton = $('copyFlightCheckFallbackBtn');
     const service = window.ATMSAutoFlight;
+    const quotaSessionKey = 'atms_auto_flight_quota_blocked_session';
+
+    if (sessionStorage.getItem(quotaSessionKey) === '1') {
+      if (fallbackButton) fallbackButton.style.display = '';
+      if (status) status.textContent = 'Automatische Flugprüfung ist in dieser Sitzung wegen erreichtem Gemini-Kontingent pausiert. Es werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
+      if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+      return;
+    }
 
     if (!service || typeof service.verifyFlights !== 'function') {
       if (status) status.textContent = 'Automatische Flugprüfung ist noch nicht verfügbar. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.';
@@ -1695,10 +2790,17 @@
 
       const technicalFailures = Number(result?.technicalFailureCount || 0);
       const firstTechnicalError = cellText(result?.firstTechnicalError);
+      const quotaFailure = technicalFailures > 0 && /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(firstTechnicalError);
       if (technicalFailures > 0) {
         if (fallbackButton) fallbackButton.style.display = '';
-        if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Technischer Fehler bei ${technicalFailures} Flug/Flügen${firstTechnicalError ? `: ${firstTechnicalError}` : ''}. Vorhandene Flugorte bleiben bei Unsicherheit erhalten.`;
-        if (typeof window.showToast === 'function') window.showToast('Flugprüfung teilweise technisch fehlgeschlagen', 'warn');
+        if (quotaFailure) {
+          sessionStorage.setItem(quotaSessionKey, '1');
+          if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Gemini-Kontingent ist derzeit erreicht; weitere automatische Aufrufe werden in dieser Sitzung gestoppt. Vorhandene Flugorte bleiben erhalten. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.`;
+          if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+        } else {
+          if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Technischer Fehler bei ${technicalFailures} Flug/Flügen. Vorhandene Flugorte bleiben bei Unsicherheit erhalten.`;
+          if (typeof window.showToast === 'function') window.showToast('Flugprüfung teilweise technisch fehlgeschlagen', 'warn');
+        }
       } else {
         if (status) status.textContent = `Automatische Flugprüfung abgeschlossen: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher → vorhandener Flugort bleibt.`;
         if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung abgeschlossen', applied.uncertainRides ? 'warn' : 'ok');
@@ -1710,8 +2812,15 @@
     } catch (error) {
       if (fallbackButton) fallbackButton.style.display = '';
       const message = cellText(error?.message) || 'unbekannter technischer Fehler';
-      if (status) status.textContent = `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
-      if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
+      const quotaFailure = /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(message);
+      if (quotaFailure) {
+        sessionStorage.setItem(quotaSessionKey, '1');
+        if (status) status.textContent = 'Automatische Flugprüfung derzeit wegen erreichtem Gemini-Kontingent nicht verfügbar. Es wurden keine Fahrtdaten überschrieben und in dieser Sitzung werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
+        if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+      } else {
+        if (status) status.textContent = `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
+        if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
+      }
     } finally {
       if (button) {
         button.disabled = !state.rides.some(ride => ride.flightNumber);
@@ -1759,6 +2868,11 @@
       });
     }
   }
+
+
+  // CORE-005J:
+  // Preis und PLAN/DISPO/LIVE werden jetzt nativ in app.js / pwa.js gerendert.
+  // Kein MutationObserver-/Textknoten-Hack mehr in plan-import.js.
 
   document.addEventListener('DOMContentLoaded', init);
 })();
