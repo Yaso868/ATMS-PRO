@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006D · 09.09.2026: No-Price-Mirror-Fallback nutzt Datenzeilen-Geometrie, wenn die mittlere Uhrzeit in der Kopfzeile vom OCR fehlt; gezielte Flug-OCR entfernt Minutenreste nur bei exakter Übereinstimmung mit der Planzeit. Keine Flugnummern-Hardcodes.
   // CORE-006C · 09.09.2026: 13-Spalten-Bildschema OHNE Preis mit zusätzlicher gespiegelter Uhrzeit nach Firma; verhindert, dass Minutenreste der Planzeit vor Flugnummern geraten. Bestehende 12-/13-Preis-/14-Preis-Schemata bleiben erhalten.
   // CORE-006B · 09.09.2026: 14-Spalten-Bildschema mit zusätzlicher mittlerer Uhrzeit zwischen Firma und Flug ang./ausg.; geometrische Zeilenprüfung auf dynamische Spaltenindizes umgestellt. Bestehende 12-/13-Spalten-Layouts bleiben erhalten.
 
@@ -1241,10 +1242,53 @@
     return mirrorGap ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_PRICE;
   }
 
-  function completeAtmsImageAnchors(observed, width) {
+  function hasNoPriceMirrorDataEvidence(lines, header) {
+    const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
+    if (!anchors.length) return false;
+    if (anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) return false;
+
+    const firma = anchors.find(anchor => anchor.key === 'firma');
+    const firstFlight = anchors.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    if (!firma || !firstFlight || !(firstFlight.x > firma.x)) return false;
+
+    const left = Number(firma.x);
+    const right = Number(firstFlight.x);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right - left < 8) return false;
+
+    let evidenceRows = 0;
+    for (const line of (lines || []).slice((header.index || 0) + 1)) {
+      const regionWords = (line.words || []).filter(word => {
+        const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+        return cx > left && cx < right;
+      });
+      if (!regionWords.length) continue;
+
+      const joined = regionWords
+        .map(word => cellText(word.text))
+        .join('')
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il]/g, '1');
+
+      const matches = joined.match(/(?:^|\D)([0-2]?\d[:.]?[0-5]\d)(?!\d)/g) || [];
+      const plausible = matches.some(token => {
+        const digits = token.replace(/\D/g, '');
+        if (digits.length < 3 || digits.length > 4) return false;
+        const padded = digits.padStart(4, '0');
+        const hh = Number(padded.slice(0, 2));
+        const mm = Number(padded.slice(2));
+        return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
+      });
+
+      if (plausible) evidenceRows++;
+      if (evidenceRows >= 2) return true;
+    }
+    return false;
+  }
+
+  function completeAtmsImageAnchors(observed, width, forcedSchema = null) {
     const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
     const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
-    const schema = chooseAtmsImageSchema(input);
+    const schema = forcedSchema || chooseAtmsImageSchema(input);
     const slots = Array(schema.length).fill(null);
     let cursor = 0;
     let matched = 0;
@@ -1362,7 +1406,12 @@
       throw new Error('Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden. Bitte vollständige Kopfzeile mit hochladen.');
     }
 
-    const completed = completeAtmsImageAnchors(header.anchors, width);
+    const forceNoPriceMirror = hasNoPriceMirrorDataEvidence(lines, header);
+    const completed = completeAtmsImageAnchors(
+      header.anchors,
+      width,
+      forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null
+    );
     const { sorted: anchors, boundaries } = anchorsToBoundaries(completed.anchors, width);
     const semantic = imageSemanticColumns(anchors);
     const headerRow = anchors.map(anchor => anchor.label);
@@ -1518,6 +1567,7 @@
       width,
       standardAtms: completed.standard,
       schemaColumns: anchors.length,
+      forcedNoPriceMirror: Boolean(forceNoPriceMirror),
       syntheticAnchorCount: completed.syntheticCount
     };
     return rows;
@@ -1817,6 +1867,20 @@
     return out;
   }
 
+  function sanitizeTargetedFlightCandidate(candidate, rideTime) {
+    const normalized = normalizeFlightNumber(candidate);
+    const time = normalizeTime(rideTime);
+    if (!normalized || !time) return normalized;
+
+    const minute = time.slice(3, 5);
+    const match = normalized.match(/^(\d{2})([A-Z][A-Z0-9]\d{1,4}[A-Z]?)$/);
+    if (!match || match[1] !== minute) return normalized;
+
+    const remainder = normalizeFlightNumber(match[2]);
+    if (!remainder || !looksLikeFlight(remainder)) return normalized;
+    return remainder;
+  }
+
   async function recoverMissingFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const status = $('importStatus');
@@ -1879,7 +1943,11 @@
         for (const [x0, cy0, x1, cy1, scale] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           const second = await Tesseract.recognize(crop, 'eng');
-          const candidates = flightCandidatesFromOcrResult(second);
+          const candidates = [...new Set(
+            flightCandidatesFromOcrResult(second)
+              .map(candidate => sanitizeTargetedFlightCandidate(candidate, ride.planTime || ride.time))
+              .filter(Boolean)
+          )];
           attempts.push(candidates.slice());
           if (candidates.length === 1) {
             const candidate = candidates[0];
