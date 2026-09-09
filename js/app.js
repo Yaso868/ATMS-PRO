@@ -1,3 +1,4 @@
+// CORE-006A 09.09.2026: Explicit Plan Import Guard – Planimport nur nach echtem Nutzer-Klick; blockierte/importfremde Aufrufe werden protokolliert und bestehende Fahrten gesichert. Zusätzlich kann der letzte Zustand vor einem Planimport gezielt wiederhergestellt werden.
 // CORE-005Z 09.09.2026: Multi-Airport Flight Context – Flugprüfung erkennt den tatsächlich beteiligten Flughafen (z. B. DUS oder CGN) aus Abholung/Ziel, ohne Flugnummer-Hardcoding; Gemini- und Live-Prüfauftrag werden airport-spezifisch.
 // CORE-005Y 09.09.2026: Android JSON Input Guard – erkennt abgeschnittene Gemini-/Live-JSONs bereits beim Einfügen und meldet sie verständlich, ohne Flug-/Zeit-/Persistenzlogik zu ändern.
 // CORE-005Q 08.09.2026: Flugpruef-Persistenz nach Neuimport: exakter Match Flugnummer+Datum+Richtung+Flugzeit; verifizierte Orte und manuelle Hinweise werden sofort wiederhergestellt.
@@ -278,7 +279,7 @@ function ensurePersistenceSafetyPanel(){
     return true;
   }
   const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
   // CORE-005V3: Das Live-Flugdaten-Panel ist auf Mobil bereits nachweislich sichtbar.
   // Deshalb wird die Persistenz-Sicherheit als Kind dieses Panels gemountet.
   // Fallbacks bleiben nur fuer den unwahrscheinlichen Fall, dass Live noch nicht existiert.
@@ -296,6 +297,7 @@ function ensurePersistenceSafetyPanel(){
   $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
   $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
+  $('atmsRestorePreviousImportBtn')?.addEventListener('click',restorePreviousPlanImport);
   return true;
 }
 function initPersistenceSafetyPanelObserver(){
@@ -1745,6 +1747,101 @@ function ensureLiveFlightPanel(){
   renderArrivalBufferSetting();
 }
 
+/* CORE-006A – Planimport nur nach explizitem, echtem Nutzer-Klick */
+let atmsPlanImportAuthorization={armed:false,source:'',at:0};
+
+function armPlanImportAuthorization(source){
+  atmsPlanImportAuthorization={
+    armed:true,
+    source:String(source||''),
+    at:Date.now()
+  };
+  persistAudit('plan_import_authorized',{source:String(source||'')});
+}
+function consumePlanImportAuthorization(){
+  const auth=atmsPlanImportAuthorization;
+  atmsPlanImportAuthorization={armed:false,source:'',at:0};
+  const age=Date.now()-Number(auth?.at||0);
+  return {
+    ok:Boolean(auth?.armed)&&age>=0&&age<=5000,
+    source:String(auth?.source||''),
+    ageMs:Number.isFinite(age)?age:null
+  };
+}
+function installPlanImportTrustedClickGuard(){
+  if(window.__atmsPlanImportTrustedClickGuard)return;
+  document.addEventListener('click',event=>{
+    const target=event.target instanceof Element?event.target:event.target?.parentElement;
+    const button=target?.closest?.('#importPlanBtn,#loadBtn');
+    if(!button)return;
+
+    // Programmgesteuerte .click()-Aufrufe sind nicht vertrauenswürdig und dürfen
+    // weder plan-import.js noch den Legacy-JSON-Import erreichen.
+    if(event.isTrusted!==true){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      persistAudit('plan_import_untrusted_click_blocked',{source:button.id||''});
+      try{showToast('Automatischer Planimport aus Sicherheitsgründen blockiert','warn')}catch(_){}
+      return;
+    }
+    armPlanImportAuthorization(button.id||'');
+  },true);
+  window.__atmsPlanImportTrustedClickGuard=true;
+}
+installPlanImportTrustedClickGuard();
+
+function restoreCurrentRidesAfterBlockedImport(){
+  try{
+    safePersistentSetItem(KEY,JSON.stringify(Array.isArray(rides)?rides:[]),'blocked-plan-import-rides');
+    safePersistentSetItem(DONE,JSON.stringify([...done]),'blocked-plan-import-done');
+    capturePersistenceSafety('blocked-plan-import');
+    syncPersistenceDurableShadow('blocked-plan-import');
+  }catch(_){}
+}
+function readPreviousPlanImportSnapshot(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('atms_import_previous_v1')||'null');
+    if(!raw||!Array.isArray(raw.rides)||!raw.rides.length)return null;
+    return raw;
+  }catch(_){return null}
+}
+function restorePreviousPlanImport(){
+  const previous=readPreviousPlanImportSnapshot();
+  if(!previous){
+    showToast('Kein vorheriger Planimport-Zustand gefunden','warn');
+    return false;
+  }
+  const stamp=previous.savedAt?new Date(previous.savedAt).toLocaleString('de-DE'):'unbekannter Zeitpunkt';
+  if(!confirm(`Letzten Zustand VOR dem Planimport wiederherstellen?
+
+Gespeichert: ${stamp}
+Fahrten: ${previous.rides.length}
+
+Der aktuelle Zustand wird vorher zusätzlich lokal gesichert.`))return false;
+
+  try{
+    localStorage.setItem('atms_import_recovery_current_v1',JSON.stringify({
+      savedAt:new Date().toISOString(),
+      rides:Array.isArray(rides)?rides:[],
+      done:[...done]
+    }));
+  }catch(_){}
+
+  rides=previous.rides.map((r,i)=>norm(r,i));
+  done=new Set([...done].filter(id=>rides.some(r=>String(r.id)===String(id))));
+  save();
+  capturePersistenceSafety('manual-restore-previous-plan-import');
+  syncPersistenceDurableShadow('manual-restore-previous-plan-import');
+  persistAudit('previous_plan_import_restored',{
+    snapshotSavedAt:String(previous.savedAt||''),
+    rides:rides.length
+  });
+  render();
+  updateBackupUI();
+  showToast(`${rides.length} Fahrten aus Zustand vor letztem Planimport wiederhergestellt`,'ok');
+  return true;
+}
+
 function importChoice(newRides){
   if(!Array.isArray(newRides)||!newRides.length)throw Error('Keine Fahrten gefunden');
   if(!rides.length)return 'replace';
@@ -1767,6 +1864,24 @@ function mergeImportedRides(current,incoming){
 }
 function applyImportedRides(newRides){
   if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
+
+  const importAuthorization=consumePlanImportAuthorization();
+  if(!importAuthorization.ok){
+    const stack=String(new Error('blocked-plan-import').stack||'').split('\n').slice(1,6).join(' | ');
+    persistAudit('plan_import_blocked',{
+      reason:'missing-trusted-user-click',
+      incomingCount:newRides.length,
+      source:importAuthorization.source,
+      ageMs:importAuthorization.ageMs,
+      stack
+    });
+    restoreCurrentRidesAfterBlockedImport();
+    throw Error('Sicherheitsblock: Planimport wurde nicht durch „Geprüfte Fahrten übernehmen“ oder „JSON laden“ gestartet.');
+  }
+  persistAudit('plan_import_started',{
+    source:importAuthorization.source,
+    incomingCount:newRides.length
+  });
 
   // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
   // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
@@ -2175,7 +2290,7 @@ window.addEventListener('error',e=>showAppError(e.error||e.message));
 window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
-window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;
