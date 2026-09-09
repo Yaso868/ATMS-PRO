@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006H · 09.09.2026: Reine Rand-Satzzeichen an Fahrerwerten werden generisch entfernt, wenn danach ein vollständig gültiger Fahrername übrig bleibt. Kein Namens-Hardcode; unklare/innere OCR-Artefakte bleiben weiterhin in der gezielten Zweit-OCR bzw. manuellen Prüfung.
   // CORE-006G · 09.09.2026: OCR-auffällige Fahrerwerte (z. B. führende/abschließende Satzzeichen oder andere Nicht-Namenszeichen) werden wie fehlende Fahrer gezielt nur in der konkreten rechten Fahrerzelle erneut gelesen. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
   // CORE-006F · 09.09.2026: Fehlende Fahrerzellen werden bei Bildimport gezielt nur in der konkreten rechten Fahrerzelle lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
   // CORE-006D · 09.09.2026: No-Price-Mirror-Fallback nutzt Datenzeilen-Geometrie, wenn die mittlere Uhrzeit in der Kopfzeile vom OCR fehlt; gezielte Flug-OCR entfernt Minutenreste nur bei exakter Übereinstimmung mit der Planzeit. Keine Flugnummern-Hardcodes.
@@ -809,6 +810,8 @@
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) {
         issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      } else if (ride.driverRecoveredFromBoundaryNormalization) {
+        issues.push({ level: 'warning', row, text: `Fahrer ${ride.driver} nach Entfernen reiner OCR-Randzeichen erkannt – Original bitte einmal prüfen` });
       } else if (ride.driverRecoveredFromTargetedOcr) {
         issues.push({ level: 'warning', row, text: `Fahrer ${ride.driver} durch lokale zweite OCR aus der Fahrerzelle erkannt – Original bitte einmal prüfen` });
       } else if (ride.driverNeedsManualCheck) {
@@ -1754,6 +1757,23 @@
     return [...found.values()];
   }
 
+  function normalizeDriverBoundaryNoise(value) {
+    const raw = cellText(value);
+    if (!raw) return '';
+
+    // Nur Randzeichen entfernen. Buchstaben/Ziffern innerhalb des eigentlichen
+    // OCR-Textes werden niemals verändert oder ergänzt.
+    const trimmed = raw
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ-]+/, '')
+      .replace(/[^A-Za-zÄÖÜäöüßÀ-ÿ-]+$/, '')
+      .trim();
+
+    if (!trimmed || trimmed === raw) return '';
+    const normalized = normalizeDriverCandidate(trimmed);
+    if (!normalized || normalized !== trimmed) return '';
+    return normalized;
+  }
+
   function driverNeedsTargetedRecovery(value) {
     const raw = cellText(value);
     if (!raw) return true;
@@ -1788,6 +1808,18 @@
       if (!driverNeedsTargetedRecovery(originalDriver)) continue;
 
       ride.driverRawOcr = originalDriver;
+
+      // CORE-006H: Wenn ausschließlich offensichtliche Randzeichen den ansonsten
+      // vollständig gültigen Namen verunreinigen, ist keine semantische Korrektur
+      // nötig. Beispielklasse: "‘Name", ": Name |", "Name |".
+      const boundaryNormalized = normalizeDriverBoundaryNoise(originalDriver);
+      if (boundaryNormalized) {
+        ride.driver = boundaryNormalized;
+        ride.driverRecoveredFromBoundaryNormalization = true;
+        ride.driverNeedsManualCheck = false;
+        ride.driverRecoverySource = 'driver_boundary_noise_normalization';
+        continue;
+      }
 
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
