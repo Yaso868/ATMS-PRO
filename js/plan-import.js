@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006J · 09.09.2026: Zeitsemantik Bild-Planliste: erste Uhrzeit neben Preis = DISPO-Zeit; mittlere Uhrzeit vor Flug ang. = gespiegelte DISPO-Zeit; letzte Uhrzeit vor Ort = Flugzeit aus Liste. Alle drei Werte bleiben getrennt gespeichert.
   // CORE-006H · 09.09.2026: Reine Rand-Satzzeichen an Fahrerwerten werden generisch entfernt, wenn danach ein vollständig gültiger Fahrername übrig bleibt. Kein Namens-Hardcode; unklare/innere OCR-Artefakte bleiben weiterhin in der gezielten Zweit-OCR bzw. manuellen Prüfung.
   // CORE-006G · 09.09.2026: OCR-auffällige Fahrerwerte (z. B. führende/abschließende Satzzeichen oder andere Nicht-Namenszeichen) werden wie fehlende Fahrer gezielt nur in der konkreten rechten Fahrerzelle erneut gelesen. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
   // CORE-006F · 09.09.2026: Fehlende Fahrerzellen werden bei Bildimport gezielt nur in der konkreten rechten Fahrerzelle lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
@@ -747,16 +748,27 @@
       ? ''
       : normalizeFlightLocation(sourceFlightLocationRaw);
 
+    // CORE-006J: Verbindliche Zeitsemantik der aktuellen ATMS-Bildlisten.
+    const primaryDispoTime = normalizeTime(valueAt(row, mapping, 'time'));
+    const mirroredDispoTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
+    const dispoTime = primaryDispoTime || mirroredDispoTime;
+    const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
+
     return {
       id: `import-${Date.now()}-${rowNumber}`,
       sourceRow: rowNumber,
       sourceFile: fileName,
       planDate: currentPlanDate(),
       date: currentPlanDate(),
-      time: normalizeTime(valueAt(row, mapping, 'time')),
-      planTime: normalizeTime(valueAt(row, mapping, 'time')),
-      timeMirror: normalizeTime(valueAt(row, mapping, 'timeMirror')),
-      flightTime: normalizeTime(valueAt(row, mapping, 'flightTime')),
+      // `planTime` bleibt nur als Legacy-Kompatibilitätswert erhalten.
+      // Semantisch ist diese erste Zeit in den aktuellen Bildlisten die DISPO-Zeit.
+      time: dispoTime,
+      planTime: dispoTime,
+      dispoTime,
+      dispo_time: dispoTime,
+      timeMirror: mirroredDispoTime,
+      flightTime: listedFlightTime,
+      timeSemanticSource: 'dispo+mirror+listed-flight-time',
       pickup,
       destination,
       customer,
@@ -806,6 +818,9 @@
     rides.forEach(ride => {
       const row = ride.sourceRow;
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
+      if (ride.dispoTime && ride.timeMirror && normalizeTime(ride.dispoTime) !== normalizeTime(ride.timeMirror)) {
+        issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.dispoTime} und gespiegelte DISPO-Zeit ${ride.timeMirror} weichen ab – Original-Planliste prüfen` });
+      }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) {

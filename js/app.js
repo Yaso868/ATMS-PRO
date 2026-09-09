@@ -1,4 +1,8 @@
-// CORE-006I · 09.09.2026: Fahrtenansicht bewahrt die Reihenfolge der Planliste; keine automatische Umsortierung nach PLAN/DISPO/LIVE-Zeit. Bestehende Zeitfelder und Live-/Dispo-Logik bleiben unverändert.
+// CORE-006J · 09.09.2026: Zeitsemantik der Bild-Planliste verbindlich getrennt: erste Uhrzeit = DISPO, mittlere Uhrzeit = gespiegelte DISPO-Zeit, letzte Uhrzeit vor Ort = Flugzeit aus Liste. Flugzeit wird in Fahrtenkarte/Cockpit sichtbar; LIVE bleibt separates Abholzeitfeld mit Priorität LIVE > DISPO > PLAN.
+// CORE-006I · 09.09.2026: Fahrtenansicht bewahrt die Reihenfolge der Planliste; keine automatische Umsortierung nach PLAN/DISPO/LIVE-Zeit.
+// CORE-006A 09.09.2026: Explicit Plan Import Guard – Planimport nur nach echtem Nutzer-Klick; blockierte/importfremde Aufrufe werden protokolliert und bestehende Fahrten gesichert. Zusätzlich kann der letzte Zustand vor einem Planimport gezielt wiederhergestellt werden.
+// CORE-005Z 09.09.2026: Multi-Airport Flight Context – Flugprüfung erkennt den tatsächlich beteiligten Flughafen (z. B. DUS oder CGN) aus Abholung/Ziel, ohne Flugnummer-Hardcoding; Gemini- und Live-Prüfauftrag werden airport-spezifisch.
+// CORE-005Y 09.09.2026: Android JSON Input Guard – erkennt abgeschnittene Gemini-/Live-JSONs bereits beim Einfügen und meldet sie verständlich, ohne Flug-/Zeit-/Persistenzlogik zu ändern.
 // CORE-005Q 08.09.2026: Flugpruef-Persistenz nach Neuimport: exakter Match Flugnummer+Datum+Richtung+Flugzeit; verifizierte Orte und manuelle Hinweise werden sofort wiederhergestellt.
 // CORE-005P 08.09.2026: Globaler Arrival-Abholpuffer + manuell bestätigte Landungszeit im Live-Panel; PLAN/DISPO bleiben unverändert.
 // CORE-005O 08.09.2026: Sichere OCR-Ortsnormalisierung für München-Fehllesungen; Originalwert bleibt intern erhalten.
@@ -23,7 +27,8 @@ function first(...v){for(const x of v)if(x!==undefined&&x!==null&&String(x).trim
 // CORE-004L: Planzeit darf nie von einer später berechneten Zeit überschrieben werden.
 // Deshalb haben explizite PLAN-Felder Vorrang; das historische Feld `time` bleibt nur Fallback für alte Daten.
 function planTimeOf(r){return first(r.planTime,r.plan_abholzeit,r.planzeit,r.plan_zeit,r.abholzeitPlan,r.planPickupTime,r.plan_pickup_time,r.time,r.abholzeit)}
-function dispoTimeOf(r){return first(r.dispoTime,r.dispo_time,r.dispoZeit,r.dispozeit,r.dispo_zeit,r.dispo_abholzeit,r.dispo_uhrzeit,r.dispositionTime,r.disposition_time,r.disponierte_abholzeit,r.pickupTimeDispo,r.pickup_time_dispo,r.uhrzeit2,r.uhrzeit_2,r.zweiteUhrzeit,r.secondColumnTime,r.zweite_uhrzeit,r.zweiteZeit,r.zweite_zeit,r.secondTime,r.second_time,r.secondPickupTime)}
+function dispoTimeOf(r){return first(r.dispoTime,r.dispo_time,r.dispoZeit,r.dispozeit,r.dispo_zeit,r.dispo_abholzeit,r.dispo_uhrzeit,r.timeMirror,r.time_mirror,r.dispositionTime,r.disposition_time,r.disponierte_abholzeit,r.pickupTimeDispo,r.pickup_time_dispo,r.uhrzeit2,r.uhrzeit_2,r.zweiteUhrzeit,r.secondColumnTime,r.zweite_uhrzeit,r.zweiteZeit,r.zweite_zeit,r.secondTime,r.second_time,r.secondPickupTime)}
+function listedFlightTimeOf(r){return first(r.flightTime,r.flugzeit,r.flight_time,r.currentFlightTime,r.current_flight_time)}
 function explicitLiveTimeOf(r){return first(r.liveTime,r.live_time,r.currentPickupTime,r.current_pickup_time,r.aktuelle_abholzeit,r.aktuelleZeit,r.aktuelle_zeit,r.live_abholzeit,r.flightradar_abholzeit,r.verspaetete_abholzeit,r.verspätete_abholzeit,r.livePickupTime,r.live_pickup_time,r.currentTime,r.current_time)}
 function actualLandingTimeOf(r){return first(r.actualLandingTime,r.actual_landing_time,r.landingTimeActual,r.landing_time_actual,r.landedAt,r.landed_at,r.actualArrivalTime,r.actual_arrival_time,r.flightActualArrival,r.flight_actual_arrival,r.realArrivalTime,r.real_arrival_time)}
 function globalArrivalBufferMinutes(){const raw=Number(getLiveSettings().arrivalPickupBufferMinutes??15);return Number.isFinite(raw)?Math.max(0,Math.min(120,Math.round(raw))):15}
@@ -41,7 +46,7 @@ function liveTimeOf(r){return first(explicitLiveTimeOf(r),derivedLiveTimeOf(r))}
 function normalizeStops(r){const raw=r.bundleStops||r.stops||r.destinations||r.ziele||r.bundle_ziele||[];if(!Array.isArray(raw))return[];return raw.map((s,i)=>{if(typeof s==='string')return{name:s,persons:0,order:i+1};return{name:first(s.name,s.destination,s.ziel,s.ort,s.hotel),persons:Number(s.persons||s.personen||0),order:Number(s.order||s.reihenfolge||i+1)}}).filter(s=>s.name)}
 function isBundleRide(r){return Boolean(r.bundle||r.isBundle||r.bundelfahrt||r.is_bundelfahrt||r.bundleRide||normalizeStops(r).length>1)}
 function normalizeFlightLocationOcr(value){const raw=String(value||'').trim();if(!raw)return'';const key=raw.toLowerCase().replace(/\s+/g,' ');if(['miinchen','mienchen','munchen','muenchen'].includes(key))return'München';return raw}
-function norm(r,i){const plan=planTimeOf(r),dispo=dispoTimeOf(r),landing=actualLandingTimeOf(r),buffer=liveBufferMinutesOf(r),live=liveTimeOf(r),rawFlightLocation=first(r.flightLocation,r.flugort,r.ort),normalizedFlightLocation=normalizeFlightLocationOcr(rawFlightLocation);return{...r,id:first(r.id,'ride-'+(i+1)),date:first(r.date,r.datum),time:plan,planTime:plan,dispoTime:dispo,liveTime:live,actualLandingTime:landing,liveBufferMinutes:buffer,liveTimeDerivedFromLanding:Boolean(!explicitLiveTimeOf(r)&&landing&&live),driver:first(r.driver,r.fahrer),pickup:first(r.pickup,r.abholort,r.start),destination:first(r.destination,r.zielort,r.ziel),flightNumber:first(r.flightNumber,r.flugnummer).toUpperCase(),flightLocationRaw:first(r.flightLocationRaw,r.sourceFlightLocationRaw,rawFlightLocation),flightLocation:normalizedFlightLocation,iata:first(r.iata),airline:first(r.airline),partner:first(r.partner,r.airline),company:first(r.company,r.firma,'WT'),vehicle:first(r.vehicle,r.fahrzeug,'Pkw'),persons:Number(r.persons||r.personen||0),price:Number(r.price||r.preis||0),currency:first(r.currency,'EUR'),notes:first(r.notes,r.hinweis),flightStatus:first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status),delayMinutes:Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0),landed:Boolean(r.landed||r.gelandet),isBundle:isBundleRide(r),bundleStops:normalizeStops(r)}}
+function norm(r,i){const plan=planTimeOf(r),dispo=dispoTimeOf(r),landing=actualLandingTimeOf(r),buffer=liveBufferMinutesOf(r),live=liveTimeOf(r),listedFlightTime=listedFlightTimeOf(r),rawFlightLocation=first(r.flightLocation,r.flugort,r.ort),normalizedFlightLocation=normalizeFlightLocationOcr(rawFlightLocation);return{...r,id:first(r.id,'ride-'+(i+1)),date:first(r.date,r.datum),time:plan,planTime:plan,dispoTime:dispo,timeMirror:first(r.timeMirror,r.time_mirror),flightTime:listedFlightTime,liveTime:live,actualLandingTime:landing,liveBufferMinutes:buffer,liveTimeDerivedFromLanding:Boolean(!explicitLiveTimeOf(r)&&landing&&live),driver:first(r.driver,r.fahrer),pickup:first(r.pickup,r.abholort,r.start),destination:first(r.destination,r.zielort,r.ziel),flightNumber:first(r.flightNumber,r.flugnummer).toUpperCase(),flightLocationRaw:first(r.flightLocationRaw,r.sourceFlightLocationRaw,rawFlightLocation),flightLocation:normalizedFlightLocation,iata:first(r.iata),airline:first(r.airline),partner:first(r.partner,r.airline),company:first(r.company,r.firma,'WT'),vehicle:first(r.vehicle,r.fahrzeug,'Pkw'),persons:Number(r.persons||r.personen||0),price:Number(r.price||r.preis||0),currency:first(r.currency,'EUR'),notes:first(r.notes,r.hinweis),flightStatus:first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status),delayMinutes:Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0),landed:Boolean(r.landed||r.gelandet),isBundle:isBundleRide(r),bundleStops:normalizeStops(r)}}
 function normKey(v){return String(v||'').trim().toLowerCase().replace(/\s+/g,' ')}
 
 // CORE-005V – additive Persistenz-Sicherheitslage. Bewusst außerhalb des atms_-Präfixes,
@@ -277,7 +282,7 @@ function ensurePersistenceSafetyPanel(){
     return true;
   }
   const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
   // CORE-005V3: Das Live-Flugdaten-Panel ist auf Mobil bereits nachweislich sichtbar.
   // Deshalb wird die Persistenz-Sicherheit als Kind dieses Panels gemountet.
   // Fallbacks bleiben nur fuer den unwahrscheinlichen Fall, dass Live noch nicht existiert.
@@ -295,6 +300,7 @@ function ensurePersistenceSafetyPanel(){
   $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
   $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
+  $('atmsRestorePreviousImportBtn')?.addEventListener('click',restorePreviousPlanImport);
   return true;
 }
 function initPersistenceSafetyPanelObserver(){
@@ -520,7 +526,7 @@ function updateRideTimeField(rideId,patch){
 window.ATMSSetDispoTime=function(rideId,time){return updateRideTimeField(rideId,{dispoTime:String(time||'').trim()})};
 window.ATMSSetLiveTime=function(rideId,time){return updateRideTimeField(rideId,{liveTime:String(time||'').trim(),liveTimeDerivedFromLanding:false})};
 window.ATMSSetActualLandingTime=function(rideId,landingTime,bufferMinutes){const patch={actualLandingTime:String(landingTime||'').trim(),liveTime:''};if(bufferMinutes!==undefined&&bufferMinutes!==null&&String(bufferMinutes).trim()!=='')patch.liveBufferOverrideMinutes=Math.max(0,Math.min(120,Math.round(Number(bufferMinutes)||0)));return updateRideTimeField(rideId,patch)};
-window.ATMSTimeSnapshot=function(rideId){const r=rides.find(x=>String(x?.id||'')===String(rideId||''));if(!r)return null;return{planTime:planTimeOf(r),dispoTime:dispoTimeOf(r),actualLandingTime:actualLandingTimeOf(r),liveTime:liveTimeOf(r),liveBufferMinutes:liveBufferMinutesOf(r),effectiveTime:effectiveTime(r),effectiveSource:effectiveSource(r)}};
+window.ATMSTimeSnapshot=function(rideId){const r=rides.find(x=>String(x?.id||'')===String(rideId||''));if(!r)return null;return{planTime:planTimeOf(r),dispoTime:dispoTimeOf(r),timeMirror:first(r.timeMirror,r.time_mirror),flightTime:listedFlightTimeOf(r),actualLandingTime:actualLandingTimeOf(r),liveTime:liveTimeOf(r),liveBufferMinutes:liveBufferMinutesOf(r),effectiveTime:effectiveTime(r),effectiveSource:effectiveSource(r)}};
 function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
@@ -528,7 +534,17 @@ function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r
   safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
 }function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
 function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(/storniert|cancelled|canceled/.test(raw))return{key:'cancelled',label:'Storniert'};if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time|scheduled/.test(raw))return{key:'on-time',label:'Pünktlich'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
-function timeMarkup(r){const plan=planTimeOf(r);const current=effectiveTime(r);if(current&&plan&&current!==plan)return `<div class="time-stack"><div class="plan-small">${esc(plan)}</div><div class="current-large">${esc(current)}</div></div>`;return `<div class="time-single">${esc(current||plan||'--:--')}</div>`}
+function timeMarkup(r){
+  const plan=planTimeOf(r),dispo=dispoTimeOf(r),live=liveTimeOf(r);
+  const base=first(dispo,plan);
+  if(live&&base&&live!==base)return `<div class="time-stack"><div class="plan-small">${esc(base)}</div><div class="current-large">${esc(live)}</div></div>`;
+  if(!live&&dispo&&plan&&dispo!==plan)return `<div class="time-stack"><div class="plan-small">${esc(plan)}</div><div class="current-large">${esc(dispo)}</div></div>`;
+  return `<div class="time-single">${esc(first(live,dispo,plan,'--:--'))}</div>`
+}
+function listedFlightTimeMarkup(r){
+  const value=listedFlightTimeOf(r);
+  return value?`<div class="flight-time-note" style="font-size:12px;font-weight:800;margin-top:4px;opacity:.88">🕒 Flugzeit Liste ${esc(value)}</div>`:''
+}
 function ridePartnerLabel(r){
   const left=String(r.partner||r.airline||r.customer||'').trim();
   const right=String(r.company||'').trim();
@@ -543,14 +559,10 @@ function rideCard(r,i){
   const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">⚠ manuell prüfen</span>`:'';
   const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${manualFlightBadge}</div>`:'';
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
-  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta">✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</div>${bundleFlightLocation}${stopRows}</div><div class="chev">›</div></article>`
+  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta">✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${stopRows}</div><div class="chev">›</div></article>`
 }
 function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
-  // CORE-006I: Die Fahrtenliste folgt der Reihenfolge der importierten Planliste.
-  // PLAN-, DISPO- oder LIVE-Zeiten dürfen Karten nicht eigenständig umsortieren.
-  // visualRides() erhält die Reihenfolge des gespeicherten Fahrtenarrays und damit
-  // bei Planimporten die sourceRow-Reihenfolge. Erledigte Fahrten bleiben lediglich
-  // im separaten Erledigt-Bereich.
+  // CORE-006I: Fahrtenansicht folgt der Reihenfolge der importierten Planliste.
   const open=vr.filter(r=>!isDone(r)&&matches(r));
   const fin=vr.filter(r=>isDone(r)&&matches(r));
 $('summary').textContent=`${mode==='all'?open.length+fin.length:open.length} Fahrten · ${driverFilter||'Alle Fahrer'}`;
@@ -606,7 +618,7 @@ function openDrivers(){
   dialog.classList.remove('hidden');
 }
 
-function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitPlan=planTimeOf(active)||'--:--';const cockpitCurrent=effectiveTime(active)||'--:--';$('planTime').textContent=cockpitPlan;$('planTime').classList.toggle('plan-replaced',Boolean(cockpitPlan&&cockpitCurrent&&cockpitPlan!=='--:--'&&cockpitCurrent!==cockpitPlan));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=source==='live'?'LIVE-ABHOLZEIT':source==='dispo'?'DISPO-ABHOLZEIT':'AKTUELLE ABHOLZEIT';$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=ridePriceLabel(active);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';const statusBadge=$('statusBadge');if(statusBadge){let badgeText='KEINE LIVE-DATEN';let badgeTone='neutral';if(activeDone){badgeText='ERLEDIGT';badgeTone='done'}else if(fsi.key==='on-time'){badgeText='PÜNKTLICH';badgeTone='ok'}else if(fsi.key==='delayed'){badgeText=String(fsi.label||'VERSPÄTET').toUpperCase();badgeTone='warn'}else if(fsi.key==='landed'){badgeText='GELANDET';badgeTone='landed'}else if(fsi.key==='cancelled'){badgeText='STORNIERT';badgeTone='warn'}statusBadge.textContent=badgeText;statusBadge.dataset.atmsTone=badgeTone;if(badgeTone==='neutral'){statusBadge.style.color='#aebfc9';statusBadge.style.borderColor='rgba(174,191,201,.45)';statusBadge.style.background='rgba(174,191,201,.08)'}else{statusBadge.style.removeProperty('color');statusBadge.style.removeProperty('border-color');statusBadge.style.removeProperty('background')}}renderDispatcherControls();renderDriverControls();const editFlightBtn=document.querySelector('#cockpitView .edit');if(editFlightBtn)editFlightBtn.onclick=openManualFlightEditor}
+function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitDispo=first(dispoTimeOf(active),planTimeOf(active))||'--:--';const cockpitCurrent=effectiveTime(active)||'--:--';$('planTime').textContent=cockpitDispo;const leftTimeLabel=$('planTime')?.parentElement?.querySelector('.lbl');if(leftTimeLabel)leftTimeLabel.textContent='DISPO-ZEIT';$('planTime').classList.toggle('plan-replaced',Boolean(cockpitDispo&&cockpitCurrent&&cockpitDispo!=='--:--'&&cockpitCurrent!==cockpitDispo));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=source==='live'?'LIVE-ABHOLZEIT':'AKTUELLE ABHOLZEIT';$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const flightTimeHost=$('flightLoc')?.parentElement;let flightListTime=$('flightListTime');if(flightTimeHost&&!flightListTime){flightListTime=document.createElement('div');flightListTime.id='flightListTime';flightListTime.style.cssText='font-size:14px;font-weight:800;margin-top:6px;opacity:.9';flightTimeHost.insertBefore(flightListTime,$('cockFlightStatus')||null)}if(flightListTime)flightListTime.textContent=listedFlightTimeOf(active)?`🕒 Flugzeit Liste ${listedFlightTimeOf(active)}`:'🕒 Flugzeit Liste –';const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=ridePriceLabel(active);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';const statusBadge=$('statusBadge');if(statusBadge){let badgeText='KEINE LIVE-DATEN';let badgeTone='neutral';if(activeDone){badgeText='ERLEDIGT';badgeTone='done'}else if(fsi.key==='on-time'){badgeText='PÜNKTLICH';badgeTone='ok'}else if(fsi.key==='delayed'){badgeText=String(fsi.label||'VERSPÄTET').toUpperCase();badgeTone='warn'}else if(fsi.key==='landed'){badgeText='GELANDET';badgeTone='landed'}else if(fsi.key==='cancelled'){badgeText='STORNIERT';badgeTone='warn'}statusBadge.textContent=badgeText;statusBadge.dataset.atmsTone=badgeTone;if(badgeTone==='neutral'){statusBadge.style.color='#aebfc9';statusBadge.style.borderColor='rgba(174,191,201,.45)';statusBadge.style.background='rgba(174,191,201,.08)'}else{statusBadge.style.removeProperty('color');statusBadge.style.removeProperty('border-color');statusBadge.style.removeProperty('background')}}renderDispatcherControls();renderDriverControls();const editFlightBtn=document.querySelector('#cockpitView .edit');if(editFlightBtn)editFlightBtn.onclick=openManualFlightEditor}
 
 function fullMessagePlace(name){
   const raw=String(name||'').trim();
@@ -844,12 +856,38 @@ function resetAtmsData(){
 
 
 /* FLIGHT-001 – Gemini-Flugprüfung (halbautomatisch, ohne API) */
-function flightDirectionForGemini(r){
-  const d=directionOf(r);
-  if(d==='airport_to_hotels')return'arrival';
-  if(d==='hotels_to_airport')return'departure';
-  return'unknown';
+function flightAirportIataFromPlace(value){
+  const raw=String(value||'').trim();
+  if(!raw)return'';
+  const upper=raw.toUpperCase();
+  const n=normKey(raw);
+
+  // Explizite, ausgeschriebene Flughafennamen bleiben sicher erkennbar.
+  if(n.includes('flughafen düsseldorf')||n.includes('flughafen duesseldorf')||n.includes('düsseldorf airport')||n.includes('duesseldorf airport'))return'DUS';
+  if(n.includes('flughafen köln')||n.includes('flughafen koeln')||n.includes('cologne bonn airport')||n.includes('köln/bonn')||n.includes('koeln/bonn'))return'CGN';
+
+  // Ein reiner IATA-Code ist eindeutig.
+  const exact=upper.match(/^([A-Z]{3})$/);
+  if(exact)return exact[1];
+
+  // Generisch: Drei-Buchstaben-IATA nur dann übernehmen, wenn der Text
+  // eindeutig einen Flughafenbereich bezeichnet. Dadurch wird z. B.
+  // "CGN Vorfeld" erkannt, aber "NH Nord DUS" NICHT als Flughafen.
+  if(/\b(?:AIRPORT|FLUGHAFEN|VORFELD|AIRSIDE)\b/i.test(raw)){
+    const tokens=upper.match(/\b[A-Z]{3}\b/g)||[];
+    if(tokens.length===1)return tokens[0];
+  }
+  return'';
 }
+function flightAirportContext(r){
+  const pickupIata=flightAirportIataFromPlace(r?.pickup||r?.abholort||'');
+  const destinationIata=flightAirportIataFromPlace(r?.destination||r?.zielort||r?.ziel||'');
+  if(pickupIata&&!destinationIata)return{airportIata:pickupIata,direction:'arrival'};
+  if(!pickupIata&&destinationIata)return{airportIata:destinationIata,direction:'departure'};
+  return{airportIata:'',direction:'unknown'};
+}
+function flightDirectionForGemini(r){return flightAirportContext(r).direction}
+function flightAirportForGemini(r){return flightAirportContext(r).airportIata}
 
 /* FLIGHT-CACHE-001 – geprüfte Gemini-Flugorte dauerhaft für exakt dieselbe Planfahrt sichern */
 function flightCacheNumber(value){
@@ -971,8 +1009,9 @@ function flightCacheMatchTuple(r){
   const flight=flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight);
   const date=String(r?.date||'').trim();
   const direction=String(flightDirectionForGemini(r)||'unknown').trim().toLowerCase();
+  const airportIata=String(flightAirportForGemini(r)||'').trim().toUpperCase();
   const flightTime=String(first(r?.flightTime,r?.flugzeit,r?.flight_time)||'').trim();
-  return {flight,date,direction,flightTime};
+  return {flight,date,direction,airportIata,flightTime};
 }
 function findFlightCacheForRide(r){
   const key=flightCacheMatchTuple(r);
@@ -984,7 +1023,16 @@ function findFlightCacheForRide(r){
     const cacheFlight=flightCacheNumber(x.flightNumber);
     const cacheDate=String(x.date||'').trim();
     const cacheDirection=String(x.direction||'unknown').trim().toLowerCase();
+    const cacheAirportIata=String(x.airportIata||'').trim().toUpperCase();
     const cacheFlightTime=String(x.flightTime||'').trim();
+
+    // Bestehende ältere DUS-Cache-Einträge haben noch kein airportIata.
+    // Diese bleiben für DUS kompatibel, dürfen aber niemals auf CGN oder
+    // einen anderen Flughafen übertragen werden.
+    if(cacheAirportIata&&key.airportIata&&cacheAirportIata!==key.airportIata)return false;
+    if(!cacheAirportIata&&key.airportIata&&key.airportIata!=='DUS')return false;
+    if(cacheAirportIata&&!key.airportIata)return false;
+
     return cacheFlight===key.flight
       && cacheDate===key.date
       && cacheDirection===key.direction
@@ -1038,15 +1086,17 @@ function flightCheckItems(source=rides){
     const date=rawDate||berlinDate();
     const dateAssumed=!rawDate;
     const direction=flightDirectionForGemini(r);
+    const airportIata=flightAirportForGemini(r);
     const flightTime=first(r.flightTime,r.flugzeit,r.flight_time);
     const locationFromPlan=first(r.locationFromPlan,r.flightLocation,r.flugort,r.ort);
-    const key=[flight,date,direction,flightTime].join('|');
+    const key=[flight,date,airportIata,direction,flightTime].join('|');
     if(!map.has(key))map.set(key,{
       flightNumber:flight,
       date,
       dateAssumed,
       flightTime:flightTime||null,
       direction,
+      airportIata:airportIata||null,
       locationFromPlan
     });
   }
@@ -1055,29 +1105,31 @@ function flightCheckItems(source=rides){
 function buildGeminiFlightPrompt(){
   const items=flightCheckItems();
   if(!items.length)throw new Error('Keine Flugnummern in der aktuellen Planliste gefunden.');
-  return `ATMS PRO – FLIGHT-007 DAY-002 strikte aktuelle Flugprüfung
+  return `ATMS PRO – FLIGHT-008 MULTI-AIRPORT strikte aktuelle Flugprüfung
 
 Prüfe JEDE unten aufgeführte Flugnummer für den angegebenen Flugtag anhand aktueller, DATUMSSPEZIFISCHER Webdaten. Prüfe jeden Eintrag bei diesem Auftrag neu. Eine Flugnummer darf niemals allein aufgrund einer bekannten, früheren oder typischen Route einem Ort zugeordnet werden.
 
 VERBINDLICHE VERIFIKATIONSREGELN:
-1. direction=arrival: Gesucht ist der HERKUNFTSORT des konkreten Fluges nach Düsseldorf (DUS).
-2. direction=departure: Gesucht ist der ZIELORT des konkreten Fluges ab Düsseldorf (DUS).
-3. Verwende date EXAKT. Verifiziere ausdrücklich, dass die Flugnummer an diesem Datum mit Düsseldorf (DUS) als passendem Start- oder Zielairport existiert.
-4. Allgemeine Flugpläne, typische Routen, historische Routenzuordnungen oder gespeicherte Flugnummer→Ort-Zuordnungen reichen NICHT.
-5. status="verified" UND confidence="high" sind NUR erlaubt, wenn mindestens ZWEI voneinander unabhängige, datumsspezifische Quellen dieselbe konkrete Route bestätigen.
-6. Mindestens eine der zwei Quellen soll nach Möglichkeit eine Primärquelle sein: Flughafen Düsseldorf oder offizielle Airline-Flugstatus-/Flugplanquelle. Die zweite Quelle soll unabhängig davon sein.
-7. Wenn nur EINE geeignete Quelle gefunden wird: status="needs_manual_check" und confidence="medium" oder "low". NIEMALS verified/high.
-8. Wenn keine geeignete datumsspezifische Quelle gefunden wird, Quellen widersprechen oder die konkrete DUS-Verbindung nicht sicher bestätigt werden kann: status="needs_manual_check". NICHT raten.
-9. flightTime ist ein zusätzliches Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und die Zuordnung ohne flightTime nicht eindeutig ist: status="needs_manual_check".
-10. locationFromPlan ist ausschließlich ein Vergleichswert und KEINE Quelle. Prüfe auch vorhandene Planorte vollständig neu.
-11. Weicht ein sicher verifiziertes Ergebnis von locationFromPlan ab, setze conflict=true.
-12. Erfinde keine Orte, IATA-Codes, Quellen, URLs oder Prüfzeiten.
-13. sources MUSS ein JSON-Array sein. Jede Quelle muss mindestens "name" und "url" enthalten. Nur tatsächlich für diesen Flug und dieses Datum verwendete Quellen eintragen.
-14. Bei verified/high müssen mindestens zwei unterschiedliche sources-Einträge vorhanden sein.
-15. sourceNote soll die Prüfung kurz zusammenfassen, darf aber sources nicht ersetzen.
-16. checkedAt muss der tatsächliche Zeitpunkt dieser Webprüfung in ISO-8601-UTC sein. ATMS speichert zusätzlich selbst seinen Übernahmezeitpunkt.
-17. Verwende EXAKT die unten definierten Feldnamen. Keine alternativen Namen wie flight_number, city, notes oder ein reines Array.
-18. Antworte ausschließlich mit EINEM gültigen JSON-Objekt gemäß dem Schema. Kein Markdown, keine Erklärung vor oder nach dem JSON.
+1. airportIata ist der für DIESE Fahrt relevante Flughafen. Verwende exakt diesen Flughafen und ersetze ihn nicht durch DUS oder einen anderen Airport.
+2. direction=arrival: Gesucht ist der HERKUNFTSORT des konkreten Fluges NACH airportIata.
+3. direction=departure: Gesucht ist der ZIELORT des konkreten Fluges AB airportIata.
+4. Verwende date EXAKT. Verifiziere ausdrücklich, dass die Flugnummer an diesem Datum mit airportIata als passendem Start- oder Zielairport existiert.
+5. Wenn airportIata fehlt/null oder direction=unknown ist: status="needs_manual_check". Nicht raten.
+6. Allgemeine Flugpläne, typische Routen, historische Routenzuordnungen oder gespeicherte Flugnummer→Ort-Zuordnungen reichen NICHT.
+7. status="verified" UND confidence="high" sind NUR erlaubt, wenn mindestens ZWEI voneinander unabhängige, datumsspezifische Quellen dieselbe konkrete Route bestätigen.
+8. Mindestens eine der zwei Quellen soll nach Möglichkeit die offizielle Quelle des betroffenen Flughafens oder der Airline sein. Die zweite Quelle soll unabhängig davon sein.
+9. Wenn nur EINE geeignete Quelle gefunden wird: status="needs_manual_check" und confidence="medium" oder "low". NIEMALS verified/high.
+10. Wenn keine geeignete datumsspezifische Quelle gefunden wird, Quellen widersprechen oder die konkrete Verbindung über airportIata nicht sicher bestätigt werden kann: status="needs_manual_check". NICHT raten.
+11. flightTime ist ein zusätzliches Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und die Zuordnung ohne flightTime nicht eindeutig ist: status="needs_manual_check".
+12. locationFromPlan ist ausschließlich ein Vergleichswert und KEINE Quelle. Prüfe auch vorhandene Planorte vollständig neu.
+13. Weicht ein sicher verifiziertes Ergebnis von locationFromPlan ab, setze conflict=true.
+14. Erfinde keine Orte, IATA-Codes, Quellen, URLs oder Prüfzeiten.
+15. sources MUSS ein JSON-Array sein. Jede Quelle muss mindestens "name" und "url" enthalten. Nur tatsächlich für diesen Flug, dieses Datum und airportIata verwendete Quellen eintragen.
+16. Bei verified/high müssen mindestens zwei unterschiedliche sources-Einträge vorhanden sein.
+17. sourceNote soll die Prüfung kurz zusammenfassen, darf aber sources nicht ersetzen.
+18. checkedAt muss der tatsächliche Zeitpunkt dieser Webprüfung in ISO-8601-UTC sein. ATMS speichert zusätzlich selbst seinen Übernahmezeitpunkt.
+19. Verwende EXAKT die unten definierten Feldnamen.
+20. Antworte ausschließlich mit EINEM gültigen JSON-Objekt gemäß dem Schema. Kein Markdown, keine Erklärung vor oder nach dem JSON.
 
 VERBINDLICHES JSON-SCHEMA:
 {
@@ -1089,6 +1141,7 @@ VERBINDLICHES JSON-SCHEMA:
       "dateAssumed": false,
       "flightTime": null,
       "direction": "arrival|departure|unknown",
+      "airportIata": "DUS|CGN|anderer IATA-Code|null",
       "originCity": "",
       "originIata": "",
       "destinationCity": "",
@@ -1113,6 +1166,7 @@ VERBINDLICHES JSON-SCHEMA:
 }
 
 WICHTIG:
+- airportIata aus dem Prüfeintrag unverändert zurückgeben.
 - Bei status="verified" + confidence="high": sources.length MUSS mindestens 2 sein.
 - Bei weniger als 2 unabhängigen Quellen: status="needs_manual_check".
 - Gib alle Prüfeinträge in derselben Reihenfolge zurück.
@@ -1132,8 +1186,80 @@ async function copyGeminiFlightPrompt(){
     showToast('Prompt anzeigen und manuell kopieren','warn');
   }
 }
+/* CORE-005Y – Android JSON Input Guard */
+function inspectAtmsJsonInput(text){
+  const raw=clean(String(text||'')).trim();
+  if(!raw)return{state:'empty',text:''};
+  if(!raw.startsWith('{'))return{state:'invalid',text:raw,reason:'JSON muss mit { beginnen.'};
+
+  const stack=[];
+  let inString=false,escaped=false;
+
+  for(let i=0;i<raw.length;i++){
+    const ch=raw[i];
+
+    if(inString){
+      if(escaped){escaped=false;continue}
+      if(ch==='\\'){escaped=true;continue}
+      if(ch==='"'){inString=false}
+      continue;
+    }
+
+    if(ch==='"'){inString=true;continue}
+    if(ch==='{'||ch==='['){stack.push(ch);continue}
+    if(ch==='}'||ch===']'){
+      const expected=ch==='}'?'{':'[';
+      const opened=stack.pop();
+      if(opened!==expected)return{state:'invalid',text:raw,reason:'JSON-Klammern passen nicht zusammen.'};
+    }
+  }
+
+  if(inString||escaped||stack.length||!raw.endsWith('}')){
+    return{state:'incomplete',text:raw,reason:'JSON endet unvollständig.'};
+  }
+
+  try{
+    JSON.parse(raw);
+    return{state:'complete',text:raw};
+  }catch(e){
+    const message=String(e?.message||e);
+    if(/unexpected end|unterminated string|end of json|unterminated/i.test(message)){
+      return{state:'incomplete',text:raw,reason:message};
+    }
+    return{state:'invalid',text:raw,reason:message};
+  }
+}
+function parseAtmsJsonObject(text,label){
+  const result=inspectAtmsJsonInput(text);
+  if(result.state==='empty')throw new Error(`${label}: Kein JSON eingefügt.`);
+  if(result.state==='incomplete')throw new Error(`${label}: JSON ist unvollständig oder beim Kopieren abgeschnitten. Bitte vollständig neu kopieren.`);
+  if(result.state==='invalid')throw new Error(`${label}: JSON ist ungültig${result.reason?` (${result.reason})`:''}.`);
+  return JSON.parse(result.text);
+}
+function installJsonInputGuard(inputId,statusId,label){
+  const input=$(inputId),status=$(statusId);
+  if(!input||!status||input.dataset.atmsJsonGuard==='1')return;
+  input.dataset.atmsJsonGuard='1';
+  input.addEventListener('input',()=>{
+    const result=inspectAtmsJsonInput(input.value);
+    if(result.state==='empty'){
+      status.textContent=`Noch kein ${label} eingefügt.`;
+      return;
+    }
+    if(result.state==='incomplete'){
+      status.textContent=`⚠ ${label} unvollständig/abgeschnitten – bitte vollständig neu kopieren.`;
+      return;
+    }
+    if(result.state==='invalid'){
+      status.textContent=`⚠ ${label} syntaktisch ungültig – bitte JSON prüfen.`;
+      return;
+    }
+    status.textContent=`✓ ${label} vollständig erkannt. Bereit zur Übernahme.`;
+  });
+}
+
 function parseGeminiFlightResult(text){
-  const obj=JSON.parse(clean(String(text||'')));
+  const obj=parseAtmsJsonObject(text,'Gemini-JSON');
   if(!obj || Array.isArray(obj) || typeof obj!=='object'){
     throw new Error('FLIGHT-007 erwartet ein JSON-Objekt mit dem Feld "flights".');
   }
@@ -1142,7 +1268,7 @@ function parseGeminiFlightResult(text){
   }
 
   const requiredFields=[
-    'flightNumber','date','dateAssumed','flightTime','direction',
+    'flightNumber','date','dateAssumed','flightTime','direction','airportIata',
     'originCity','originIata','destinationCity','destinationIata',
     'relevantLocation','status','confidence','conflict','sources','sourceNote'
   ];
@@ -1167,6 +1293,10 @@ function parseGeminiFlightResult(text){
     }
 
     const direction=String(x.direction||'unknown').trim().toLowerCase();
+    const airportIata=String(x.airportIata||'').trim().toUpperCase();
+    if(airportIata&&!/^[A-Z]{3}$/.test(airportIata)){
+      throw new Error(`FLIGHT-008: airportIata bei Flug ${index+1} ist ungültig.`);
+    }
     const location=String(x.relevantLocation||'').trim();
     const iata=String(
       x.iata ||
@@ -1202,6 +1332,7 @@ function parseGeminiFlightResult(text){
       dateAssumed:Boolean(x.dateAssumed),
       flightTime:String(x.flightTime||'').trim(),
       direction,
+      airportIata,
       flightLocation:location,
       iata,
       confidence:verified?'verified':'uncertain',
@@ -1230,6 +1361,7 @@ function applyGeminiFlightResult(){
       const flight=flightCacheNumber(r.flightNumber);
       const date=String(r.date||'').trim();
       const direction=flightDirectionForGemini(r);
+      const airportIata=flightAirportForGemini(r);
       const flightTime=String(r.flightTime||'').trim();
 
       // FLIGHT-007 + DAY-002:
@@ -1249,6 +1381,13 @@ function applyGeminiFlightResult(){
         if(direction!=='unknown'){
           if(checkedDirection==='unknown' || checkedDirection!==direction)return false;
         }else if(checkedDirection!=='unknown'){
+          return false;
+        }
+
+        const checkedAirportIata=String(x.airportIata||'').trim().toUpperCase();
+        if(airportIata){
+          if(!checkedAirportIata || checkedAirportIata!==airportIata)return false;
+        }else if(checkedAirportIata){
           return false;
         }
 
@@ -1280,6 +1419,7 @@ function applyGeminiFlightResult(){
         fingerprint:flightRideFingerprint(r),
         flightNumber:flight,
         direction,
+        airportIata:airportIata||String(hit.airportIata||'').trim().toUpperCase(),
         date:date||String(hit.date||'').trim(),
         flightTime:flightTime||String(hit.flightTime||'').trim(),
         flightLocation:verified?hit.flightLocation:'',
@@ -1384,6 +1524,7 @@ function ensureGeminiFlightPanel(){
   load.parentElement?.insertBefore(panel,load.nextSibling);
   $('copyGeminiFlightBtn')?.addEventListener('click',copyGeminiFlightPrompt);
   $('applyGeminiFlightBtn')?.addEventListener('click',applyGeminiFlightResult);
+  installJsonInputGuard('geminiFlightResult','geminiFlightStatus','Gemini-JSON');
 }
 
 
@@ -1395,15 +1536,56 @@ function liveFlightCheckItems(source=rides){
     if(!flight)continue;
     const date=String(r.date||'').trim()||berlinDate();
     const direction=flightDirectionForGemini(r);
-    const key=[flight,date,direction].join('|');
-    if(!map.has(key))map.set(key,{flightNumber:flight,date,direction,flightLocation:String(r.flightLocation||'').trim()||null,planPickupTime:planTimeOf(r)||null});
+    const airportIata=flightAirportForGemini(r);
+    const key=[flight,date,airportIata,direction].join('|');
+    if(!map.has(key))map.set(key,{flightNumber:flight,date,direction,airportIata:airportIata||null,flightLocation:String(r.flightLocation||'').trim()||null,planPickupTime:planTimeOf(r)||null});
   }
   return [...map.values()];
 }
 function buildLiveFlightPrompt(){
   const items=liveFlightCheckItems();
   if(!items.length)throw new Error('Keine Flüge in den aktuell gespeicherten Fahrten gefunden.');
-  return `ATMS PRO – LIVE-FLIGHT-001 strikte aktuelle Live-Flugprüfung\n\nPrüfe JEDE unten aufgeführte Flugnummer für den angegebenen Tag anhand AKTUELLER öffentlicher Webdaten. Keine historischen/typischen Routen als Live-Status verwenden.\n\nVERBINDLICHE REGELN:\n1. direction=departure: DUS ist Abflugairport. relevant sind aktueller Status und die aktuelle DUS-Abflugzeit.\n2. direction=arrival: DUS ist Zielairport. relevant sind aktueller Status und die aktuelle DUS-Ankunftszeit.\n3. date exakt verwenden. Keine Daten eines anderen Tages übernehmen.\n4. confirmed=true nur mit mindestens ZWEI voneinander unabhängigen, aktuellen/datumsspezifischen Quellen. Mindestens eine Quelle nach Möglichkeit DUS, Airline oder ein etablierter Live-Tracker.\n5. Wenn der Flug noch nicht gestartet ist und keine belastbare Schätzung existiert, Status scheduled/on_time ist erlaubt, aber Zeiten nur aus tatsächlich angezeigten aktuellen Daten übernehmen.\n6. Bei Widerspruch, unklarer Zuordnung oder weniger als 2 geeigneten Quellen: confirmed=false, status=unknown. Nicht raten.\n7. dusScheduledTime, dusEstimatedTime und dusActualTime immer als lokale DUS-Zeit HH:MM zurückgeben oder null. Der globale ATMS-Abholpuffer wird erst lokal in der App addiert und darf nicht in diese Zeiten eingerechnet werden.\n8. delayMinutes ist die aktuelle Abweichung am DUS-Ereignis in ganzen Minuten; wenn nicht belastbar bestimmbar, null.\n9. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden.\n10. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.\n11. Antworte ausschließlich mit EINEM gültigen JSON-Objekt. Kein Markdown.\n\nJSON-SCHEMA:\n{\n  "checkedAt":"ISO-8601",\n  "flights":[{\n    "flightNumber":"EW0000",\n    "date":"YYYY-MM-DD",\n    "direction":"arrival|departure|unknown",\n    "status":"scheduled|on_time|delayed|landed|cancelled|unknown",\n    "dusScheduledTime":"HH:MM|null",\n    "dusEstimatedTime":"HH:MM|null",\n    "dusActualTime":"HH:MM|null",\n    "delayMinutes":null,\n    "confirmed":false,\n    "sources":[{"name":"","url":""}],\n    "sourceNote":""\n  }]\n}\n\nZu prüfen:\n${JSON.stringify(items,null,2)}`;
+  return `ATMS PRO – LIVE-FLIGHT-002 MULTI-AIRPORT strikte aktuelle Live-Flugprüfung
+
+Prüfe JEDE unten aufgeführte Flugnummer für den angegebenen Tag anhand AKTUELLER öffentlicher Webdaten. Keine historischen/typischen Routen als Live-Status verwenden.
+
+VERBINDLICHE REGELN:
+1. airportIata ist der für die konkrete Fahrt relevante Flughafen. Verwende exakt diesen Airport.
+2. direction=departure: airportIata ist der Abflugairport. Relevant sind aktueller Status und die aktuelle Abflugzeit an airportIata.
+3. direction=arrival: airportIata ist der Zielairport. Relevant sind aktueller Status und die aktuelle Ankunftszeit an airportIata.
+4. date exakt verwenden. Keine Daten eines anderen Tages oder eines anderen Airports übernehmen.
+5. confirmed=true nur mit mindestens ZWEI voneinander unabhängigen, aktuellen/datumsspezifischen Quellen. Mindestens eine Quelle nach Möglichkeit der betroffene Airport, die Airline oder ein etablierter Live-Tracker.
+6. Wenn airportIata fehlt/null oder direction=unknown ist: confirmed=false, status=unknown. Nicht raten.
+7. Wenn der Flug noch nicht gestartet ist und keine belastbare Schätzung existiert, Status scheduled/on_time ist erlaubt, aber Zeiten nur aus tatsächlich angezeigten aktuellen Daten übernehmen.
+8. Bei Widerspruch, unklarer Zuordnung oder weniger als 2 geeigneten Quellen: confirmed=false, status=unknown. Nicht raten.
+9. airportScheduledTime, airportEstimatedTime und airportActualTime immer als lokale Zeit des betroffenen Airports HH:MM zurückgeben oder null. Der globale ATMS-Abholpuffer wird erst lokal in der App addiert und darf nicht in diese Zeiten eingerechnet werden.
+10. delayMinutes ist die aktuelle Abweichung am Ereignis des betroffenen Airports in ganzen Minuten; wenn nicht belastbar bestimmbar, null.
+11. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden.
+12. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.
+13. airportIata aus dem Prüfeintrag unverändert zurückgeben.
+14. Antworte ausschließlich mit EINEM gültigen JSON-Objekt. Kein Markdown.
+
+JSON-SCHEMA:
+{
+  "checkedAt":"ISO-8601",
+  "flights":[{
+    "flightNumber":"EW0000",
+    "date":"YYYY-MM-DD",
+    "direction":"arrival|departure|unknown",
+    "airportIata":"DUS|CGN|anderer IATA-Code|null",
+    "status":"scheduled|on_time|delayed|landed|cancelled|unknown",
+    "airportScheduledTime":"HH:MM|null",
+    "airportEstimatedTime":"HH:MM|null",
+    "airportActualTime":"HH:MM|null",
+    "delayMinutes":null,
+    "confirmed":false,
+    "sources":[{"name":"","url":""}],
+    "sourceNote":""
+  }]
+}
+
+Zu prüfen:
+${JSON.stringify(items,null,2)}`;
 }
 async function copyLiveFlightPrompt(){
   try{
@@ -1429,32 +1611,34 @@ function minuteDeltaClock(from,to){
   let d=bh*60+bm-(ah*60+am);if(d<-720)d+=1440;if(d>720)d-=1440;return d;
 }
 function parseLiveFlightResult(text){
-  const obj=JSON.parse(clean(String(text||'')));
+  const obj=parseAtmsJsonObject(text,'Live-Flug-JSON');
   if(!obj||Array.isArray(obj)||typeof obj!=='object'||!Array.isArray(obj.flights)||!obj.flights.length)throw new Error('LIVE-FLIGHT-001 erwartet ein JSON-Objekt mit dem Feld "flights".');
   return obj.flights.map((x,index)=>{
     if(!x||typeof x!=='object'||Array.isArray(x))throw new Error(`Live-Flug ${index+1} ist ungültig.`);
     const flightNumber=flightCacheNumber(x.flightNumber);if(!flightNumber)throw new Error(`flightNumber bei Live-Flug ${index+1} fehlt.`);
     const date=String(x.date||'').trim();
     const direction=String(x.direction||'unknown').trim().toLowerCase();
+    const airportIata=String(x.airportIata||'').trim().toUpperCase();
+    if(airportIata&&!/^[A-Z]{3}$/.test(airportIata))throw new Error(`airportIata bei Live-Flug ${index+1} ist ungültig.`);
     const allowedStatus=new Set(['scheduled','on_time','delayed','landed','cancelled','unknown']);
     const status=allowedStatus.has(String(x.status||'unknown').trim().toLowerCase())?String(x.status||'unknown').trim().toLowerCase():'unknown';
     const sources=Array.isArray(x.sources)?x.sources.map(src=>({name:String(src?.name||'').trim(),url:String(src?.url||'').trim()})).filter(src=>src.name&&src.url):[];
     const uniqueSources=new Set(sources.map(src=>src.url.toLowerCase())).size;
     const confirmed=Boolean(x.confirmed)&&uniqueSources>=2&&status!=='unknown';
-    const scheduled=strictClockOrNull(x.dusScheduledTime);
-    const estimated=strictClockOrNull(x.dusEstimatedTime);
-    const actual=strictClockOrNull(x.dusActualTime);
+    const scheduled=strictClockOrNull(x.airportScheduledTime??x.dusScheduledTime);
+    const estimated=strictClockOrNull(x.airportEstimatedTime??x.dusEstimatedTime);
+    const actual=strictClockOrNull(x.airportActualTime??x.dusActualTime);
     let delay=x.delayMinutes===null||x.delayMinutes===undefined||x.delayMinutes===''?null:Number(x.delayMinutes);
     if(!Number.isFinite(delay))delay=null;
     if(delay===null){const current=actual||estimated;if(scheduled&&current)delay=minuteDeltaClock(scheduled,current);}
-    return {flightNumber,date,direction,status,dusScheduledTime:scheduled,dusEstimatedTime:estimated,dusActualTime:actual,delayMinutes:delay,confirmed,sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
+    return {flightNumber,date,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
   });
 }
 function livePickupFromCheck(ride,hit){
   if(!ride||!hit||!hit.confirmed)return'';
   if(hit.status==='cancelled')return'';
   if(hit.direction==='arrival'){
-    const arrival=hit.dusActualTime||hit.dusEstimatedTime;
+    const arrival=hit.airportActualTime||hit.airportEstimatedTime;
     return arrival?clockPlusMinutes(arrival,arrivalBufferMinutesForRide(ride)):'';
   }
   if(hit.direction==='departure'){
@@ -1475,7 +1659,8 @@ function applyLiveFlightResult(){
       const flight=flightCacheNumber(r.flightNumber);if(!flight)return r;
       const date=String(r.date||'').trim();
       const direction=flightDirectionForGemini(r);
-      const candidates=checked.filter(x=>flightCacheNumber(x.flightNumber)===flight&&(!date||x.date===date)&&x.direction===direction);
+      const airportIata=flightAirportForGemini(r);
+      const candidates=checked.filter(x=>flightCacheNumber(x.flightNumber)===flight&&(!date||x.date===date)&&x.direction===direction&&String(x.airportIata||'').trim().toUpperCase()===String(airportIata||'').trim().toUpperCase());
       if(candidates.length!==1)return r;
       const hit=candidates[0];
       if(!hit.confirmed){uncertain++;return r;}
@@ -1489,9 +1674,10 @@ function applyLiveFlightResult(){
         delayMinutes:Number.isFinite(Number(hit.delayMinutes))?Number(hit.delayMinutes):0,
         landed:hit.status==='landed',
         liveFlightStatus:hit.status,
-        liveFlightScheduledTime:hit.dusScheduledTime||'',
-        liveFlightEstimatedTime:hit.dusEstimatedTime||'',
-        liveFlightActualTime:hit.dusActualTime||'',
+        liveFlightAirportIata:airportIata||'',
+        liveFlightScheduledTime:hit.airportScheduledTime||'',
+        liveFlightEstimatedTime:hit.airportEstimatedTime||'',
+        liveFlightActualTime:hit.airportActualTime||'',
         liveCheckedAt:checkedAt,
         liveSourceNote:hit.sourceNote,
         liveSources:hit.sources
@@ -1571,9 +1757,105 @@ function ensureLiveFlightPanel(){
   if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
   $('copyLiveFlightBtn')?.addEventListener('click',copyLiveFlightPrompt);
   $('applyLiveFlightBtn')?.addEventListener('click',applyLiveFlightResult);
+  installJsonInputGuard('liveFlightResult','liveFlightImportStatus','Live-Flug-JSON');
   $('saveLiveArrivalBufferBtn')?.addEventListener('click',saveArrivalBufferSetting);
   $('applyManualArrivalBtn')?.addEventListener('click',applyManualArrivalLanding);
   renderArrivalBufferSetting();
+}
+
+/* CORE-006A – Planimport nur nach explizitem, echtem Nutzer-Klick */
+let atmsPlanImportAuthorization={armed:false,source:'',at:0};
+
+function armPlanImportAuthorization(source){
+  atmsPlanImportAuthorization={
+    armed:true,
+    source:String(source||''),
+    at:Date.now()
+  };
+  persistAudit('plan_import_authorized',{source:String(source||'')});
+}
+function consumePlanImportAuthorization(){
+  const auth=atmsPlanImportAuthorization;
+  atmsPlanImportAuthorization={armed:false,source:'',at:0};
+  const age=Date.now()-Number(auth?.at||0);
+  return {
+    ok:Boolean(auth?.armed)&&age>=0&&age<=5000,
+    source:String(auth?.source||''),
+    ageMs:Number.isFinite(age)?age:null
+  };
+}
+function installPlanImportTrustedClickGuard(){
+  if(window.__atmsPlanImportTrustedClickGuard)return;
+  document.addEventListener('click',event=>{
+    const target=event.target instanceof Element?event.target:event.target?.parentElement;
+    const button=target?.closest?.('#importPlanBtn,#loadBtn');
+    if(!button)return;
+
+    // Programmgesteuerte .click()-Aufrufe sind nicht vertrauenswürdig und dürfen
+    // weder plan-import.js noch den Legacy-JSON-Import erreichen.
+    if(event.isTrusted!==true){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      persistAudit('plan_import_untrusted_click_blocked',{source:button.id||''});
+      try{showToast('Automatischer Planimport aus Sicherheitsgründen blockiert','warn')}catch(_){}
+      return;
+    }
+    armPlanImportAuthorization(button.id||'');
+  },true);
+  window.__atmsPlanImportTrustedClickGuard=true;
+}
+installPlanImportTrustedClickGuard();
+
+function restoreCurrentRidesAfterBlockedImport(){
+  try{
+    safePersistentSetItem(KEY,JSON.stringify(Array.isArray(rides)?rides:[]),'blocked-plan-import-rides');
+    safePersistentSetItem(DONE,JSON.stringify([...done]),'blocked-plan-import-done');
+    capturePersistenceSafety('blocked-plan-import');
+    syncPersistenceDurableShadow('blocked-plan-import');
+  }catch(_){}
+}
+function readPreviousPlanImportSnapshot(){
+  try{
+    const raw=JSON.parse(localStorage.getItem('atms_import_previous_v1')||'null');
+    if(!raw||!Array.isArray(raw.rides)||!raw.rides.length)return null;
+    return raw;
+  }catch(_){return null}
+}
+function restorePreviousPlanImport(){
+  const previous=readPreviousPlanImportSnapshot();
+  if(!previous){
+    showToast('Kein vorheriger Planimport-Zustand gefunden','warn');
+    return false;
+  }
+  const stamp=previous.savedAt?new Date(previous.savedAt).toLocaleString('de-DE'):'unbekannter Zeitpunkt';
+  if(!confirm(`Letzten Zustand VOR dem Planimport wiederherstellen?
+
+Gespeichert: ${stamp}
+Fahrten: ${previous.rides.length}
+
+Der aktuelle Zustand wird vorher zusätzlich lokal gesichert.`))return false;
+
+  try{
+    localStorage.setItem('atms_import_recovery_current_v1',JSON.stringify({
+      savedAt:new Date().toISOString(),
+      rides:Array.isArray(rides)?rides:[],
+      done:[...done]
+    }));
+  }catch(_){}
+
+  rides=previous.rides.map((r,i)=>norm(r,i));
+  done=new Set([...done].filter(id=>rides.some(r=>String(r.id)===String(id))));
+  save();
+  capturePersistenceSafety('manual-restore-previous-plan-import');
+  syncPersistenceDurableShadow('manual-restore-previous-plan-import');
+  persistAudit('previous_plan_import_restored',{
+    snapshotSavedAt:String(previous.savedAt||''),
+    rides:rides.length
+  });
+  render();
+  updateBackupUI();
+  showToast(`${rides.length} Fahrten aus Zustand vor letztem Planimport wiederhergestellt`,'ok');
+  return true;
 }
 
 function importChoice(newRides){
@@ -1598,6 +1880,24 @@ function mergeImportedRides(current,incoming){
 }
 function applyImportedRides(newRides){
   if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
+
+  const importAuthorization=consumePlanImportAuthorization();
+  if(!importAuthorization.ok){
+    const stack=String(new Error('blocked-plan-import').stack||'').split('\n').slice(1,6).join(' | ');
+    persistAudit('plan_import_blocked',{
+      reason:'missing-trusted-user-click',
+      incomingCount:newRides.length,
+      source:importAuthorization.source,
+      ageMs:importAuthorization.ageMs,
+      stack
+    });
+    restoreCurrentRidesAfterBlockedImport();
+    throw Error('Sicherheitsblock: Planimport wurde nicht durch „Geprüfte Fahrten übernehmen“ oder „JSON laden“ gestartet.');
+  }
+  persistAudit('plan_import_started',{
+    source:importAuthorization.source,
+    incomingCount:newRides.length
+  });
 
   // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
   // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
@@ -2006,7 +2306,7 @@ window.addEventListener('error',e=>showAppError(e.error||e.message));
 window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
-window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;
