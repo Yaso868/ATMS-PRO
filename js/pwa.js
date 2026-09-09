@@ -38,6 +38,13 @@
     if(installBox) installBox.classList.add('hidden');
   });
 })();
+/* CORE-006K · 09.09.2026:
+   Zeitdarstellung Fahrtenliste korrigiert:
+   - erste/gespiegelte Uhrzeit = DISPO-Zeit
+   - letzte Uhrzeit vor Ort = aktuelle Flugzeit aus der Liste
+   - diese Flugzeit darf früher ODER später als DISPO sein
+   - Statuszeile zeigt DISPO links und Flugzeit/LIVE rechts, ohne doppelte "Geplant"-Anzeige.
+*/
 /* CORE-005J · 07.09.2026: Statuszeile rendert PLAN/DISPO/LIVE nativ und stabil; kein Selbst-Render-Loop. */
 /* ==========================================================
    ATMS PRO – Fahrtenübersicht UI Phase 1 / Schritt 6
@@ -93,6 +100,8 @@
       #listView .${STATUS_CLASS}-dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px;background:#8296a2}
       #listView .${STATUS_CLASS}-state.on-time{color:#54e20f}
       #listView .${STATUS_CLASS}-state.on-time .${STATUS_CLASS}-dot{background:#54e20f}
+      #listView .${STATUS_CLASS}-state.early{color:#34c4ff}
+      #listView .${STATUS_CLASS}-state.early .${STATUS_CLASS}-dot{background:#00a8ff}
       #listView .${STATUS_CLASS}-state.delayed{color:#ff536d}
       #listView .${STATUS_CLASS}-state.delayed .${STATUS_CLASS}-dot{background:#ff3155}
       #listView .${STATUS_CLASS}-state.landed{color:#34c4ff}
@@ -165,54 +174,77 @@
   function timingInfo(card,ride){
     if(!ride){
       const fallback=cardFallback(card);
-      return {...fallback,sideLabel:'Live'};
+      return {...fallback,leftLabel:'Dispo',sideLabel:'Live'};
     }
-    const plan=(typeof planTimeOf==='function' ? planTimeOf(ride) : (ride.planTime||ride.time||'')) || '--:--';
+
+    // CORE-006K: Bei den aktuellen Bild-Planlisten ist die erste Uhrzeit
+    // die operative DISPO-Zeit. `planTime` bleibt nur Legacy-Fallback.
+    let dispo='';
+    try{
+      dispo=typeof dispoTimeOf==='function'
+        ? (dispoTimeOf(ride)||'')
+        : String(ride.dispoTime||ride.dispo_time||ride.timeMirror||ride.time_mirror||'').trim();
+    }catch(_){ dispo=''; }
+
+    const legacyPlan=(typeof planTimeOf==='function'
+      ? planTimeOf(ride)
+      : (ride.planTime||ride.time||'')) || '';
+    const baseTime=dispo || legacyPlan || '--:--';
 
     let live='';
-    let dispo='';
     try{
       live=typeof liveTimeOf==='function'
         ? (liveTimeOf(ride)||'')
         : String(ride.liveTime||ride.live_time||'').trim();
     }catch(_){ live=''; }
+
+    let listedFlightTime='';
     try{
-      dispo=typeof dispoTimeOf==='function'
-        ? (dispoTimeOf(ride)||'')
-        : String(ride.dispoTime||ride.dispo_time||ride.dispo_abholzeit||'').trim();
-    }catch(_){ dispo=''; }
+      listedFlightTime=typeof listedFlightTimeOf==='function'
+        ? (listedFlightTimeOf(ride)||'')
+        : String(ride.flightTime||ride.flugzeit||ride.flight_time||'').trim();
+    }catch(_){ listedFlightTime=''; }
 
     let existing={key:'unknown',label:'Keine Live-Daten'};
     try{ if(typeof flightStatusInfo==='function') existing=flightStatusInfo(ride)||existing; }catch(_){ }
     const explicitDelay=Number(ride.delayMinutes??ride.delay_minutes??ride.verspaetungMinuten??ride.verspätung_minuten??ride.delay??0)||0;
 
-    // LIVE ist die einzige Zeit, aus der die rote/grüne Abweichung zur PLAN-Zeit berechnet wird.
+    // Echte LIVE-Abholzeit hat weiterhin höchste Priorität.
     if(live){
-      const diff=minuteDiff(plan,live);
+      const diff=minuteDiff(baseTime,live);
       if(diff!==null){
-        if(diff>0) return {plan,current:live,sideLabel:'Live',key:'delayed',label:`+${diff} MIN`};
-        return {plan,current:live,sideLabel:'Live',key:'on-time',label:'PÜNKTLICH'};
+        if(diff>0) return {plan:baseTime,leftLabel:'Dispo',current:live,sideLabel:'Live',key:'delayed',label:`+${diff} MIN`};
+        return {plan:baseTime,leftLabel:'Dispo',current:live,sideLabel:'Live',key:'on-time',label:'PÜNKTLICH'};
       }
-      if(explicitDelay>0) return {plan,current:live,sideLabel:'Live',key:'delayed',label:`+${explicitDelay} MIN`};
-      if(existing.key==='landed') return {plan,current:live,sideLabel:'Live',key:'landed',label:'GELANDET'};
-      return {plan,current:live,sideLabel:'Live',key:'unknown',label:'LIVE'};
+      if(explicitDelay>0) return {plan:baseTime,leftLabel:'Dispo',current:live,sideLabel:'Live',key:'delayed',label:`+${explicitDelay} MIN`};
+      if(existing.key==='landed') return {plan:baseTime,leftLabel:'Dispo',current:live,sideLabel:'Live',key:'landed',label:'GELANDET'};
+      return {plan:baseTime,leftLabel:'Dispo',current:live,sideLabel:'Live',key:'unknown',label:'LIVE'};
     }
 
-    // DISPO ist eine eigene operative Vorgabe und ausdrücklich KEINE Live-Verspätung.
-    if(dispo){
-      return {plan,current:dispo,sideLabel:'Dispo',key:'unknown',label:'LIVE --:--'};
+    // Ohne LIVE-Daten wird die letzte Uhrzeit der Planliste als aktuelle Flugzeit
+    // gezeigt. Sie kann später ODER früher als die DISPO-Zeit sein.
+    if(listedFlightTime){
+      const diff=minuteDiff(baseTime,listedFlightTime);
+      if(diff!==null){
+        if(diff>0) return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'delayed',label:`+${diff} MIN`};
+        if(diff<0) return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'early',label:`${Math.abs(diff)} MIN FRÜHER`};
+        return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'on-time',label:'PÜNKTLICH'};
+      }
+      return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'unknown',label:'FLUGZEIT LISTE'};
     }
 
-    if(explicitDelay>0) return {plan,current:'',sideLabel:'Live',key:'delayed',label:`+${explicitDelay} MIN`};
-    if(existing.key==='on-time') return {plan,current:'',sideLabel:'Live',key:'on-time',label:'PÜNKTLICH'};
-    if(existing.key==='landed') return {plan,current:'',sideLabel:'Live',key:'landed',label:'GELANDET'};
-    if(existing.key==='delayed') return {plan,current:'',sideLabel:'Live',key:'delayed',label:String(existing.label||'VERSPÄTET').toUpperCase().replace(/\.$/,'')};
-    return {plan,current:'',sideLabel:'Live',key:'unknown',label:'KEINE LIVE-DATEN'};
+    // Fallback für ältere Fahrten ohne dritte Flugzeit.
+    if(explicitDelay>0) return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'delayed',label:`+${explicitDelay} MIN`};
+    if(existing.key==='on-time') return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'on-time',label:'PÜNKTLICH'};
+    if(existing.key==='landed') return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'landed',label:'GELANDET'};
+    if(existing.key==='delayed') return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'delayed',label:String(existing.label||'VERSPÄTET').toUpperCase().replace(/\.$/,'')};
+    return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'unknown',label:'KEINE LIVE-DATEN'};
   }
 
   function statusSignature(info){
     return JSON.stringify([
       info.plan||'',
+      info.leftLabel||'',
       info.current||'',
       info.sideLabel||'',
       info.key||'',
@@ -226,9 +258,10 @@
     line.dataset.atmsSignature=statusSignature(info);
     const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
     const current=info.current||'--:--';
+    const leftLabel=info.leftLabel||'Dispo';
     const sideLabel=info.sideLabel||'Live';
     line.innerHTML=`
-      <span class="${STATUS_CLASS}-side">Geplant <b>${safe(info.plan||'--:--')}</b></span>
+      <span class="${STATUS_CLASS}-side">${safe(leftLabel)} <b>${safe(info.plan||'--:--')}</b></span>
       <span class="${STATUS_CLASS}-state ${safe(info.key||'unknown')}"><i class="${STATUS_CLASS}-dot"></i>${safe(info.label||'KEINE LIVE-DATEN')}</span>
       <span class="${STATUS_CLASS}-side">${safe(sideLabel)} <b>${safe(current)}</b></span>
     `;
@@ -392,24 +425,6 @@
     localStorage.setItem(MANUAL_EDIT_KEY,JSON.stringify(Object.fromEntries(entries)));
   }
 
-  // CORE-005X · 09.09.2026:
-  // Eine manuelle Flugnummerkorrektur bleibt geschützt. Hat ATMS denselben Ride
-  // DANACH erfolgreich verifiziert, dürfen der neuere Flugort/IATA/Prüfstatus
-  // nicht mehr durch den älteren manuellen Datensatz zurückgesetzt werden.
-  // Eine spätere manuelle Änderung bleibt weiterhin bewusst „manuell prüfen“.
-  function verifiedFlightCheckIsNewerThanManual(ride,hit){
-    const manualAt=Date.parse(str(hit?.updatedAt||ride?.manualFlightEditAt));
-    const verifiedAt=Date.parse(str(ride?.flightCheckedAt));
-    return Boolean(
-      ride?.flightCheckConfidence==='verified' &&
-      ride?.flightNeedsManualCheck===false &&
-      str(ride?.flightLocation) &&
-      Number.isFinite(manualAt) &&
-      Number.isFinite(verifiedAt) &&
-      verifiedAt>manualAt
-    );
-  }
-
   function applyStoredManualEdits(list){
     const edits=readManualEdits();
     let changed=0;
@@ -420,17 +435,14 @@
       const loc=str(hit.flightLocation);
       const iata=str(hit.iata).toUpperCase();
       const dir=hit.flightDirection||inferFlightDirection(ride);
-      const keepNewerVerified=verifiedFlightCheckIsNewerThanManual(ride,hit);
       ride.flightNumber=no;
       ride.arrivalFlight=dir==='arrival'?no:'';
       ride.departureFlight=dir==='departure'?no:'';
       ride.flightDirection=dir;
-      if(!keepNewerVerified){
-        ride.flightLocation=loc;
-        ride.iata=iata;
-        ride.flightCheckConfidence='manual';
-        ride.flightNeedsManualCheck=Boolean(no);
-      }
+      ride.flightLocation=loc;
+      ride.iata=iata;
+      ride.flightCheckConfidence='manual';
+      ride.flightNeedsManualCheck=Boolean(no);
       ride.manualFlightEditAt=hit.updatedAt||'';
       changed++;
     });
