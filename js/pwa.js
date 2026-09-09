@@ -392,6 +392,24 @@
     localStorage.setItem(MANUAL_EDIT_KEY,JSON.stringify(Object.fromEntries(entries)));
   }
 
+  // CORE-005X · 09.09.2026:
+  // Eine manuelle Flugnummerkorrektur bleibt geschützt. Hat ATMS denselben Ride
+  // DANACH erfolgreich verifiziert, dürfen der neuere Flugort/IATA/Prüfstatus
+  // nicht mehr durch den älteren manuellen Datensatz zurückgesetzt werden.
+  // Eine spätere manuelle Änderung bleibt weiterhin bewusst „manuell prüfen“.
+  function verifiedFlightCheckIsNewerThanManual(ride,hit){
+    const manualAt=Date.parse(str(hit?.updatedAt||ride?.manualFlightEditAt));
+    const verifiedAt=Date.parse(str(ride?.flightCheckedAt));
+    return Boolean(
+      ride?.flightCheckConfidence==='verified' &&
+      ride?.flightNeedsManualCheck===false &&
+      str(ride?.flightLocation) &&
+      Number.isFinite(manualAt) &&
+      Number.isFinite(verifiedAt) &&
+      verifiedAt>manualAt
+    );
+  }
+
   function applyStoredManualEdits(list){
     const edits=readManualEdits();
     let changed=0;
@@ -402,14 +420,17 @@
       const loc=str(hit.flightLocation);
       const iata=str(hit.iata).toUpperCase();
       const dir=hit.flightDirection||inferFlightDirection(ride);
+      const keepNewerVerified=verifiedFlightCheckIsNewerThanManual(ride,hit);
       ride.flightNumber=no;
       ride.arrivalFlight=dir==='arrival'?no:'';
       ride.departureFlight=dir==='departure'?no:'';
       ride.flightDirection=dir;
-      ride.flightLocation=loc;
-      ride.iata=iata;
-      ride.flightCheckConfidence='manual';
-      ride.flightNeedsManualCheck=Boolean(no);
+      if(!keepNewerVerified){
+        ride.flightLocation=loc;
+        ride.iata=iata;
+        ride.flightCheckConfidence='manual';
+        ride.flightNeedsManualCheck=Boolean(no);
+      }
       ride.manualFlightEditAt=hit.updatedAt||'';
       changed++;
     });
