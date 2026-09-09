@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-005W · 09.09.2026: OCR-mehrdeutige Flugpräfixe (z. B. I/1/L oder O/0) werden bei Bildimport gezielt nur in der konkreten Flugzelle erneut gelesen. Automatische Korrektur nur bei eindeutigem Mehrfach-Konsens; sonst Warnung statt Raten.
   // CORE-005R · 08.09.2026: Verdächtige/fehlende Preiszellen im Bild-/WhatsApp-Import werden gezielt lokal erneut OCR-gelesen. Nur eindeutiger plausibler Mehrfach-Konsens wird automatisch übernommen; sonst bleibt die bestehende manuelle Preis-Sicherheitsabfrage erhalten. Keine feste Sonderregel für 47,60 €.
   // CORE-005O · 08.09.2026: Sichere OCR-Ortsnormalisierung: Miinchen/Mienchen/Munchen/Muenchen → München; Rohwert bleibt in sourceFlightLocationRaw erhalten.
   // CORE-005L · 08.09.2026: Bildimport mit Preis-Spalte auf 13-Spalten-ATMS-Schema gehärtet; fehlend gelesene 'Flug ausg.'-Überschrift wird geometrisch rekonstruiert.
@@ -801,6 +802,9 @@
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
+      if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
+        issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
+      }
 
       // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
       // Das verhindert genau den heute beobachteten Fall "Palma vorhanden, EW9577 weg".
@@ -811,7 +815,13 @@
           text: `Flugort „${normalizeFlightLocation(ride.flightLocation)}“ vorhanden, aber Flugnummer fehlt – Original-Planliste prüfen; Ort bleibt erhalten`
         });
       }
-      if (ride.flightRecoveredFromTargetedOcr && ride.flightNumber) {
+      if (ride.flightRecoveredFromAmbiguousOcr && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugnummer ${ride.flightOcrInitialAmbiguous} durch lokalen OCR-Konsens als ${ride.flightNumber} korrigiert – aktuelle Flugprüfung empfohlen`
+        });
+      } else if (ride.flightRecoveredFromTargetedOcr && ride.flightNumber) {
         issues.push({
           level: 'warning',
           row,
@@ -1769,6 +1779,115 @@
     return out;
   }
 
+  function hasAmbiguousFlightPrefix(value) {
+    const flight = normalizeFlightNumber(value);
+    if (!flight) return false;
+    // Flugdesignator ist in den ATMS-Listen in der Regel die ersten zwei Zeichen.
+    // Nur 0/1 in diesem Prefix sind OCR-mehrdeutig; andere Ziffern bleiben unangetastet.
+    return /^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(flight) && /[01]/.test(flight.slice(0, 2));
+  }
+
+  function ambiguityEquivalentFlight(a, b) {
+    const left = normalizeFlightNumber(a);
+    const right = normalizeFlightNumber(b);
+    if (!left || !right || left.length !== right.length || left === right) return false;
+    const sameOrAmbiguous = (x, y) => {
+      if (x === y) return true;
+      const group1 = new Set(['I', '1', 'L']);
+      const group0 = new Set(['O', '0']);
+      return (group1.has(x) && group1.has(y)) || (group0.has(x) && group0.has(y));
+    };
+    for (let i = 0; i < left.length; i++) {
+      if (!sameOrAmbiguous(left[i], right[i])) return false;
+    }
+    return true;
+  }
+
+  async function recoverAmbiguousFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeFlightNumber(ride.flightNumber);
+      if (!initial || !hasAmbiguousFlightPrefix(initial)) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) {
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) {
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(2, cellWidth * 0.03);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left + cellWidth * 0.08, y0 - rowHeight * 0.12, right - cellWidth * 0.08, y1 + rowHeight * 0.12, 3]
+      ];
+
+      if (status) status.textContent = `Mehrdeutige Flugzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      const attempts = [];
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = flightCandidatesFromOcrResult(second)
+            .filter(candidate => candidate === initial || ambiguityEquivalentFlight(initial, candidate));
+          attempts.push(candidates.slice());
+          if (candidates.length !== 1) continue;
+          const candidate = candidates[0];
+          votes.set(candidate, (votes.get(candidate) || 0) + 1);
+        }
+      } catch (_) {
+        ride.flightAmbiguousOcrAttempts = attempts;
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      ride.flightAmbiguousOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Nie aufgrund eines Einzel-Treffers korrigieren. Mindestens zwei enge Crops
+      // muessen dieselbe alternative Lesart liefern und sie muss eindeutig gewinnen.
+      if (winner && winner[0] !== initial && winner[1] >= 2 && (!runner || winner[1] > runner[1]) && ambiguityEquivalentFlight(initial, winner[0])) {
+        const recovered = winner[0];
+        ride.flightNumber = recovered;
+        if (routeType === 'arrival') ride.arrivalFlight = recovered;
+        if (routeType === 'departure') ride.departureFlight = recovered;
+        ride.flightDirection = routeType;
+        ride.flightOcrInitialAmbiguous = initial;
+        ride.flightRecoveredFromAmbiguousOcr = true;
+        ride.flightOcrAmbiguityNeedsReview = false;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      } else {
+        ride.flightOcrAmbiguityNeedsReview = true;
+      }
+    }
+    return out;
+  }
+
   async function readImagePlan(file) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
     const canvas = await preprocessImage(file);
@@ -2203,6 +2322,12 @@
           mappingInfo.mapping
         );
         preparedRides = await recoverMissingFlightNumbersTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverAmbiguousFlightNumbersTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
