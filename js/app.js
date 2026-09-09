@@ -1,3 +1,4 @@
+// CORE-005Y 09.09.2026: Android JSON Input Guard – erkennt abgeschnittene Gemini-/Live-JSONs bereits beim Einfügen und meldet sie verständlich, ohne Flug-/Zeit-/Persistenzlogik zu ändern.
 // CORE-005Q 08.09.2026: Flugpruef-Persistenz nach Neuimport: exakter Match Flugnummer+Datum+Richtung+Flugzeit; verifizierte Orte und manuelle Hinweise werden sofort wiederhergestellt.
 // CORE-005P 08.09.2026: Globaler Arrival-Abholpuffer + manuell bestätigte Landungszeit im Live-Panel; PLAN/DISPO bleiben unverändert.
 // CORE-005O 08.09.2026: Sichere OCR-Ortsnormalisierung für München-Fehllesungen; Originalwert bleibt intern erhalten.
@@ -1124,8 +1125,80 @@ async function copyGeminiFlightPrompt(){
     showToast('Prompt anzeigen und manuell kopieren','warn');
   }
 }
+/* CORE-005Y – Android JSON Input Guard */
+function inspectAtmsJsonInput(text){
+  const raw=clean(String(text||'')).trim();
+  if(!raw)return{state:'empty',text:''};
+  if(!raw.startsWith('{'))return{state:'invalid',text:raw,reason:'JSON muss mit { beginnen.'};
+
+  const stack=[];
+  let inString=false,escaped=false;
+
+  for(let i=0;i<raw.length;i++){
+    const ch=raw[i];
+
+    if(inString){
+      if(escaped){escaped=false;continue}
+      if(ch==='\\'){escaped=true;continue}
+      if(ch==='"'){inString=false}
+      continue;
+    }
+
+    if(ch==='"'){inString=true;continue}
+    if(ch==='{'||ch==='['){stack.push(ch);continue}
+    if(ch==='}'||ch===']'){
+      const expected=ch==='}'?'{':'[';
+      const opened=stack.pop();
+      if(opened!==expected)return{state:'invalid',text:raw,reason:'JSON-Klammern passen nicht zusammen.'};
+    }
+  }
+
+  if(inString||escaped||stack.length||!raw.endsWith('}')){
+    return{state:'incomplete',text:raw,reason:'JSON endet unvollständig.'};
+  }
+
+  try{
+    JSON.parse(raw);
+    return{state:'complete',text:raw};
+  }catch(e){
+    const message=String(e?.message||e);
+    if(/unexpected end|unterminated string|end of json|unterminated/i.test(message)){
+      return{state:'incomplete',text:raw,reason:message};
+    }
+    return{state:'invalid',text:raw,reason:message};
+  }
+}
+function parseAtmsJsonObject(text,label){
+  const result=inspectAtmsJsonInput(text);
+  if(result.state==='empty')throw new Error(`${label}: Kein JSON eingefügt.`);
+  if(result.state==='incomplete')throw new Error(`${label}: JSON ist unvollständig oder beim Kopieren abgeschnitten. Bitte vollständig neu kopieren.`);
+  if(result.state==='invalid')throw new Error(`${label}: JSON ist ungültig${result.reason?` (${result.reason})`:''}.`);
+  return JSON.parse(result.text);
+}
+function installJsonInputGuard(inputId,statusId,label){
+  const input=$(inputId),status=$(statusId);
+  if(!input||!status||input.dataset.atmsJsonGuard==='1')return;
+  input.dataset.atmsJsonGuard='1';
+  input.addEventListener('input',()=>{
+    const result=inspectAtmsJsonInput(input.value);
+    if(result.state==='empty'){
+      status.textContent=`Noch kein ${label} eingefügt.`;
+      return;
+    }
+    if(result.state==='incomplete'){
+      status.textContent=`⚠ ${label} unvollständig/abgeschnitten – bitte vollständig neu kopieren.`;
+      return;
+    }
+    if(result.state==='invalid'){
+      status.textContent=`⚠ ${label} syntaktisch ungültig – bitte JSON prüfen.`;
+      return;
+    }
+    status.textContent=`✓ ${label} vollständig erkannt. Bereit zur Übernahme.`;
+  });
+}
+
 function parseGeminiFlightResult(text){
-  const obj=JSON.parse(clean(String(text||'')));
+  const obj=parseAtmsJsonObject(text,'Gemini-JSON');
   if(!obj || Array.isArray(obj) || typeof obj!=='object'){
     throw new Error('FLIGHT-007 erwartet ein JSON-Objekt mit dem Feld "flights".');
   }
@@ -1376,6 +1449,7 @@ function ensureGeminiFlightPanel(){
   load.parentElement?.insertBefore(panel,load.nextSibling);
   $('copyGeminiFlightBtn')?.addEventListener('click',copyGeminiFlightPrompt);
   $('applyGeminiFlightBtn')?.addEventListener('click',applyGeminiFlightResult);
+  installJsonInputGuard('geminiFlightResult','geminiFlightStatus','Gemini-JSON');
 }
 
 
@@ -1421,7 +1495,7 @@ function minuteDeltaClock(from,to){
   let d=bh*60+bm-(ah*60+am);if(d<-720)d+=1440;if(d>720)d-=1440;return d;
 }
 function parseLiveFlightResult(text){
-  const obj=JSON.parse(clean(String(text||'')));
+  const obj=parseAtmsJsonObject(text,'Live-Flug-JSON');
   if(!obj||Array.isArray(obj)||typeof obj!=='object'||!Array.isArray(obj.flights)||!obj.flights.length)throw new Error('LIVE-FLIGHT-001 erwartet ein JSON-Objekt mit dem Feld "flights".');
   return obj.flights.map((x,index)=>{
     if(!x||typeof x!=='object'||Array.isArray(x))throw new Error(`Live-Flug ${index+1} ist ungültig.`);
@@ -1563,6 +1637,7 @@ function ensureLiveFlightPanel(){
   if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
   $('copyLiveFlightBtn')?.addEventListener('click',copyLiveFlightPrompt);
   $('applyLiveFlightBtn')?.addEventListener('click',applyLiveFlightResult);
+  installJsonInputGuard('liveFlightResult','liveFlightImportStatus','Live-Flug-JSON');
   $('saveLiveArrivalBufferBtn')?.addEventListener('click',saveArrivalBufferSetting);
   $('applyManualArrivalBtn')?.addEventListener('click',applyManualArrivalLanding);
   renderArrivalBufferSetting();
