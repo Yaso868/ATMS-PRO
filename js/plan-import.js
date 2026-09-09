@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006G · 09.09.2026: OCR-auffällige Fahrerwerte (z. B. führende/abschließende Satzzeichen oder andere Nicht-Namenszeichen) werden wie fehlende Fahrer gezielt nur in der konkreten rechten Fahrerzelle erneut gelesen. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
   // CORE-006F · 09.09.2026: Fehlende Fahrerzellen werden bei Bildimport gezielt nur in der konkreten rechten Fahrerzelle lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
   // CORE-006D · 09.09.2026: No-Price-Mirror-Fallback nutzt Datenzeilen-Geometrie, wenn die mittlere Uhrzeit in der Kopfzeile vom OCR fehlt; gezielte Flug-OCR entfernt Minutenreste nur bei exakter Übereinstimmung mit der Planzeit. Keine Flugnummern-Hardcodes.
   // CORE-006C · 09.09.2026: 13-Spalten-Bildschema OHNE Preis mit zusätzlicher gespiegelter Uhrzeit nach Firma; verhindert, dass Minutenreste der Planzeit vor Flugnummern geraten. Bestehende 12-/13-Preis-/14-Preis-Schemata bleiben erhalten.
@@ -810,6 +811,8 @@
         issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
       } else if (ride.driverRecoveredFromTargetedOcr) {
         issues.push({ level: 'warning', row, text: `Fahrer ${ride.driver} durch lokale zweite OCR aus der Fahrerzelle erkannt – Original bitte einmal prüfen` });
+      } else if (ride.driverNeedsManualCheck) {
+        issues.push({ level: 'warning', row, text: `Fahrer „${ride.driver}“ OCR-auffällig – Original-Planliste prüfen` });
       }
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
@@ -1724,6 +1727,12 @@
     if (!text || text.length < 2 || text.length > 40) return '';
     if (!looksLikeDriverName(text)) return '';
     if (/^(wg|fahrer|driver|chauffeur|van|pkw|bus|sprinter|taxi)$/i.test(text)) return '';
+
+    // Sicherheitsregel: einzelne Buchstaben-Fragmente in Mehrwort-Treffern werden
+    // nicht automatisch als Fahrername akzeptiert. Lieber manuell prüfen als raten.
+    const tokens = text.split(/[\s-]+/).filter(Boolean);
+    if (tokens.length > 1 && tokens.some(token => token.length === 1)) return '';
+
     return text;
   }
 
@@ -1745,6 +1754,21 @@
     return [...found.values()];
   }
 
+  function driverNeedsTargetedRecovery(value) {
+    const raw = cellText(value);
+    if (!raw) return true;
+
+    // Saubere Namen wie "Rida", "Lana", "Sabrina" bleiben unangetastet.
+    // Führende/abschließende Satzzeichen, OCR-Balken, Ziffern oder sonstige
+    // Nicht-Namenszeichen machen den Primärwert dagegen verdächtig.
+    if (!looksLikeDriverName(raw)) return true;
+
+    const normalized = normalizeDriverCandidate(raw);
+    if (!normalized) return true;
+
+    return normalized !== raw;
+  }
+
   async function recoverMissingDriversTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const driverCol = mapping?.driver;
@@ -1760,7 +1784,10 @@
 
     for (let i = 0; i < out.length; i++) {
       const ride = out[i];
-      if (cellText(ride.driver)) continue;
+      const originalDriver = cellText(ride.driver);
+      if (!driverNeedsTargetedRecovery(originalDriver)) continue;
+
+      ride.driverRawOcr = originalDriver;
 
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
@@ -1818,14 +1845,24 @@
 
       // Sicherheitsregel: kein Einzel-Treffer. Mindestens zwei getrennte enge
       // OCR-Versuche müssen denselben Namen lesen, und der Kandidat muss eindeutig gewinnen.
-      if (!winner || winner[1] < 2) continue;
-      if (runner && winner[1] === runner[1]) continue;
+      if (!winner || winner[1] < 2) {
+        if (originalDriver) ride.driverNeedsManualCheck = true;
+        continue;
+      }
+      if (runner && winner[1] === runner[1]) {
+        if (originalDriver) ride.driverNeedsManualCheck = true;
+        continue;
+      }
 
       const recovered = normalizeDriverCandidate(displayByKey.get(winner[0]) || '');
-      if (!recovered) continue;
+      if (!recovered) {
+        if (originalDriver) ride.driverNeedsManualCheck = true;
+        continue;
+      }
 
       ride.driver = recovered;
       ride.driverRecoveredFromTargetedOcr = true;
+      ride.driverNeedsManualCheck = false;
       ride.driverRecoverySource = 'targeted_driver_cell_consensus';
     }
 
