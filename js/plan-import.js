@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-005W1 · 09.09.2026: Mehrdeutige Flugzellen werden zusätzlich mit Single-Line/Single-Word OCR-Modi nachgelesen; weiterhin nur eindeutiger Mehrfach-Konsens.
   // CORE-005W · 09.09.2026: OCR-mehrdeutige Flugpräfixe (z. B. I/1/L oder O/0) werden bei Bildimport gezielt nur in der konkreten Flugzelle erneut gelesen. Automatische Korrektur nur bei eindeutigem Mehrfach-Konsens; sonst Warnung statt Raten.
   // CORE-005R · 08.09.2026: Verdächtige/fehlende Preiszellen im Bild-/WhatsApp-Import werden gezielt lokal erneut OCR-gelesen. Nur eindeutiger plausibler Mehrfach-Konsens wird automatisch übernommen; sonst bleibt die bestehende manuelle Preis-Sicherheitsabfrage erhalten. Keine feste Sonderregel für 47,60 €.
   // CORE-005O · 08.09.2026: Sichere OCR-Ortsnormalisierung: Miinchen/Mienchen/Munchen/Muenchen → München; Rohwert bleibt in sourceFlightLocationRaw erhalten.
@@ -1847,15 +1848,26 @@
       const votes = new Map();
       const attempts = [];
       try {
+        // CORE-005W1: Eine Tabellenzelle wird von Tesseract im Standard-Seitenmodus
+        // bei I/1/L teils stabil falsch gelesen. Deshalb dieselben ENGEN Zell-Crops
+        // zusätzlich als einzelne Textzeile bzw. einzelnes Wort lesen. Die Modi zählen
+        // als getrennte OCR-Versuche; eine Korrektur braucht weiterhin >=2 Stimmen.
+        const ocrModes = [
+          { name: 'default', options: {} },
+          { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
+          { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+        ];
         for (const [x0, cy0, x1, cy1, scale] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          const second = await Tesseract.recognize(crop, 'eng');
-          const candidates = flightCandidatesFromOcrResult(second)
-            .filter(candidate => candidate === initial || ambiguityEquivalentFlight(initial, candidate));
-          attempts.push(candidates.slice());
-          if (candidates.length !== 1) continue;
-          const candidate = candidates[0];
-          votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = flightCandidatesFromOcrResult(second)
+              .filter(candidate => candidate === initial || ambiguityEquivalentFlight(initial, candidate));
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
         }
       } catch (_) {
         ride.flightAmbiguousOcrAttempts = attempts;
