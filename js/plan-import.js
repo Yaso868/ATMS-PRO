@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006C · 09.09.2026: 13-Spalten-Bildschema OHNE Preis mit zusätzlicher gespiegelter Uhrzeit nach Firma; verhindert, dass Minutenreste der Planzeit vor Flugnummern geraten. Bestehende 12-/13-Preis-/14-Preis-Schemata bleiben erhalten.
   // CORE-006B · 09.09.2026: 14-Spalten-Bildschema mit zusätzlicher mittlerer Uhrzeit zwischen Firma und Flug ang./ausg.; geometrische Zeilenprüfung auf dynamische Spaltenindizes umgestellt. Bestehende 12-/13-Spalten-Layouts bleiben erhalten.
 
   // CORE-005W1 · 09.09.2026: Mehrdeutige Flugzellen werden zusätzlich mit Single-Line/Single-Word OCR-Modi nachgelesen; weiterhin nur eindeutiger Mehrfach-Konsens.
@@ -1157,6 +1158,22 @@
     { label: 'Wg', key: 'wg' }
   ];
 
+  const ATMS_IMAGE_SCHEMA_13_MIRROR = [
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
   const ATMS_IMAGE_SCHEMA_13_PRICE = [
     { label: 'Preis', key: 'preis' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
@@ -1193,15 +1210,19 @@
   function chooseAtmsImageSchema(observed) {
     const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
     const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
-    if (!hasPrice) return ATMS_IMAGE_SCHEMA_12;
-
     const timeAnchors = input.filter(anchor => anchor.key === 'uhrzeit' || anchor.key === 'zeit');
-    if (timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_14_PRICE;
 
-    // Falls die mittlere "Uhrzeit" vom OCR fehlt, darf sie nur bei klarer
-    // Kopfzeilen-Geometrie synthetisch ergänzt werden.
+    // CORE-006C: Auch Listen OHNE Preis können eine zusätzliche gespiegelte
+    // Planzeit direkt nach "Firma" besitzen. Drei erkannte Uhrzeit-Header sind
+    // dafür ein starkes, layoutunabhängiges Signal.
+    if (!hasPrice && timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_13_MIRROR;
+    if (hasPrice && timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_14_PRICE;
+
+    // Falls genau die mittlere "Uhrzeit" vom OCR fehlt, wird nur bei klarer
+    // Kopfzeilen-Geometrie ein Mirror-Schema rekonstruiert.
     const firma = input.find(anchor => anchor.key === 'firma');
     const firstFlight = input.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    let mirrorGap = false;
     if (firma && firstFlight && firstFlight.x > firma.x) {
       const gaps = [];
       for (let i = 1; i < input.length; i++) {
@@ -1210,11 +1231,14 @@
       }
       const sorted = gaps.slice().sort((a,b)=>a-b);
       const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
-      if (median > 0 && (firstFlight.x - firma.x) >= median * 1.55) {
-        return ATMS_IMAGE_SCHEMA_14_PRICE;
-      }
+      // Ohne Preis etwas konservativer, damit echte 12-Spalten-Listen nicht
+      // wegen einer breiten Firma-Spalte fälschlich erweitert werden.
+      const factor = hasPrice ? 1.55 : 1.80;
+      mirrorGap = median > 0 && (firstFlight.x - firma.x) >= median * factor;
     }
-    return ATMS_IMAGE_SCHEMA_13_PRICE;
+
+    if (!hasPrice) return mirrorGap ? ATMS_IMAGE_SCHEMA_13_MIRROR : ATMS_IMAGE_SCHEMA_12;
+    return mirrorGap ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_PRICE;
   }
 
   function completeAtmsImageAnchors(observed, width) {
