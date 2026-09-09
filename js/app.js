@@ -13,7 +13,7 @@
 // CORE-005V2 08.09.2026: Persistenz-Panel im selben Import-Host direkt hinter Live-Flugdaten verankert; Mobile-Stack erweitert.
 // CORE-005V3 08.09.2026: Persistenz-Panel wird direkt IN das sichtbare Live-Flugdaten-Panel gemountet; vorhandene Fehlplatzierung wird automatisch verschoben.
 // CORE-005V4 08.09.2026: Kritische Safety-Schattenwerte werden bei normalen Snapshots niemals durch bloß fehlende localStorage-Keys verworfen; Startup/Import kann dadurch verlorene Flugdaten wiederherstellen.
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -73,6 +73,99 @@ function updatePersistenceSafetyKey(key,rawValue,reason='write'){
     writePersistenceSafety(storage,reason);
   }catch(_){ }
 }
+// CORE-005V5: Zweite, unabhaengige Persistenzschicht in IndexedDB.
+// Sie ist absichtlich getrennt von localStorage, damit ein unerwarteter Verlust
+// des kompletten Safety-/Audit-Containers die letzte verifizierte Flugpruefung
+// nicht mehr mitreissen kann. Fehlende aktuelle Werte loeschen den Durable-Shadow nie.
+function openPersistenceDurableDb(){
+  return new Promise((resolve,reject)=>{
+    try{
+      if(!('indexedDB' in window))return reject(new Error('IndexedDB nicht verfuegbar'));
+      const req=indexedDB.open(PERSIST_DURABLE_DB,1);
+      req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(PERSIST_DURABLE_STORE))db.createObjectStore(PERSIST_DURABLE_STORE)};
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error('IndexedDB konnte nicht geoeffnet werden'));
+    }catch(e){reject(e)}
+  });
+}
+async function readPersistenceDurableShadow(){
+  const db=await openPersistenceDurableDb();
+  try{
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(PERSIST_DURABLE_STORE,'readonly');
+      const req=tx.objectStore(PERSIST_DURABLE_STORE).get(PERSIST_DURABLE_RECORD);
+      req.onsuccess=()=>resolve(req.result&&typeof req.result==='object'?req.result:null);
+      req.onerror=()=>reject(req.error||new Error('Durable-Shadow konnte nicht gelesen werden'));
+    });
+  }finally{try{db.close()}catch(_){}}
+}
+async function writePersistenceDurableShadow(storage,reason='sync'){
+  const db=await openPersistenceDurableDb();
+  const payload={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:String(reason||''),storage:{...(storage||{})}};
+  try{
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(PERSIST_DURABLE_STORE,'readwrite');
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error||new Error('Durable-Shadow Schreibfehler'));
+      tx.objectStore(PERSIST_DURABLE_STORE).put(payload,PERSIST_DURABLE_RECORD);
+    });
+    persistenceDurableShadow=payload;
+    persistenceDurableReady=true;
+    persistenceDurableError='';
+    persistAudit('durable_sync',{reason:String(reason||''),keys:Object.keys(payload.storage||{}).length});
+    return payload;
+  }finally{try{db.close()}catch(_){}}
+}
+function mergedCriticalShadowFromCurrent(){
+  const storage={...(persistenceDurableShadow?.storage||{})};
+  for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY]){
+    const raw=localStorage.getItem(key);
+    if(typeof raw==='string'&&raw.length)storage[key]=raw;
+  }
+  return storage;
+}
+function syncPersistenceDurableShadow(reason='sync'){
+  const storage=mergedCriticalShadowFromCurrent();
+  if(!Object.keys(storage).length)return Promise.resolve(null);
+  persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:String(reason||''),storage};
+  persistenceDurableReady=true;
+  return writePersistenceDurableShadow(storage,reason).catch(e=>{
+    persistenceDurableError=String(e?.message||e);
+    persistAudit('durable_sync_failed',{reason:String(reason||''),message:persistenceDurableError});
+    return null;
+  });
+}
+async function initPersistenceDurableShadow(){
+  try{
+    const saved=await readPersistenceDurableShadow();
+    if(saved&&saved.storage&&typeof saved.storage==='object')persistenceDurableShadow=saved;
+    persistenceDurableReady=true;
+    persistenceDurableError='';
+    const result=restoreMissingCriticalPersistence('startup-durable');
+    if(result.restored){
+      recoverVerifiedFlightCache();
+      const restoredRides=applyFlightCacheToRides(applyRideOverrides(rides).rides);
+      rides=restoredRides.rides;
+      save();
+      render();
+    }
+    capturePersistenceSafety('startup-durable-ready');
+    if(persistenceDurableShadow)persistAudit('durable_loaded',{keys:Object.keys(persistenceDurableShadow.storage||{}).length,restored:result.restored});
+  }catch(e){
+    persistenceDurableReady=true;
+    persistenceDurableError=String(e?.message||e);
+    persistAudit('durable_load_failed',{message:persistenceDurableError});
+  }
+}
+function clearPersistenceDurableShadow(){
+  persistenceDurableShadow=null;
+  persistenceDurableReady=false;
+  persistenceDurableError='';
+  try{
+    const req=indexedDB.deleteDatabase(PERSIST_DURABLE_DB);
+    req.onsuccess=req.onerror=req.onblocked=()=>{};
+  }catch(_){ }
+}
 function capturePersistenceSafety(reason='snapshot'){
   try{
     const previous=readPersistenceSafety();
@@ -102,6 +195,7 @@ function capturePersistenceSafety(reason='snapshot'){
 
     const payload=writePersistenceSafety(storage,reason);
     persistAudit('snapshot',{reason:String(reason||''),keys:Object.keys(storage).length,preservedCritical:preserved});
+    syncPersistenceDurableShadow('snapshot:'+reason);
     return payload;
   }catch(e){persistAudit('snapshot_failed',{reason:String(reason||''),message:String(e?.message||e)});return null}
 }
@@ -115,6 +209,10 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
+    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY].includes(key)){
+      const storage={...(persistenceDurableShadow?.storage||{})};storage[key]=value;persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:'verified-write:'+reason,storage};persistenceDurableReady=true;
+      writePersistenceDurableShadow(storage,'verified-write:'+reason).catch(e=>{persistenceDurableError=String(e?.message||e);persistAudit('durable_sync_failed',{reason:'verified-write:'+reason,message:persistenceDurableError})});
+    }
     persistAudit('write_ok',{key,reason:String(reason||''),length:value.length});
     return true;
   }catch(e){
@@ -125,12 +223,11 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  if(!snap)return {restored:0,keys:[]};
   const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
-    const raw=snap.storage?.[key];
+    const raw=(snap?.storage?.[key] ?? persistenceDurableShadow?.storage?.[key]);
     if(typeof raw!=='string'||!raw.length)continue;
     try{
       localStorage.setItem(key,raw);
@@ -154,15 +251,16 @@ function persistenceDiagnosis(){
   const snap=readPersistenceSafety();
   let audit=[];try{audit=JSON.parse(localStorage.getItem(PERSIST_AUDIT_KEY)||'[]');if(!Array.isArray(audit))audit=[]}catch(_){audit=[]}
   const inspect=key=>{
-    const raw=localStorage.getItem(key),shadow=snap?.storage?.[key];
+    const raw=localStorage.getItem(key),shadow=snap?.storage?.[key],durable=persistenceDurableShadow?.storage?.[key];
     let count=null,parseOk=true;
     if(raw!==null){try{const v=JSON.parse(raw);count=Array.isArray(v)?v.length:(v&&typeof v==='object'?Object.keys(v).length:null)}catch(_){parseOk=false}}
-    return {key,present:raw!==null,rawLength:raw?.length||0,parseOk,count,shadowPresent:typeof shadow==='string',shadowLength:typeof shadow==='string'?shadow.length:0};
+    return {key,present:raw!==null,rawLength:raw?.length||0,parseOk,count,shadowPresent:typeof shadow==='string',shadowLength:typeof shadow==='string'?shadow.length:0,durablePresent:typeof durable==='string',durableLength:typeof durable==='string'?durable.length:0};
   };
   return {
-    diagnosis:'CORE-005V4 Persistent Data Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
+    diagnosis:'CORE-005V5 Durable Persistence Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
     selfTest:persistenceSelfTest(),
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
+    durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
     recentAudit:audit.slice(0,30)
   };
@@ -178,7 +276,7 @@ function ensurePersistenceSafetyPanel(){
     return true;
   }
   const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: lokaler Sicherheits-Snapshot, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
   // CORE-005V3: Das Live-Flugdaten-Panel ist auf Mobil bereits nachweislich sichtbar.
   // Deshalb wird die Persistenz-Sicherheit als Kind dieses Panels gemountet.
   // Fallbacks bleiben nur fuer den unwahrscheinlichen Fall, dass Live noch nicht existiert.
@@ -732,7 +830,7 @@ function resetAtmsData(){
   if(!confirm('Wirklich alle lokal gespeicherten ATMS-Daten löschen?\n\nDisponenten, Fahrten, Erledigt-Status und Einstellungen werden entfernt.'))return;
   if(!confirm('Letzte Sicherheitsabfrage: Daten endgültig zurücksetzen?'))return;
   const keys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith('atms_'))keys.push(k)}keys.forEach(k=>localStorage.removeItem(k));
-  localStorage.removeItem(PERSIST_SAFETY_KEY);localStorage.removeItem(PERSIST_AUDIT_KEY);
+  localStorage.removeItem(PERSIST_SAFETY_KEY);localStorage.removeItem(PERSIST_AUDIT_KEY);clearPersistenceDurableShadow();
   alert('ATMS-Daten wurden zurückgesetzt.');location.reload();
 }
 
@@ -1213,6 +1311,7 @@ function applyGeminiFlightResult(){
     upsertFlightCache(cacheEntries);
     save();
     capturePersistenceSafety('after-gemini-flight-apply');
+    syncPersistenceDurableShadow('after-gemini-flight-apply');
     try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked}}));}catch(_){}
     if(box)box.value='';
     const status=$('geminiFlightStatus');if(status)status.textContent=`${updated} Fahrt(en) geprüft${uncertain?` · ${uncertain} unsicher → vorhandener Flugort bleibt · manuell prüfen`:''}${downgraded?` · ${downgraded} wegen <2 Quellen heruntergestuft`:''}.`;
@@ -1495,6 +1594,7 @@ function applyImportedRides(newRides){
   // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
   // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
   restoreMissingCriticalPersistence('before-plan-import');
+  syncPersistenceDurableShadow('before-plan-import');
   capturePersistenceSafety('before-plan-import');
 
   try{
@@ -1526,6 +1626,7 @@ function applyImportedRides(newRides){
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
   save();
   capturePersistenceSafety('after-plan-import');
+  syncPersistenceDurableShadow('after-plan-import');
 
   return {
     cancelled:false,
@@ -1838,6 +1939,7 @@ function initApp(){
     restoreMissingCriticalPersistence('startup');
     recoverVerifiedFlightCache();
     capturePersistenceSafety('startup');
+    initPersistenceDurableShadow();
     initPersistentFlightCheckStatus();
     bindClick('driverBtn',openDrivers);
     bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
