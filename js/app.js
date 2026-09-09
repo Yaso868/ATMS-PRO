@@ -1,3 +1,4 @@
+// CORE-005Z 09.09.2026: Multi-Airport Flight Context – Flugprüfung erkennt den tatsächlich beteiligten Flughafen (z. B. DUS oder CGN) aus Abholung/Ziel, ohne Flugnummer-Hardcoding; Gemini- und Live-Prüfauftrag werden airport-spezifisch.
 // CORE-005Y 09.09.2026: Android JSON Input Guard – erkennt abgeschnittene Gemini-/Live-JSONs bereits beim Einfügen und meldet sie verständlich, ohne Flug-/Zeit-/Persistenzlogik zu ändern.
 // CORE-005Q 08.09.2026: Flugpruef-Persistenz nach Neuimport: exakter Match Flugnummer+Datum+Richtung+Flugzeit; verifizierte Orte und manuelle Hinweise werden sofort wiederhergestellt.
 // CORE-005P 08.09.2026: Globaler Arrival-Abholpuffer + manuell bestätigte Landungszeit im Live-Panel; PLAN/DISPO bleiben unverändert.
@@ -837,12 +838,38 @@ function resetAtmsData(){
 
 
 /* FLIGHT-001 – Gemini-Flugprüfung (halbautomatisch, ohne API) */
-function flightDirectionForGemini(r){
-  const d=directionOf(r);
-  if(d==='airport_to_hotels')return'arrival';
-  if(d==='hotels_to_airport')return'departure';
-  return'unknown';
+function flightAirportIataFromPlace(value){
+  const raw=String(value||'').trim();
+  if(!raw)return'';
+  const upper=raw.toUpperCase();
+  const n=normKey(raw);
+
+  // Explizite, ausgeschriebene Flughafennamen bleiben sicher erkennbar.
+  if(n.includes('flughafen düsseldorf')||n.includes('flughafen duesseldorf')||n.includes('düsseldorf airport')||n.includes('duesseldorf airport'))return'DUS';
+  if(n.includes('flughafen köln')||n.includes('flughafen koeln')||n.includes('cologne bonn airport')||n.includes('köln/bonn')||n.includes('koeln/bonn'))return'CGN';
+
+  // Ein reiner IATA-Code ist eindeutig.
+  const exact=upper.match(/^([A-Z]{3})$/);
+  if(exact)return exact[1];
+
+  // Generisch: Drei-Buchstaben-IATA nur dann übernehmen, wenn der Text
+  // eindeutig einen Flughafenbereich bezeichnet. Dadurch wird z. B.
+  // "CGN Vorfeld" erkannt, aber "NH Nord DUS" NICHT als Flughafen.
+  if(/\b(?:AIRPORT|FLUGHAFEN|VORFELD|AIRSIDE)\b/i.test(raw)){
+    const tokens=upper.match(/\b[A-Z]{3}\b/g)||[];
+    if(tokens.length===1)return tokens[0];
+  }
+  return'';
 }
+function flightAirportContext(r){
+  const pickupIata=flightAirportIataFromPlace(r?.pickup||r?.abholort||'');
+  const destinationIata=flightAirportIataFromPlace(r?.destination||r?.zielort||r?.ziel||'');
+  if(pickupIata&&!destinationIata)return{airportIata:pickupIata,direction:'arrival'};
+  if(!pickupIata&&destinationIata)return{airportIata:destinationIata,direction:'departure'};
+  return{airportIata:'',direction:'unknown'};
+}
+function flightDirectionForGemini(r){return flightAirportContext(r).direction}
+function flightAirportForGemini(r){return flightAirportContext(r).airportIata}
 
 /* FLIGHT-CACHE-001 – geprüfte Gemini-Flugorte dauerhaft für exakt dieselbe Planfahrt sichern */
 function flightCacheNumber(value){
@@ -964,8 +991,9 @@ function flightCacheMatchTuple(r){
   const flight=flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight);
   const date=String(r?.date||'').trim();
   const direction=String(flightDirectionForGemini(r)||'unknown').trim().toLowerCase();
+  const airportIata=String(flightAirportForGemini(r)||'').trim().toUpperCase();
   const flightTime=String(first(r?.flightTime,r?.flugzeit,r?.flight_time)||'').trim();
-  return {flight,date,direction,flightTime};
+  return {flight,date,direction,airportIata,flightTime};
 }
 function findFlightCacheForRide(r){
   const key=flightCacheMatchTuple(r);
@@ -977,7 +1005,16 @@ function findFlightCacheForRide(r){
     const cacheFlight=flightCacheNumber(x.flightNumber);
     const cacheDate=String(x.date||'').trim();
     const cacheDirection=String(x.direction||'unknown').trim().toLowerCase();
+    const cacheAirportIata=String(x.airportIata||'').trim().toUpperCase();
     const cacheFlightTime=String(x.flightTime||'').trim();
+
+    // Bestehende ältere DUS-Cache-Einträge haben noch kein airportIata.
+    // Diese bleiben für DUS kompatibel, dürfen aber niemals auf CGN oder
+    // einen anderen Flughafen übertragen werden.
+    if(cacheAirportIata&&key.airportIata&&cacheAirportIata!==key.airportIata)return false;
+    if(!cacheAirportIata&&key.airportIata&&key.airportIata!=='DUS')return false;
+    if(cacheAirportIata&&!key.airportIata)return false;
+
     return cacheFlight===key.flight
       && cacheDate===key.date
       && cacheDirection===key.direction
@@ -1031,15 +1068,17 @@ function flightCheckItems(source=rides){
     const date=rawDate||berlinDate();
     const dateAssumed=!rawDate;
     const direction=flightDirectionForGemini(r);
+    const airportIata=flightAirportForGemini(r);
     const flightTime=first(r.flightTime,r.flugzeit,r.flight_time);
     const locationFromPlan=first(r.locationFromPlan,r.flightLocation,r.flugort,r.ort);
-    const key=[flight,date,direction,flightTime].join('|');
+    const key=[flight,date,airportIata,direction,flightTime].join('|');
     if(!map.has(key))map.set(key,{
       flightNumber:flight,
       date,
       dateAssumed,
       flightTime:flightTime||null,
       direction,
+      airportIata:airportIata||null,
       locationFromPlan
     });
   }
@@ -1048,29 +1087,31 @@ function flightCheckItems(source=rides){
 function buildGeminiFlightPrompt(){
   const items=flightCheckItems();
   if(!items.length)throw new Error('Keine Flugnummern in der aktuellen Planliste gefunden.');
-  return `ATMS PRO – FLIGHT-007 DAY-002 strikte aktuelle Flugprüfung
+  return `ATMS PRO – FLIGHT-008 MULTI-AIRPORT strikte aktuelle Flugprüfung
 
 Prüfe JEDE unten aufgeführte Flugnummer für den angegebenen Flugtag anhand aktueller, DATUMSSPEZIFISCHER Webdaten. Prüfe jeden Eintrag bei diesem Auftrag neu. Eine Flugnummer darf niemals allein aufgrund einer bekannten, früheren oder typischen Route einem Ort zugeordnet werden.
 
 VERBINDLICHE VERIFIKATIONSREGELN:
-1. direction=arrival: Gesucht ist der HERKUNFTSORT des konkreten Fluges nach Düsseldorf (DUS).
-2. direction=departure: Gesucht ist der ZIELORT des konkreten Fluges ab Düsseldorf (DUS).
-3. Verwende date EXAKT. Verifiziere ausdrücklich, dass die Flugnummer an diesem Datum mit Düsseldorf (DUS) als passendem Start- oder Zielairport existiert.
-4. Allgemeine Flugpläne, typische Routen, historische Routenzuordnungen oder gespeicherte Flugnummer→Ort-Zuordnungen reichen NICHT.
-5. status="verified" UND confidence="high" sind NUR erlaubt, wenn mindestens ZWEI voneinander unabhängige, datumsspezifische Quellen dieselbe konkrete Route bestätigen.
-6. Mindestens eine der zwei Quellen soll nach Möglichkeit eine Primärquelle sein: Flughafen Düsseldorf oder offizielle Airline-Flugstatus-/Flugplanquelle. Die zweite Quelle soll unabhängig davon sein.
-7. Wenn nur EINE geeignete Quelle gefunden wird: status="needs_manual_check" und confidence="medium" oder "low". NIEMALS verified/high.
-8. Wenn keine geeignete datumsspezifische Quelle gefunden wird, Quellen widersprechen oder die konkrete DUS-Verbindung nicht sicher bestätigt werden kann: status="needs_manual_check". NICHT raten.
-9. flightTime ist ein zusätzliches Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und die Zuordnung ohne flightTime nicht eindeutig ist: status="needs_manual_check".
-10. locationFromPlan ist ausschließlich ein Vergleichswert und KEINE Quelle. Prüfe auch vorhandene Planorte vollständig neu.
-11. Weicht ein sicher verifiziertes Ergebnis von locationFromPlan ab, setze conflict=true.
-12. Erfinde keine Orte, IATA-Codes, Quellen, URLs oder Prüfzeiten.
-13. sources MUSS ein JSON-Array sein. Jede Quelle muss mindestens "name" und "url" enthalten. Nur tatsächlich für diesen Flug und dieses Datum verwendete Quellen eintragen.
-14. Bei verified/high müssen mindestens zwei unterschiedliche sources-Einträge vorhanden sein.
-15. sourceNote soll die Prüfung kurz zusammenfassen, darf aber sources nicht ersetzen.
-16. checkedAt muss der tatsächliche Zeitpunkt dieser Webprüfung in ISO-8601-UTC sein. ATMS speichert zusätzlich selbst seinen Übernahmezeitpunkt.
-17. Verwende EXAKT die unten definierten Feldnamen. Keine alternativen Namen wie flight_number, city, notes oder ein reines Array.
-18. Antworte ausschließlich mit EINEM gültigen JSON-Objekt gemäß dem Schema. Kein Markdown, keine Erklärung vor oder nach dem JSON.
+1. airportIata ist der für DIESE Fahrt relevante Flughafen. Verwende exakt diesen Flughafen und ersetze ihn nicht durch DUS oder einen anderen Airport.
+2. direction=arrival: Gesucht ist der HERKUNFTSORT des konkreten Fluges NACH airportIata.
+3. direction=departure: Gesucht ist der ZIELORT des konkreten Fluges AB airportIata.
+4. Verwende date EXAKT. Verifiziere ausdrücklich, dass die Flugnummer an diesem Datum mit airportIata als passendem Start- oder Zielairport existiert.
+5. Wenn airportIata fehlt/null oder direction=unknown ist: status="needs_manual_check". Nicht raten.
+6. Allgemeine Flugpläne, typische Routen, historische Routenzuordnungen oder gespeicherte Flugnummer→Ort-Zuordnungen reichen NICHT.
+7. status="verified" UND confidence="high" sind NUR erlaubt, wenn mindestens ZWEI voneinander unabhängige, datumsspezifische Quellen dieselbe konkrete Route bestätigen.
+8. Mindestens eine der zwei Quellen soll nach Möglichkeit die offizielle Quelle des betroffenen Flughafens oder der Airline sein. Die zweite Quelle soll unabhängig davon sein.
+9. Wenn nur EINE geeignete Quelle gefunden wird: status="needs_manual_check" und confidence="medium" oder "low". NIEMALS verified/high.
+10. Wenn keine geeignete datumsspezifische Quelle gefunden wird, Quellen widersprechen oder die konkrete Verbindung über airportIata nicht sicher bestätigt werden kann: status="needs_manual_check". NICHT raten.
+11. flightTime ist ein zusätzliches Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und die Zuordnung ohne flightTime nicht eindeutig ist: status="needs_manual_check".
+12. locationFromPlan ist ausschließlich ein Vergleichswert und KEINE Quelle. Prüfe auch vorhandene Planorte vollständig neu.
+13. Weicht ein sicher verifiziertes Ergebnis von locationFromPlan ab, setze conflict=true.
+14. Erfinde keine Orte, IATA-Codes, Quellen, URLs oder Prüfzeiten.
+15. sources MUSS ein JSON-Array sein. Jede Quelle muss mindestens "name" und "url" enthalten. Nur tatsächlich für diesen Flug, dieses Datum und airportIata verwendete Quellen eintragen.
+16. Bei verified/high müssen mindestens zwei unterschiedliche sources-Einträge vorhanden sein.
+17. sourceNote soll die Prüfung kurz zusammenfassen, darf aber sources nicht ersetzen.
+18. checkedAt muss der tatsächliche Zeitpunkt dieser Webprüfung in ISO-8601-UTC sein. ATMS speichert zusätzlich selbst seinen Übernahmezeitpunkt.
+19. Verwende EXAKT die unten definierten Feldnamen.
+20. Antworte ausschließlich mit EINEM gültigen JSON-Objekt gemäß dem Schema. Kein Markdown, keine Erklärung vor oder nach dem JSON.
 
 VERBINDLICHES JSON-SCHEMA:
 {
@@ -1082,6 +1123,7 @@ VERBINDLICHES JSON-SCHEMA:
       "dateAssumed": false,
       "flightTime": null,
       "direction": "arrival|departure|unknown",
+      "airportIata": "DUS|CGN|anderer IATA-Code|null",
       "originCity": "",
       "originIata": "",
       "destinationCity": "",
@@ -1106,6 +1148,7 @@ VERBINDLICHES JSON-SCHEMA:
 }
 
 WICHTIG:
+- airportIata aus dem Prüfeintrag unverändert zurückgeben.
 - Bei status="verified" + confidence="high": sources.length MUSS mindestens 2 sein.
 - Bei weniger als 2 unabhängigen Quellen: status="needs_manual_check".
 - Gib alle Prüfeinträge in derselben Reihenfolge zurück.
@@ -1207,7 +1250,7 @@ function parseGeminiFlightResult(text){
   }
 
   const requiredFields=[
-    'flightNumber','date','dateAssumed','flightTime','direction',
+    'flightNumber','date','dateAssumed','flightTime','direction','airportIata',
     'originCity','originIata','destinationCity','destinationIata',
     'relevantLocation','status','confidence','conflict','sources','sourceNote'
   ];
@@ -1232,6 +1275,10 @@ function parseGeminiFlightResult(text){
     }
 
     const direction=String(x.direction||'unknown').trim().toLowerCase();
+    const airportIata=String(x.airportIata||'').trim().toUpperCase();
+    if(airportIata&&!/^[A-Z]{3}$/.test(airportIata)){
+      throw new Error(`FLIGHT-008: airportIata bei Flug ${index+1} ist ungültig.`);
+    }
     const location=String(x.relevantLocation||'').trim();
     const iata=String(
       x.iata ||
@@ -1267,6 +1314,7 @@ function parseGeminiFlightResult(text){
       dateAssumed:Boolean(x.dateAssumed),
       flightTime:String(x.flightTime||'').trim(),
       direction,
+      airportIata,
       flightLocation:location,
       iata,
       confidence:verified?'verified':'uncertain',
@@ -1295,6 +1343,7 @@ function applyGeminiFlightResult(){
       const flight=flightCacheNumber(r.flightNumber);
       const date=String(r.date||'').trim();
       const direction=flightDirectionForGemini(r);
+      const airportIata=flightAirportForGemini(r);
       const flightTime=String(r.flightTime||'').trim();
 
       // FLIGHT-007 + DAY-002:
@@ -1314,6 +1363,13 @@ function applyGeminiFlightResult(){
         if(direction!=='unknown'){
           if(checkedDirection==='unknown' || checkedDirection!==direction)return false;
         }else if(checkedDirection!=='unknown'){
+          return false;
+        }
+
+        const checkedAirportIata=String(x.airportIata||'').trim().toUpperCase();
+        if(airportIata){
+          if(!checkedAirportIata || checkedAirportIata!==airportIata)return false;
+        }else if(checkedAirportIata){
           return false;
         }
 
@@ -1345,6 +1401,7 @@ function applyGeminiFlightResult(){
         fingerprint:flightRideFingerprint(r),
         flightNumber:flight,
         direction,
+        airportIata:airportIata||String(hit.airportIata||'').trim().toUpperCase(),
         date:date||String(hit.date||'').trim(),
         flightTime:flightTime||String(hit.flightTime||'').trim(),
         flightLocation:verified?hit.flightLocation:'',
@@ -1461,15 +1518,56 @@ function liveFlightCheckItems(source=rides){
     if(!flight)continue;
     const date=String(r.date||'').trim()||berlinDate();
     const direction=flightDirectionForGemini(r);
-    const key=[flight,date,direction].join('|');
-    if(!map.has(key))map.set(key,{flightNumber:flight,date,direction,flightLocation:String(r.flightLocation||'').trim()||null,planPickupTime:planTimeOf(r)||null});
+    const airportIata=flightAirportForGemini(r);
+    const key=[flight,date,airportIata,direction].join('|');
+    if(!map.has(key))map.set(key,{flightNumber:flight,date,direction,airportIata:airportIata||null,flightLocation:String(r.flightLocation||'').trim()||null,planPickupTime:planTimeOf(r)||null});
   }
   return [...map.values()];
 }
 function buildLiveFlightPrompt(){
   const items=liveFlightCheckItems();
   if(!items.length)throw new Error('Keine Flüge in den aktuell gespeicherten Fahrten gefunden.');
-  return `ATMS PRO – LIVE-FLIGHT-001 strikte aktuelle Live-Flugprüfung\n\nPrüfe JEDE unten aufgeführte Flugnummer für den angegebenen Tag anhand AKTUELLER öffentlicher Webdaten. Keine historischen/typischen Routen als Live-Status verwenden.\n\nVERBINDLICHE REGELN:\n1. direction=departure: DUS ist Abflugairport. relevant sind aktueller Status und die aktuelle DUS-Abflugzeit.\n2. direction=arrival: DUS ist Zielairport. relevant sind aktueller Status und die aktuelle DUS-Ankunftszeit.\n3. date exakt verwenden. Keine Daten eines anderen Tages übernehmen.\n4. confirmed=true nur mit mindestens ZWEI voneinander unabhängigen, aktuellen/datumsspezifischen Quellen. Mindestens eine Quelle nach Möglichkeit DUS, Airline oder ein etablierter Live-Tracker.\n5. Wenn der Flug noch nicht gestartet ist und keine belastbare Schätzung existiert, Status scheduled/on_time ist erlaubt, aber Zeiten nur aus tatsächlich angezeigten aktuellen Daten übernehmen.\n6. Bei Widerspruch, unklarer Zuordnung oder weniger als 2 geeigneten Quellen: confirmed=false, status=unknown. Nicht raten.\n7. dusScheduledTime, dusEstimatedTime und dusActualTime immer als lokale DUS-Zeit HH:MM zurückgeben oder null. Der globale ATMS-Abholpuffer wird erst lokal in der App addiert und darf nicht in diese Zeiten eingerechnet werden.\n8. delayMinutes ist die aktuelle Abweichung am DUS-Ereignis in ganzen Minuten; wenn nicht belastbar bestimmbar, null.\n9. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden.\n10. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.\n11. Antworte ausschließlich mit EINEM gültigen JSON-Objekt. Kein Markdown.\n\nJSON-SCHEMA:\n{\n  "checkedAt":"ISO-8601",\n  "flights":[{\n    "flightNumber":"EW0000",\n    "date":"YYYY-MM-DD",\n    "direction":"arrival|departure|unknown",\n    "status":"scheduled|on_time|delayed|landed|cancelled|unknown",\n    "dusScheduledTime":"HH:MM|null",\n    "dusEstimatedTime":"HH:MM|null",\n    "dusActualTime":"HH:MM|null",\n    "delayMinutes":null,\n    "confirmed":false,\n    "sources":[{"name":"","url":""}],\n    "sourceNote":""\n  }]\n}\n\nZu prüfen:\n${JSON.stringify(items,null,2)}`;
+  return `ATMS PRO – LIVE-FLIGHT-002 MULTI-AIRPORT strikte aktuelle Live-Flugprüfung
+
+Prüfe JEDE unten aufgeführte Flugnummer für den angegebenen Tag anhand AKTUELLER öffentlicher Webdaten. Keine historischen/typischen Routen als Live-Status verwenden.
+
+VERBINDLICHE REGELN:
+1. airportIata ist der für die konkrete Fahrt relevante Flughafen. Verwende exakt diesen Airport.
+2. direction=departure: airportIata ist der Abflugairport. Relevant sind aktueller Status und die aktuelle Abflugzeit an airportIata.
+3. direction=arrival: airportIata ist der Zielairport. Relevant sind aktueller Status und die aktuelle Ankunftszeit an airportIata.
+4. date exakt verwenden. Keine Daten eines anderen Tages oder eines anderen Airports übernehmen.
+5. confirmed=true nur mit mindestens ZWEI voneinander unabhängigen, aktuellen/datumsspezifischen Quellen. Mindestens eine Quelle nach Möglichkeit der betroffene Airport, die Airline oder ein etablierter Live-Tracker.
+6. Wenn airportIata fehlt/null oder direction=unknown ist: confirmed=false, status=unknown. Nicht raten.
+7. Wenn der Flug noch nicht gestartet ist und keine belastbare Schätzung existiert, Status scheduled/on_time ist erlaubt, aber Zeiten nur aus tatsächlich angezeigten aktuellen Daten übernehmen.
+8. Bei Widerspruch, unklarer Zuordnung oder weniger als 2 geeigneten Quellen: confirmed=false, status=unknown. Nicht raten.
+9. airportScheduledTime, airportEstimatedTime und airportActualTime immer als lokale Zeit des betroffenen Airports HH:MM zurückgeben oder null. Der globale ATMS-Abholpuffer wird erst lokal in der App addiert und darf nicht in diese Zeiten eingerechnet werden.
+10. delayMinutes ist die aktuelle Abweichung am Ereignis des betroffenen Airports in ganzen Minuten; wenn nicht belastbar bestimmbar, null.
+11. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden.
+12. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.
+13. airportIata aus dem Prüfeintrag unverändert zurückgeben.
+14. Antworte ausschließlich mit EINEM gültigen JSON-Objekt. Kein Markdown.
+
+JSON-SCHEMA:
+{
+  "checkedAt":"ISO-8601",
+  "flights":[{
+    "flightNumber":"EW0000",
+    "date":"YYYY-MM-DD",
+    "direction":"arrival|departure|unknown",
+    "airportIata":"DUS|CGN|anderer IATA-Code|null",
+    "status":"scheduled|on_time|delayed|landed|cancelled|unknown",
+    "airportScheduledTime":"HH:MM|null",
+    "airportEstimatedTime":"HH:MM|null",
+    "airportActualTime":"HH:MM|null",
+    "delayMinutes":null,
+    "confirmed":false,
+    "sources":[{"name":"","url":""}],
+    "sourceNote":""
+  }]
+}
+
+Zu prüfen:
+${JSON.stringify(items,null,2)}`;
 }
 async function copyLiveFlightPrompt(){
   try{
@@ -1502,25 +1600,27 @@ function parseLiveFlightResult(text){
     const flightNumber=flightCacheNumber(x.flightNumber);if(!flightNumber)throw new Error(`flightNumber bei Live-Flug ${index+1} fehlt.`);
     const date=String(x.date||'').trim();
     const direction=String(x.direction||'unknown').trim().toLowerCase();
+    const airportIata=String(x.airportIata||'').trim().toUpperCase();
+    if(airportIata&&!/^[A-Z]{3}$/.test(airportIata))throw new Error(`airportIata bei Live-Flug ${index+1} ist ungültig.`);
     const allowedStatus=new Set(['scheduled','on_time','delayed','landed','cancelled','unknown']);
     const status=allowedStatus.has(String(x.status||'unknown').trim().toLowerCase())?String(x.status||'unknown').trim().toLowerCase():'unknown';
     const sources=Array.isArray(x.sources)?x.sources.map(src=>({name:String(src?.name||'').trim(),url:String(src?.url||'').trim()})).filter(src=>src.name&&src.url):[];
     const uniqueSources=new Set(sources.map(src=>src.url.toLowerCase())).size;
     const confirmed=Boolean(x.confirmed)&&uniqueSources>=2&&status!=='unknown';
-    const scheduled=strictClockOrNull(x.dusScheduledTime);
-    const estimated=strictClockOrNull(x.dusEstimatedTime);
-    const actual=strictClockOrNull(x.dusActualTime);
+    const scheduled=strictClockOrNull(x.airportScheduledTime??x.dusScheduledTime);
+    const estimated=strictClockOrNull(x.airportEstimatedTime??x.dusEstimatedTime);
+    const actual=strictClockOrNull(x.airportActualTime??x.dusActualTime);
     let delay=x.delayMinutes===null||x.delayMinutes===undefined||x.delayMinutes===''?null:Number(x.delayMinutes);
     if(!Number.isFinite(delay))delay=null;
     if(delay===null){const current=actual||estimated;if(scheduled&&current)delay=minuteDeltaClock(scheduled,current);}
-    return {flightNumber,date,direction,status,dusScheduledTime:scheduled,dusEstimatedTime:estimated,dusActualTime:actual,delayMinutes:delay,confirmed,sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
+    return {flightNumber,date,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
   });
 }
 function livePickupFromCheck(ride,hit){
   if(!ride||!hit||!hit.confirmed)return'';
   if(hit.status==='cancelled')return'';
   if(hit.direction==='arrival'){
-    const arrival=hit.dusActualTime||hit.dusEstimatedTime;
+    const arrival=hit.airportActualTime||hit.airportEstimatedTime;
     return arrival?clockPlusMinutes(arrival,arrivalBufferMinutesForRide(ride)):'';
   }
   if(hit.direction==='departure'){
@@ -1541,7 +1641,8 @@ function applyLiveFlightResult(){
       const flight=flightCacheNumber(r.flightNumber);if(!flight)return r;
       const date=String(r.date||'').trim();
       const direction=flightDirectionForGemini(r);
-      const candidates=checked.filter(x=>flightCacheNumber(x.flightNumber)===flight&&(!date||x.date===date)&&x.direction===direction);
+      const airportIata=flightAirportForGemini(r);
+      const candidates=checked.filter(x=>flightCacheNumber(x.flightNumber)===flight&&(!date||x.date===date)&&x.direction===direction&&String(x.airportIata||'').trim().toUpperCase()===String(airportIata||'').trim().toUpperCase());
       if(candidates.length!==1)return r;
       const hit=candidates[0];
       if(!hit.confirmed){uncertain++;return r;}
@@ -1555,9 +1656,10 @@ function applyLiveFlightResult(){
         delayMinutes:Number.isFinite(Number(hit.delayMinutes))?Number(hit.delayMinutes):0,
         landed:hit.status==='landed',
         liveFlightStatus:hit.status,
-        liveFlightScheduledTime:hit.dusScheduledTime||'',
-        liveFlightEstimatedTime:hit.dusEstimatedTime||'',
-        liveFlightActualTime:hit.dusActualTime||'',
+        liveFlightAirportIata:airportIata||'',
+        liveFlightScheduledTime:hit.airportScheduledTime||'',
+        liveFlightEstimatedTime:hit.airportEstimatedTime||'',
+        liveFlightActualTime:hit.airportActualTime||'',
         liveCheckedAt:checkedAt,
         liveSourceNote:hit.sourceNote,
         liveSources:hit.sources
