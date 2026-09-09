@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  // CORE-006B · 09.09.2026: 14-Spalten-Bildschema mit zusätzlicher mittlerer Uhrzeit zwischen Firma und Flug ang./ausg.; geometrische Zeilenprüfung auf dynamische Spaltenindizes umgestellt. Bestehende 12-/13-Spalten-Layouts bleiben erhalten.
+
   // CORE-005W1 · 09.09.2026: Mehrdeutige Flugzellen werden zusätzlich mit Single-Line/Single-Word OCR-Modi nachgelesen; weiterhin nur eindeutiger Mehrfach-Konsens.
   // CORE-005W · 09.09.2026: OCR-mehrdeutige Flugpräfixe (z. B. I/1/L oder O/0) werden bei Bildimport gezielt nur in der konkreten Flugzelle erneut gelesen. Automatische Korrektur nur bei eindeutigem Mehrfach-Konsens; sonst Warnung statt Raten.
   // CORE-005R · 08.09.2026: Verdächtige/fehlende Preiszellen im Bild-/WhatsApp-Import werden gezielt lokal erneut OCR-gelesen. Nur eindeutiger plausibler Mehrfach-Konsens wird automatisch übernommen; sonst bleibt die bestehende manuelle Preis-Sicherheitsabfrage erhalten. Keine feste Sonderregel für 47,60 €.
@@ -362,7 +364,7 @@
 
   function normalizeFlightLocation(value) {
     const text = cellText(value).trim();
-    if (!text) return '';
+    if (!text || /^[-–—~_.\s]+$/.test(text)) return '';
     if (/^(miinchen|mienchen|munchen|muenchen)$/i.test(text)) return 'München';
     if (/^zirich$/i.test(text) || /^zurich$/i.test(text)) return 'Zürich';
     if (/^milan$/i.test(text)) return 'Mailand';
@@ -1171,10 +1173,54 @@
     { label: 'Wg', key: 'wg' }
   ];
 
+  const ATMS_IMAGE_SCHEMA_14_PRICE = [
+    { label: 'Preis', key: 'preis' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  function chooseAtmsImageSchema(observed) {
+    const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
+    const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
+    if (!hasPrice) return ATMS_IMAGE_SCHEMA_12;
+
+    const timeAnchors = input.filter(anchor => anchor.key === 'uhrzeit' || anchor.key === 'zeit');
+    if (timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_14_PRICE;
+
+    // Falls die mittlere "Uhrzeit" vom OCR fehlt, darf sie nur bei klarer
+    // Kopfzeilen-Geometrie synthetisch ergänzt werden.
+    const firma = input.find(anchor => anchor.key === 'firma');
+    const firstFlight = input.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    if (firma && firstFlight && firstFlight.x > firma.x) {
+      const gaps = [];
+      for (let i = 1; i < input.length; i++) {
+        const gap = Number(input[i].x) - Number(input[i - 1].x);
+        if (Number.isFinite(gap) && gap > 3) gaps.push(gap);
+      }
+      const sorted = gaps.slice().sort((a,b)=>a-b);
+      const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+      if (median > 0 && (firstFlight.x - firma.x) >= median * 1.55) {
+        return ATMS_IMAGE_SCHEMA_14_PRICE;
+      }
+    }
+    return ATMS_IMAGE_SCHEMA_13_PRICE;
+  }
+
   function completeAtmsImageAnchors(observed, width) {
     const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
     const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
-    const schema = hasPrice ? ATMS_IMAGE_SCHEMA_13_PRICE : ATMS_IMAGE_SCHEMA_12;
+    const schema = chooseAtmsImageSchema(input);
     const slots = Array(schema.length).fill(null);
     let cursor = 0;
     let matched = 0;
@@ -1257,6 +1303,33 @@
     };
   }
 
+  function imageSemanticColumns(anchors) {
+    const list = Array.isArray(anchors) ? anchors : [];
+    const indexesOf = key => list.map((anchor,index)=>anchor?.key===key?index:-1).filter(index=>index>=0);
+    const firstOf = key => {
+      const index = list.findIndex(anchor => anchor?.key === key);
+      return index >= 0 ? index : undefined;
+    };
+    const times = indexesOf('uhrzeit');
+    const wg = indexesOf('wg');
+    return {
+      price: firstOf('preis'),
+      rideTime: times.length ? times[0] : undefined,
+      timeMirror: times.length >= 3 ? times[1] : undefined,
+      flightTime: times.length >= 2 ? times[times.length - 1] : undefined,
+      pickup: firstOf('von'),
+      destination: firstOf('nach'),
+      customer: firstOf('name'),
+      company: firstOf('firma'),
+      arrivalFlight: firstOf('flugang'),
+      departureFlight: firstOf('flugausg'),
+      vehicle: wg.length ? wg[0] : undefined,
+      persons: firstOf('pers'),
+      location: firstOf('ort'),
+      driver: wg.length >= 2 ? wg[wg.length - 1] : firstOf('fahrer')
+    };
+  }
+
   function imageWordsToMatrix(words, width) {
     const lines = groupOcrLines(words);
     const header = detectImageHeaderLine(lines);
@@ -1267,6 +1340,7 @@
 
     const completed = completeAtmsImageAnchors(header.anchors, width);
     const { sorted: anchors, boundaries } = anchorsToBoundaries(completed.anchors, width);
+    const semantic = imageSemanticColumns(anchors);
     const headerRow = anchors.map(anchor => anchor.label);
     const rows = [headerRow];
     const rowMetaByMatrixIndex = {};
@@ -1283,31 +1357,51 @@
 
       const row = cells.map(parts => parts.join(' ').replace(/\s+/g,' ').trim());
       const nonEmpty = row.filter(Boolean).length;
-      const firstRaw = cellText(row[0]);
-      const firstNormalized = firstRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
-      const firstCellTime = looksLikeTime(firstNormalized) || /^\d{3,4}$/.test(firstNormalized.replace(/\D/g,''));
-      const secondTimeRaw = cellText(row[9]);
-      const secondTimeNormalized = secondTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
-      const secondCellTime = looksLikeTime(secondTimeNormalized) || /^\d{3,4}$/.test(secondTimeNormalized.replace(/\D/g,''));
-      const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
-      const hasFlight = row.some(value => looksLikeFlight(value));
-      const hasRoute = Boolean(cellText(row[1]) && cellText(row[2]));
-      const hasIdentity = Boolean(cellText(row[3]) || cellText(row[4]) || cellText(row[11]));
-      const strongOrphanRow = hasRoute && hasIdentity && nonEmpty >= 5 && (secondCellTime || hasFlight || cellText(row[5]) || cellText(row[6]));
 
-      // CORE-005B: Die linke Uhrzeit bleibt der primaere Zeilenanker. Wenn Tesseract
-      // aber genau diese eine Zelle verliert, darf eine ansonsten eindeutig erkannte
-      // physische Tabellenzeile nicht komplett verschwinden. Solche "orphan rows"
-      // bleiben erhalten und ihre linke Uhrzeit wird danach NUR in dieser Zelle lokal
-      // nachgelesen. Die zweite Uhrzeit wird dabei nie als Planzeit uebernommen.
+      const rideTimeIndex = semantic.rideTime;
+      const rideTimeRaw = rideTimeIndex === undefined ? '' : cellText(row[rideTimeIndex]);
+      const rideTimeNormalized = rideTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const rideTimeValid = looksLikeTime(rideTimeNormalized) || /^\d{3,4}$/.test(rideTimeNormalized.replace(/\D/g,''));
+
+      const secondaryTimes = [semantic.timeMirror, semantic.flightTime]
+        .filter(index => index !== undefined && index !== rideTimeIndex);
+      const secondaryTimeValid = secondaryTimes.some(index => {
+        const raw = cellText(row[index]);
+        const normalized = raw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+        return looksLikeTime(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g,''));
+      });
+
+      const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
+      const hasFlight = [semantic.arrivalFlight, semantic.departureFlight]
+        .filter(index => index !== undefined)
+        .some(index => looksLikeFlight(row[index]));
+      const hasRoute = Boolean(
+        semantic.pickup !== undefined &&
+        semantic.destination !== undefined &&
+        cellText(row[semantic.pickup]) &&
+        cellText(row[semantic.destination])
+      );
+      const hasIdentity = [semantic.customer, semantic.company, semantic.driver]
+        .filter(index => index !== undefined)
+        .some(index => Boolean(cellText(row[index])));
+      const hasFlightCells = [semantic.arrivalFlight, semantic.departureFlight]
+        .filter(index => index !== undefined)
+        .some(index => Boolean(cellText(row[index])));
+      const strongOrphanRow = hasRoute && hasIdentity && nonEmpty >= 5 &&
+        (secondaryTimeValid || hasFlight || hasFlightCells);
+
+      // CORE-005B/006B: Planzeit dynamisch aus der Kopfzeile bestimmen.
+      // Eine Preis-Spalte vor der Planzeit verändert den Zeilenanker nicht.
       const keep = completed.standard
-        ? ((firstCellTime && nonEmpty >= 2) || strongOrphanRow)
+        ? ((rideTimeValid && nonEmpty >= 2) || strongOrphanRow)
         : (nonEmpty >= 3 && (hasTime || hasFlight));
 
       if (!keep) return;
 
-      // Leichte OCR-Verwechslungen nur in der ersten Uhrzeitzelle normalisieren.
-      if (completed.standard && firstCellTime && firstNormalized !== firstRaw) row[0] = firstNormalized;
+      if (completed.standard && rideTimeValid && rideTimeIndex !== undefined &&
+          rideTimeNormalized !== rideTimeRaw) {
+        row[rideTimeIndex] = rideTimeNormalized;
+      }
 
       rows.push(row);
       const ys0 = (line.words || []).map(word => Number(word.y0 || 0)).filter(Number.isFinite);
@@ -1395,9 +1489,11 @@
     rows._atmsImageMeta = {
       anchors,
       boundaries,
+      semantic,
       rowMetaByMatrixIndex,
       width,
       standardAtms: completed.standard,
+      schemaColumns: anchors.length,
       syntheticAnchorCount: completed.syntheticCount
     };
     return rows;
@@ -1466,35 +1562,45 @@
           });
 
           const candidate = cells.map(parts => parts.join(' ').replace(/\s+/g, ' ').trim());
-          const firstRaw = cellText(candidate[0]);
-          const firstNormalized = firstRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
-          const firstTime = looksLikeTime(firstNormalized) || /^\d{3,4}$/.test(firstNormalized.replace(/\D/g, ''));
-          if (firstTime && firstNormalized !== firstRaw) candidate[0] = firstNormalized;
+          const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+          const rideTimeIndex = semantic.rideTime;
+          const rideTimeRaw = rideTimeIndex === undefined ? '' : cellText(candidate[rideTimeIndex]);
+          const rideTimeNormalized = rideTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+          const rideTimeValid = looksLikeTime(rideTimeNormalized) || /^\d{3,4}$/.test(rideTimeNormalized.replace(/\D/g, ''));
+          if (rideTimeValid && rideTimeIndex !== undefined && rideTimeNormalized !== rideTimeRaw) {
+            candidate[rideTimeIndex] = rideTimeNormalized;
+          }
 
           const nonEmpty = candidate.filter(Boolean).length;
-          const routeScore = (cellText(candidate[1]) ? 1 : 0) + (cellText(candidate[2]) ? 1 : 0);
-          const identityScore = (cellText(candidate[3]) ? 1 : 0) + (cellText(candidate[4]) ? 1 : 0) + (cellText(candidate[11]) ? 1 : 0);
-          const score = nonEmpty + (firstTime ? 8 : 0) + routeScore * 2 + identityScore;
+          const routeScore = [semantic.pickup, semantic.destination]
+            .filter(index => index !== undefined)
+            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+          const identityScore = [semantic.customer, semantic.company, semantic.driver]
+            .filter(index => index !== undefined)
+            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+          const score = nonEmpty + (rideTimeValid ? 8 : 0) + routeScore * 2 + identityScore;
 
           if (score > bestScore) {
             bestScore = score;
             bestRow = candidate;
           }
 
-          if (firstTime && nonEmpty >= 5 && routeScore >= 1) break;
+          if (rideTimeValid && nonEmpty >= 5 && routeScore >= 1) break;
         } catch (_) {
           // Nur Sicherheitsnetz; der naechste Versuch darf weiterlaufen.
         }
       }
 
       if (!bestRow) continue;
-      const first = cellText(bestRow[0]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
-      const firstTime = looksLikeTime(first) || /^\d{3,4}$/.test(first.replace(/\D/g, ''));
+      const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+      const rideTimeIndex = semantic.rideTime;
+      const rideTime = rideTimeIndex === undefined ? '' : cellText(bestRow[rideTimeIndex]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const rideTimeValid = looksLikeTime(rideTime) || /^\d{3,4}$/.test(rideTime.replace(/\D/g, ''));
       const nonEmpty = bestRow.filter(Boolean).length;
 
       // Nur eine wirklich plausibel erneut gelesene Fahrtzeile aktivieren.
-      if (firstTime && nonEmpty >= 4) {
-        bestRow[0] = first;
+      if (rideTimeValid && nonEmpty >= 4) {
+        bestRow[rideTimeIndex] = rideTime;
         out[matrixIndex] = bestRow;
         meta.syntheticGapRecovered = true;
       }
