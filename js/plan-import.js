@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006L · 10.09.2026: Von-/Nach-Ortszellen erhalten eine rein lokale deutsche Zweit-OCR in wenigen Spalten-Durchläufen. Eine abweichende Schreibweise wird nur bei wiederholtem exaktem Konsens und ausschließlich bei einer kleinen, diakritikbezogenen OCR-Abweichung übernommen; keine Ortsnamen-Hardcodes.
   // CORE-006J · 09.09.2026: Zeitsemantik Bild-Planliste: erste Uhrzeit neben Preis = DISPO-Zeit; mittlere Uhrzeit vor Flug ang. = gespiegelte DISPO-Zeit; letzte Uhrzeit vor Ort = Flugzeit aus Liste. Alle drei Werte bleiben getrennt gespeichert.
   // CORE-006H · 09.09.2026: Reine Rand-Satzzeichen an Fahrerwerten werden generisch entfernt, wenn danach ein vollständig gültiger Fahrername übrig bleibt. Kein Namens-Hardcode; unklare/innere OCR-Artefakte bleiben weiterhin in der gezielten Zweit-OCR bzw. manuellen Prüfung.
   // CORE-006G · 09.09.2026: OCR-auffällige Fahrerwerte (z. B. führende/abschließende Satzzeichen oder andere Nicht-Namenszeichen) werden wie fehlende Fahrer gezielt nur in der konkreten rechten Fahrerzelle erneut gelesen. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
@@ -1916,6 +1917,221 @@
     return out;
   }
 
+  // CORE-006L: Ortsnamen werden nicht per Wörterbuch oder Sonderfall korrigiert.
+  // Stattdessen werden die beiden Routen-Spalten mit deutscher OCR lokal noch einmal
+  // gelesen. Eine Änderung ist nur erlaubt, wenn zwei unabhängige Spalten-Durchläufe
+  // exakt denselben Kandidaten liefern und sich dieser nur minimal vom Primärwert
+  // unterscheidet, dabei aber eine echte lateinische Diakritik wiederherstellt.
+  function routeOcrText(value) {
+    return cellText(value)
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ0-9]+/, '')
+      .replace(/[^A-Za-zÄÖÜäöüßÀ-ÿ0-9)]+$/, '')
+      .trim();
+  }
+
+  function routeOcrBase(value) {
+    return routeOcrText(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase('de-DE');
+  }
+
+  function routeOcrDistance(leftValue, rightValue) {
+    const left = routeOcrBase(leftValue);
+    const right = routeOcrBase(rightValue);
+    if (left === right) return 0;
+    if (!left) return right.length;
+    if (!right) return left.length;
+
+    const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= left.length; i++) {
+      let diagonal = previous[0];
+      previous[0] = i;
+      for (let j = 1; j <= right.length; j++) {
+        const above = previous[j];
+        const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+        previous[j] = Math.min(
+          previous[j] + 1,
+          previous[j - 1] + 1,
+          diagonal + cost
+        );
+        diagonal = above;
+      }
+    }
+    return previous[right.length];
+  }
+
+  function routeHasLatinDiacritic(value) {
+    return /[ÄÖÜäöüßÀ-ÿ]/.test(routeOcrText(value));
+  }
+
+  function routeChangedDiacriticTokenIsSafe(originalValue, candidateValue) {
+    const original = routeOcrText(originalValue);
+    const candidate = routeOcrText(candidateValue);
+    if (!original || !candidate || original === candidate) return false;
+    if (!routeHasLatinDiacritic(candidate)) return false;
+    if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ0-9 .,'’&()/+\-]+$/.test(candidate)) return false;
+
+    const originalTokens = original.split(/\s+/);
+    const candidateTokens = candidate.split(/\s+/);
+    if (originalTokens.length !== candidateTokens.length) return false;
+    if (Math.abs(original.length - candidate.length) > 1) return false;
+    if (routeOcrDistance(original, candidate) > 1) return false;
+
+    let changedTokens = 0;
+    for (let index = 0; index < originalTokens.length; index++) {
+      const left = originalTokens[index];
+      const right = candidateTokens[index];
+      if (left === right) continue;
+      changedTokens += 1;
+      if (changedTokens > 1) return false;
+      if (right.length < 4) return false;
+      if (!routeHasLatinDiacritic(right)) return false;
+      if (routeOcrDistance(left, right) > 1) return false;
+    }
+    return changedTokens === 1;
+  }
+
+  function routeWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta) {
+    const grouped = new Map();
+    const words = Array.isArray(result?.data?.words) ? result.data.words : [];
+
+    words.forEach(word => {
+      const text = routeOcrText(word?.text);
+      const bbox = word?.bbox || {};
+      const y0 = Number(bbox.y0);
+      const y1 = Number(bbox.y1);
+      const x0 = Number(bbox.x0);
+      const confidence = Number(word?.confidence);
+      if (!text || ![x0, y0, y1].every(Number.isFinite)) return;
+      if (Number.isFinite(confidence) && confidence < 20) return;
+
+      const sourceCy = cropTop + ((y0 + y1) / 2) / cropScale;
+      let best = null;
+      let bestDistance = Infinity;
+      rowsWithMeta.forEach(item => {
+        const meta = item.meta;
+        const rowHeight = Math.max(8, Number(meta.y1) - Number(meta.y0));
+        const pad = Math.max(2, rowHeight * 0.28);
+        if (sourceCy < Number(meta.y0) - pad || sourceCy > Number(meta.y1) + pad) return;
+        const distance = Math.abs(sourceCy - Number(meta.cy));
+        if (distance < bestDistance) {
+          best = item;
+          bestDistance = distance;
+        }
+      });
+      if (!best) return;
+
+      const list = grouped.get(best.sourceRow) || [];
+      list.push({ text, x: x0 / cropScale });
+      grouped.set(best.sourceRow, list);
+    });
+
+    const byRow = new Map();
+    grouped.forEach((items, sourceRow) => {
+      const text = routeOcrText(items.sort((a,b) => a.x - b.x).map(item => item.text).join(' '));
+      if (text) byRow.set(sourceRow, text);
+    });
+    return byRow;
+  }
+
+  async function recoverRouteDiacriticsTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const fields = [
+      { field: 'pickup', label: 'Von' },
+      { field: 'destination', label: 'Nach' }
+    ];
+
+    for (const descriptor of fields) {
+      const column = mapping?.[descriptor.field];
+      if (column === undefined) continue;
+      const left = Number(boundaries[column]);
+      const right = Number(boundaries[column + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const rowsWithMeta = out.map(ride => {
+        const matrixIndex = Number(ride.sourceRow || 0) - 1;
+        const meta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+        if (!meta) return null;
+        const y0 = Number(meta.y0);
+        const y1 = Number(meta.y1);
+        const cy = Number(meta.cy ?? ((y0 + y1) / 2));
+        if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
+        return { sourceRow: Number(ride.sourceRow), meta: { y0, y1, cy } };
+      }).filter(Boolean);
+      if (!rowsWithMeta.length) continue;
+
+      const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
+      const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
+      const cellWidth = Math.max(8, right - left);
+      const padX = Math.max(1, cellWidth * 0.025);
+      const attempts = [
+        { name: 'deu-column-psm4', scale: 2, options: { tessedit_pageseg_mode: '4' } },
+        { name: 'deu-column-psm6', scale: 3, options: { tessedit_pageseg_mode: '6' } }
+      ];
+      const votesByRow = new Map();
+      const displayByRowKey = new Map();
+      const attemptLogByRow = new Map();
+
+      if (status) status.textContent = `${descriptor.label}-Ortszellen werden lokal mit deutscher OCR gegengeprüft …`;
+
+      try {
+        for (const attempt of attempts) {
+          const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
+          const second = await Tesseract.recognize(crop, 'deu', attempt.options);
+          const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
+
+          rowsWithMeta.forEach(item => {
+            const candidate = routeOcrText(rowCandidates.get(item.sourceRow) || '');
+            const log = attemptLogByRow.get(item.sourceRow) || [];
+            log.push({ mode: attempt.name, candidate });
+            attemptLogByRow.set(item.sourceRow, log);
+            if (!candidate) return;
+
+            const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+            const rowVotes = votesByRow.get(item.sourceRow) || new Map();
+            rowVotes.set(key, (rowVotes.get(key) || 0) + 1);
+            votesByRow.set(item.sourceRow, rowVotes);
+            const displayKey = `${item.sourceRow}|${key}`;
+            if (!displayByRowKey.has(displayKey)) displayByRowKey.set(displayKey, candidate);
+          });
+        }
+      } catch (_) {
+        // Fehlende/noch nicht geladene deutsche Sprachdaten dürfen den Bildimport
+        // niemals blockieren. Der sichere Primärwert bleibt dann unverändert.
+      }
+
+      out.forEach(ride => {
+        const sourceRow = Number(ride.sourceRow);
+        const original = routeOcrText(ride[descriptor.field]);
+        ride[`${descriptor.field}TargetedOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
+        if (!original) return;
+
+        const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
+          .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
+        const winner = ranked[0] || null;
+        const runner = ranked[1] || null;
+        if (!winner || winner[1] < 2) return;
+        if (runner && winner[1] === runner[1]) return;
+
+        const candidate = routeOcrText(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
+        if (!routeChangedDiacriticTokenIsSafe(original, candidate)) return;
+
+        ride[`${descriptor.field}RawOcr`] = original;
+        ride[descriptor.field] = candidate;
+        ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
+        ride[`${descriptor.field}RecoverySource`] = 'targeted_route_diacritic_consensus';
+      });
+    }
+
+    return out;
+  }
+
   // CORE-005R: Preis-Kandidaten werden nur aus expliziten Dezimaldarstellungen
   // der gezielt ausgeschnittenen Preiszelle gewonnen. Eine verlorene Dezimalstelle
   // (z. B. reines "4760") wird NICHT erraten oder automatisch verschoben.
@@ -2732,6 +2948,12 @@
           mappingInfo.mapping
         );
         preparedRides = await recoverSuspiciousPricesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverRouteDiacriticsTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
