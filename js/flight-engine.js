@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = 'FLIGHT-008-CORE004A';
+  const VERSION = 'FLIGHT-009-CORE006P';
   const FLIGHT_CACHE_KEY = 'atms_flight_cache_v1';
 
   const text = value => String(value ?? '').trim();
@@ -26,6 +26,33 @@
     if (direction === 'departure') return 'destination';
     return 'unknown';
   }
+
+  // CORE-006P · Multi-Airport-Kontext für automatische und Fallback-Flugprüfung.
+  // Nutzt nur eindeutige Flughafenbezeichnungen aus Abholung/Ziel. Keine Flugnummer-Hardcodes.
+  function airportIataFromPlace(value) {
+    const raw = text(value);
+    if (!raw) return '';
+    const normalized = raw.toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+    const up = raw.toUpperCase();
+    if (normalized.includes('flughafen dusseldorf') || normalized.includes('dusseldorf airport')) return 'DUS';
+    if (normalized.includes('flughafen koln') || normalized.includes('cologne bonn airport') || normalized.includes('koln/bonn')) return 'CGN';
+    const exact = up.match(/^([A-Z]{3})$/);
+    if (exact) return exact[1];
+    if (/\b(?:AIRPORT|FLUGHAFEN|VORFELD|AIRSIDE)\b/i.test(raw)) {
+      const tokens = up.match(/\b[A-Z]{3}\b/g) || [];
+      if (tokens.length === 1) return tokens[0];
+    }
+    return '';
+  }
+
+  function flightAirportContext(ride) {
+    const pickupIata = airportIataFromPlace(ride?.pickup || ride?.abholort || '');
+    const destinationIata = airportIataFromPlace(ride?.destination || ride?.zielort || ride?.ziel || '');
+    if (pickupIata && !destinationIata) return { airportIata: pickupIata, direction: 'arrival' };
+    if (!pickupIata && destinationIata) return { airportIata: destinationIata, direction: 'departure' };
+    return { airportIata: '', direction: 'unknown' };
+  }
+
 
   // CORE-001A · 11.08.2026 14:41 Uhr (Europe/Berlin):
   // Der persistente Flugcache bleibt ausschließlich als Historie/Audit erhalten.
@@ -63,18 +90,20 @@
       const location = text(item?.flightLocation || item?.relevantLocation);
       const confidence = text(item?.confidence).toLowerCase();
       const status = text(item?.status).toLowerCase();
-      const verified = Boolean(location && location !== 'Flugort prüfen' && !item?.conflict && (
-        confidence === 'verified' || confidence === 'high' || confidence === 'medium' || status === 'verified'
-      ));
+      const sourceCount = Number(item?.sourceCount || (Array.isArray(item?.sources) ? item.sources.length : 0));
+      const verified = Boolean(location && location !== 'Flugort prüfen' && !item?.conflict &&
+        status === 'verified' && (confidence === 'verified' || confidence === 'high') && sourceCount >= 2);
       if (!flightNumber || !date || !verified) return;
+      const airportIata = upper(item?.airportIata);
       const iata = text(item?.iata || (direction === 'arrival' ? item?.originIata : '') || (direction === 'departure' ? item?.destinationIata : '')).toUpperCase();
-      const sameKey = x => upper(x?.flightNumber) === flightNumber && text(x?.date) === date && (text(x?.direction) || 'unknown') === direction && text(x?.flightTime) === flightTime;
+      const sameKey = x => upper(x?.flightNumber) === flightNumber && text(x?.date) === date && (text(x?.direction) || 'unknown') === direction && text(x?.flightTime) === flightTime && upper(x?.airportIata) === airportIata;
       cache = cache.filter(x => !sameKey(x));
       cache.unshift({
         rideId: '',
         fingerprint: '',
         flightNumber,
         direction,
+        airportIata,
         date,
         flightTime,
         flightLocation: location,
@@ -95,6 +124,7 @@
   function verifiedCacheHit(ride, flightNumber, direction) {
     const date = text(ride?.date);
     const flightTime = text(ride?.flightTime);
+    const airportIata = flightAirportContext(ride).airportIata;
     if (!flightNumber || !date) return null;
 
     let candidates = getVerifiedFlightCache().filter(item => {
@@ -103,6 +133,9 @@
       if (text(item.date) !== date) return false;
       const itemDirection = text(item.direction);
       if (direction && itemDirection && itemDirection !== 'unknown' && itemDirection !== direction) return false;
+      const itemAirport = upper(item?.airportIata);
+      if (airportIata && itemAirport && itemAirport !== airportIata) return false;
+      if (airportIata && !itemAirport && airportIata !== 'DUS') return false;
       const location = text(item.flightLocation);
       return Boolean(location && location !== 'Flugort prüfen');
     });
@@ -141,7 +174,8 @@
   function prepareRide(ride) {
     const flightNumber = upper(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
     const currentLocation = text(ride?.flightLocation);
-    const direction = normalizeDirection(ride);
+    const airportContext = flightAirportContext(ride);
+    const direction = normalizeDirection(ride) || airportContext.direction;
     if (!flightNumber) {
       return {
         ...ride,
@@ -150,6 +184,7 @@
           status: 'not-required',
           source: 'none',
           direction,
+          airportIata: airportContext.airportIata,
           relevantSide: relevantSide(direction),
           checkedAt: null
         }
@@ -173,6 +208,7 @@
         status,
         source,
         direction,
+        airportIata: airportContext.airportIata,
         relevantSide: relevantSide(direction),
         currentLocation: resolvedLocation,
         checkedAt: null
@@ -188,8 +224,11 @@
     for (const ride of Array.isArray(rides) ? rides : []) {
       const flightNumber = upper(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
       if (!isRealFlightNumber(flightNumber)) continue;
-      const direction = normalizeDirection(ride);
+      const airportContext = flightAirportContext(ride);
+      const direction = normalizeDirection(ride) || airportContext.direction;
       const flightTime = text(ride?.flightTime);
+      // airportIata absichtlich NICHT im Schlüssel: zwei Teilfahrten desselben Fluges
+      // (z. B. Hotel→Hotel und danach Hotel→CGN) dürfen ihren eindeutigen Airport-Kontext ergänzen.
       const key = `${flightNumber}|${direction || 'unknown'}|${text(ride?.date)}|${flightTime}`;
       if (!map.has(key)) {
         map.set(key, {
@@ -197,12 +236,21 @@
           date: text(ride?.date),
           flightTime,
           direction,
+          airportIata: airportContext.airportIata,
+          airportConflict: false,
           relevantSide: relevantSide(direction),
           currentLocation: text(ride?.flightLocation),
           sourceRows: []
         });
       }
       const item = map.get(key);
+      if (airportContext.airportIata) {
+        if (!item.airportIata) item.airportIata = airportContext.airportIata;
+        else if (item.airportIata !== airportContext.airportIata) {
+          item.airportIata = '';
+          item.airportConflict = true;
+        }
+      }
       const row = Number(ride?.sourceRow || 0);
       if (row && !item.sourceRows.includes(row)) item.sourceRows.push(row);
       if (!item.currentLocation && text(ride?.flightLocation)) item.currentLocation = text(ride.flightLocation);
@@ -240,26 +288,31 @@
     const payload = flights.map(f => ({
       flightNumber: f.flightNumber,
       date: f.date || activePlanDate || null,
+      dateAssumed: !(f.date || activePlanDate),
       flightTime: f.flightTime || null,
-      direction: f.direction || null,
+      direction: f.direction || 'unknown',
+      airportIata: f.airportIata || null,
       relevantSide: f.relevantSide,
       locationFromPlan: f.currentLocation || null,
       sourceRows: f.sourceRows
     }));
-    return `ATMS PRO – ${VERSION} strikte aktuelle Flugprüfung\n\n` +
-`Prüfe JEDE unten aufgeführte Flugnummer für den angegebenen Flugtag anhand aktueller, datumsspezifischer öffentlicher Webdaten. Keine dauerhaft gespeicherte Flugnummer→Ort-Zuordnung verwenden.\n\n` +
+    return `ATMS PRO – FLIGHT-009 MULTI-AIRPORT strikte aktuelle Flugprüfung\n\n` +
+`Prüfe JEDE unten aufgeführte Flugnummer anhand aktueller, datumsspezifischer öffentlicher Webdaten. Keine dauerhaft gespeicherte oder typische Flugnummer→Ort-Zuordnung verwenden.\n\n` +
 `VERBINDLICHE REGELN:\n` +
-`1. direction=arrival: relevant ist der HERKUNFTSORT (origin) des konkreten Fluges nach DUS.\n` +
-`2. direction=departure: relevant ist der ZIELORT (destination) des konkreten Fluges ab DUS.\n` +
-`3. date exakt verwenden; flightTime exakt zurückgeben und zur Unterscheidung nutzen.\n` +
-`4. locationFromPlan ist nur Vergleichswert, niemals Quelle. Widerspruch => conflict=true.\n` +
-`5. verified + high nur mit mindestens ZWEI voneinander unabhängigen, datumsspezifischen Quellen. Mindestens eine Quelle nach Möglichkeit Primärquelle (DUS/Airline).\n` +
-`6. Nur eine geeignete Quelle, widersprüchliche Daten, nicht eindeutiger Flug oder keine sichere DUS-Verbindung => needs_manual_check. Nicht raten.\n` +
-`7. sources muss die tatsächlich verwendeten Quellen mit name und url enthalten. Keine Quellen/URLs erfinden.\n` +
-`8. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.\n` +
-`9. Antworte ausschließlich mit EINEM gültigen JSON-Objekt, kein Markdown.\n\n` +
-`JSON-SCHEMA:\n` +
-`{\n  "checkedAt":"ISO-8601",\n  "flights":[{\n    "flightNumber":"EW0000",\n    "date":"YYYY-MM-DD",\n    "dateAssumed":false,\n    "flightTime":null,\n    "direction":"arrival|departure|unknown",\n    "originCity":"",\n    "originIata":"",\n    "destinationCity":"",\n    "destinationIata":"",\n    "relevantLocation":"",\n    "status":"verified|needs_manual_check",\n    "confidence":"high|medium|low",\n    "conflict":false,\n    "sources":[{"name":"","url":""}],\n    "sourceNote":""\n  }]\n}\n\n` +
+`1. airportIata ist der für DIESE Fahrt relevante Flughafen. Verwende exakt diesen Flughafen und ersetze ihn niemals pauschal durch DUS.\n` +
+`2. direction=arrival: relevantLocation ist der HERKUNFTSORT des konkreten Fluges NACH airportIata.\n` +
+`3. direction=departure: relevantLocation ist der ZIELORT des konkreten Fluges AB airportIata.\n` +
+`4. Wenn airportIata fehlt/null oder direction=unknown ist: status="needs_manual_check". Nicht raten.\n` +
+`5. date ist der ATMS-Zuordnungstag dieser Fahrt und muss im JSON exakt unverändert zurückgegeben werden. Bei einem Nachtflug über Mitternacht dürfen Quellen den konkreten Flug unter dem benachbarten Service-/UTC-/Abflugtag führen. Das darf nur zur Identifikation desselben konkreten Fluges genutzt werden, wenn mindestens zwei unabhängige datumsspezifische Quellen Flugnummer, airportIata und Richtung eindeutig bestätigen; sonst needs_manual_check.\n` +
+`6. flightTime ist ein zusätzliches Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und die Zuordnung ohne flightTime nicht eindeutig ist: needs_manual_check.\n` +
+`7. locationFromPlan ist ausschließlich Vergleichswert, niemals Quelle. Sicherer Widerspruch => conflict=true.\n` +
+`8. status="verified" UND confidence="high" nur mit mindestens ZWEI voneinander unabhängigen datumsspezifischen Quellen. Eine einzelne Quelle reicht nie.\n` +
+`9. Bei widersprüchlichen Quellen, unklarer Airport-Zuordnung oder fehlender Datumsbestätigung: needs_manual_check. Nicht raten.\n` +
+`10. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine Quellen/URLs erfinden.\n` +
+`11. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.\n` +
+`12. Antworte ausschließlich mit EINEM gültigen JSON-Objekt ohne Markdown.\n\n` +
+`VERBINDLICHES JSON-SCHEMA:\n` +
+`{\n  "checkedAt":"ISO-8601",\n  "flights":[{\n    "flightNumber":"EW0000",\n    "date":"YYYY-MM-DD",\n    "dateAssumed":false,\n    "flightTime":null,\n    "direction":"arrival|departure|unknown",\n    "airportIata":"DUS|CGN|anderer IATA-Code|null",\n    "originCity":"",\n    "originIata":"",\n    "destinationCity":"",\n    "destinationIata":"",\n    "relevantLocation":"",\n    "status":"verified|needs_manual_check",\n    "confidence":"high|medium|low",\n    "conflict":false,\n    "sources":[{"name":"","url":""}],\n    "sourceNote":""\n  }]\n}\n\n` +
 `Zu prüfende Flüge:\n${JSON.stringify(payload, null, 2)}`;
   }
   function applyResults(rides, result) {
@@ -269,21 +322,23 @@
       const flightNumber = upper(item.flightNumber);
       const direction = text(item.direction) || 'unknown';
       const date = text(item.date);
+      const airportIata = upper(item.airportIata);
       const flightTime = text(item.flightTime);
-      byKey.set(`${flightNumber}|${direction}|${date}|${flightTime}`, item);
-      if (!flightTime) byKey.set(`${flightNumber}|${direction}|${date}|`, item);
-      if (!date && !flightTime) byKey.set(`${flightNumber}|${direction}||`, item);
+      byKey.set(`${flightNumber}|${direction}|${date}|${airportIata}|${flightTime}`, item);
+      if (!flightTime) byKey.set(`${flightNumber}|${direction}|${date}|${airportIata}|`, item);
+      if (!date && !flightTime) byKey.set(`${flightNumber}|${direction}||${airportIata}|`, item);
     });
     return (Array.isArray(rides) ? rides : []).map(ride => {
       const flightNumber = upper(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
       if (!flightNumber) return ride;
       const direction = normalizeDirection(ride);
       const date = text(ride?.date);
+      const airportIata = flightAirportContext(ride).airportIata;
       const flightTime = text(ride?.flightTime);
       const resultItem =
-        byKey.get(`${flightNumber}|${direction || 'unknown'}|${date}|${flightTime}`) ||
-        byKey.get(`${flightNumber}|${direction || 'unknown'}|${date}|`) ||
-        byKey.get(`${flightNumber}|${direction || 'unknown'}||`);
+        byKey.get(`${flightNumber}|${direction || 'unknown'}|${date}|${airportIata}|${flightTime}`) ||
+        byKey.get(`${flightNumber}|${direction || 'unknown'}|${date}|${airportIata}|`) ||
+        byKey.get(`${flightNumber}|${direction || 'unknown'}||${airportIata}|`);
       if (!resultItem) return ride;
       const verified = resultItem.status === 'verified' && !Boolean(resultItem.conflict) && text(resultItem.relevantLocation);
       const existingLocation = text(ride.flightLocation);

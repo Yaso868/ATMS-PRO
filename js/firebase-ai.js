@@ -1,4 +1,4 @@
-// ATMS PRO · CORE-004E · FLIGHT-012
+// ATMS PRO · CORE-006P · FLIGHT-013 MULTI-AIRPORT
 // 05.09.2026 (Europe/Berlin)
 // Firebase AI Logic + App Check + Gemini Developer API + Google Search grounding.
 // Datenschutz: niemals vollständige Planliste/Bild; nur Flugnummer, Datum, Richtung,
@@ -14,7 +14,7 @@ import {
   GoogleAIBackend
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js';
 
-const VERSION='CORE-004E-FLIGHT-012';
+const VERSION='CORE-006P-FLIGHT-013';
 const PRIMARY_MODEL='gemini-3.7-flash';
 const FALLBACK_MODEL='gemini-3.5-flash';
 
@@ -43,6 +43,26 @@ function normalizeDirection(ride){
 function relevantSide(direction){
   return direction==='arrival'?'origin':direction==='departure'?'destination':'unknown';
 }
+function airportIataFromPlace(value){
+  const raw=text(value);if(!raw)return'';
+  const normalized=raw.toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ');
+  const up=raw.toUpperCase();
+  if(normalized.includes('flughafen dusseldorf')||normalized.includes('dusseldorf airport'))return'DUS';
+  if(normalized.includes('flughafen koln')||normalized.includes('cologne bonn airport')||normalized.includes('koln/bonn'))return'CGN';
+  const exact=up.match(/^([A-Z]{3})$/);if(exact)return exact[1];
+  if(/\b(?:AIRPORT|FLUGHAFEN|VORFELD|AIRSIDE)\b/i.test(raw)){
+    const tokens=up.match(/\b[A-Z]{3}\b/g)||[];if(tokens.length===1)return tokens[0];
+  }
+  return'';
+}
+function flightAirportContext(ride){
+  const p=airportIataFromPlace(ride?.pickup||ride?.abholort||'');
+  const d=airportIataFromPlace(ride?.destination||ride?.zielort||ride?.ziel||'');
+  if(p&&!d)return{airportIata:p,direction:'arrival'};
+  if(!p&&d)return{airportIata:d,direction:'departure'};
+  return{airportIata:'',direction:'unknown'};
+}
+
 function isRealFlightNumber(value){
   const v=upper(value);
   if(!v||/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)$/.test(v))return false;
@@ -79,7 +99,7 @@ function extractGrounding(response){
     const uri=text(web?.uri);
     const title=text(web?.title)||safeHost(uri);
     if(!uri||!title)continue;
-    const identity=title.toLocaleLowerCase('de-DE');
+    const identity=(safeHost(uri)||title).toLocaleLowerCase('de-DE');
     if(!sourceMap.has(identity))sourceMap.set(identity,{name:title,url:uri});
   }
   return{
@@ -96,6 +116,7 @@ function uniqueFlights(rides){
       date:text(item.date),
       flightTime:text(item.flightTime),
       direction:text(item.direction),
+      airportIata:upper(item.airportIata),
       relevantSide:text(item.relevantSide)||relevantSide(text(item.direction)),
       locationFromPlan:currentLocationForFlight(item),
       sourceRows:Array.isArray(item.sourceRows)?item.sourceRows.slice():[]
@@ -105,14 +126,21 @@ function uniqueFlights(rides){
   for(const ride of Array.isArray(rides)?rides:[]){
     const flightNumber=upper(ride?.flightNumber||ride?.arrivalFlight||ride?.departureFlight);
     if(!isRealFlightNumber(flightNumber))continue;
-    const direction=normalizeDirection(ride),date=text(ride?.date),flightTime=text(ride?.flightTime);
+    const ctx=flightAirportContext(ride);
+    const direction=normalizeDirection(ride)||ctx.direction,date=text(ride?.date),flightTime=text(ride?.flightTime);
     const k=`${flightNumber}|${date}|${direction}|${flightTime}`;
     if(!map.has(k))map.set(k,{
-      flightNumber,date,flightTime,direction,relevantSide:relevantSide(direction),
-      locationFromPlan:text(ride?.flightLocation),sourceRows:[]
+      flightNumber,date,flightTime,direction,airportIata:ctx.airportIata,airportConflict:false,
+      relevantSide:relevantSide(direction),locationFromPlan:text(ride?.flightLocation),sourceRows:[]
     });
+    const item=map.get(k);
+    if(ctx.airportIata){
+      if(!item.airportIata)item.airportIata=ctx.airportIata;
+      else if(item.airportIata!==ctx.airportIata){item.airportIata='';item.airportConflict=true;}
+    }
     const row=Number(ride?.sourceRow||0);
-    if(row&&!map.get(k).sourceRows.includes(row))map.get(k).sourceRows.push(row);
+    if(row&&!item.sourceRows.includes(row))item.sourceRows.push(row);
+    if(!item.locationFromPlan&&text(ride?.flightLocation))item.locationFromPlan=text(ride.flightLocation);
   }
   return[...map.values()];
 }
@@ -141,24 +169,29 @@ function buildPrompt(item){
   const payload={
     flightNumber:item.flightNumber,
     date:item.date,
+    dateAssumed:false,
     direction:item.direction,
+    airportIata:item.airportIata||null,
     flightTime:item.flightTime||null,
     relevantSide:item.relevantSide,
     locationFromPlan:item.locationFromPlan||null
   };
-  return `ATMS PRO – strikte aktuelle Flugprüfung.\n\n`+
+  return `ATMS PRO – FLIGHT-013 MULTI-AIRPORT strikte aktuelle Flugprüfung.\n\n`+
 `Prüfe GENAU EINEN konkreten Flug mit Google Search anhand aktueller, DATUMSSPEZIFISCHER öffentlicher Webdaten. Verwende keine gespeicherte oder typische Flugnummer→Route-Zuordnung.\n\n`+
 `VERBINDLICHE REGELN:\n`+
 `1. Nutze Google Search. Ohne aktuelle Suchgrundlage darf status niemals "verified" sein.\n`+
-`2. direction=arrival: relevantLocation ist der HERKUNFTSORT (origin) des konkreten Fluges nach Düsseldorf (DUS).\n`+
-`3. direction=departure: relevantLocation ist der ZIELORT (destination) des konkreten Fluges ab Düsseldorf (DUS).\n`+
-`4. Verwende date EXAKT und bestätige die konkrete DUS-Verbindung an diesem Datum.\n`+
-`5. flightTime ist nur ein Unterscheidungsmerkmal. Wenn null und mehrere passende Flüge existieren: needs_manual_check.\n`+
-`6. status="verified" und confidence="high" nur, wenn mindestens ZWEI voneinander unabhängige datumsspezifische Webquellen dieselbe konkrete Route bestätigen. Eine einzelne Quelle reicht nie.\n`+
-`7. Bei widersprüchlichen Quellen, unklarer DUS-Verbindung oder fehlender Datumsbestätigung: needs_manual_check. Nicht raten.\n`+
-`8. locationFromPlan ist ausschließlich Vergleichswert, niemals Quelle. Bei sicherem Widerspruch conflict=true.\n`+
-`9. Erfinde keine Städte oder IATA-Codes.\n`+
-`10. Antworte ausschließlich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, sourceNote.\n`+
+`2. airportIata ist der für DIESE Fahrt relevante Flughafen. Verwende exakt diesen Flughafen und ersetze ihn niemals pauschal durch DUS.\n`+
+`3. direction=arrival: relevantLocation ist der HERKUNFTSORT des konkreten Fluges NACH airportIata.\n`+
+`4. direction=departure: relevantLocation ist der ZIELORT des konkreten Fluges AB airportIata.\n`+
+`5. Wenn airportIata fehlt/null oder direction=unknown ist: needs_manual_check. Nicht raten.\n`+
+`6. date ist der ATMS-Zuordnungstag und muss im ATMS-Ergebnis unverändert bleiben. Bei Nachtflügen über Mitternacht können Quellen denselben konkreten Flug unter einem benachbarten Service-/UTC-/Abflugtag führen. Nutze das nur zur Identifikation, wenn mindestens zwei unabhängige datumsspezifische Quellen Flugnummer, airportIata und Richtung eindeutig demselben Flug zuordnen; sonst needs_manual_check.\n`+
+`7. flightTime ist ein zusätzliches Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und die Zuordnung ohne flightTime nicht eindeutig ist: needs_manual_check.\n`+
+`8. status="verified" und confidence="high" nur, wenn mindestens ZWEI voneinander unabhängige datumsspezifische Webquellen dieselbe konkrete Route bestätigen. Eine einzelne Quelle reicht nie.\n`+
+`9. Prüfe zwingend, dass bei arrival destinationIata=airportIata und bei departure originIata=airportIata gilt. Andernfalls conflict=true und needs_manual_check.\n`+
+`10. Bei widersprüchlichen Quellen, unklarer Airport-Zuordnung oder fehlender Datumsbestätigung: needs_manual_check. Nicht raten.\n`+
+`11. locationFromPlan ist ausschließlich Vergleichswert, niemals Quelle. Bei sicherem Widerspruch conflict=true.\n`+
+`12. Erfinde keine Städte, IATA-Codes, Quellen oder URLs.\n`+
+`13. Antworte ausschließlich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, sourceNote.\n`+
 `status: verified|needs_manual_check; confidence: high|medium|low.\n\n`+
 `Prüfdaten:\n${JSON.stringify(payload,null,2)}`;
 }
@@ -166,7 +199,7 @@ function buildPrompt(item){
 function checkedManual(item,note,grounding=null){
   return{
     flightNumber:item.flightNumber,date:item.date,dateAssumed:false,flightTime:item.flightTime||'',
-    direction:item.direction||'unknown',flightLocation:item.locationFromPlan||'',relevantLocation:item.locationFromPlan||'',
+    direction:item.direction||'unknown',airportIata:item.airportIata||'',flightLocation:item.locationFromPlan||'',relevantLocation:item.locationFromPlan||'',
     iata:'',confidence:'uncertain',status:'needs_manual_check',conflict:false,
     sources:grounding?.sources||[],sourceCount:grounding?.sources?.length||0,sourceNote:note,
     geminiReportedCheckedAt:new Date().toISOString(),verificationDowngraded:false
@@ -193,9 +226,9 @@ async function generateWithFallback(prompt){
 }
 
 async function verifyOne(item){
-  if(!item.date||!['arrival','departure'].includes(item.direction)){
+  if(!item.date||!['arrival','departure'].includes(item.direction)||!/^[A-Z]{3}$/.test(upper(item.airportIata))){
     const g={renderedContent:'',sources:[],webSearchQueries:[]};
-    return{checked:checkedManual(item,'Datum oder Flugrichtung ist nicht eindeutig – keine automatische Webprüfung.',g),grounding:g};
+    return{checked:checkedManual(item,'Datum, Flugrichtung oder relevanter Flughafen ist nicht eindeutig – keine automatische Webprüfung.',g),grounding:g};
   }
   const generated=await generateWithFallback(buildPrompt(item));
   const response=generated.result?.response;
@@ -208,7 +241,9 @@ async function verifyOne(item){
   const modelRelevantLocation=text(parsed?.relevantLocation),modelRelevantIata=upper(parsed?.relevantIata);
   const semanticMismatch=Boolean(modelRelevantLocation&&relevantLocation&&!sameText(modelRelevantLocation,relevantLocation))||
     Boolean(modelRelevantIata&&relevantIata&&modelRelevantIata!==relevantIata);
-  const conflict=Boolean(parsed?.conflict)||semanticMismatch;
+  const airportIata=upper(item.airportIata);
+  const airportMismatch=item.direction==='arrival'?destinationIata!==airportIata:originIata!==airportIata;
+  const conflict=Boolean(parsed?.conflict)||semanticMismatch||airportMismatch;
   const sourceCount=grounding.sources.length;
   const routeComplete=Boolean(originCity&&destinationCity&&/^[A-Z]{3}$/.test(originIata)&&/^[A-Z]{3}$/.test(destinationIata));
   const claimedVerified=text(parsed?.status).toLowerCase()==='verified'&&text(parsed?.confidence).toLowerCase()==='high'&&routeComplete&&Boolean(relevantLocation)&&!conflict;
@@ -220,7 +255,7 @@ async function verifyOne(item){
   const note=`${noteBase} · Google Search: ${sourceCount} unabhängige Quelle(n).${modelNote}`;
   return{
     checked:{
-      flightNumber:item.flightNumber,date:item.date,dateAssumed:false,flightTime:item.flightTime||'',direction:item.direction,
+      flightNumber:item.flightNumber,date:item.date,dateAssumed:false,flightTime:item.flightTime||'',direction:item.direction,airportIata,
       flightLocation:verified?relevantLocation:(item.locationFromPlan||relevantLocation||''),
       relevantLocation:verified?relevantLocation:(item.locationFromPlan||relevantLocation||''),
       iata:verified&&/^[A-Z]{3}$/.test(relevantIata)?relevantIata:'',
@@ -228,7 +263,7 @@ async function verifyOne(item){
       sources:grounding.sources,sourceCount,sourceNote:note,geminiReportedCheckedAt:webCheckedAt,
       verificationDowngraded:Boolean(claimedVerified&&sourceCount<2),modelUsed:generated.modelUsed
     },
-    grounding:{...grounding,flightNumber:item.flightNumber,date:item.date,direction:item.direction,modelUsed:generated.modelUsed}
+    grounding:{...grounding,flightNumber:item.flightNumber,date:item.date,direction:item.direction,airportIata,modelUsed:generated.modelUsed}
   };
 }
 
@@ -245,7 +280,7 @@ async function verifyFlights(rides,options={}){
       checked.push(one.checked);grounding.push(one.grounding);
     }catch(error){
       const errorMessage=text(error?.message)||'unbekannter Fehler',errorCode=text(error?.code);
-      const g={renderedContent:'',sources:[],webSearchQueries:[],flightNumber:item.flightNumber,date:item.date,direction:item.direction};
+      const g={renderedContent:'',sources:[],webSearchQueries:[],flightNumber:item.flightNumber,date:item.date,direction:item.direction,airportIata:item.airportIata||''};
       const manual=checkedManual(item,`Webprüfung technisch fehlgeschlagen: ${errorCode?`${errorCode} · `:''}${errorMessage}`,g);
       manual.technicalFailure=true;manual.technicalErrorCode=errorCode;manual.technicalErrorMessage=errorMessage;
       checked.push(manual);grounding.push(g);
