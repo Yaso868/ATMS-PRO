@@ -1,7 +1,8 @@
 (() => {
   'use strict';
 
-  // CORE-006M · 10.09.2026: Verbindliche Spaltensemantik korrigiert: erste/mittlere Wg-Spalte = Fahrzeug; erste Name-Spalte = Auftrag/Kunde; rechte/letzte Name-Spalte = Fahrer. Eine Wg-Spalte wird nicht mehr als Fahrer zugeordnet. Bildschema, flexible Zuordnung und Fahrer-Zweit-OCR verwenden dieselbe Semantik.
+  // CORE-006N · 10.09.2026: Fahrer-Spaltenlogik an reale ATMS-Planlisten gehaertet. Erste Wg-Spalte = Fahrzeug. Fahrer = explizite Fahrer-Spalte, rechte zweite Name-Spalte ODER – bei aktuellen Listen wie 09.09.2026 – die rechte zweite Wg-Spalte nach Ort. Die sichtbare Kopfzeile bleibt geometrisch erhalten; keine Fahrtzeilen gehen durch Umbenennen der letzten Spalte verloren.
+  // CORE-006M · 10.09.2026: Zwischenstand; reine Umbenennung der letzten Wg-Spalte in Name erwies sich bei realen Planlisten mit sichtbarer rechter Wg-Kopfzeile als zu streng und wurde durch CORE-006N ersetzt.
   // CORE-006L · 10.09.2026: Von-/Nach-Ortszellen erhalten eine rein lokale deutsche Zweit-OCR in wenigen Spalten-Durchläufen. Eine abweichende Schreibweise wird nur bei wiederholtem exaktem Konsens und ausschließlich bei einer kleinen, diakritikbezogenen OCR-Abweichung übernommen; keine Ortsnamen-Hardcodes.
   // CORE-006J · 09.09.2026: Zeitsemantik Bild-Planliste: erste Uhrzeit neben Preis = DISPO-Zeit; mittlere Uhrzeit vor Flug ang. = gespiegelte DISPO-Zeit; letzte Uhrzeit vor Ort = Flugzeit aus Liste. Alle drei Werte bleiben getrennt gespeichert.
   // CORE-006H · 09.09.2026: Reine Rand-Satzzeichen an Fahrerwerten werden generisch entfernt, wenn danach ein vollständig gültiger Fahrername übrig bleibt. Kein Namens-Hardcode; unklare/innere OCR-Artefakte bleiben weiterhin in der gezielten Zweit-OCR bzw. manuellen Prüfung.
@@ -597,11 +598,13 @@
       if (field && mapping[field] === undefined) mapping[field] = header.index;
     });
 
-    // CORE-006M: Verbindliche ATMS-Semantik:
-    // - erste/mittlere Wg-Spalte = Fahrzeug
+    // CORE-006N: Reale ATMS-Planlisten besitzen je nach Quelle rechts entweder
+    // "Name", "Fahrer" ODER erneut "Wg", obwohl die Zellen dort Fahrernamen enthalten.
+    // Deshalb semantisch unterscheiden statt die sichtbare Kopfzeile umzubenennen:
     // - erste Name-Spalte = Auftrag/Kunde
-    // - rechte/letzte Name-Spalte = Fahrer
-    // Eine Wg-Spalte darf niemals als Fahrer interpretiert werden.
+    // - erste Wg-Spalte = Fahrzeug
+    // - Fahrer = explizite Fahrer-Spalte, zweite/rechte Name-Spalte oder zweite/rechte
+    //   Wg-Spalte, sofern sie rechts von "Ort" liegt.
     const nameHeaders = headers.filter(h => h.key === 'name');
     if (nameHeaders.length) mapping.customer = nameHeaders[0].index;
 
@@ -611,6 +614,11 @@
 
     const wgHeaders = headers.filter(h => h.key === 'wg' || aliases.vehicle.includes(h.key));
     if (mapping.vehicle === undefined && wgHeaders.length) mapping.vehicle = wgHeaders[0].index;
+    if (mapping.driver === undefined && wgHeaders.length >= 2) {
+      const locationHeader = headers.find(h => aliases.flightLocation.includes(h.key));
+      const rightWg = wgHeaders[wgHeaders.length - 1];
+      if (!locationHeader || rightWg.index > locationHeader.index) mapping.driver = rightWg.index;
+    }
 
     detectTimeColumns(headers, mapping, ambiguities);
 
@@ -645,6 +653,11 @@
 
     const wgHeaders = headers.filter(h => h.key === 'wg' || aliases.vehicle.includes(h.key));
     if (mapping.vehicle === undefined && wgHeaders.length) mapping.vehicle = wgHeaders[0].index;
+    if (mapping.driver === undefined && wgHeaders.length >= 2) {
+      const locationHeader = headers.find(h => aliases.flightLocation.includes(h.key));
+      const rightWg = wgHeaders[wgHeaders.length - 1];
+      if (!locationHeader || rightWg.index > locationHeader.index) mapping.driver = rightWg.index;
+    }
 
     return {
       mapping,
@@ -1197,7 +1210,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Name', key: 'name' }
+    { label: 'Wg', key: 'wg' }
   ];
 
   const ATMS_IMAGE_SCHEMA_13_MIRROR = [
@@ -1213,7 +1226,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Name', key: 'name' }
+    { label: 'Wg', key: 'wg' }
   ];
 
   const ATMS_IMAGE_SCHEMA_13_PRICE = [
@@ -1229,7 +1242,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Name', key: 'name' }
+    { label: 'Wg', key: 'wg' }
   ];
 
   const ATMS_IMAGE_SCHEMA_14_PRICE = [
@@ -1246,7 +1259,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Name', key: 'name' }
+    { label: 'Wg', key: 'wg' }
   ];
 
   function chooseAtmsImageSchema(observed) {
@@ -1338,8 +1351,9 @@
       const expected = schema[schemaIndex].key;
       const actual = anchor.key;
       if (expected === actual) return true;
-      // Eine explizite Fahrer-Ueberschrift darf die letzte Wg-Spalte ersetzen.
-      if (schemaIndex === schema.length - 1 && actual === 'fahrer') return true;
+      // Die rechte Fahrer-Spalte ist je nach Planquelle als Wg, Name oder Fahrer
+      // beschriftet. Alle drei Varianten sind nur im LETZTEN Schema-Slot kompatibel.
+      if (schemaIndex === schema.length - 1 && (actual === 'fahrer' || actual === 'name')) return true;
       return false;
     };
 
@@ -1353,10 +1367,12 @@
       }
       if (hit < 0) continue;
 
+      const isDriverSlot = hit === schema.length - 1;
+      const preserveDriverHeader = isDriverSlot && (anchor.key === 'name' || anchor.key === 'fahrer');
       slots[hit] = {
         ...anchor,
-        label: schema[hit].label,
-        key: schema[hit].key,
+        label: preserveDriverHeader ? anchor.label : schema[hit].label,
+        key: preserveDriverHeader ? anchor.key : schema[hit].key,
         synthetic: false
       };
       cursor = hit + 1;
@@ -1423,6 +1439,10 @@
     const wg = indexesOf('wg');
     const names = indexesOf('name');
     const explicitDriver = firstOf('fahrer');
+    const locationIndex = firstOf('ort');
+    const rightWgDriver = wg.length >= 2
+      ? wg.slice().reverse().find(index => locationIndex === undefined || index > locationIndex)
+      : undefined;
     return {
       price: firstOf('preis'),
       rideTime: times.length ? times[0] : undefined,
@@ -1437,7 +1457,9 @@
       vehicle: wg.length ? wg[0] : undefined,
       persons: firstOf('pers'),
       location: firstOf('ort'),
-      driver: explicitDriver !== undefined ? explicitDriver : (names.length >= 2 ? names[names.length - 1] : undefined)
+      driver: explicitDriver !== undefined
+        ? explicitDriver
+        : (names.length >= 2 ? names[names.length - 1] : rightWgDriver)
     };
   }
 
