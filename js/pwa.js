@@ -38,6 +38,13 @@
     if(installBox) installBox.classList.add('hidden');
   });
 })();
+/* CORE-006R · 10.09.2026:
+   Frisch verifizierte Flugorte dürfen beim finalen Planimport nicht durch ältere Ride-/Manual-Overrides verloren gehen:
+   - vor dem Import wird ausschließlich der aktuelle VERIFIED-Stand der analysierten Fahrt gesichert
+   - nach app.js-Import wird dieser Stand nur für exakt dieselbe Ride-ID + Flugnummer + Datum zurückgesetzt, wenn die Webprüfung nicht älter als die manuelle Änderung ist
+   - der verifizierte Stand wird anschließend auch als flightVerified-Ride-Override gespeichert
+   - kein Airport-/Flugnummer-Hardcode, kein Aufweichen von Datum/Richtung/Flugzeit, LIVE-/DISPO-/Planlogik unverändert.
+*/
 /* CORE-006Q · 10.09.2026:
    Bestehende bestätigte LIVE-Flugdaten bei Re-Import derselben konkreten Fahrt erhalten:
    - LIVE-Zeit, Landungszeit, Flugstatus und Live-Quellen bleiben bei eindeutigem Ride-Match bestehen
@@ -678,15 +685,101 @@
     return restored;
   }
 
+  function currentVerifiedImportSnapshots(list){
+    const out=new Map();
+    (Array.isArray(list)?list:[]).forEach(ride=>{
+      const id=str(ride?.id);
+      const flight=normalizeFlightNo(ride?.flightNumber||ride?.arrivalFlight||ride?.departureFlight);
+      const date=str(ride?.date||ride?.datum);
+      const location=str(ride?.flightLocation);
+      const checkedAt=str(ride?.flightCheckedAt||ride?.geminiReportedCheckedAt);
+      if(!id||!flight||!date||!location||!checkedAt)return;
+      if(ride?.flightCheckConfidence!=='verified'||ride?.flightNeedsManualCheck!==false)return;
+      out.set(id,{
+        id,flight,date,checkedAt,
+        flightNumber:ride.flightNumber,
+        arrivalFlight:ride.arrivalFlight,
+        departureFlight:ride.departureFlight,
+        flightDirection:ride.flightDirection,
+        flightLocation:ride.flightLocation,
+        iata:ride.iata,
+        flightCheckConfidence:'verified',
+        flightNeedsManualCheck:false,
+        flightCheckSourceNote:ride.flightCheckSourceNote,
+        flightCheckedAt:ride.flightCheckedAt,
+        flightAutoModel:ride.flightAutoModel
+      });
+    });
+    return out;
+  }
+
+  function restoreVerifiedImportSnapshots(snapshots){
+    if(!(snapshots instanceof Map)||!snapshots.size)return 0;
+    let current=[];
+    try{current=typeof rides!=='undefined'&&Array.isArray(rides)?rides:[]}catch(_){current=[]}
+    if(!current.length)return 0;
+    let restored=0;
+    current.forEach(ride=>{
+      const snap=snapshots.get(str(ride?.id));
+      if(!snap)return;
+      const flight=normalizeFlightNo(ride?.flightNumber||ride?.arrivalFlight||ride?.departureFlight);
+      const date=str(ride?.date||ride?.datum);
+      if(flight!==snap.flight||date!==snap.date)return;
+      // Eine nach der Webprüfung vorgenommene manuelle Änderung gewinnt weiterhin.
+      const checkedMs=timestampMs(snap.checkedAt);
+      const manualMs=timestampMs(ride?.manualFlightEditAt);
+      if(manualMs>0&&checkedMs>0&&manualMs>checkedMs)return;
+      const differs=ride.flightCheckConfidence!=='verified'||
+        ride.flightNeedsManualCheck!==false||
+        str(ride.flightLocation)!==str(snap.flightLocation)||
+        str(ride.iata).toUpperCase()!==str(snap.iata).toUpperCase();
+      if(!differs)return;
+      ride.flightNumber=snap.flightNumber;
+      ride.arrivalFlight=snap.arrivalFlight;
+      ride.departureFlight=snap.departureFlight;
+      ride.flightDirection=snap.flightDirection;
+      ride.flightLocation=snap.flightLocation;
+      ride.iata=snap.iata;
+      ride.flightCheckConfidence='verified';
+      ride.flightNeedsManualCheck=false;
+      ride.flightCheckSourceNote=snap.flightCheckSourceNote;
+      ride.flightCheckedAt=snap.flightCheckedAt;
+      ride.flightAutoModel=snap.flightAutoModel;
+      try{
+        if(typeof upsertRideOverride==='function'){
+          upsertRideOverride(ride.id,{
+            flightVerified:true,
+            flightLocation:snap.flightLocation,
+            iata:snap.iata||'',
+            flightNeedsManualCheck:false,
+            flightCheckedAt:snap.flightCheckedAt
+          });
+        }
+      }catch(_){}
+      restored++;
+    });
+    if(restored){
+      try{if(typeof save==='function')save()}catch(_){}
+      try{if(typeof window.render==='function')window.render()}catch(_){}
+    }
+    return restored;
+  }
+
   function wrapImport(){
     if(typeof window.applyImportedRides!=='function'||window.applyImportedRides.__atmsCore004eWrapped)return;
     const original=window.applyImportedRides;
     const wrapped=function(list){
       patchRecoveredFlights(list);
+      // CORE-006R: Den frisch geprüften VERIFIED-Stand VOR älteren Overrides merken.
+      const verifiedSnapshots=currentVerifiedImportSnapshots(list);
       applyStoredManualEdits(list);
       const liveRestored=preserveExistingLiveState(list);
       const result=original(list);
-      if(liveRestored&&result&&typeof result==='object')result.restoredLiveRides=liveRestored;
+      const verifiedRestored=restoreVerifiedImportSnapshots(verifiedSnapshots);
+      if(result&&typeof result==='object'){
+        if(liveRestored)result.restoredLiveRides=liveRestored;
+        if(verifiedRestored)result.restoredVerifiedImportRides=verifiedRestored;
+      }
       return result;
     };
     wrapped.__atmsCore004eWrapped=true;
