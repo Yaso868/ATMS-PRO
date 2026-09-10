@@ -38,12 +38,13 @@
     if(installBox) installBox.classList.add('hidden');
   });
 })();
-/* CORE-006K · 09.09.2026:
-   Zeitdarstellung Fahrtenliste korrigiert:
-   - erste/gespiegelte Uhrzeit = DISPO-Zeit
-   - letzte Uhrzeit vor Ort = aktuelle Flugzeit aus der Liste
-   - diese Flugzeit darf früher ODER später als DISPO sein
-   - Statuszeile zeigt DISPO links und Flugzeit/LIVE rechts, ohne doppelte "Geplant"-Anzeige.
+/* CORE-006L · 10.09.2026:
+   Keine falsche Live-Abweichung ohne echte LIVE-Daten:
+   - DISPO-Zeit bleibt links sichtbar
+   - Flugzeit aus der Planliste bleibt rechts sichtbar
+   - ohne echte LIVE-Zeit steht in der Mitte immer "KEINE LIVE-DATEN"
+   - keine +MIN / MIN FRÜHER / PÜNKTLICH-Berechnung aus der reinen Listen-Flugzeit
+   - vorhandene LIVE-Berechnung bleibt unverändert.
 */
 /* CORE-005J · 07.09.2026: Statuszeile rendert PLAN/DISPO/LIVE nativ und stabil; kein Selbst-Render-Loop. */
 /* ==========================================================
@@ -221,23 +222,15 @@
       return {plan:baseTime,leftLabel:'Dispo',current:live,sideLabel:'Live',key:'unknown',label:'LIVE'};
     }
 
-    // Ohne LIVE-Daten wird die letzte Uhrzeit der Planliste als aktuelle Flugzeit
-    // gezeigt. Sie kann später ODER früher als die DISPO-Zeit sein.
+    // CORE-006L: Ohne echte LIVE-Zeit niemals eine Abweichung aus
+    // DISPO-Zeit und reiner Listen-Flugzeit ableiten. Die Listen-Flugzeit
+    // bleibt rechts sichtbar, die Mitte zeigt eindeutig "KEINE LIVE-DATEN".
     if(listedFlightTime){
-      const diff=minuteDiff(baseTime,listedFlightTime);
-      if(diff!==null){
-        if(diff>0) return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'delayed',label:`+${diff} MIN`};
-        if(diff<0) return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'early',label:`${Math.abs(diff)} MIN FRÜHER`};
-        return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'on-time',label:'PÜNKTLICH'};
-      }
-      return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'unknown',label:'FLUGZEIT LISTE'};
+      return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'unknown',label:'KEINE LIVE-DATEN'};
     }
 
-    // Fallback für ältere Fahrten ohne dritte Flugzeit.
-    if(explicitDelay>0) return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'delayed',label:`+${explicitDelay} MIN`};
-    if(existing.key==='on-time') return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'on-time',label:'PÜNKTLICH'};
-    if(existing.key==='landed') return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'landed',label:'GELANDET'};
-    if(existing.key==='delayed') return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'delayed',label:String(existing.label||'VERSPÄTET').toUpperCase().replace(/\.$/,'')};
+    // Ohne LIVE-Zeit und ohne Listen-Flugzeit ebenfalls keine Delay-/On-Time-
+    // Aussage aus Legacy-Feldern ableiten.
     return {plan:baseTime,leftLabel:'Dispo',current:'',sideLabel:'Live',key:'unknown',label:'KEINE LIVE-DATEN'};
   }
 
