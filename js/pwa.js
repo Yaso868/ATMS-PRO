@@ -38,6 +38,13 @@
     if(installBox) installBox.classList.add('hidden');
   });
 })();
+/* CORE-006O · 10.09.2026:
+   Verifizierte Flugprüfung gewinnt über ältere manuelle Flugdaten-Markierung:
+   - manuelle Korrektur bleibt bis zu einer neueren sicheren Webprüfung bestehen
+   - eine danach verifizierte Prüfung wird beim Import/Reload nicht wieder auf
+     "manuell prüfen" zurückgestuft
+   - nur Flug-Vertrauensstatus/Flugdaten-Priorität; LIVE-/Zeitlogik unverändert.
+*/
 /* CORE-006L · 10.09.2026:
    Keine falsche Live-Abweichung ohne echte LIVE-Daten:
    - DISPO-Zeit bleibt links sichtbar
@@ -418,12 +425,48 @@
     localStorage.setItem(MANUAL_EDIT_KEY,JSON.stringify(Object.fromEntries(entries)));
   }
 
+  function timestampMs(value){
+    const ms=Date.parse(str(value));
+    return Number.isFinite(ms)?ms:0;
+  }
+
+  function verifiedBeatsStoredManual(ride,hit){
+    if(!ride||!hit)return false;
+    const checkedAt=timestampMs(ride.flightCheckedAt||ride.geminiReportedCheckedAt);
+    const manualAt=timestampMs(hit.updatedAt||ride.manualFlightEditAt);
+    return ride.flightCheckConfidence==='verified' &&
+      ride.flightNeedsManualCheck===false &&
+      checkedAt>0 &&
+      (manualAt===0||checkedAt>=manualAt);
+  }
+
+  function verifiedFlightSnapshot(ride){
+    return {
+      flightNumber:ride.flightNumber,
+      arrivalFlight:ride.arrivalFlight,
+      departureFlight:ride.departureFlight,
+      flightDirection:ride.flightDirection,
+      flightLocation:ride.flightLocation,
+      iata:ride.iata,
+      flightCheckConfidence:'verified',
+      flightNeedsManualCheck:false,
+      flightCheckSourceNote:ride.flightCheckSourceNote,
+      flightCheckedAt:ride.flightCheckedAt,
+      flightAutoModel:ride.flightAutoModel
+    };
+  }
+
   function applyStoredManualEdits(list){
     const edits=readManualEdits();
     let changed=0;
     (Array.isArray(list)?list:[]).forEach(ride=>{
       const hit=edits[flightFingerprint(ride)];
       if(!hit)return;
+      // CORE-006O: Eine nach der manuellen Änderung erfolgreich verifizierte
+      // Webprüfung ist die neuere Wahrheit und darf nicht wieder auf "manual"
+      // zurückgestuft werden. Eine ältere/fehlende Prüfung ändert nichts am
+      // bisherigen Schutz der manuellen Korrektur.
+      if(verifiedBeatsStoredManual(ride,hit))return;
       const no=normalizeFlightNo(hit.flightNumber);
       const loc=str(hit.flightLocation);
       const iata=str(hit.iata).toUpperCase();
@@ -575,10 +618,36 @@
       if(typeof applyRideOverrides!=='function'||applyRideOverrides.__atmsCore004eWrapped)return;
       const original=applyRideOverrides;
       const wrapped=function(source){
+        // CORE-006O: app.js kann einen älteren manuellen Ride-Override anwenden,
+        // bevor diese Schutzschicht läuft. Deshalb merken wir verifizierte
+        // Flugdaten, deren Webprüfung neuer als der gespeicherte manuelle Edit ist,
+        // und stellen ausschließlich diese Flug-Vertrauensfelder danach wieder her.
+        const edits=readManualEdits();
+        const verified=new Map();
+        (Array.isArray(source)?source:[]).forEach(ride=>{
+          const hit=edits[flightFingerprint(ride)];
+          if(hit&&verifiedBeatsStoredManual(ride,hit)){
+            verified.set(String(ride.id||''),verifiedFlightSnapshot(ride));
+          }
+        });
+
         const base=original(source);
-        const out=Array.isArray(base?.rides)?base.rides:(Array.isArray(source)?source:[]);
+        let out=Array.isArray(base?.rides)?base.rides:(Array.isArray(source)?source:[]);
+        let verifiedRestored=0;
+        if(verified.size){
+          out=out.map(ride=>{
+            const snap=verified.get(String(ride.id||''));
+            if(!snap)return ride;
+            const differs=ride.flightCheckConfidence!=='verified'||
+              ride.flightNeedsManualCheck!==false||
+              str(ride.flightLocation)!==str(snap.flightLocation)||
+              str(ride.iata).toUpperCase()!==str(snap.iata).toUpperCase();
+            if(differs)verifiedRestored++;
+            return {...ride,...snap};
+          });
+        }
         const manualChanged=applyStoredManualEdits(out);
-        return {rides:out,changed:Number(base?.changed||0)+manualChanged};
+        return {rides:out,changed:Number(base?.changed||0)+verifiedRestored+manualChanged};
       };
       wrapped.__atmsCore004eWrapped=true;
       applyRideOverrides=wrapped;
