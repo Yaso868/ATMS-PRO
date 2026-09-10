@@ -38,6 +38,13 @@
     if(installBox) installBox.classList.add('hidden');
   });
 })();
+/* CORE-006Q · 10.09.2026:
+   Bestehende bestätigte LIVE-Flugdaten bei Re-Import derselben konkreten Fahrt erhalten:
+   - LIVE-Zeit, Landungszeit, Flugstatus und Live-Quellen bleiben bei eindeutigem Ride-Match bestehen
+   - Match ist konservativ und nur für dieselbe Fahrt / denselben Plantag zulässig
+   - explizite neue LIVE-Daten im eingehenden Import gewinnen; nichts wird geraten
+   - DISPO-, Plan-, Listen-Flugzeit und CORE-006O-Flugvertrauen bleiben getrennt.
+*/
 /* CORE-006O · 10.09.2026:
    Verifizierte Flugprüfung gewinnt über ältere manuelle Flugdaten-Markierung:
    - manuelle Korrektur bleibt bis zu einer neueren sicheren Webprüfung bestehen
@@ -600,13 +607,87 @@
     service.__atmsCore004eWrapped=true;
   }
 
+  const LIVE_REIMPORT_FIELDS=[
+    'liveTime','live_time','currentPickupTime','current_pickup_time','aktuelle_abholzeit','aktuelleZeit','aktuelle_zeit',
+    'live_abholzeit','flightradar_abholzeit','verspaetete_abholzeit','verspätete_abholzeit','livePickupTime','live_pickup_time','currentTime','current_time',
+    'actualLandingTime','actual_landing_time','landingTimeActual','landing_time_actual','landedAt','landed_at','actualArrivalTime','actual_arrival_time',
+    'flightActualArrival','flight_actual_arrival','realArrivalTime','real_arrival_time','flightradar_landezeit','flightLandingTime','landingTime','liveLandingTime',
+    'estimatedLandingTime','etaLanding','landezeit','estimated_landing_time',
+    'flightStatus','flugstatus','liveStatus','live_status','delayMinutes','delay_minutes','verspaetungMinuten','verspätung_minuten','delay',
+    'landed','gelandet','liveFlightStatus','liveFlightAirportIata','liveFlightScheduledTime','liveFlightEstimatedTime','liveFlightActualTime',
+    'liveCheckedAt','liveSourceNote','liveSources','liveManualConfirmed','liveBufferOverrideMinutes','live_buffer_override_minutes',
+    'liveBufferMinutes','live_buffer_minutes','pickupBufferMinutes','pickup_buffer_minutes','liveTimeDerivedFromLanding'
+  ];
+
+  function liveReimportIdentity(ride){
+    const date=str(ride?.date||ride?.datum);
+    const flight=normalizeFlightNo(ride?.flightNumber||ride?.arrivalFlight||ride?.departureFlight);
+    const direction=str(ride?.flightDirection)||inferFlightDirection(ride)||'unknown';
+    const pickup=key(ride?.pickup||ride?.abholort);
+    const destination=key(ride?.destination||ride?.zielort||ride?.ziel);
+    const time=str(ride?.dispoTime||ride?.dispo_time||ride?.planTime||ride?.time||ride?.plan_abholzeit);
+    const driver=key(ride?.driver||ride?.fahrer);
+    if(!date||!flight||!pickup||!destination)return'';
+    return [date,flight,direction,pickup,destination,time,driver].join('|');
+  }
+
+  function hasMeaningfulLiveState(ride){
+    if(!ride)return false;
+    if(directLivePickup(ride)||landingTime(ride))return true;
+    if(ride.liveManualConfirmed===true||ride.landed===true||ride.gelandet===true)return true;
+    if(str(ride.liveCheckedAt)||str(ride.liveFlightActualTime)||str(ride.liveFlightEstimatedTime)||str(ride.liveFlightScheduledTime))return true;
+    const liveStatus=str(ride.liveFlightStatus||ride.liveStatus||ride.live_status||ride.flightStatus||ride.flugstatus).toLowerCase();
+    return Boolean(liveStatus&&!/^(unknown|keine live-daten|keine live daten)$/.test(liveStatus));
+  }
+
+  function preserveExistingLiveState(list){
+    const incoming=Array.isArray(list)?list:[];
+    let current=[];
+    try{current=typeof rides!=='undefined'&&Array.isArray(rides)?rides:[]}catch(_){current=[]}
+    if(!incoming.length||!current.length)return 0;
+
+    const oldByKey=new Map(),incomingCounts=new Map();
+    current.forEach(ride=>{
+      const k=liveReimportIdentity(ride);
+      if(!k||!hasMeaningfulLiveState(ride))return;
+      const arr=oldByKey.get(k)||[];arr.push(ride);oldByKey.set(k,arr);
+    });
+    incoming.forEach(ride=>{const k=liveReimportIdentity(ride);if(k)incomingCounts.set(k,(incomingCounts.get(k)||0)+1)});
+
+    let restored=0;
+    incoming.forEach(ride=>{
+      const k=liveReimportIdentity(ride);
+      const matches=k?oldByKey.get(k):null;
+      // Nur eindeutige 1:1-Zuordnung. Bei Mehrdeutigkeit niemals LIVE-Daten übertragen.
+      if(!matches||matches.length!==1||incomingCounts.get(k)!==1)return;
+      // Falls der neue Import selbst echte LIVE-Daten trägt, sind diese neuer und bleiben unangetastet.
+      if(hasMeaningfulLiveState(ride))return;
+      const previous=matches[0];
+      let changed=false;
+      LIVE_REIMPORT_FIELDS.forEach(field=>{
+        if(!Object.prototype.hasOwnProperty.call(previous,field))return;
+        ride[field]=previous[field];
+        changed=true;
+      });
+      if(changed){
+        ride.liveReimportRestoredAt=new Date().toISOString();
+        ride.liveReimportSource='same-ride-previous-state';
+        restored++;
+      }
+    });
+    return restored;
+  }
+
   function wrapImport(){
     if(typeof window.applyImportedRides!=='function'||window.applyImportedRides.__atmsCore004eWrapped)return;
     const original=window.applyImportedRides;
     const wrapped=function(list){
       patchRecoveredFlights(list);
       applyStoredManualEdits(list);
-      return original(list);
+      const liveRestored=preserveExistingLiveState(list);
+      const result=original(list);
+      if(liveRestored&&result&&typeof result==='object')result.restoredLiveRides=liveRestored;
+      return result;
     };
     wrapped.__atmsCore004eWrapped=true;
     window.applyImportedRides=wrapped;
