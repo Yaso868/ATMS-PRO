@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006M · 10.09.2026: Verbindliche Spaltensemantik korrigiert: erste/mittlere Wg-Spalte = Fahrzeug; erste Name-Spalte = Auftrag/Kunde; rechte/letzte Name-Spalte = Fahrer. Eine Wg-Spalte wird nicht mehr als Fahrer zugeordnet. Bildschema, flexible Zuordnung und Fahrer-Zweit-OCR verwenden dieselbe Semantik.
   // CORE-006L · 10.09.2026: Von-/Nach-Ortszellen erhalten eine rein lokale deutsche Zweit-OCR in wenigen Spalten-Durchläufen. Eine abweichende Schreibweise wird nur bei wiederholtem exaktem Konsens und ausschließlich bei einer kleinen, diakritikbezogenen OCR-Abweichung übernommen; keine Ortsnamen-Hardcodes.
   // CORE-006J · 09.09.2026: Zeitsemantik Bild-Planliste: erste Uhrzeit neben Preis = DISPO-Zeit; mittlere Uhrzeit vor Flug ang. = gespiegelte DISPO-Zeit; letzte Uhrzeit vor Ort = Flugzeit aus Liste. Alle drei Werte bleiben getrennt gespeichert.
   // CORE-006H · 09.09.2026: Reine Rand-Satzzeichen an Fahrerwerten werden generisch entfernt, wenn danach ein vollständig gültiger Fahrername übrig bleibt. Kein Namens-Hardcode; unklare/innere OCR-Artefakte bleiben weiterhin in der gezielten Zweit-OCR bzw. manuellen Prüfung.
@@ -596,14 +597,20 @@
       if (field && mapping[field] === undefined) mapping[field] = header.index;
     });
 
-    // "Wg" kann mehrfach vorkommen. Erstes Wg = Fahrzeug, späteres Wg/letzte Textspalte
-    // kann je nach Planlayout Fahrer sein. Eine explizite Fahrer-Überschrift hat Vorrang.
+    // CORE-006M: Verbindliche ATMS-Semantik:
+    // - erste/mittlere Wg-Spalte = Fahrzeug
+    // - erste Name-Spalte = Auftrag/Kunde
+    // - rechte/letzte Name-Spalte = Fahrer
+    // Eine Wg-Spalte darf niemals als Fahrer interpretiert werden.
+    const nameHeaders = headers.filter(h => h.key === 'name');
+    if (nameHeaders.length) mapping.customer = nameHeaders[0].index;
+
     const driverHeader = headers.find(h => aliases.driver.includes(h.key));
     if (driverHeader) mapping.driver = driverHeader.index;
+    else if (nameHeaders.length >= 2) mapping.driver = nameHeaders[nameHeaders.length - 1].index;
 
     const wgHeaders = headers.filter(h => h.key === 'wg' || aliases.vehicle.includes(h.key));
     if (mapping.vehicle === undefined && wgHeaders.length) mapping.vehicle = wgHeaders[0].index;
-    if (mapping.driver === undefined && wgHeaders.length >= 2) mapping.driver = wgHeaders[wgHeaders.length - 1].index;
 
     detectTimeColumns(headers, mapping, ambiguities);
 
@@ -629,8 +636,15 @@
     });
     detectTimeColumns(headers, mapping, ambiguities);
 
+    const nameHeaders = headers.filter(h => h.key === 'name');
+    if (nameHeaders.length) mapping.customer = nameHeaders[0].index;
+
     const driverHeader = headers.find(h => aliases.driver.includes(h.key));
     if (driverHeader) mapping.driver = driverHeader.index;
+    else if (nameHeaders.length >= 2) mapping.driver = nameHeaders[nameHeaders.length - 1].index;
+
+    const wgHeaders = headers.filter(h => h.key === 'wg' || aliases.vehicle.includes(h.key));
+    if (mapping.vehicle === undefined && wgHeaders.length) mapping.vehicle = wgHeaders[0].index;
 
     return {
       mapping,
@@ -1183,7 +1197,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Wg', key: 'wg' }
+    { label: 'Name', key: 'name' }
   ];
 
   const ATMS_IMAGE_SCHEMA_13_MIRROR = [
@@ -1199,7 +1213,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Wg', key: 'wg' }
+    { label: 'Name', key: 'name' }
   ];
 
   const ATMS_IMAGE_SCHEMA_13_PRICE = [
@@ -1215,7 +1229,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Wg', key: 'wg' }
+    { label: 'Name', key: 'name' }
   ];
 
   const ATMS_IMAGE_SCHEMA_14_PRICE = [
@@ -1232,7 +1246,7 @@
     { label: 'Pers', key: 'pers' },
     { label: 'Uhrzeit', key: 'uhrzeit' },
     { label: 'Ort', key: 'ort' },
-    { label: 'Wg', key: 'wg' }
+    { label: 'Name', key: 'name' }
   ];
 
   function chooseAtmsImageSchema(observed) {
@@ -1407,6 +1421,8 @@
     };
     const times = indexesOf('uhrzeit');
     const wg = indexesOf('wg');
+    const names = indexesOf('name');
+    const explicitDriver = firstOf('fahrer');
     return {
       price: firstOf('preis'),
       rideTime: times.length ? times[0] : undefined,
@@ -1414,14 +1430,14 @@
       flightTime: times.length >= 2 ? times[times.length - 1] : undefined,
       pickup: firstOf('von'),
       destination: firstOf('nach'),
-      customer: firstOf('name'),
+      customer: names.length ? names[0] : undefined,
       company: firstOf('firma'),
       arrivalFlight: firstOf('flugang'),
       departureFlight: firstOf('flugausg'),
       vehicle: wg.length ? wg[0] : undefined,
       persons: firstOf('pers'),
       location: firstOf('ort'),
-      driver: wg.length >= 2 ? wg[wg.length - 1] : firstOf('fahrer')
+      driver: explicitDriver !== undefined ? explicitDriver : (names.length >= 2 ? names[names.length - 1] : undefined)
     };
   }
 
