@@ -1,3 +1,4 @@
+// CORE-006U1 · 11.09.2026: Altlast-Bereinigung für frühere künstliche scheduled-LIVE=DISPO-Werte. Bei einem neuen unbestätigten Live-Prüfergebnis wird nur ein eindeutig künstlicher Altwert entfernt (vorheriger liveFlightStatus=scheduled, keine Estimated/Actual-Zeit, LIVE exakt DISPO/PLAN, keine manuelle Bestätigung). Echte LIVE-Daten, manuelle Landungen, PLAN/DISPO und übrige Logik bleiben unverändert.
 // CORE-006U · 11.09.2026: LIVE-FLIGHT scheduled/null gehärtet: scheduled erzeugt weder „Pünktlich“ noch eine künstliche LIVE-Abholzeit; delayMinutes=null bleibt beim Ableiten neutral. Bestehende fehlerhaft erzeugte scheduled-LIVE=DISPO-Werte werden beim erneuten Live-Import gezielt bereinigt. Keine Änderung an PLAN, DISPO, Arrival-Puffer, Bündeln, Routing oder Persistenz.
 // CORE-006S3 · 11.09.2026: Mobile Adresssuche gehärtet: kurze Suchbegriffe (z. B. NH) werden auch während/bei Ende von Android-IME-Komposition zuverlässig aktualisiert; Trefferzähler direkt unter dem Suchfeld. Keine Änderung an Adressdaten, Import/Export, Routing oder Fahrtenlogik.
 // CORE-006S2 · 10.09.2026: Excel-Adressimport liest XLSX-XML namespace-unabhängig (auch echte Excel-/Microsoft-365-Dateien mit Präfixen wie x:sheet/x:row). Keine Änderung an Adressdaten, Importmodi, Routing oder Fahrtenlogik.
@@ -1660,7 +1661,7 @@ function applyLiveFlightResult(){
     const box=$('liveFlightResult');
     const checked=parseLiveFlightResult(box?.value||'');
     const checkedAt=new Date().toISOString();
-    let updated=0,uncertain=0;
+    let updated=0,uncertain=0,cleanedLegacy=0;
     rides=rides.map(r=>{
       const flight=flightCacheNumber(r.flightNumber);if(!flight)return r;
       const date=String(r.date||'').trim();
@@ -1669,7 +1670,36 @@ function applyLiveFlightResult(){
       const candidates=checked.filter(x=>flightCacheNumber(x.flightNumber)===flight&&(!date||x.date===date)&&x.direction===direction&&String(x.airportIata||'').trim().toUpperCase()===String(airportIata||'').trim().toUpperCase());
       if(candidates.length!==1)return r;
       const hit=candidates[0];
-      if(!hit.confirmed){uncertain++;return r;}
+      if(!hit.confirmed){
+        uncertain++;
+        // CORE-006U1: Ein unsicheres neues Ergebnis darf echte vorhandene LIVE-Daten nicht löschen.
+        // Bereinigt wird ausschließlich das bekannte Altlast-Muster aus dem früheren scheduled-Import:
+        // scheduled + keine Estimated/Actual-Zeit + LIVE exakt DISPO/PLAN + keine manuelle Bestätigung.
+        const priorLive=first(r.liveTime,r.live_time);
+        const priorBase=first(dispoTimeOf(r),planTimeOf(r));
+        const priorLiveStatus=String(r.liveFlightStatus||'').trim().toLowerCase();
+        const priorEstimated=first(r.liveFlightEstimatedTime);
+        const priorActual=first(r.liveFlightActualTime);
+        const manualConfirmed=Boolean(r.liveManualConfirmed);
+        const clearLegacyScheduledLive=priorLiveStatus==='scheduled'
+          && !priorEstimated
+          && !priorActual
+          && !manualConfirmed
+          && Boolean(priorLive)
+          && priorLive===priorBase;
+        if(!clearLegacyScheduledLive)return r;
+        cleanedLegacy++;
+        return norm({...r,
+          liveTime:'',
+          live_time:'',
+          flightStatus:'unknown',
+          landed:false,
+          liveFlightStatus:'unknown',
+          liveFlightEstimatedTime:'',
+          liveFlightActualTime:'',
+          liveCheckedAt:checkedAt
+        },0);
+      }
       const nextLive=livePickupFromCheck(r,hit);
       const rawStatus=hit.status==='landed'?'landed':hit.status==='delayed'?'delayed':hit.status==='cancelled'?'cancelled':hit.status==='on_time'?'on-time':hit.status==='scheduled'?'scheduled':'unknown';
       // CORE-006U: Frühere fehlerhafte scheduled-Imports konnten LIVE exakt auf DISPO/PLAN setzen.
@@ -1701,8 +1731,8 @@ function applyLiveFlightResult(){
     });
     save();render();
     if(box)box.value='';
-    const status=$('liveFlightImportStatus');if(status)status.textContent=`${updated} Fahrt(en) mit bestätigten Live-Flugdaten aktualisiert${uncertain?` · ${uncertain} unsicher nicht verändert`:''}.`;
-    showToast(`${updated} Live-Flugdaten übernommen`,'ok');
+    const status=$('liveFlightImportStatus');if(status)status.textContent=`${updated} Fahrt(en) mit bestätigten Live-Flugdaten aktualisiert${uncertain?` · ${uncertain} unsicher`:''}${cleanedLegacy?` · ${cleanedLegacy} alter künstlicher scheduled-LIVE-Wert bereinigt`:''}.`;
+    showToast(`${updated} Live-Flugdaten übernommen${cleanedLegacy?` · ${cleanedLegacy} Altwert bereinigt`:''}`,'ok');
   }catch(e){const status=$('liveFlightImportStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Live-Flugergebnis ungültig','warn');}
 }
 function renderArrivalBufferSetting(){
