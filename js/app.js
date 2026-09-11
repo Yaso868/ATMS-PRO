@@ -1,3 +1,4 @@
+// CORE-006U · 11.09.2026: LIVE-FLIGHT scheduled/null gehärtet: scheduled erzeugt weder „Pünktlich“ noch eine künstliche LIVE-Abholzeit; delayMinutes=null bleibt beim Ableiten neutral. Bestehende fehlerhaft erzeugte scheduled-LIVE=DISPO-Werte werden beim erneuten Live-Import gezielt bereinigt. Keine Änderung an PLAN, DISPO, Arrival-Puffer, Bündeln, Routing oder Persistenz.
 // CORE-006S3 · 11.09.2026: Mobile Adresssuche gehärtet: kurze Suchbegriffe (z. B. NH) werden auch während/bei Ende von Android-IME-Komposition zuverlässig aktualisiert; Trefferzähler direkt unter dem Suchfeld. Keine Änderung an Adressdaten, Import/Export, Routing oder Fahrtenlogik.
 // CORE-006S2 · 10.09.2026: Excel-Adressimport liest XLSX-XML namespace-unabhängig (auch echte Excel-/Microsoft-365-Dateien mit Präfixen wie x:sheet/x:row). Keine Änderung an Adressdaten, Importmodi, Routing oder Fahrtenlogik.
 // CORE-006S · 10.09.2026: Editierbare Orte-&-Adressen-Verwaltung mit sicherem Excel/CSV-Import/Export. Routen verwenden nur exakte Adressbuch-Treffer bzw. eindeutige Airport-Codes; keine Hotel-Filiale wird geraten. Bündelfahrten behalten die Planreihenfolge.
@@ -536,7 +537,7 @@ function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r
   safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
   safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
 }function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
-function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(/storniert|cancelled|canceled/.test(raw))return{key:'cancelled',label:'Storniert'};if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time|scheduled/.test(raw))return{key:'on-time',label:'Pünktlich'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
+function flightStatusInfo(r){const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;if(/storniert|cancelled|canceled/.test(raw))return{key:'cancelled',label:'Storniert'};if(r.landed||r.gelandet||/gelandet|landed|arrived/.test(raw))return{key:'landed',label:'Gelandet'};if(delay>0||/verspät|delay|late/.test(raw))return{key:'delayed',label:delay>0?`+${delay} Min.`:'Verspätet'};if(/pünkt|on.?time/.test(raw))return{key:'on-time',label:'Pünktlich'};if(/scheduled|geplant/.test(raw))return{key:'unknown',label:'Keine Live-Daten'};return{key:'unknown',label:'Keine Live-Daten'}}function flightStatusMarkup(r){const x=flightStatusInfo(r);return `<span class="flight-status ${x.key}">${esc(x.label)}</span>`}
 function timeMarkup(r){
   const plan=planTimeOf(r),dispo=dispoTimeOf(r),live=liveTimeOf(r);
   const base=first(dispo,plan);
@@ -1646,9 +1647,11 @@ function livePickupFromCheck(ride,hit){
   }
   if(hit.direction==='departure'){
     const plan=planTimeOf(ride);if(!plan)return'';
-    const delay=Number(hit.delayMinutes);
-    if(Number.isFinite(delay))return clockPlusMinutes(plan,delay);
-    return hit.status==='on_time'||hit.status==='scheduled'?plan:'';
+    const hasDelay=hit.delayMinutes!==null&&hit.delayMinutes!==undefined&&hit.delayMinutes!==''&&Number.isFinite(Number(hit.delayMinutes));
+    if(hasDelay)return clockPlusMinutes(plan,Number(hit.delayMinutes));
+    // CORE-006U: Nur explizit bestätigtes on_time darf LIVE=DISPO/PLAN setzen.
+    // scheduled bedeutet lediglich geplant und erzeugt ohne echte Schätzung/Aktualzeit keine LIVE-Abholzeit.
+    return hit.status==='on_time'?plan:'';
   }
   return'';
 }
@@ -1668,13 +1671,23 @@ function applyLiveFlightResult(){
       const hit=candidates[0];
       if(!hit.confirmed){uncertain++;return r;}
       const nextLive=livePickupFromCheck(r,hit);
-      const rawStatus=hit.status==='landed'?'landed':hit.status==='delayed'?'delayed':hit.status==='cancelled'?'cancelled':(hit.status==='on_time'||hit.status==='scheduled')?'on-time':'unknown';
+      const rawStatus=hit.status==='landed'?'landed':hit.status==='delayed'?'delayed':hit.status==='cancelled'?'cancelled':hit.status==='on_time'?'on-time':hit.status==='scheduled'?'scheduled':'unknown';
+      // CORE-006U: Frühere fehlerhafte scheduled-Imports konnten LIVE exakt auf DISPO/PLAN setzen.
+      // Nur genau diese künstlichen Altwerte werden beim erneuten Live-Import entfernt.
+      const priorLive=first(r.liveTime,r.live_time);
+      const priorBase=first(dispoTimeOf(r),planTimeOf(r));
+      const clearLegacyScheduledLive=hit.status==='scheduled'
+        && !nextLive
+        && String(r.liveFlightStatus||'').trim().toLowerCase()==='scheduled'
+        && Boolean(priorLive)
+        && priorLive===priorBase;
+      const mergedLive=nextLive||(clearLegacyScheduledLive?'':priorLive);
       updated++;
       return norm({...r,
-        liveTime:nextLive||r.liveTime||'',
-        live_time:nextLive||r.live_time||'',
+        liveTime:mergedLive,
+        live_time:mergedLive,
         flightStatus:rawStatus,
-        delayMinutes:Number.isFinite(Number(hit.delayMinutes))?Number(hit.delayMinutes):0,
+        delayMinutes:hit.delayMinutes===null?null:(Number.isFinite(Number(hit.delayMinutes))?Number(hit.delayMinutes):null),
         landed:hit.status==='landed',
         liveFlightStatus:hit.status,
         liveFlightAirportIata:airportIata||'',
