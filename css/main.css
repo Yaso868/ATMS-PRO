@@ -702,3 +702,102 @@
     padding-bottom:4px;
   }
 }
+
+
+/* ==========================================================
+   ATMS PRO – CORE-006X · 11.09.2026
+   A: Live-Dispo Past-Ride Guard (UI-Feld)
+   B: Mobile Import/Settings Width Guard
+   C: Import / Einstellungen getrennte Ansichten
+
+   Keine Änderung an PLAN/DISPO/LIVE, Flugprüfung, OCR, GPS,
+   Routing, Adressdaten, Persistenz oder CORE-006W.
+   ========================================================== */
+html,body{
+  max-width:100%;
+  overflow-x:hidden;
+}
+#importView,#settingsView{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow-x:hidden;
+}
+#importView .import,
+#settingsView .settings-page{
+  width:100%;
+  max-width:760px;
+  min-width:0;
+  margin:0 auto;
+}
+#importView .card,
+#settingsView .card,
+#importToolsHost,
+#settingsToolsHost,
+#importToolsHost > *,
+#settingsToolsHost > *{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+#importView input,
+#importView select,
+#importView textarea,
+#importView button,
+#settingsView input,
+#settingsView select,
+#settingsView textarea,
+#settingsView button{
+  max-width:100%;
+  min-width:0;
+  box-sizing:border-box;
+}
+#importView .plan-preview-wrap{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow-x:auto;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+}
+#importView .plan-preview{
+  max-width:none;
+}
+#importToolsHost,
+#settingsToolsHost{
+  display:block;
+}
+.live-stat-wide{
+  grid-column:1 / -1;
+}
+.live-stat-wide .live-input{
+  width:92px;
+  display:inline-block;
+  margin-right:4px;
+}
+@media(max-width:760px){
+  #importView .import,
+  #settingsView .settings-page{
+    padding-left:12px;
+    padding-right:12px;
+    padding-bottom:calc(110px + env(safe-area-inset-bottom));
+  }
+  #importView .cockHead,
+  #settingsView .cockHead{
+    min-width:0;
+  }
+  #importView .cockHead h1,
+  #settingsView .cockHead h1{
+    min-width:0;
+    overflow-wrap:anywhere;
+  }
+  #importView .actions2,
+  #settingsView .actions2,
+  #importView .settings-grid,
+  #settingsView .settings-grid,
+  #settingsView .driver-edit-grid{
+    min-width:0;
+    max-width:100%;
+  }
+}
