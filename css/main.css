@@ -656,3 +656,49 @@
     overscroll-behavior:contain;
   }
 }
+
+/* ==========================================================
+   ATMS PRO – CORE-006T · Mobile Cockpit Scroll-Fix
+   11.09.2026
+
+   Problem:
+   Auf Mobile war das Cockpit künstlich auf die Displayhöhe begrenzt.
+   #cockpitView und .cockpit nutzten overflow:hidden; gleichzeitig
+   wurde die letzte Cockpit-Karte in minmax(0,1fr) gezwungen.
+   Dadurch konnte der Kommunikationsbereich unten abgeschnitten
+   werden und „📢 Info / Status“ war nicht erreichbar.
+
+   Lösung:
+   - Cockpit-Inhalt darf auf Mobile vertikal scrollen.
+   - Alle vier Cockpit-Zeilen behalten ihre natürliche Höhe.
+   - Die letzte Karte darf ihren Inhalt vollständig anzeigen.
+   - Zusätzliche Scroll-Sicherheitszone oberhalb der festen Bottom-Navigation.
+
+   Keine Änderung an Fahrten-, Flug-, Live-, Adress-, Import-,
+   Backup-, Bündel- oder WhatsApp-Logik.
+   ========================================================== */
+@media (max-width:760px){
+  #cockpitView{
+    overflow:hidden;
+  }
+
+  #cockpitView .cockpit{
+    height:100%;
+    min-height:0;
+    overflow-y:auto;
+    overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-y:contain;
+    grid-template-rows:max-content max-content max-content max-content;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom));
+    scroll-padding-bottom:calc(96px + env(safe-area-inset-bottom));
+  }
+
+  #cockpitView .card{
+    overflow:visible;
+  }
+
+  #cockpitView .communication-center{
+    padding-bottom:4px;
+  }
+}
