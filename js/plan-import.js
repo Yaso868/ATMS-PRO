@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-007D1 · 12.09.2026: Kopfzeilenlose ATMS-Ausschnitte behalten den strengen Geometrie-Guard, koennen aber bei wenigen schwachen Kernzellen eine gezielte Zell-Zweit-OCR ausfuehren. Nur eindeutiger Mehrfach-Konsens wird uebernommen; bei zu vielen/weiterhin unklaren Zellen bleibt der sichere Abbruch bestehen. Keine Werte-Hardcodes.
   // CORE-007D · 12.09.2026: HEADERLESS PLAN SAFE OCR. Bildausschnitte ohne sichtbare Kopfzeile dürfen ausschließlich dann als bekanntes 13-Spalten-ATMS-Preislayout rekonstruiert werden, wenn mehrere Datenzeilen gemeinsam Preis-, DISPO-Zeit-, Routen-, Fahrzeug-/Personen-, Flug- und Fahrer-Geometrie plausibel bestätigen. Die Spaltengrenzen werden aus einer normierten ATMS-Layoutvorlage anhand der im Bild tatsächlich erkannten Preis-/Zeitanker skaliert und anschließend erneut gegen die Datenzeilen validiert. Bei unklarer Struktur bleibt der bisherige sichere Abbruch bestehen. Keine Namen, Flugnummern, Orte oder Zeiten werden hart codiert.
   // CORE-007B · 12.09.2026: OCR CONFIDENCE DISPLAY. Die interne technische Struktur-Konfidenz bleibt unverändert als Sicherheitswert erhalten, wird bei Bildimport aber nicht mehr missverständlich als allgemeine '% Erkennung' ausgegeben. Sichtbar sind stattdessen der reale OCR-Analysezustand, Anzahl OCR-geprüfter Fahrten sowie offene Hinweise/Fehler. Keine künstliche 100-%-Anzeige.
   // CORE-007A · 12.09.2026: OCR CLEAN ANALYSIS. Sicher per Mehrfach-Konsens aufgeloeste Zeit-/Fahrer-OCR-Korrekturen bleiben als interne Diagnose-Metadaten erhalten, erscheinen aber nicht mehr als offene Hinweise. Fehlende/noch zu verifizierende Flugorte werden als eigener Bereich 'Flugprüfung offen' geführt und nicht als OCR-Hinweis gezählt. Nur ungelöste OCR-/Datenprobleme bleiben als Hinweis oder Fehler sichtbar. Keine Werte werden geraten oder hart codiert.
@@ -1539,8 +1540,17 @@
     return /^[A-Za-zÄÖÜäöüßÀ-ÿ][A-Za-zÄÖÜäöüßÀ-ÿ\- ]{1,39}$/.test(text);
   }
 
+  function headerlessTextLike(value, minLetters = 2) {
+    const text = cellText(value).replace(/\s+/g, ' ').trim();
+    if (!text) return false;
+    const letters = (text.match(/[A-Za-zÄÖÜäöüßÀ-ÿ]/g) || []).length;
+    return letters >= minLetters;
+  }
+
   function headerlessCoreRowCheck(row) {
-    if (!Array.isArray(row) || row.length < ATMS_IMAGE_SCHEMA_13_PRICE.length) return { ok: false, flight: false };
+    if (!Array.isArray(row) || row.length < ATMS_IMAGE_SCHEMA_13_PRICE.length) {
+      return { ok: false, flight: false, fields: {} };
+    }
 
     const priceRaw = cellText(row[0]);
     const timeRaw = cellText(row[1]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
@@ -1554,23 +1564,30 @@
     const persons = parseNumber(row[9]);
     const driver = cellText(row[12]);
 
-    const priceOk = headerlessPriceLike(priceRaw) && parseNumber(priceRaw) > 0;
-    const timeOk = headerlessTimeLike(timeRaw) && Boolean(normalizeTime(timeRaw));
-    const routeOk = Boolean(pickup && destination && /[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(pickup + destination));
-    const identityOk = Boolean(customer && company && /[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(customer + company));
-    const vehicleOk = Boolean(vehicle && !/^\d+(?:[.,]\d+)?$/.test(vehicle) && /[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(vehicle));
-    const personsOk = Number.isFinite(persons) && persons >= 1 && persons <= 99;
-    const driverOk = headerlessDriverLike(driver);
+    const fields = {
+      price: headerlessPriceLike(priceRaw) && parseNumber(priceRaw) > 0,
+      time: headerlessTimeLike(timeRaw) && Boolean(normalizeTime(timeRaw)),
+      pickup: headerlessTextLike(pickup),
+      destination: headerlessTextLike(destination),
+      customer: headerlessTextLike(customer),
+      company: headerlessTextLike(company),
+      vehicle: Boolean(vehicle && !/^\d+(?:[.,]\d+)?$/.test(vehicle) && headerlessTextLike(vehicle, 2)),
+      persons: Number.isFinite(persons) && persons >= 1 && persons <= 99,
+      driver: headerlessDriverLike(driver)
+    };
     const flight = Boolean(arrival || departure);
 
     // Falls eine Flugnummer erkannt wurde, darf sie nur in genau einer der beiden
     // benachbarten Flugspalten stehen. Richtung/Flughafen wird spaeter weiterhin
     // aus den echten Routendaten bestimmt; hier wird nichts geraten.
     const flightColumnsOk = !(arrival && departure);
+    const coreOk = Object.values(fields).every(Boolean);
 
     return {
-      ok: priceOk && timeOk && routeOk && identityOk && vehicleOk && personsOk && driverOk && flightColumnsOk,
-      flight
+      ok: coreOk && flightColumnsOk,
+      flight,
+      flightColumnsOk,
+      fields
     };
   }
 
@@ -1618,17 +1635,29 @@
     if (boundaries[boundaries.length - 1] < width * 0.92 || boundaries[boundaries.length - 1] > width * 1.04) return null;
 
     const candidateRows = [];
-    usableLines.forEach(line => {
+    const provisionalRows = [];
+    pairedLines.forEach(line => {
       const row = headerlessCellsFromLine(line, boundaries, ATMS_IMAGE_SCHEMA_13_PRICE.length);
       const check = headerlessCoreRowCheck(row);
+      provisionalRows.push({ line, row, check });
       if (check.ok) candidateRows.push({ line, row, flight: check.flight });
     });
 
-    // Mindestens zwei sichere Zeilen UND mindestens 75 % der Preis/Zeit-geankerten
-    // Zeilen muessen die komplette Semantik bestaetigen. Zusaetzlich muss wenigstens
-    // ein realer Flug erkannt sein. Sonst bleibt der bestehende sichere Abbruch.
+    // CORE-007D1: Die Geometrie darf bereits als PROVISORISCH sicher gelten, wenn
+    // mehrere Preis-/Zeit-geankerte Zeilen die volle Tabellenbreite tragen. Eine
+    // schwache Einzelzelle darf dann spaeter gezielt nachgelesen werden. Die
+    // eigentliche Datenfreigabe erfolgt aber erst NACH dieser Zell-Zweit-OCR.
     const required = Math.max(2, Math.ceil(pairedLines.length * 0.75));
-    if (candidateRows.length < required || !candidateRows.some(item => item.flight)) return null;
+    const semanticValidated = candidateRows.length >= required && candidateRows.some(item => item.flight);
+    const fullSpanRows = pairedLines.filter(line => {
+      const words = line?.words || [];
+      if (!words.length) return false;
+      const minX = Math.min(...words.map(word => Number(word.x0 || 0)));
+      const maxX = Math.max(...words.map(word => Number(word.x1 || 0)));
+      return minX <= width * 0.10 && maxX >= width * 0.88;
+    }).length;
+    const provisionalGeometrySafe = fullSpanRows >= required;
+    if (!semanticValidated && !provisionalGeometrySafe) return null;
 
     const anchors = ATMS_IMAGE_SCHEMA_13_PRICE.map((slot,index) => ({
       label: slot.label,
@@ -1642,14 +1671,17 @@
       anchors,
       boundaries,
       semantic: imageSemanticColumns(anchors),
-      lines: usableLines,
+      lines: pairedLines,
       standard: true,
       syntheticCount: anchors.length,
       headerlessAtms: true,
+      needsCellRecovery: !semanticValidated,
       validation: {
         anchoredRows: pairedLines.length,
+        fullSpanRows,
         verifiedRows: candidateRows.length,
-        requiredRows: required
+        requiredRows: required,
+        semanticValidated
       }
     };
   }
@@ -1843,6 +1875,7 @@
       forcedNoPriceMirror: Boolean(forceNoPriceMirror),
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
+      headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
       headerlessValidation: headerlessLayout?.validation || null
     };
     return rows;
@@ -1864,6 +1897,221 @@
     ctx.imageSmoothingEnabled = scale > 1;
     if (scale > 1 && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    return out;
+  }
+
+
+  function headerlessCellFieldForColumn(column) {
+    const map = {
+      0: 'price', 1: 'time', 2: 'pickup', 3: 'destination',
+      4: 'customer', 5: 'company', 6: 'arrivalFlight', 7: 'departureFlight',
+      8: 'vehicle', 9: 'persons', 12: 'driver'
+    };
+    return map[column] || '';
+  }
+
+  function headerlessCellCandidateFromResult(result, field) {
+    const rawText = cellText(result?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (field === 'price') {
+      const candidates = priceCandidatesFromOcrResult(result);
+      if (candidates.length !== 1) return '';
+      return `${Number(candidates[0]).toFixed(2).replace('.', ',')} €`;
+    }
+
+    if (field === 'time') {
+      const candidates = rideTimeCandidatesFromOcrResult(result);
+      return candidates.length === 1 ? candidates[0] : '';
+    }
+
+    if (field === 'persons') {
+      const tokens = rawText.replace(/[Oo]/g, '0').match(/\d{1,2}/g) || [];
+      const values = [...new Set(tokens.map(Number).filter(value => Number.isInteger(value) && value >= 1 && value <= 99))];
+      return values.length === 1 ? String(values[0]) : '';
+    }
+
+    if (field === 'arrivalFlight' || field === 'departureFlight') {
+      const candidates = [...new Set(flightCandidatesFromOcrResult(result).map(normalizeFlightNumber).filter(Boolean))];
+      return candidates.length === 1 ? candidates[0] : '';
+    }
+
+    const text = rawText
+      .replace(/^[|:;,.]+/, '')
+      .replace(/[|:;,.]+$/, '')
+      .trim();
+    if (!text) return '';
+
+    if (field === 'driver') return headerlessDriverLike(text) ? text : '';
+    if (field === 'vehicle') {
+      return headerlessTextLike(text, 2) && !/^\d+(?:[.,]\d+)?$/.test(text) ? text : '';
+    }
+    if (['pickup','destination','customer','company'].includes(field)) {
+      return headerlessTextLike(text, 2) ? text : '';
+    }
+    return '';
+  }
+
+  function headerlessCellCandidateKey(value, field) {
+    if (!value) return '';
+    if (field === 'price') return Number(parseNumber(value)).toFixed(2);
+    if (field === 'time') return normalizeTime(value);
+    if (field === 'persons') return String(Math.round(parseNumber(value)));
+    if (field === 'arrivalFlight' || field === 'departureFlight') return normalizeFlightNumber(value);
+    return cleanKey(value);
+  }
+
+  function headerlessOcrOptions(field, mode) {
+    const options = { tessedit_pageseg_mode: mode };
+    if (field === 'time') options.tessedit_char_whitelist = '0123456789:.';
+    if (field === 'persons') options.tessedit_char_whitelist = '0123456789';
+    if (field === 'arrivalFlight' || field === 'departureFlight') options.tessedit_char_whitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    return options;
+  }
+
+  async function recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, column, field) {
+    const boundaries = imageMeta?.boundaries || [];
+    const left = Number(boundaries[column]);
+    const right = Number(boundaries[column + 1]);
+    const y0 = Number(rowMeta?.y0);
+    const y1 = Number(rowMeta?.y1);
+    if (![left, right, y0, y1].every(Number.isFinite) || right <= left || y1 <= y0) {
+      return { value: '', attempts: [] };
+    }
+
+    const rowHeight = Math.max(12, y1 - y0);
+    const cellWidth = Math.max(8, right - left);
+    const padX = Math.max(1, cellWidth * 0.035);
+    const padY = Math.max(1, rowHeight * 0.15);
+    const attemptsSpec = [
+      { scale: 2, mode: '7', inset: 1 },
+      { scale: 3, mode: '7', inset: 0 },
+      { scale: 2, mode: '6', inset: 0 }
+    ];
+    const votes = new Map();
+    const displayByKey = new Map();
+    const attempts = [];
+
+    for (const spec of attemptsSpec) {
+      const extra = spec.inset ? padX : 0;
+      const crop = cropCanvasRegion(
+        imageCanvas,
+        left + padX + extra,
+        y0 - padY,
+        right - padX - extra,
+        y1 + padY,
+        spec.scale
+      );
+      try {
+        const result = await Tesseract.recognize(crop, 'eng', headerlessOcrOptions(field, spec.mode));
+        const candidate = headerlessCellCandidateFromResult(result, field);
+        const key = headerlessCellCandidateKey(candidate, field);
+        attempts.push({ scale: spec.scale, mode: spec.mode, candidate });
+        if (!key) continue;
+        votes.set(key, (votes.get(key) || 0) + 1);
+        if (!displayByKey.has(key)) displayByKey.set(key, candidate);
+      } catch (_) {
+        attempts.push({ scale: spec.scale, mode: spec.mode, candidate: '' });
+      }
+    }
+
+    const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const winner = ranked[0] || null;
+    const runner = ranked[1] || null;
+    if (!winner || winner[1] < 2) return { value: '', attempts };
+    if (runner && winner[1] === runner[1]) return { value: '', attempts };
+    return { value: displayByKey.get(winner[0]) || '', attempts };
+  }
+
+  function headerlessInvalidCoreColumns(row) {
+    const check = headerlessCoreRowCheck(row);
+    const fieldToColumn = {
+      price: 0, time: 1, pickup: 2, destination: 3,
+      customer: 4, company: 5, vehicle: 8, persons: 9, driver: 12
+    };
+    return Object.entries(check.fields || {})
+      .filter(([, ok]) => !ok)
+      .map(([field]) => ({ field, column: fieldToColumn[field] }))
+      .filter(item => item.column !== undefined);
+  }
+
+  async function recoverHeaderlessCellsTargeted(matrix, imageCanvas, imageMeta) {
+    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta?.headerlessAtms || !window.Tesseract) return matrix;
+    const out = matrix.map(row => Array.isArray(row) ? row.slice() : row);
+    const metaByIndex = imageMeta.rowMetaByMatrixIndex || {};
+    const status = $('importStatus');
+    const recoveryLog = [];
+
+    // Sicherheitsbremse: Headerless-Zweit-OCR soll nur wenige schwache Zellen
+    // retten. Sind zu viele Kernzellen unklar, bleibt die Liste abgelehnt statt
+    // einen ganzen Tabelleninhalt aus Einzel-Crops zusammenzuraten.
+    let totalInvalid = 0;
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const invalid = headerlessInvalidCoreColumns(out[matrixIndex]);
+      if (invalid.length > 4) {
+        imageMeta.headerlessCellRecovery = { accepted: false, reason: 'too_many_invalid_cells_in_row', totalInvalid };
+        return out;
+      }
+      totalInvalid += invalid.length;
+    }
+    if (totalInvalid > 12) {
+      imageMeta.headerlessCellRecovery = { accepted: false, reason: 'too_many_invalid_cells', totalInvalid };
+      return out;
+    }
+
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const row = out[matrixIndex];
+      const rowMeta = metaByIndex[matrixIndex];
+      if (!rowMeta) continue;
+
+      const invalid = headerlessInvalidCoreColumns(row);
+      for (const item of invalid) {
+        if (status) status.textContent = `Kopfzeilenloser Ausschnitt: ${item.field}-Zelle in Zeile ${matrixIndex + 1} wird sicher nachgelesen …`;
+        const recovered = await recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, item.column, item.field);
+        recoveryLog.push({ matrixIndex, field: item.field, column: item.column, attempts: recovered.attempts, recovered: recovered.value });
+        if (recovered.value) row[item.column] = recovered.value;
+      }
+
+    }
+
+    // Flugnummern sind fuer einzelne Fahrten optional. Nur wenn im gesamten
+    // kopfzeilenlosen Ausschnitt noch KEIN Flug erkannt wurde, werden die beiden
+    // Flugspalten eng nachgelesen. So bleibt der Fallback schnell und rät keine
+    // Flugnummern in legitime Leerzellen hinein.
+    let hasAnyFlightBeforeRecovery = out.slice(1).some(row =>
+      Boolean(normalizeFlightNumber(row?.[6]) || normalizeFlightNumber(row?.[7]))
+    );
+    if (!hasAnyFlightBeforeRecovery) {
+      for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+        const rowMeta = metaByIndex[matrixIndex];
+        if (!rowMeta) continue;
+        for (const [column, field] of [[6, 'arrivalFlight'], [7, 'departureFlight']]) {
+          const recovered = await recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, column, field);
+          recoveryLog.push({ matrixIndex, field, column, attempts: recovered.attempts, recovered: recovered.value });
+          if (recovered.value) out[matrixIndex][column] = recovered.value;
+        }
+      }
+    }
+
+    const rowChecks = [];
+    let hasFlight = false;
+    let accepted = out.length > 1;
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const check = headerlessCoreRowCheck(out[matrixIndex]);
+      rowChecks.push({ matrixIndex, ok: check.ok, flight: check.flight, fields: check.fields });
+      if (!check.ok) accepted = false;
+      if (check.flight) hasFlight = true;
+    }
+    if (!hasFlight) accepted = false;
+
+    imageMeta.headerlessCellRecovery = {
+      accepted,
+      totalInvalid,
+      recoveredCells: recoveryLog.filter(item => Boolean(item.recovered)).length,
+      rowChecks,
+      recoveryLog
+    };
+    imageMeta.headerlessNeedsCellRecovery = !accepted;
+    out._atmsImageMeta = imageMeta;
     return out;
   }
 
@@ -3040,6 +3288,13 @@
     if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
     if (matrix._atmsImageMeta) {
       matrix = await recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta);
+      if (matrix._atmsImageMeta?.headerlessAtms) {
+        matrix = await recoverHeaderlessCellsTargeted(matrix, canvas, matrix._atmsImageMeta);
+        const recovery = matrix._atmsImageMeta?.headerlessCellRecovery;
+        if (!recovery?.accepted) {
+          throw new Error('Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. Bitte vollständige Kopfzeile mit hochladen.');
+        }
+      }
     }
     return {
       kind: 'matrix',
