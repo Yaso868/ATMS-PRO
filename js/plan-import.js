@@ -3,6 +3,7 @@
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
+  // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
 
@@ -45,7 +46,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {} };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {} };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -838,6 +839,36 @@
       notes: cellText(valueAt(row, mapping, 'notes')),
       rideType,
       importStatus: 'recognized'
+    };
+  }
+
+  function cancellationMarker(value) {
+    const key = cleanKey(value);
+    return ['storno', 'storniert', 'cancelled', 'canceled'].includes(key) ? key : '';
+  }
+
+  function detectCancelledPlanRow(row, mapping) {
+    // CORE-007D8: Ein einzelnes Wort "Storno" darf niemals genügen, weil es
+    // theoretisch auch als Name/Freitext vorkommen könnte. Für den automatischen
+    // Ausschluss verlangen wir zwei unabhängige, exakt gemappte Signale derselben
+    // Zeile: Fahrer = Storno/Cancelled UND mindestens ein zweites Signal in einem
+    // Status-nahen Feld (zweite Uhrzeit/Flugzeit, Ort oder Notiz).
+    const fields = ['driver', 'flightTime', 'timeMirror', 'flightLocation', 'notes'];
+    const hits = [];
+    fields.forEach(field => {
+      const index = mapping?.[field];
+      if (index === undefined || index === null) return;
+      const raw = cellText(row?.[index]);
+      const marker = cancellationMarker(raw);
+      if (marker) hits.push({ field, raw, marker });
+    });
+    const driverHit = hits.find(hit => hit.field === 'driver');
+    const secondaryHits = hits.filter(hit => hit.field !== 'driver');
+    if (!driverHit || secondaryHits.length < 1) return null;
+    return {
+      marker: driverHit.marker,
+      fields: hits.map(hit => hit.field),
+      values: hits.map(hit => hit.raw)
     };
   }
 
@@ -3973,6 +4004,7 @@
   function render() {
     refreshIssuesAfterFlightSync();
     const rides = state.rides, issues = state.issues;
+    const cancelledRows = Array.isArray(state.cancelledRows) ? state.cancelledRows : [];
     const flightChecks = issues.filter(issue => issue.kind === 'flight_check');
     const actionableIssues = issues.filter(issue => issue.kind !== 'flight_check');
     const errors = actionableIssues.filter(issue => issue.level === 'error').length;
@@ -4046,7 +4078,15 @@
         </div>`
       : '<div class="plan-issue ok" style="margin-top:10px">✓ Keine Flugprüfung offen.</div>';
 
-    $('planIssues').innerHTML = actionableHtml + flightCheckHtml;
+    const cancelledHtml = cancelledRows.length
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(255,118,118,.45);background:rgba(70,18,18,.32)">
+          <div><b>⛔ Storno erkannt: ${escapeHtml(String(cancelledRows.length))}</b></div>
+          <div style="font-size:12px;opacity:.84;margin-top:5px">Diese Zeile${cancelledRows.length === 1 ? '' : 'n'} wurde${cancelledRows.length === 1 ? '' : 'n'} sicher als Storno erkannt und nicht als aktive Fahrt, Fahrer oder Flug übernommen.</div>
+          <div style="font-size:12px;line-height:1.5;margin-top:7px">${cancelledRows.map(item => escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''}${item.flightNumber ? ` · ${item.flightNumber}` : ''}`)).join(' · ')}</div>
+        </div>`
+      : '';
+
+    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
@@ -4089,13 +4129,16 @@
 
     $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || actionableIssues.some(issue => issue.kind === 'price');
     const unresolvedPriceIssues = actionableIssues.filter(issue => issue.kind === 'price').length;
-    $('importStatus').textContent = errors
+    const cancelledSuffix = cancelledRows.length
+      ? ` ${cancelledRows.length} Storno-Zeile${cancelledRows.length === 1 ? '' : 'n'} sicher ausgeschlossen.`
+      : '';
+    $('importStatus').textContent = (errors
       ? `${rides.length} Fahrten erkannt. ${errors} Fehler müssen vor dem Import behoben werden.`
       : unresolvedPriceIssues
         ? `${rides.length} Fahrten erkannt. ${unresolvedPriceIssues} auffälliger Preis muss vor der Übernahme bestätigt werden.`
         : flightChecks.length
           ? `${rides.length} Fahrten erkannt und OCR-geprüft. ${flightChecks.length} Flugprüfung(en) offen. Bereit zur Übernahme.`
-          : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`;
+          : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
   }
 
   async function analyze() {
@@ -4108,6 +4151,7 @@
         const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
         if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
         const planDate = currentPlanDate();
+        state.cancelledRows = [];
         state.rides = result.rows.map((ride, index) => {
           const withDate = { ...ride, planDate: cellText(ride?.planDate) || planDate, date: cellText(ride?.date) || planDate };
           return window.norm ? window.norm(withDate, index) : withDate;
@@ -4154,12 +4198,36 @@
 
       const dataRows = matrix.slice(headerDetection.index + 1);
       const rides = [];
+      const cancelledRows = [];
       dataRows.forEach((row, offset) => {
         const sourceRow = headerDetection.index + offset + 2;
         if (!isDataRow(row, mappingInfo.mapping)) return;
+
+        // CORE-007D8 gilt bewusst nur für Bild-/OCR-Planlisten. Eine Zeile wird
+        // nur bei doppeltem, semantisch passendem Storno-Signal ausgeschlossen.
+        if (result.imageOcr) {
+          const cancelled = detectCancelledPlanRow(row, mappingInfo.mapping);
+          if (cancelled) {
+            const preview = makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: true });
+            cancelledRows.push({
+              sourceRow,
+              time: preview.dispoTime || preview.time || normalizeTime(valueAt(row, mappingInfo.mapping, 'time')),
+              flightNumber: preview.flightNumber || '',
+              pickup: preview.pickup || '',
+              destination: preview.destination || '',
+              marker: cancelled.marker,
+              markerFields: cancelled.fields
+            });
+            return;
+          }
+        }
+
         rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: Boolean(result.imageOcr) }));
       });
-      if (!rides.length) throw new Error('Unterhalb der Überschriften wurden keine Fahrten erkannt.');
+      state.cancelledRows = cancelledRows;
+      if (!rides.length) throw new Error(cancelledRows.length
+        ? 'Alle erkannten Datenzeilen sind sicher als Storno markiert; es gibt keine aktive Fahrt zur Übernahme.'
+        : 'Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
       let preparedRides = rides;
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
@@ -4234,6 +4302,7 @@
     state.file = file;
     state.matrix = [];
     state.rides = [];
+    state.cancelledRows = [];
     state.issues = [];
     state.meta = {};
     state.priceDecisions = {};
