@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-007D9A · 12.09.2026: FULL ROUTE CELL RECOVERY & FLIGHT OCR DIAGNOSTICS. Von-/Nach-Zellen werden bei möglicher Rechtsabschneidung pro einzelner Tabellenzelle und mit enger Zeilenhoehe mehrfach vollständig nachgelesen; übernommen werden nur eindeutige Konsens-Erweiterungen mit vollständigen Suffix-Tokens. Unvollständige Einzelbuchstaben/-fragmente dürfen keine Route mehr verschlechtern. Bei ungewöhnlichen Flugdesignatoren werden die tatsächlich erkannten lokalen OCR-Kandidaten diagnostisch ausgegeben, ohne aus Minderheits-/Einzeltreffern eine Flugnummer zu raten. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
   // CORE-007D9 · 12.09.2026: FLIGHT NUMBER & ROUTE CELL RECOVERY. Auffällige alphabetische Flugdesignatoren mit mehr als zwei Zeichen werden ausschließlich in ihrer eigenen Flugzelle lokal nachgelesen; eine Korrektur darf nur bei eindeutigem Mehrfach-Konsens mit identischem numerischem Flugteil erfolgen. Von-/Nach-Zellen dürfen nur um eindeutig mehrfach gelesene, reine Suffix-Tokens vervollständigt werden (kein Wörterbuch, keine Orts-/Hotel-Hardcodes). Flugorte aus der Planliste bleiben sichtbar als Vergleichswert, gelten beim Bildimport aber bis zu einer aktuellen verifizierten Flugprüfung als ungeprüft. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
@@ -892,6 +893,21 @@
     return Boolean(values[0] || (values[1] && values[2]));
   }
 
+  function unusualFlightDiagnosticText(ride) {
+    const attempts = Array.isArray(ride?.flightUnusualOcrAttempts) ? ride.flightUnusualOcrAttempts : [];
+    const counts = new Map();
+    attempts.forEach(attempt => {
+      (Array.isArray(attempt?.candidates) ? attempt.candidates : []).forEach(candidate => {
+        const normalized = normalizeFlightNumber(candidate);
+        if (!normalized) return;
+        counts.set(normalized, (counts.get(normalized) || 0) + 1);
+      });
+    });
+    const ranked = [...counts.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (!ranked.length) return 'keine eindeutigen lokalen Kandidaten';
+    return ranked.slice(0, 4).map(([candidate, count]) => `${candidate} ${count}×`).join(' · ');
+  }
+
   function validate(rides) {
     const issues = [];
     const fingerprints = new Set();
@@ -922,7 +938,7 @@
         issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
       }
       if (ride.flightOcrUnusualNeedsReview && ride.flightNumber) {
-        issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} hat einen ungewöhnlich langen alphabetischen Designator – lokale OCR war nicht eindeutig; Original bitte prüfen` });
+        issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} hat einen ungewöhnlich langen alphabetischen Designator – lokale OCR war nicht eindeutig; OCR-Kandidaten: ${unusualFlightDiagnosticText(ride)}; Original bitte prüfen` });
       }
 
       // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
@@ -3221,6 +3237,11 @@
     for (let i = 0; i < left.length; i++) {
       if (left[i] !== right[i]) return false;
     }
+    // CORE-007D9A: Ein OCR-Fragment wie "D" oder "Ir" darf niemals als
+    // sichere Routenvervollständigung gelten. Fehlende Suffix-Tokens muessen
+    // vollständig lesbar sein; 1-2 Zeichen sind dafür zu schwach.
+    const appended = right.slice(left.length);
+    if (!appended.length || appended.some(token => token.length < 3)) return false;
     return true;
   }
 
@@ -3234,83 +3255,76 @@
       { field: 'destination', label: 'Nach' }
     ];
 
+    // CORE-007D9A: Nicht mehr eine komplette Spalte als OCR-Block lesen. Bei
+    // schmalen Tabellen konnte Tesseract dadurch den rechten Rand einer Zelle
+    // als unvollständiges Token (z. B. "D" / "Ir") liefern. Jede Route wird
+    // jetzt ausschließlich in ihrer eigenen Tabellenzelle nachgelesen.
     for (const descriptor of fields) {
       const column = mapping?.[descriptor.field];
       if (column === undefined) continue;
       const left = Number(boundaries[column]);
       const right = Number(boundaries[column + 1]);
       if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+      const cellWidth = Math.max(8, right - left);
 
-      const rowsWithMeta = out.map(ride => {
+      for (const ride of out) {
+        const original = routeOcrText(ride[descriptor.field]);
+        if (!original) continue;
         const matrixIndex = Number(ride.sourceRow || 0) - 1;
         const meta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
-        if (!meta) return null;
+        if (!meta) continue;
         const y0 = Number(meta.y0);
         const y1 = Number(meta.y1);
-        const cy = Number(meta.cy ?? ((y0 + y1) / 2));
-        if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
-        return { sourceRow: Number(ride.sourceRow), meta: { y0, y1, cy } };
-      }).filter(Boolean);
-      if (!rowsWithMeta.length) continue;
+        if (![y0, y1].every(Number.isFinite) || y1 <= y0) continue;
+        const rowHeight = Math.max(12, y1 - y0);
+        const padY = Math.max(1, rowHeight * 0.10);
+        const inset1 = Math.max(1, cellWidth * 0.008);
+        const inset2 = Math.max(1, cellWidth * 0.018);
+        const attempts = [
+          { name: 'deu-full-2x-line', lang: 'deu', scale: 2, x0: left, x1: right, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'deu-full-3x-line', lang: 'deu', scale: 3, x0: left, x1: right, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'deu-inner-3x-line', lang: 'deu', scale: 3, x0: left + inset1, x1: right - inset1, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'eng-full-3x-line', lang: 'eng', scale: 3, x0: left, x1: right, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'eng-inner-3x-line', lang: 'eng', scale: 3, x0: left + inset2, x1: right - inset2, options: { tessedit_pageseg_mode: '7' } }
+        ];
+        const votes = new Map();
+        const display = new Map();
+        const log = [];
 
-      const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
-      const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
-      const cellWidth = Math.max(8, right - left);
-      // Anders als CORE-006L wird der rechte Zellrand hier bewusst nicht stark
-      // beschnitten, weil genau dort fehlende Suffix-Tokens liegen können.
-      const attempts = [
-        { name: 'deu-full-psm4', lang: 'deu', scale: 2, x0: left, x1: right, options: { tessedit_pageseg_mode: '4' } },
-        { name: 'deu-full-psm6', lang: 'deu', scale: 3, x0: left, x1: right, options: { tessedit_pageseg_mode: '6' } },
-        { name: 'deu-inner-psm6', lang: 'deu', scale: 2, x0: left + Math.max(1, cellWidth * 0.008), x1: right - Math.max(1, cellWidth * 0.004), options: { tessedit_pageseg_mode: '6' } }
-      ];
-      const votesByRow = new Map();
-      const displayByRowKey = new Map();
-      const attemptLogByRow = new Map();
-
-      if (status) status.textContent = `${descriptor.label}-Zellen werden auf abgeschnittene End-Tokens geprüft …`;
-      try {
-        for (const attempt of attempts) {
-          const crop = cropCanvasRegion(imageCanvas, attempt.x0, minY, attempt.x1, maxY, attempt.scale);
-          const second = await Tesseract.recognize(crop, attempt.lang, attempt.options);
-          const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
-          rowsWithMeta.forEach(item => {
-            const candidate = routeOcrText(rowCandidates.get(item.sourceRow) || '');
-            const log = attemptLogByRow.get(item.sourceRow) || [];
+        if (status) status.textContent = `${descriptor.label}-Zelle Zeile ${ride.sourceRow} wird vollständig nachgelesen …`;
+        try {
+          for (const attempt of attempts) {
+            const crop = cropCanvasRegion(imageCanvas, attempt.x0, y0 - padY, attempt.x1, y1 + padY, attempt.scale);
+            const second = await Tesseract.recognize(crop, attempt.lang, attempt.options);
+            const rawText = routeOcrText(second?.data?.text || (second?.data?.words || []).map(word => word?.text || '').join(' '));
+            const candidate = routeOcrText(rawText);
             log.push({ mode: attempt.name, candidate });
-            attemptLogByRow.set(item.sourceRow, log);
-            if (!candidate) return;
+            if (!candidate || !routeCompletionIsSafe(original, candidate)) continue;
             const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
-            const rowVotes = votesByRow.get(item.sourceRow) || new Map();
-            rowVotes.set(key, (rowVotes.get(key) || 0) + 1);
-            votesByRow.set(item.sourceRow, rowVotes);
-            const displayKey = `${item.sourceRow}|${key}`;
-            if (!displayByRowKey.has(displayKey)) displayByRowKey.set(displayKey, candidate);
-          });
+            votes.set(key, (votes.get(key) || 0) + 1);
+            if (!display.has(key)) display.set(key, candidate);
+          }
+        } catch (_) {
+          ride[`${descriptor.field}CompletionOcrAttempts`] = log;
+          continue;
         }
-      } catch (_) {
-        // Sicherheitsnetz: Der Primärwert bleibt bei fehlender Sprachdatei/OCR unverändert.
-      }
 
-      out.forEach(ride => {
-        const sourceRow = Number(ride.sourceRow);
-        const original = routeOcrText(ride[descriptor.field]);
-        ride[`${descriptor.field}CompletionOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
-        if (!original) return;
-        const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
-          .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
+        ride[`${descriptor.field}CompletionOcrAttempts`] = log;
+        const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
         const winner = ranked[0] || null;
         const runner = ranked[1] || null;
-        if (!winner || winner[1] < 2) return;
-        if (runner && winner[1] === runner[1]) return;
-        const candidate = routeOcrText(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
-        if (!routeCompletionIsSafe(original, candidate)) return;
+        if (!winner || winner[1] < 2) continue;
+        if (runner && winner[1] === runner[1]) continue;
+        const candidate = routeOcrText(display.get(winner[0]) || '');
+        if (!routeCompletionIsSafe(original, candidate)) continue;
+
         ride[`${descriptor.field}RawOcr`] = ride[`${descriptor.field}RawOcr`] || original;
         ride[descriptor.field] = candidate;
         ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
         ride[`${descriptor.field}RecoveredFromSuffixOcr`] = true;
-        ride[`${descriptor.field}RecoverySource`] = 'targeted_route_suffix_consensus';
+        ride[`${descriptor.field}RecoverySource`] = 'targeted_full_route_cell_consensus';
         ride.rideType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
-      });
+      }
     }
     return out;
   }
@@ -3862,12 +3876,13 @@
           const crop = cropCanvasRegion(imageCanvas, region.x0, y0 - padY, region.x1, y1 + padY, region.scale);
           for (const mode of modes) {
             const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const raw = String(second?.data?.text || '').trim().replace(/\s+/g, ' ').slice(0, 48);
             const candidates = [...new Set(
               flightCandidatesFromOcrResult(second)
                 .map(normalizeFlightNumber)
                 .filter(candidate => candidate && sameAlphabeticFlightNumericIdentity(initial, candidate))
             )];
-            attempts.push({ region: region.name, mode: mode.name, candidates: candidates.slice() });
+            attempts.push({ region: region.name, mode: mode.name, raw, candidates: candidates.slice() });
             if (candidates.length !== 1) continue;
             const candidate = candidates[0];
             votes.set(candidate, (votes.get(candidate) || 0) + 1);
@@ -3890,8 +3905,11 @@
 
       const recovered = winner[0];
       if (recovered === initial) {
-        // Mehrfach-Konsens bestätigt den Primärwert; keine automatische Verkürzung.
-        ride.flightOcrUnusualNeedsReview = false;
+        // CORE-007D9A: Auch mehrfach identische OCR bestätigt nicht automatisch,
+        // dass ein >2-buchstabiger Designator fachlich korrekt ist. Der Wert wird
+        // nicht verändert, bleibt aber mit den tatsächlichen Kandidaten sichtbar
+        // prüfpflichtig. So wird aus wiederholt gleichem OCR kein Sachbeweis.
+        ride.flightOcrUnusualNeedsReview = true;
         ride.flightUnusualConfirmedByTargetedOcr = true;
         continue;
       }
@@ -3906,7 +3924,7 @@
       ride.flightDirection = routeType;
       ride.flightOcrInitialUnusual = initial;
       ride.flightRecoveredFromUnusualOcr = true;
-      ride.flightOcrUnusualNeedsReview = false;
+      ride.flightOcrUnusualNeedsReview = hasUnusualAlphabeticFlightDesignator(recovered);
       ride.flightNeedsManualCheck = true;
       ride.flightCheckConfidence = 'uncertain';
     }
