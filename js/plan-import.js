@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
+
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
 
   // CORE-007D1 · 12.09.2026: Kopfzeilenlose ATMS-Ausschnitte behalten den strengen Geometrie-Guard, koennen aber bei wenigen schwachen Kernzellen eine gezielte Zell-Zweit-OCR ausfuehren. Nur eindeutiger Mehrfach-Konsens wird uebernommen; bei zu vielen/weiterhin unklaren Zellen bleibt der sichere Abbruch bestehen. Keine Werte-Hardcodes.
@@ -1817,7 +1819,7 @@
   }
 
   function formatHeaderlessOcrDiagnostic(diag) {
-    if (!diag || typeof diag !== 'object') return 'CORE-007D3 Diagnose: Grund=unknown';
+    if (!diag || typeof diag !== 'object') return 'CORE-007D4 Diagnose: Grund=unknown';
     const num = value => Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
     const parts = [
       `Grund=${cellText(diag.rejectReason) || 'unknown'}`,
@@ -1831,7 +1833,164 @@
     if (diag.recurringRowCount !== undefined) {
       parts.push(`X=${num(diag.leftAnchoredRows)}/${num(diag.routeRows)}/${num(diag.rightRows)}/${num(diag.flightRows)}`);
     }
-    return `CORE-007D3 Diagnose: ${parts.join(' · ')}`;
+    if (diag.priceAnchorRecovery) {
+      const rec = diag.priceAnchorRecovery;
+      parts.push(`PreisNachlese=${num(rec.recoveredRows)}/${num(rec.attemptedRows)}`);
+    }
+    return `CORE-007D4 Diagnose: ${parts.join(' · ')}`;
+  }
+
+  let headerlessPriceAnchorRecoveryDiagnostic = null;
+
+  async function recoverHeaderlessPriceAnchorsTargeted(words, imageCanvas, width) {
+    headerlessPriceAnchorRecoveryDiagnostic = {
+      attemptedRows: 0,
+      recoveredRows: 0,
+      skipped: '',
+      recovered: []
+    };
+
+    if (!Array.isArray(words) || !imageCanvas || !window.Tesseract || !Number.isFinite(Number(width)) || Number(width) < 500) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'missing_words_canvas_or_width';
+      return words;
+    }
+
+    const strictLines = groupOcrLines(words);
+    const header = detectImageHeaderLine(strictLines);
+    const hasSafeHeader = Boolean(header && header.score >= 6 && header.anchors.length >= 6);
+    if (hasSafeHeader) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'safe_header_present';
+      return words;
+    }
+
+    const lines = groupOcrLines(words, 0).filter(line => (line?.words || []).length >= 4);
+    if (lines.length < 2) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'insufficient_lines';
+      return words;
+    }
+
+    const existingPriceAnchors = lines.filter(line =>
+      Number.isFinite(headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16))
+    ).length;
+    const timeAnchoredLines = lines.map((line, index) => ({
+      line,
+      index,
+      timeX: headerlessLineAnchor(line, headerlessTimeLike, 0, width * 0.24),
+      hasPrice: Number.isFinite(headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16))
+    })).filter(item => Number.isFinite(item.timeX));
+
+    headerlessPriceAnchorRecoveryDiagnostic.existingPriceAnchors = existingPriceAnchors;
+    headerlessPriceAnchorRecoveryDiagnostic.timeAnchors = timeAnchoredLines.length;
+
+    // Der normale Headerless-Guard ist bereits zufrieden; keine zusätzliche OCR nötig.
+    if (existingPriceAnchors >= 2) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'enough_existing_price_anchors';
+      return words;
+    }
+    // Ohne mindestens zwei sichere Zeitanker wird nichts rekonstruiert.
+    if (timeAnchoredLines.length < 2) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'insufficient_time_anchors';
+      return words;
+    }
+
+    const templatePriceCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1]) / 2;
+    const templateTimeCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[2]) / 2;
+    const augmented = words.slice();
+
+    for (const item of timeAnchoredLines) {
+      if (item.hasPrice) continue;
+
+      const offsetPx = item.timeX - width * templateTimeCenter;
+      if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.05) continue;
+
+      const left = offsetPx + width * ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0];
+      const right = offsetPx + width * ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1];
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+      if (left < -width * 0.04 || right > width * 0.18) continue;
+
+      const lineWords = item.line?.words || [];
+      const y0s = lineWords.map(word => Number(word.y0)).filter(Number.isFinite);
+      const y1s = lineWords.map(word => Number(word.y1)).filter(Number.isFinite);
+      if (!y0s.length || !y1s.length) continue;
+      const rowY0 = Math.min(...y0s);
+      const rowY1 = Math.max(...y1s);
+      const rowHeight = Math.max(12, rowY1 - rowY0);
+      const padY = Math.max(2, rowHeight * 0.22);
+      const padX = Math.max(2, width * 0.004);
+
+      const attemptsSpec = [
+        { scale: 2, mode: '7' },
+        { scale: 3, mode: '7' },
+        { scale: 3, mode: '6' }
+      ];
+      const votes = new Map();
+      const attempts = [];
+
+      headerlessPriceAnchorRecoveryDiagnostic.attemptedRows++;
+
+      for (const spec of attemptsSpec) {
+        const crop = cropCanvasRegion(
+          imageCanvas,
+          Math.max(0, left - padX),
+          Math.max(0, rowY0 - padY),
+          Math.min(imageCanvas.width, right + padX),
+          Math.min(imageCanvas.height, rowY1 + padY),
+          spec.scale
+        );
+        try {
+          const result = await Tesseract.recognize(crop, 'eng', {
+            tessedit_pageseg_mode: spec.mode,
+            tessedit_char_whitelist: '0123456789,.'
+          });
+          const candidates = priceCandidatesFromOcrResult(result);
+          const candidate = candidates.length === 1 ? candidates[0] : null;
+          attempts.push({ scale: spec.scale, mode: spec.mode, candidate });
+          if (!Number.isFinite(candidate)) continue;
+          const key = (Math.round(candidate * 100) / 100).toFixed(2);
+          votes.set(key, (votes.get(key) || 0) + 1);
+        } catch (_) {
+          attempts.push({ scale: spec.scale, mode: spec.mode, candidate: null });
+        }
+      }
+
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+      if (!winner || winner[1] < 2 || (runner && runner[1] === winner[1])) {
+        headerlessPriceAnchorRecoveryDiagnostic.recovered.push({ row: item.index, accepted: false, attempts });
+        continue;
+      }
+
+      const value = Number(winner[0]);
+      if (!Number.isFinite(value) || value <= 0 || pricePlausibility(value).suspicious) {
+        headerlessPriceAnchorRecoveryDiagnostic.recovered.push({ row: item.index, accepted: false, attempts });
+        continue;
+      }
+
+      const priceCenter = offsetPx + width * templatePriceCenter;
+      const syntheticWidth = Math.max(20, (right - left) * 0.55);
+      augmented.push({
+        text: `${value.toFixed(2).replace('.', ',')} €`,
+        confidence: 99,
+        bbox: {
+          x0: Math.max(0, priceCenter - syntheticWidth / 2),
+          x1: Math.min(width, priceCenter + syntheticWidth / 2),
+          y0: rowY0,
+          y1: rowY1
+        },
+        _atmsHeaderlessRecoveredPriceAnchor: true
+      });
+      headerlessPriceAnchorRecoveryDiagnostic.recoveredRows++;
+      headerlessPriceAnchorRecoveryDiagnostic.recovered.push({
+        row: item.index,
+        accepted: true,
+        value,
+        votes: winner[1],
+        attempts
+      });
+    }
+
+    return augmented;
   }
 
   function imageWordsToMatrix(words, width) {
@@ -1843,10 +2002,11 @@
     // aufgebaut. Akzeptiert wird er erst nach der strengen Mehrzeilenvalidierung.
     const headerlessLines = hasSafeHeader ? null : groupOcrLines(words, 0);
     const headerlessDiagnostic = hasSafeHeader ? null : {
-      version: 'CORE-007D3',
+      version: 'CORE-007D4',
       headerScore: Number(header?.score || 0),
       headerAnchors: Number(header?.anchors?.length || 0),
-      wordCount: Array.isArray(words) ? words.length : 0
+      wordCount: Array.isArray(words) ? words.length : 0,
+      priceAnchorRecovery: headerlessPriceAnchorRecoveryDiagnostic ? { ...headerlessPriceAnchorRecoveryDiagnostic } : null
     };
     const headerlessLayout = hasSafeHeader ? null : inferHeaderlessAtmsPriceLayout(headerlessLines, width, headerlessDiagnostic);
 
@@ -3438,7 +3598,13 @@
         }
       }
     });
-    const words = result?.data?.words || [];
+    let words = result?.data?.words || [];
+    // CORE-007D4: Nur wenn kein sicherer Header vorhanden ist und die erste OCR
+    // trotz mehrerer Zeitanker zu wenige Preisanker liefert, wird der linke
+    // Preiskorridor zeilenweise gezielt nachgelesen. Das Ergebnis wird lediglich
+    // als OCR-Anker ergänzt; die unveränderten Headerless-Sicherheitsguards
+    // entscheiden anschließend weiterhin über Annahme oder Abbruch.
+    words = await recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width);
     let matrix = imageWordsToMatrix(words, canvas.width);
     if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
     if (matrix._atmsImageMeta) {
@@ -3450,7 +3616,7 @@
           const reason = cellText(recovery?.reason) || 'cell_recovery_not_accepted';
           const totalInvalid = Number(recovery?.totalInvalid || 0);
           const recoveredCells = Number(recovery?.recoveredCells || 0);
-          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. CORE-007D3 Diagnose: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells}. Bitte vollständige Kopfzeile mit hochladen.`);
+          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. CORE-007D4 Diagnose: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells}. Bitte vollständige Kopfzeile mit hochladen.`);
         }
       }
     }
