@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-006Z · 12.09.2026: OCR TIME & DRIVER REFERENCE GUARD. Verdächtige 00:00–05:59-DISPO-Zeiten werden vor der Folgetag-Entscheidung ausschließlich in ihrer eigenen Uhrzeitzelle lokal nachgelesen und nur bei eindeutigem Mehrfach-Konsens korrigiert. Die rechte Fahrer-Spalte erhält zusätzlich eine spaltenweite deutsche Zweit-OCR mit konservativer Konsens-/Kompatibilitätsprüfung für Diakritik und optionale einbuchstabige Namenszusätze. 'Taxi' ist in der Fahrerposition ein zulässiger operativer Eintrag. Keine Namen, Zeiten oder Flugnummern werden hart codiert.
   // CORE-006N · 10.09.2026: Fahrer-Spaltenlogik an reale ATMS-Planlisten gehaertet. Erste Wg-Spalte = Fahrzeug. Fahrer = explizite Fahrer-Spalte, rechte zweite Name-Spalte ODER – bei aktuellen Listen wie 09.09.2026 – die rechte zweite Wg-Spalte nach Ort. Die sichtbare Kopfzeile bleibt geometrisch erhalten; keine Fahrtzeilen gehen durch Umbenennen der letzten Spalte verloren.
   // CORE-006M · 10.09.2026: Zwischenstand; reine Umbenennung der letzten Wg-Spalte in Name erwies sich bei realen Planlisten mit sichtbarer rechter Wg-Kopfzeile als zu streng und wurde durch CORE-006N ersetzt.
   // CORE-006L · 10.09.2026: Von-/Nach-Ortszellen erhalten eine rein lokale deutsche Zweit-OCR in wenigen Spalten-Durchläufen. Eine abweichende Schreibweise wird nur bei wiederholtem exaktem Konsens und ausschließlich bei einer kleinen, diakritikbezogenen OCR-Abweichung übernommen; keine Ortsnamen-Hardcodes.
@@ -675,8 +676,10 @@
   function looksLikeDriverName(value) {
     const text = cellText(value);
     if (!text) return false;
-    if (/^(van|pkw|bus|sprinter|taxi)$/i.test(text)) return false;
-    return /^[A-Za-zÄÖÜäöüß\- ]{2,}$/.test(text);
+    // CORE-006Z: In der rechten Fahrer-/Wg-Spalte ist "Taxi" ein zulässiger
+    // operativer Dispo-Eintrag. Fahrzeugbegriffe bleiben ansonsten ausgeschlossen.
+    if (/^(van|pkw|bus|sprinter)$/i.test(text)) return false;
+    return /^[A-Za-zÄÖÜäöüßÀ-ÿ\- ]{2,}$/.test(text);
   }
 
   function getDriverValue(row, mapping) {
@@ -846,6 +849,9 @@
     rides.forEach(ride => {
       const row = ride.sourceRow;
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
+      if (ride.timeRecoveredFromTargetedOcr && ride.timeOcrInitial && normalizeTime(ride.timeOcrInitial) !== normalizeTime(ride.time)) {
+        issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.timeOcrInitial} durch lokale zweite OCR als ${ride.time} korrigiert – Original bitte einmal prüfen` });
+      }
       if (ride.dispoTime && ride.timeMirror && normalizeTime(ride.dispoTime) !== normalizeTime(ride.timeMirror)) {
         issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.dispoTime} und gespiegelte DISPO-Zeit ${ride.timeMirror} weichen ab – Original-Planliste prüfen` });
       }
@@ -1783,12 +1789,19 @@
       .trim();
     if (!text || text.length < 2 || text.length > 40) return '';
     if (!looksLikeDriverName(text)) return '';
-    if (/^(wg|fahrer|driver|chauffeur|van|pkw|bus|sprinter|taxi)$/i.test(text)) return '';
+    if (/^(wg|fahrer|driver|chauffeur|van|pkw|bus|sprinter)$/i.test(text)) return '';
 
-    // Sicherheitsregel: einzelne Buchstaben-Fragmente in Mehrwort-Treffern werden
-    // nicht automatisch als Fahrername akzeptiert. Lieber manuell prüfen als raten.
+    // CORE-006Z: Ein einzelner letzter Großbuchstabe ist als echter Namenszusatz
+    // zulässig (z. B. Initiale/Kürzel). Einzelbuchstaben an anderer Stelle bleiben
+    // weiterhin gesperrt, damit OCR-Fragmente nicht als Fahrername durchrutschen.
     const tokens = text.split(/[\s-]+/).filter(Boolean);
-    if (tokens.length > 1 && tokens.some(token => token.length === 1)) return '';
+    if (tokens.length > 1) {
+      const badSingle = tokens.some((token, index) => {
+        if (token.length !== 1) return false;
+        return !(index === tokens.length - 1 && /^[A-ZÄÖÜ]$/.test(token));
+      });
+      if (badSingle) return '';
+    }
 
     return text;
   }
@@ -1951,6 +1964,166 @@
       ride.driverNeedsManualCheck = false;
       ride.driverRecoverySource = 'targeted_driver_cell_consensus';
     }
+
+    return out;
+  }
+
+
+  function driverEditDistance(leftValue, rightValue) {
+    const left = cleanKey(leftValue);
+    const right = cleanKey(rightValue);
+    if (left === right) return 0;
+    if (!left) return right.length;
+    if (!right) return left.length;
+    const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= left.length; i++) {
+      let diagonal = previous[0];
+      previous[0] = i;
+      for (let j = 1; j <= right.length; j++) {
+        const above = previous[j];
+        const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+        previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + cost);
+        diagonal = above;
+      }
+    }
+    return previous[right.length];
+  }
+
+  function driverHasLatinDiacritic(value) {
+    return /[ÄÖÜäöüßÀ-ÿ]/.test(cellText(value));
+  }
+
+  function driverTrailingInitialStem(value) {
+    const tokens = cellText(value).split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) return '';
+    const last = tokens[tokens.length - 1];
+    if (!/^[A-ZÄÖÜ]$/.test(last)) return '';
+    return tokens.slice(0, -1).join(' ');
+  }
+
+  function driverConsensusCandidateIsSafe(originalValue, candidateValue) {
+    const original = normalizeDriverCandidate(originalValue);
+    const candidate = normalizeDriverCandidate(candidateValue);
+    if (!original || !candidate || original === candidate) return false;
+
+    const originalKey = cleanKey(original);
+    const candidateKey = cleanKey(candidate);
+    if (!originalKey || !candidateKey) return false;
+
+    // Reine Diakritik-/Großschreibungsverbesserung ist sicher, wenn die Basis gleich ist.
+    if (originalKey === candidateKey) {
+      return driverHasLatinDiacritic(candidate) && !driverHasLatinDiacritic(original);
+    }
+
+    // Ein finaler einbuchstabiger Namenszusatz darf nur dann ergänzt werden, wenn der
+    // eigentliche Name gegenüber dem Primärwert identisch oder höchstens um EIN OCR-Zeichen
+    // verschieden ist. Ohne Mehrfach-Konsens wird diese Regel nie angewendet.
+    const stem = driverTrailingInitialStem(candidate);
+    if (stem) {
+      const stemDistance = driverEditDistance(original, stem);
+      if (stemDistance <= 1) return true;
+    }
+
+    // Deutsche Diakritik kann bei englischer Primär-OCR zugleich einen Buchstaben verschieben.
+    // Ein einziger Zeichenunterschied ist nur bei tatsächlich vorhandener Diakritik erlaubt.
+    if (driverHasLatinDiacritic(candidate) && driverEditDistance(original, candidate) <= 1) return true;
+
+    return false;
+  }
+
+  async function recoverDriverColumnConsensusTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const driverCol = mapping?.driver;
+    if (driverCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[driverCol]);
+    const right = Number(boundaries[driverCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const rowsWithMeta = out.map(ride => {
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const meta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!meta) return null;
+      const y0 = Number(meta.y0), y1 = Number(meta.y1);
+      const cy = Number(meta.cy ?? ((y0 + y1) / 2));
+      if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
+      return { sourceRow: Number(ride.sourceRow), meta: { y0, y1, cy } };
+    }).filter(Boolean);
+    if (!rowsWithMeta.length) return out;
+
+    const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
+    const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
+    const cellWidth = Math.max(8, right - left);
+    const padX = Math.max(1, cellWidth * 0.025);
+    const attempts = [
+      { name: 'deu-driver-psm4', scale: 2, options: { tessedit_pageseg_mode: '4' } },
+      { name: 'deu-driver-psm6', scale: 3, options: { tessedit_pageseg_mode: '6' } },
+      { name: 'deu-driver-psm11', scale: 2, options: { tessedit_pageseg_mode: '11' } }
+    ];
+    const status = $('importStatus');
+    const votesByRow = new Map();
+    const displayByRowKey = new Map();
+    const attemptLogByRow = new Map();
+
+    if (status) status.textContent = 'Fahrer-Spalte wird lokal mit deutscher OCR gegengeprüft …';
+
+    try {
+      for (const attempt of attempts) {
+        const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
+        const second = await Tesseract.recognize(crop, 'deu', attempt.options);
+        const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
+
+        rowsWithMeta.forEach(item => {
+          const rawCandidate = routeOcrText(rowCandidates.get(item.sourceRow) || '');
+          const candidate = normalizeDriverCandidate(rawCandidate);
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          log.push({ mode: attempt.name, candidate });
+          attemptLogByRow.set(item.sourceRow, log);
+          if (!candidate) return;
+
+          const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+          const rowVotes = votesByRow.get(item.sourceRow) || new Map();
+          rowVotes.set(key, (rowVotes.get(key) || 0) + 1);
+          votesByRow.set(item.sourceRow, rowVotes);
+          const displayKey = `${item.sourceRow}|${key}`;
+          if (!displayByRowKey.has(displayKey)) displayByRowKey.set(displayKey, candidate);
+        });
+      }
+    } catch (_) {
+      return out;
+    }
+
+    out.forEach(ride => {
+      const sourceRow = Number(ride.sourceRow);
+      const original = normalizeDriverCandidate(ride.driver);
+      ride.driverGermanColumnOcrAttempts = attemptLogByRow.get(sourceRow) || [];
+      if (!original) return;
+
+      const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+      if (!winner || winner[1] < 2) return;
+      if (runner && winner[1] === runner[1]) return;
+
+      const candidate = normalizeDriverCandidate(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
+      if (!candidate || !driverConsensusCandidateIsSafe(original, candidate)) return;
+
+      ride.driverRawOcr = ride.driverRawOcr || original;
+      ride.driver = candidate;
+      ride.driverRecoverySource = 'driver_german_column_consensus';
+
+      // Reine Diakritikverbesserungen brauchen keinen zusätzlichen Warnhinweis.
+      // Inhaltliche Ergänzungen/Ein-Zeichen-Korrekturen bleiben sichtbar prüfbar.
+      if (cleanKey(original) !== cleanKey(candidate)) {
+        ride.driverRecoveredFromTargetedOcr = true;
+      } else {
+        ride.driverRecoveredFromGermanColumnOcr = true;
+        ride.driverNeedsManualCheck = false;
+      }
+    });
 
     return out;
   }
@@ -2324,6 +2497,92 @@
       ride.planTime = recovered;
       ride.timeRecoveredFromTargetedOcr = true;
     }
+    return out;
+  }
+
+
+  async function recoverSuspiciousRideTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const timeCol = mapping?.time;
+    if (timeCol === undefined) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[timeCol]);
+    const right = Number(boundaries[timeCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
+      const initialMinutes = timeToMinutes(initial);
+      if (initialMinutes === null || initialMinutes >= NEXT_DAY_CUTOFF_MINUTES) continue;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.16);
+      const padX = Math.max(1, cellWidth * 0.035);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.10), right, y1 + Math.max(2, rowHeight * 0.10), 3]
+      ];
+      const ocrModes = [
+        { name: 'default', options: {} },
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789:.' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: '0123456789:.' } }
+      ];
+
+      if (status) status.textContent = `Verdächtige Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = rideTimeCandidatesFromOcrResult(second);
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = normalizeTime(candidates[0]);
+            if (timeToMinutes(candidate) === null) continue;
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.timeSuspiciousOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.timeSuspiciousOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Keine Korrektur aufgrund eines Einzel-Treffers. Mindestens zwei lokale
+      // OCR-Versuche müssen dieselbe alternative Zeit liefern und eindeutig gewinnen.
+      if (!winner || winner[1] < 2) continue;
+      if (runner && winner[1] === runner[1]) continue;
+      const recovered = normalizeTime(winner[0]);
+      if (!recovered || recovered === initial) continue;
+
+      ride.timeOcrInitial = initial;
+      ride.time = recovered;
+      ride.planTime = recovered;
+      ride.dispoTime = recovered;
+      ride.dispo_time = recovered;
+      ride.timeRecoveredFromTargetedOcr = true;
+      ride.timeRecoverySource = 'targeted_suspicious_time_cell_consensus';
+    }
+
     return out;
   }
 
@@ -2985,6 +3244,12 @@
           result.imageMeta,
           mappingInfo.mapping
         );
+        preparedRides = await recoverSuspiciousRideTimesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
         preparedRides = await recoverSuspiciousPricesTargeted(
           preparedRides,
           result.imageCanvas,
@@ -2998,6 +3263,12 @@
           mappingInfo.mapping
         );
         preparedRides = await recoverMissingDriversTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverDriverColumnConsensusTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
