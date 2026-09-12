@@ -1,11 +1,6 @@
 (() => {
   'use strict';
 
-  // CORE-007D9C · 12.09.2026: GRIDLINE CELL BOUNDARY RECOVERY. Für gezielte Routen-/Flugzellen-Nachlesung werden sichtbare vertikale Tabellenlinien lokal um die bereits bekannte Spaltengeometrie gesucht. Nur deutlich vertikal wiederkehrende Kanten innerhalb eines engen Erwartungskorridors dürfen eine Zellgrenze verfeinern; sonst bleibt die bisherige Grenze unverändert. Die verfeinerten Grenzen werden ausschließlich für die Zweit-OCR verwendet, nicht für die Primärmatrix. Keine Flugnummern-/Orts-Hardcodes, kein Raten; Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
-  // CORE-007D9B · 12.09.2026: WIDE CELL MULTISCALE OCR RECOVERY. Für bereits nachgewiesene rechts abgeschnittene Von-/Nach-Zellen und ungewöhnliche Flugdesignatoren werden ausschließlich die konkreten Tabellenzellen in mehreren Skalierungen, PSM-Modi und binarisierten Kontrastvarianten erneut gelesen. Routen-Erweiterungen benötigen weiterhin einen eindeutigen tokenweisen Suffix-Konsens; zusätzlich muss derselbe Gewinner aus mindestens zwei unterschiedlichen Bildvarianten stammen. Flugnummern werden nur bei identischem Zahlenteil/Suffix und eindeutigem Mehrfach-Konsens ersetzt. Keine Wörterbuchkorrektur, kein EWS→EW-Hardcode, kein Raten. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
-  // CORE-007D9A · 12.09.2026: FULL ROUTE CELL RECOVERY & FLIGHT OCR DIAGNOSTICS. Von-/Nach-Zellen werden bei möglicher Rechtsabschneidung pro einzelner Tabellenzelle und mit enger Zeilenhoehe mehrfach vollständig nachgelesen; übernommen werden nur eindeutige Konsens-Erweiterungen mit vollständigen Suffix-Tokens. Unvollständige Einzelbuchstaben/-fragmente dürfen keine Route mehr verschlechtern. Bei ungewöhnlichen Flugdesignatoren werden die tatsächlich erkannten lokalen OCR-Kandidaten diagnostisch ausgegeben, ohne aus Minderheits-/Einzeltreffern eine Flugnummer zu raten. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
-  // CORE-007D9 · 12.09.2026: FLIGHT NUMBER & ROUTE CELL RECOVERY. Auffällige alphabetische Flugdesignatoren mit mehr als zwei Zeichen werden ausschließlich in ihrer eigenen Flugzelle lokal nachgelesen; eine Korrektur darf nur bei eindeutigem Mehrfach-Konsens mit identischem numerischem Flugteil erfolgen. Von-/Nach-Zellen dürfen nur um eindeutig mehrfach gelesene, reine Suffix-Tokens vervollständigt werden (kein Wörterbuch, keine Orts-/Hotel-Hardcodes). Flugorte aus der Planliste bleiben sichtbar als Vergleichswert, gelten beim Bildimport aber bis zu einer aktuellen verifizierten Flugprüfung als ungeprüft. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
-
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
@@ -830,19 +825,9 @@
       dispoAbholzeit: dispatcherTime,
       dispatcherNote: dispatcherTime ? `Disponentenzeit aus Ort-Spalte: ${sourceFlightLocationRaw}` : '',
       sourceFlightLocationRaw,
-      // CORE-007D9: Ein Flugort aus der hochgeladenen Bild-Planliste ist ein
-      // Vergleichswert, keine datumsspezifische Verifikation. Er bleibt sichtbar,
-      // wird aber bis zu einer echten aktuellen Flugprüfung ausdrücklich offen geführt.
-      locationFromPlan: options.imageOcr && flightLocation ? flightLocation : '',
-      flightLocationFromPlan: Boolean(options.imageOcr && flightLocation),
       flightRecoveredFromRow: Boolean(recoveredFlight),
       flightRecoveryAmbiguous,
-      flightNeedsManualCheck: Boolean(
-        recoveredFlight ||
-        flightRecoveryAmbiguous ||
-        (options.imageOcr && flightNumber && flightLocation)
-      ),
-      flightCheckConfidence: options.imageOcr && flightNumber && flightLocation ? 'uncertain' : '',
+      flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
       vehicle: getVehicleValue(row, mapping, options),
       persons: getPersonsValue(row, mapping, options),
       price: findPriceValue(row, mapping, options),
@@ -895,21 +880,6 @@
     return Boolean(values[0] || (values[1] && values[2]));
   }
 
-  function unusualFlightDiagnosticText(ride) {
-    const attempts = Array.isArray(ride?.flightUnusualOcrAttempts) ? ride.flightUnusualOcrAttempts : [];
-    const counts = new Map();
-    attempts.forEach(attempt => {
-      (Array.isArray(attempt?.candidates) ? attempt.candidates : []).forEach(candidate => {
-        const normalized = normalizeFlightNumber(candidate);
-        if (!normalized) return;
-        counts.set(normalized, (counts.get(normalized) || 0) + 1);
-      });
-    });
-    const ranked = [...counts.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    if (!ranked.length) return 'keine eindeutigen lokalen Kandidaten';
-    return ranked.slice(0, 4).map(([candidate, count]) => `${candidate} ${count}×`).join(' · ');
-  }
-
   function validate(rides) {
     const issues = [];
     const fingerprints = new Set();
@@ -938,9 +908,6 @@
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
         issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
-      }
-      if (ride.flightOcrUnusualNeedsReview && ride.flightNumber) {
-        issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} hat einen ungewöhnlich langen alphabetischen Designator – lokale OCR war nicht eindeutig; OCR-Kandidaten: ${unusualFlightDiagnosticText(ride)}; Original bitte prüfen` });
       }
 
       // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
@@ -2321,160 +2288,6 @@
   }
 
 
-  // CORE-007D9C: Die OCR-Kopfzeile liefert gute ungefähre Spaltenpositionen,
-  // kann bei schmalen Zellen aber die echte senkrechte Tabellenlinie um wenige
-  // Pixel verfehlen. Genau das kann das letzte Wort einer Route abschneiden oder
-  // Nachbarzeichen in eine Flugzelle ziehen. Für die Zweit-OCR wird deshalb nur
-  // in einem engen Korridor um jede erwartete Grenze nach einer vertikal über
-  // mehrere Datenzeilen wiederkehrenden Bildkante gesucht. Die Primärmatrix bleibt
-  // vollständig unangetastet.
-  function gridlineSampleRows(imageMeta, height) {
-    const metas = Object.values(imageMeta?.rowMetaByMatrixIndex || {})
-      .map(meta => ({
-        y0: Number(meta?.y0),
-        y1: Number(meta?.y1),
-        cy: Number(meta?.cy)
-      }))
-      .filter(meta => [meta.y0, meta.y1, meta.cy].every(Number.isFinite) && meta.y1 > meta.y0)
-      .sort((a,b) => a.cy - b.cy);
-    if (!metas.length) return [];
-
-    const gaps = [];
-    for (let i = 1; i < metas.length; i++) {
-      const gap = metas[i].cy - metas[i - 1].cy;
-      if (Number.isFinite(gap) && gap > 4) gaps.push(gap);
-    }
-    gaps.sort((a,b) => a - b);
-    const medianGap = gaps.length
-      ? gaps[Math.floor(gaps.length / 2)]
-      : Math.max(16, Math.max(...metas.map(meta => meta.y1 - meta.y0)) * 1.8);
-    const offset = Math.max(3, Math.min(medianGap * 0.31, 18));
-    const rows = [];
-    metas.forEach(meta => {
-      [meta.cy - offset, meta.cy + offset].forEach(y => {
-        const yy = Math.round(y);
-        if (yy > 2 && yy < height - 3) rows.push(yy);
-      });
-    });
-    return [...new Set(rows)].sort((a,b) => a - b);
-  }
-
-  function detectGridlineBoundaries(imageCanvas, imageMeta) {
-    if (!imageCanvas || !imageMeta) return null;
-    if (imageMeta._core007d9cGridlineBoundaries) return imageMeta._core007d9cGridlineBoundaries;
-
-    const expected = (imageMeta.boundaries || []).map(Number);
-    if (expected.length < 4 || expected.some(value => !Number.isFinite(value))) return null;
-    const width = Number(imageCanvas.width || 0);
-    const height = Number(imageCanvas.height || 0);
-    if (width < 200 || height < 60) return null;
-    const sampleRows = gridlineSampleRows(imageMeta, height);
-    if (sampleRows.length < 4) return null;
-
-    let pixels;
-    try {
-      pixels = imageCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
-    } catch (_) {
-      return null;
-    }
-
-    const edgeScore = x => {
-      const xi = Math.max(2, Math.min(width - 3, Math.round(x)));
-      let sum = 0;
-      let strong = 0;
-      let used = 0;
-      for (const y of sampleRows) {
-        const row = y * width;
-        const left2 = pixels[(row + xi - 2) * 4];
-        const left1 = pixels[(row + xi - 1) * 4];
-        const right1 = pixels[(row + xi + 1) * 4];
-        const right2 = pixels[(row + xi + 2) * 4];
-        if (![left2, left1, right1, right2].every(Number.isFinite)) continue;
-        const gradient = Math.max(
-          Math.abs(right1 - left1),
-          Math.abs(right2 - left2),
-          Math.abs(right2 - left1),
-          Math.abs(right1 - left2)
-        );
-        sum += gradient;
-        if (gradient >= 18) strong++;
-        used++;
-      }
-      return used ? { mean: sum / used, strongRatio: strong / used } : { mean: 0, strongRatio: 0 };
-    };
-
-    const refined = expected.slice();
-    const accepted = Array(expected.length).fill(false);
-    const details = [];
-    // Aussenkanten werden nicht verschoben; nur innere Spaltengrenzen koennen
-    // verfeinert werden. Ein enger Radius verhindert, dass Textkanten als neue
-    // Tabellenlinie missverstanden werden.
-    for (let i = 1; i < expected.length - 1; i++) {
-      const leftGap = expected[i] - expected[i - 1];
-      const rightGap = expected[i + 1] - expected[i];
-      if (!(leftGap > 6 && rightGap > 6)) continue;
-      const radius = Math.max(5, Math.min(width * 0.018, Math.min(leftGap, rightGap) * 0.20));
-      const start = Math.max(2, Math.floor(expected[i] - radius));
-      const end = Math.min(width - 3, Math.ceil(expected[i] + radius));
-      let bestX = Math.round(expected[i]);
-      let best = edgeScore(bestX);
-      const localMeans = [];
-      for (let x = start; x <= end; x++) {
-        const score = edgeScore(x);
-        localMeans.push(score.mean);
-        if (score.mean > best.mean || (score.mean === best.mean && score.strongRatio > best.strongRatio)) {
-          best = score;
-          bestX = x;
-        }
-      }
-      localMeans.sort((a,b) => a - b);
-      const median = localMeans.length ? localMeans[Math.floor(localMeans.length / 2)] : 0;
-      // Relative Evidenz ist hier wichtiger als ein fixer Grauwert, weil Tabellenlinien
-      // je nach Screenshot/Skalierung unterschiedlich stark antialiasen. Trotzdem
-      // muessen mehrere Zeilen dieselbe Kante tragen.
-      const relativeLift = best.mean - median;
-      const safe = best.strongRatio >= 0.10 && best.mean >= 7 && relativeLift >= 2.5;
-      if (safe) {
-        refined[i] = bestX;
-        accepted[i] = true;
-      }
-      details.push({ index: i, expected: expected[i], refined: safe ? bestX : expected[i], safe, mean: best.mean, strongRatio: best.strongRatio, relativeLift });
-    }
-
-    // Globale Plausibilitaet: keine Grenze darf die Reihenfolge umkehren oder eine
-    // Spalte auf weniger als 35 % ihrer erwarteten Breite zusammendruecken.
-    for (let i = 1; i < refined.length; i++) {
-      const expectedGap = expected[i] - expected[i - 1];
-      const actualGap = refined[i] - refined[i - 1];
-      if (!(actualGap > Math.max(4, expectedGap * 0.35))) {
-        const fallback = { boundaries: expected.slice(), accepted: Array(expected.length).fill(false), details, safe: false };
-        imageMeta._core007d9cGridlineBoundaries = fallback;
-        return fallback;
-      }
-    }
-
-    const result = { boundaries: refined, accepted, details, safe: accepted.some(Boolean), sampleRows: sampleRows.length };
-    imageMeta._core007d9cGridlineBoundaries = result;
-    return result;
-  }
-
-  function gridAwareCellBounds(imageCanvas, imageMeta, column) {
-    const fallback = imageMeta?.boundaries || [];
-    const leftFallback = Number(fallback[column]);
-    const rightFallback = Number(fallback[column + 1]);
-    if (!Number.isFinite(leftFallback) || !Number.isFinite(rightFallback) || rightFallback <= leftFallback) return null;
-    const grid = detectGridlineBoundaries(imageCanvas, imageMeta);
-    if (!grid?.safe) return { left: leftFallback, right: rightFallback, source: 'header-geometry' };
-    const leftSafe = column === 0 || Boolean(grid.accepted?.[column]);
-    const rightSafe = column + 1 === fallback.length - 1 || Boolean(grid.accepted?.[column + 1]);
-    if (!leftSafe || !rightSafe) return { left: leftFallback, right: rightFallback, source: 'header-geometry' };
-    const left = Number(grid.boundaries[column]);
-    const right = Number(grid.boundaries[column + 1]);
-    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left + 4) return { left: leftFallback, right: rightFallback, source: 'header-geometry' };
-    return { left, right, source: 'gridline', grid };
-  }
-
-
   function headerlessCellFieldForColumn(column) {
     const map = {
       0: 'price', 1: 'time', 2: 'pickup', 3: 'destination',
@@ -3369,139 +3182,6 @@
     return out;
   }
 
-  // CORE-007D9: Reine OCR-Abschneidungen am rechten Rand einer Von-/Nach-Zelle
-  // dürfen nur ergänzt werden, wenn der vorhandene Wert tokenweise vollständig
-  // am Anfang des lokal mehrfach identisch gelesenen Kandidaten steht. Es werden
-  // ausschließlich fehlende Suffix-Tokens ergänzt; bestehende Zeichen/Wörter
-  // werden niemals ersetzt oder aufgrund eines Wörterbuchs geraten.
-  function routeCompletionTokens(value) {
-    return routeOcrText(value)
-      .normalize('NFKC')
-      .toLocaleLowerCase('de-DE')
-      .match(/[a-zäöüßà-ÿ0-9]+/g) || [];
-  }
-
-  function routeCompletionIsSafe(originalValue, candidateValue) {
-    const original = routeOcrText(originalValue);
-    const candidate = routeOcrText(candidateValue);
-    if (!original || !candidate || candidate.length <= original.length) return false;
-    const left = routeCompletionTokens(original);
-    const right = routeCompletionTokens(candidate);
-    if (!left.length || right.length <= left.length) return false;
-    // Maximal wenige fehlende End-Tokens nachlesen; lange fremde Zellinhalte sperren.
-    if (right.length - left.length > 3 || candidate.length - original.length > 24) return false;
-    for (let i = 0; i < left.length; i++) {
-      if (left[i] !== right[i]) return false;
-    }
-    // CORE-007D9A: Ein OCR-Fragment wie "D" oder "Ir" darf niemals als
-    // sichere Routenvervollständigung gelten. Fehlende Suffix-Tokens muessen
-    // vollständig lesbar sein; 1-2 Zeichen sind dafür zu schwach.
-    const appended = right.slice(left.length);
-    if (!appended.length || appended.some(token => token.length < 3)) return false;
-    return true;
-  }
-
-  async function recoverTruncatedRoutesTargeted(rides, imageCanvas, imageMeta, mapping) {
-    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
-    const boundaries = imageMeta.boundaries || [];
-    const status = $('importStatus');
-    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
-    const fields = [
-      { field: 'pickup', label: 'Von' },
-      { field: 'destination', label: 'Nach' }
-    ];
-
-    // CORE-007D9A: Nicht mehr eine komplette Spalte als OCR-Block lesen. Bei
-    // schmalen Tabellen konnte Tesseract dadurch den rechten Rand einer Zelle
-    // als unvollständiges Token (z. B. "D" / "Ir") liefern. Jede Route wird
-    // jetzt ausschließlich in ihrer eigenen Tabellenzelle nachgelesen.
-    for (const descriptor of fields) {
-      const column = mapping?.[descriptor.field];
-      if (column === undefined) continue;
-      const cellBounds = gridAwareCellBounds(imageCanvas, imageMeta, column);
-      if (!cellBounds) continue;
-      const left = Number(cellBounds.left);
-      const right = Number(cellBounds.right);
-      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
-      const cellWidth = Math.max(8, right - left);
-
-      for (const ride of out) {
-        const original = routeOcrText(ride[descriptor.field]);
-        if (!original) continue;
-        const matrixIndex = Number(ride.sourceRow || 0) - 1;
-        const meta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
-        if (!meta) continue;
-        const y0 = Number(meta.y0);
-        const y1 = Number(meta.y1);
-        if (![y0, y1].every(Number.isFinite) || y1 <= y0) continue;
-        const rowHeight = Math.max(12, y1 - y0);
-        const padY = Math.max(1, rowHeight * 0.10);
-        const inset1 = Math.max(1, cellWidth * 0.008);
-        const inset2 = Math.max(1, cellWidth * 0.018);
-        // CORE-007D9B: dieselbe Zelle mit mehreren Skalierungen und klar
-        // unterschiedlichen Bildvarianten lesen. Wir gehen NICHT über die rechte
-        // Zellgrenze hinaus; dadurch können Nachbarspalten keine künstlichen
-        // Suffix-Wörter liefern. Ein Gewinner braucht Konsens aus mindestens zwei
-        // Bildfamilien (z. B. raw + bw185), nicht nur zwei PSM-Läufe desselben Crops.
-        const attempts = [
-          { name: 'raw-full-3x-line', family: 'raw', lang: 'deu', scale: 3, x0: left, x1: right, threshold: null, contrast: 1.0, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'raw-full-4x-block', family: 'raw', lang: 'deu', scale: 4, x0: left, x1: right, threshold: null, contrast: 1.0, options: { tessedit_pageseg_mode: '6' } },
-          { name: 'raw-inner-4x-line', family: 'raw-inner', lang: 'deu', scale: 4, x0: left + inset1, x1: right - inset1, threshold: null, contrast: 1.0, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'bw165-full-4x-line', family: 'bw165', lang: 'deu', scale: 4, x0: left, x1: right, threshold: 165, contrast: 1.15, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'bw185-full-4x-line', family: 'bw185', lang: 'deu', scale: 4, x0: left, x1: right, threshold: 185, contrast: 1.10, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'bw205-full-5x-line', family: 'bw205', lang: 'deu', scale: 5, x0: left, x1: right, threshold: 205, contrast: 1.05, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'bw185-inner-5x-line', family: 'bw185-inner', lang: 'deu', scale: 5, x0: left + inset2, x1: right - inset2, threshold: 185, contrast: 1.10, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'eng-bw185-full-4x-line', family: 'eng-bw185', lang: 'eng', scale: 4, x0: left, x1: right, threshold: 185, contrast: 1.10, options: { tessedit_pageseg_mode: '7' } }
-        ];
-        const votes = new Map();
-        const families = new Map();
-        const display = new Map();
-        const log = [];
-
-        if (status) status.textContent = `${descriptor.label}-Zelle Zeile ${ride.sourceRow} wird mehrstufig nachgelesen …`;
-        try {
-          for (const attempt of attempts) {
-            const rawCrop = cropCanvasRegion(imageCanvas, attempt.x0, y0 - padY, attempt.x1, y1 + padY, attempt.scale);
-            const crop = attempt.threshold === null
-              ? rawCrop
-              : prepareHeaderlessPriceCrop(rawCrop, attempt.threshold, attempt.contrast);
-            const second = await Tesseract.recognize(crop, attempt.lang, attempt.options);
-            const rawText = routeOcrText(second?.data?.text || (second?.data?.words || []).map(word => word?.text || '').join(' '));
-            const candidate = routeOcrText(rawText);
-            log.push({ mode: attempt.name, family: attempt.family, candidate, bounds: cellBounds.source });
-            if (!candidate || !routeCompletionIsSafe(original, candidate)) continue;
-            const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
-            votes.set(key, (votes.get(key) || 0) + 1);
-            if (!families.has(key)) families.set(key, new Set());
-            families.get(key).add(attempt.family);
-            if (!display.has(key)) display.set(key, candidate);
-          }
-        } catch (_) {
-          ride[`${descriptor.field}CompletionOcrAttempts`] = log;
-          continue;
-        }
-
-        ride[`${descriptor.field}CompletionOcrAttempts`] = log;
-        const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
-        const winner = ranked[0] || null;
-        const runner = ranked[1] || null;
-        if (!winner || winner[1] < 2) continue;
-        if ((families.get(winner[0])?.size || 0) < 2) continue;
-        if (runner && winner[1] === runner[1]) continue;
-        const candidate = routeOcrText(display.get(winner[0]) || '');
-        if (!routeCompletionIsSafe(original, candidate)) continue;
-
-        ride[`${descriptor.field}RawOcr`] = ride[`${descriptor.field}RawOcr`] || original;
-        ride[descriptor.field] = candidate;
-        ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
-        ride[`${descriptor.field}RecoveredFromSuffixOcr`] = true;
-        ride[`${descriptor.field}RecoverySource`] = 'targeted_full_route_cell_consensus';
-        ride.rideType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
-      }
-    }
-    return out;
-  }
-
   // CORE-005R: Preis-Kandidaten werden nur aus expliziten Dezimaldarstellungen
   // der gezielt ausgeschnittenen Preiszelle gewonnen. Eine verlorene Dezimalstelle
   // (z. B. reines "4760") wird NICHT erraten oder automatisch verschoben.
@@ -3972,150 +3652,6 @@
       } else {
         ride.flightOcrAmbiguityNeedsReview = true;
       }
-    }
-    return out;
-  }
-
-  // CORE-007D9: Ein rein alphabetischer Flugdesignator mit mehr als zwei
-  // Buchstaben ist in den aktuellen ATMS-Planlisten OCR-auffällig. Er wird nicht
-  // pauschal gekürzt. Stattdessen wird ausschließlich dieselbe Flugzelle lokal
-  // nachgelesen. Eine alternative Lesart darf nur gewinnen, wenn der numerische
-  // Flugteil (und ein eventueller Suffixbuchstabe) identisch bleibt.
-  function alphabeticFlightParts(value) {
-    const flight = normalizeFlightNumber(value);
-    const match = flight.match(/^([A-Z]{2,4})(\d{1,4})([A-Z]?)$/);
-    return match ? { flight, designator: match[1], number: match[2], suffix: match[3] || '' } : null;
-  }
-
-  function hasUnusualAlphabeticFlightDesignator(value) {
-    const parts = alphabeticFlightParts(value);
-    return Boolean(parts && parts.designator.length > 2);
-  }
-
-  function sameAlphabeticFlightNumericIdentity(leftValue, rightValue) {
-    const left = alphabeticFlightParts(leftValue);
-    const right = alphabeticFlightParts(rightValue);
-    return Boolean(left && right && left.number === right.number && left.suffix === right.suffix);
-  }
-
-  async function recoverUnusualFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
-    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
-    const status = $('importStatus');
-    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
-
-    for (let i = 0; i < out.length; i++) {
-      const ride = out[i];
-      const initial = normalizeFlightNumber(ride.flightNumber);
-      if (!initial || !hasUnusualAlphabeticFlightDesignator(initial)) continue;
-
-      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
-      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
-      const colIndex = field ? mapping?.[field] : undefined;
-      const matrixIndex = Number(ride.sourceRow || 0) - 1;
-      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
-      if (colIndex === undefined || !rowMeta) {
-        ride.flightOcrUnusualNeedsReview = true;
-        continue;
-      }
-
-      const cellBounds = gridAwareCellBounds(imageCanvas, imageMeta, colIndex);
-      if (!cellBounds) {
-        ride.flightOcrUnusualNeedsReview = true;
-        continue;
-      }
-      const left = Number(cellBounds.left);
-      const right = Number(cellBounds.right);
-      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) {
-        ride.flightOcrUnusualNeedsReview = true;
-        continue;
-      }
-
-      const y0 = Number(rowMeta.y0 || 0);
-      const y1 = Number(rowMeta.y1 || 0);
-      const rowHeight = Math.max(18, y1 - y0);
-      const cellWidth = Math.max(8, right - left);
-      const padY = Math.max(2, rowHeight * 0.12);
-      // CORE-007D9B: komplette Flugzelle in mehreren Skalierungen und
-      // Schwellenwerten lesen. Auch hier wird die Zellgrenze nicht überschritten.
-      // Die Kandidaten müssen denselben numerischen Flugteil wie die Primärlesung
-      // besitzen; dadurch kann eine Nachbarzelle keinen fachlich anderen Flug erzeugen.
-      const specs = [
-        { name: 'raw-full-3x-line', family: 'raw', x0: left, x1: right, scale: 3, threshold: null, contrast: 1.0, mode: '7' },
-        { name: 'raw-full-4x-word', family: 'raw', x0: left, x1: right, scale: 4, threshold: null, contrast: 1.0, mode: '8' },
-        { name: 'raw-inner-4x-line', family: 'raw-inner', x0: left + cellWidth * 0.012, x1: right - cellWidth * 0.012, scale: 4, threshold: null, contrast: 1.0, mode: '7' },
-        { name: 'bw155-full-4x-line', family: 'bw155', x0: left, x1: right, scale: 4, threshold: 155, contrast: 1.18, mode: '7' },
-        { name: 'bw175-full-4x-line', family: 'bw175', x0: left, x1: right, scale: 4, threshold: 175, contrast: 1.12, mode: '7' },
-        { name: 'bw190-full-5x-line', family: 'bw190', x0: left, x1: right, scale: 5, threshold: 190, contrast: 1.08, mode: '7' },
-        { name: 'bw205-full-5x-word', family: 'bw205', x0: left, x1: right, scale: 5, threshold: 205, contrast: 1.05, mode: '8' },
-        { name: 'bw185-inner-5x-rawline', family: 'bw185-inner', x0: left + cellWidth * 0.012, x1: right - cellWidth * 0.012, scale: 5, threshold: 185, contrast: 1.10, mode: '13' }
-      ];
-      const votes = new Map();
-      const families = new Map();
-      const attempts = [];
-
-      if (status) status.textContent = `Auffällige Flugzelle Zeile ${ride.sourceRow} wird mehrstufig nachgelesen …`;
-      try {
-        for (const spec of specs) {
-          const rawCrop = cropCanvasRegion(imageCanvas, spec.x0, y0 - padY, spec.x1, y1 + padY, spec.scale);
-          const crop = spec.threshold === null
-            ? rawCrop
-            : prepareHeaderlessPriceCrop(rawCrop, spec.threshold, spec.contrast);
-          const second = await Tesseract.recognize(crop, 'eng', {
-            tessedit_pageseg_mode: spec.mode,
-            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-          });
-          const raw = String(second?.data?.text || '').trim().replace(/\s+/g, ' ').slice(0, 64);
-          const candidates = [...new Set(
-            flightCandidatesFromOcrResult(second)
-              .map(normalizeFlightNumber)
-              .filter(candidate => candidate && sameAlphabeticFlightNumericIdentity(initial, candidate))
-          )];
-          attempts.push({ region: spec.name, family: spec.family, raw, candidates: candidates.slice(), bounds: cellBounds.source });
-          if (candidates.length !== 1) continue;
-          const candidate = candidates[0];
-          votes.set(candidate, (votes.get(candidate) || 0) + 1);
-          if (!families.has(candidate)) families.set(candidate, new Set());
-          families.get(candidate).add(spec.family);
-        }
-      } catch (_) {
-        ride.flightUnusualOcrAttempts = attempts;
-        ride.flightOcrUnusualNeedsReview = true;
-        continue;
-      }
-
-      ride.flightUnusualOcrAttempts = attempts;
-      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-      const winner = ranked[0] || null;
-      const runner = ranked[1] || null;
-      if (!winner || winner[1] < 2 || (families.get(winner[0])?.size || 0) < 2 || (runner && winner[1] === runner[1])) {
-        ride.flightOcrUnusualNeedsReview = true;
-        continue;
-      }
-
-      const recovered = winner[0];
-      if (recovered === initial) {
-        // CORE-007D9A: Auch mehrfach identische OCR bestätigt nicht automatisch,
-        // dass ein >2-buchstabiger Designator fachlich korrekt ist. Der Wert wird
-        // nicht verändert, bleibt aber mit den tatsächlichen Kandidaten sichtbar
-        // prüfpflichtig. So wird aus wiederholt gleichem OCR kein Sachbeweis.
-        ride.flightOcrUnusualNeedsReview = true;
-        ride.flightUnusualConfirmedByTargetedOcr = true;
-        continue;
-      }
-      if (!sameAlphabeticFlightNumericIdentity(initial, recovered)) {
-        ride.flightOcrUnusualNeedsReview = true;
-        continue;
-      }
-
-      ride.flightNumber = recovered;
-      if (routeType === 'arrival') ride.arrivalFlight = recovered;
-      if (routeType === 'departure') ride.departureFlight = recovered;
-      ride.flightDirection = routeType;
-      ride.flightOcrInitialUnusual = initial;
-      ride.flightRecoveredFromUnusualOcr = true;
-      ride.flightOcrUnusualNeedsReview = hasUnusualAlphabeticFlightDesignator(recovered);
-      ride.flightNeedsManualCheck = true;
-      ride.flightCheckConfidence = 'uncertain';
     }
     return out;
   }
@@ -4605,22 +4141,6 @@
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
   }
 
-  function enforcePlanFlightLocationsAsUnverified(rides) {
-    return (Array.isArray(rides) ? rides : []).map(ride => {
-      if (!ride?.sourceImageOcr || !ride?.flightNumber || !ride?.flightLocationFromPlan) return ride;
-      // Eine Verifikation muss ein echtes Prüfdatum besitzen. Ein bloßer Ort aus
-      // der Bild-Planliste darf durch prepareRides() nicht still auf VERIFIED springen.
-      const hasCurrentVerification = ride.flightCheckConfidence === 'verified' && Boolean(cellText(ride.flightCheckedAt));
-      if (hasCurrentVerification) return ride;
-      return {
-        ...ride,
-        locationFromPlan: ride.locationFromPlan || ride.flightLocation || '',
-        flightNeedsManualCheck: true,
-        flightCheckConfidence: 'uncertain'
-      };
-    });
-  }
-
   async function analyze() {
     if (!state.file) return;
     try {
@@ -4735,12 +4255,6 @@
           result.imageMeta,
           mappingInfo.mapping
         );
-        preparedRides = await recoverTruncatedRoutesTargeted(
-          preparedRides,
-          result.imageCanvas,
-          result.imageMeta,
-          mappingInfo.mapping
-        );
         preparedRides = await recoverMissingDriversTargeted(
           preparedRides,
           result.imageCanvas,
@@ -4765,19 +4279,12 @@
           result.imageMeta,
           mappingInfo.mapping
         );
-        preparedRides = await recoverUnusualFlightNumbersTargeted(
-          preparedRides,
-          result.imageCanvas,
-          result.imageMeta,
-          mappingInfo.mapping
-        );
         preparedRides = applyRepeatedTextConsistency(preparedRides);
       }
 
       state.matrix = matrix;
       state.rides = assignRideDates(preparedRides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
-      state.rides = enforcePlanFlightLocationsAsUnverified(state.rides);
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
