@@ -1664,9 +1664,25 @@
     };
   }
 
-  function inferHeaderlessAtmsPriceLayout(lines, width) {
+  function inferHeaderlessAtmsPriceLayout(lines, width, diagnostics = null) {
+    // CORE-007D3: Reine Diagnoseinstrumentierung. Jede bisherige Ja/Nein-
+    // Entscheidung bleibt unverändert; bei einem Abbruch wird nur dokumentiert,
+    // welche Sicherheitsstufe abgelehnt hat.
+    const diag = diagnostics && typeof diagnostics === 'object' ? diagnostics : {};
+    const reject = (reason, extra = {}) => {
+      Object.assign(diag, extra, { accepted: false, rejectReason: reason });
+      return null;
+    };
+
     const usableLines = (lines || []).filter(line => (line?.words || []).length >= 4);
-    if (usableLines.length < 2 || !Number.isFinite(Number(width)) || Number(width) < 500) return null;
+    Object.assign(diag, {
+      inputLines: Array.isArray(lines) ? lines.length : 0,
+      usableLines: usableLines.length,
+      width: Number(width) || 0
+    });
+    if (usableLines.length < 2 || !Number.isFinite(Number(width)) || Number(width) < 500) {
+      return reject('insufficient_usable_lines_or_width');
+    }
 
     const priceCenters = [];
     const timeCenters = [];
@@ -1686,15 +1702,22 @@
       }
     });
 
-    // CORE-007D2: Preis und Zeit muessen weiterhin jeweils mehrfach vorkommen,
-    // muessen aber nicht mehr zwingend schon in derselben ersten OCR-Zeile erkannt
-    // worden sein. So darf eine schwache Einzelzelle nicht die gesamte Geometrie
-    // verwerfen, bevor die gezielte Zell-OCR greifen kann.
-    if (priceCenters.length < 2 || timeCenters.length < 2) return null;
+    Object.assign(diag, {
+      priceAnchors: priceCenters.length,
+      timeAnchors: timeCenters.length
+    });
+
+    // CORE-007D2-Entscheidung bleibt unveraendert.
+    if (priceCenters.length < 2 || timeCenters.length < 2) {
+      return reject('insufficient_price_or_time_anchors');
+    }
 
     const observedPrice = medianNumber(priceCenters);
     const observedTime = medianNumber(timeCenters);
-    if (!Number.isFinite(observedPrice) || !Number.isFinite(observedTime) || observedTime <= observedPrice) return null;
+    Object.assign(diag, { observedPrice, observedTime });
+    if (!Number.isFinite(observedPrice) || !Number.isFinite(observedTime) || observedTime <= observedPrice) {
+      return reject('invalid_anchor_medians');
+    }
 
     const templatePriceCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1]) / 2;
     const templateTimeCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[2]) / 2;
@@ -1702,17 +1725,26 @@
     const scalePx = width;
     const offsetPx = observedTime - scalePx * templateTimeCenter;
     const expectedPrice = offsetPx + scalePx * templatePriceCenter;
-    if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.05) return null;
-    if (Math.abs(observedPrice - expectedPrice) > width * 0.04) return null;
+    Object.assign(diag, { offsetPx, expectedPrice, priceDeviationPx: Math.abs(observedPrice - expectedPrice) });
+    if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.05) {
+      return reject('template_offset_out_of_range');
+    }
+    if (Math.abs(observedPrice - expectedPrice) > width * 0.04) {
+      return reject('price_anchor_not_matching_template');
+    }
 
     const boundaries = ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS.map(ratio => offsetPx + scalePx * ratio);
-    if (boundaries.some((value,index) => !Number.isFinite(value) || (index && value <= boundaries[index - 1]))) return null;
-    if (boundaries[0] < -width * 0.04 || boundaries[0] > width * 0.07) return null;
-    if (boundaries[boundaries.length - 1] < width * 0.91 || boundaries[boundaries.length - 1] > width * 1.05) return null;
+    if (boundaries.some((value,index) => !Number.isFinite(value) || (index && value <= boundaries[index - 1]))) {
+      return reject('invalid_column_boundaries');
+    }
+    if (boundaries[0] < -width * 0.04 || boundaries[0] > width * 0.07) {
+      return reject('left_boundary_out_of_range', { firstBoundary: boundaries[0] });
+    }
+    if (boundaries[boundaries.length - 1] < width * 0.91 || boundaries[boundaries.length - 1] > width * 1.05) {
+      return reject('right_boundary_out_of_range', { lastBoundary: boundaries[boundaries.length - 1] });
+    }
 
-    // Datenzeilen fuer die eigentliche Matrix: alle ausreichend breiten OCR-Zeilen,
-    // die mindestens einen linken Preis-/Zeitanker besitzen. Damit bleibt eine
-    // einzelne schwach gelesene Preis- ODER Zeit-Zelle spaeter gezielt reparierbar.
+    // CORE-007D2-Entscheidung bleibt unveraendert.
     const candidateLines = usableLines.filter((line, index) => {
       if (!priceLines.has(index) && !timeLines.has(index)) return false;
       const words = line?.words || [];
@@ -1724,7 +1756,8 @@
       const maxX = Math.max(...xs1);
       return minX <= width * 0.20 && maxX >= width * 0.45;
     });
-    if (candidateLines.length < 2) return null;
+    diag.candidateLines = candidateLines.length;
+    if (candidateLines.length < 2) return reject('insufficient_candidate_lines');
 
     const semanticRows = [];
     candidateLines.forEach(line => {
@@ -1737,11 +1770,22 @@
     const verifiedRows = semanticRows.filter(item => item.check.ok);
     const semanticValidated = verifiedRows.length >= required && verifiedRows.some(item => item.check.flight);
 
-    // Neue CORE-007D2-Sicherheitsstufe: wiederkehrende X-Korridore ueber mehrere
-    // Zeilen. Das ist staerker als eine einzelne OCR-Zeile und gleichzeitig
-    // toleranter gegen eine schwache Personen-/Fahrerzelle.
     const recurring = headerlessRecurringColumnEvidence(candidateLines, boundaries);
-    if (!semanticValidated && !recurring.safe) return null;
+    Object.assign(diag, {
+      verifiedRows: verifiedRows.length,
+      requiredRows: required,
+      semanticValidated,
+      recurringSafe: Boolean(recurring.safe),
+      recurringRowCount: Number(recurring.rowCount || 0),
+      stableColumns: Number(recurring.stableColumns || 0),
+      leftAnchoredRows: Number(recurring.leftAnchoredRows || 0),
+      routeRows: Number(recurring.routeRows || 0),
+      rightRows: Number(recurring.rightRows || 0),
+      flightRows: Number(recurring.flightRows || 0)
+    });
+    if (!semanticValidated && !recurring.safe) {
+      return reject('semantic_and_recurring_validation_failed');
+    }
 
     const anchors = ATMS_IMAGE_SCHEMA_13_PRICE.map((slot,index) => ({
       label: slot.label,
@@ -1751,6 +1795,7 @@
       headerless: true
     }));
 
+    Object.assign(diag, { accepted: true, rejectReason: '' });
     return {
       anchors,
       boundaries,
@@ -1760,6 +1805,7 @@
       syntheticCount: anchors.length,
       headerlessAtms: true,
       needsCellRecovery: !semanticValidated,
+      diagnostics: diag,
       validation: {
         anchoredRows: candidateLines.length,
         verifiedRows: verifiedRows.length,
@@ -1770,6 +1816,24 @@
     };
   }
 
+  function formatHeaderlessOcrDiagnostic(diag) {
+    if (!diag || typeof diag !== 'object') return 'CORE-007D3 Diagnose: Grund=unknown';
+    const num = value => Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
+    const parts = [
+      `Grund=${cellText(diag.rejectReason) || 'unknown'}`,
+      `OCR-Zeilen=${num(diag.usableLines)}/${num(diag.inputLines)}`,
+      `Preisanker=${num(diag.priceAnchors)}`,
+      `Zeitanker=${num(diag.timeAnchors)}`
+    ];
+    if (diag.candidateLines !== undefined) parts.push(`Kandidaten=${num(diag.candidateLines)}`);
+    if (diag.verifiedRows !== undefined) parts.push(`Verifiziert=${num(diag.verifiedRows)}/${num(diag.requiredRows)}`);
+    if (diag.stableColumns !== undefined) parts.push(`StabileSpalten=${num(diag.stableColumns)}`);
+    if (diag.recurringRowCount !== undefined) {
+      parts.push(`X=${num(diag.leftAnchoredRows)}/${num(diag.routeRows)}/${num(diag.rightRows)}/${num(diag.flightRows)}`);
+    }
+    return `CORE-007D3 Diagnose: ${parts.join(' · ')}`;
+  }
+
   function imageWordsToMatrix(words, width) {
     const lines = groupOcrLines(words);
     const header = detectImageHeaderLine(lines);
@@ -1778,10 +1842,16 @@
     // OCR-Zeilensatz mit niedrigerer Wort-Konfidenz fuer die Headerless-Geometrie
     // aufgebaut. Akzeptiert wird er erst nach der strengen Mehrzeilenvalidierung.
     const headerlessLines = hasSafeHeader ? null : groupOcrLines(words, 0);
-    const headerlessLayout = hasSafeHeader ? null : inferHeaderlessAtmsPriceLayout(headerlessLines, width);
+    const headerlessDiagnostic = hasSafeHeader ? null : {
+      version: 'CORE-007D3',
+      headerScore: Number(header?.score || 0),
+      headerAnchors: Number(header?.anchors?.length || 0),
+      wordCount: Array.isArray(words) ? words.length : 0
+    };
+    const headerlessLayout = hasSafeHeader ? null : inferHeaderlessAtmsPriceLayout(headerlessLines, width, headerlessDiagnostic);
 
     if (!hasSafeHeader && !headerlessLayout) {
-      throw new Error('Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden und der Ausschnitt ohne Kopfzeile war geometrisch nicht eindeutig genug. Bitte vollständige Kopfzeile mit hochladen.');
+      throw new Error(`Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden und der Ausschnitt ohne Kopfzeile war geometrisch nicht eindeutig genug. ${formatHeaderlessOcrDiagnostic(headerlessDiagnostic)} Bitte vollständige Kopfzeile mit hochladen.`);
     }
 
     const forceNoPriceMirror = hasSafeHeader ? hasNoPriceMirrorDataEvidence(lines, header) : false;
@@ -1960,7 +2030,8 @@
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
-      headerlessValidation: headerlessLayout?.validation || null
+      headerlessValidation: headerlessLayout?.validation || null,
+      headerlessDiagnostic: headerlessLayout?.diagnostics || headerlessDiagnostic || null
     };
     return rows;
   }
@@ -3376,7 +3447,10 @@
         matrix = await recoverHeaderlessCellsTargeted(matrix, canvas, matrix._atmsImageMeta);
         const recovery = matrix._atmsImageMeta?.headerlessCellRecovery;
         if (!recovery?.accepted) {
-          throw new Error('Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. Bitte vollständige Kopfzeile mit hochladen.');
+          const reason = cellText(recovery?.reason) || 'cell_recovery_not_accepted';
+          const totalInvalid = Number(recovery?.totalInvalid || 0);
+          const recoveredCells = Number(recovery?.recoveredCells || 0);
+          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. CORE-007D3 Diagnose: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells}. Bitte vollständige Kopfzeile mit hochladen.`);
         }
       }
     }
