@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-007D9B · 12.09.2026: WIDE CELL MULTISCALE OCR RECOVERY. Für bereits nachgewiesene rechts abgeschnittene Von-/Nach-Zellen und ungewöhnliche Flugdesignatoren werden ausschließlich die konkreten Tabellenzellen in mehreren Skalierungen, PSM-Modi und binarisierten Kontrastvarianten erneut gelesen. Routen-Erweiterungen benötigen weiterhin einen eindeutigen tokenweisen Suffix-Konsens; zusätzlich muss derselbe Gewinner aus mindestens zwei unterschiedlichen Bildvarianten stammen. Flugnummern werden nur bei identischem Zahlenteil/Suffix und eindeutigem Mehrfach-Konsens ersetzt. Keine Wörterbuchkorrektur, kein EWS→EW-Hardcode, kein Raten. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
   // CORE-007D9A · 12.09.2026: FULL ROUTE CELL RECOVERY & FLIGHT OCR DIAGNOSTICS. Von-/Nach-Zellen werden bei möglicher Rechtsabschneidung pro einzelner Tabellenzelle und mit enger Zeilenhoehe mehrfach vollständig nachgelesen; übernommen werden nur eindeutige Konsens-Erweiterungen mit vollständigen Suffix-Tokens. Unvollständige Einzelbuchstaben/-fragmente dürfen keine Route mehr verschlechtern. Bei ungewöhnlichen Flugdesignatoren werden die tatsächlich erkannten lokalen OCR-Kandidaten diagnostisch ausgegeben, ohne aus Minderheits-/Einzeltreffern eine Flugnummer zu raten. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
   // CORE-007D9 · 12.09.2026: FLIGHT NUMBER & ROUTE CELL RECOVERY. Auffällige alphabetische Flugdesignatoren mit mehr als zwei Zeichen werden ausschließlich in ihrer eigenen Flugzelle lokal nachgelesen; eine Korrektur darf nur bei eindeutigem Mehrfach-Konsens mit identischem numerischem Flugteil erfolgen. Von-/Nach-Zellen dürfen nur um eindeutig mehrfach gelesene, reine Suffix-Tokens vervollständigt werden (kein Wörterbuch, keine Orts-/Hotel-Hardcodes). Flugorte aus der Planliste bleiben sichtbar als Vergleichswert, gelten beim Bildimport aber bis zu einer aktuellen verifizierten Flugprüfung als ungeprüft. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
 
@@ -3280,28 +3281,42 @@
         const padY = Math.max(1, rowHeight * 0.10);
         const inset1 = Math.max(1, cellWidth * 0.008);
         const inset2 = Math.max(1, cellWidth * 0.018);
+        // CORE-007D9B: dieselbe Zelle mit mehreren Skalierungen und klar
+        // unterschiedlichen Bildvarianten lesen. Wir gehen NICHT über die rechte
+        // Zellgrenze hinaus; dadurch können Nachbarspalten keine künstlichen
+        // Suffix-Wörter liefern. Ein Gewinner braucht Konsens aus mindestens zwei
+        // Bildfamilien (z. B. raw + bw185), nicht nur zwei PSM-Läufe desselben Crops.
         const attempts = [
-          { name: 'deu-full-2x-line', lang: 'deu', scale: 2, x0: left, x1: right, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'deu-full-3x-line', lang: 'deu', scale: 3, x0: left, x1: right, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'deu-inner-3x-line', lang: 'deu', scale: 3, x0: left + inset1, x1: right - inset1, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'eng-full-3x-line', lang: 'eng', scale: 3, x0: left, x1: right, options: { tessedit_pageseg_mode: '7' } },
-          { name: 'eng-inner-3x-line', lang: 'eng', scale: 3, x0: left + inset2, x1: right - inset2, options: { tessedit_pageseg_mode: '7' } }
+          { name: 'raw-full-3x-line', family: 'raw', lang: 'deu', scale: 3, x0: left, x1: right, threshold: null, contrast: 1.0, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'raw-full-4x-block', family: 'raw', lang: 'deu', scale: 4, x0: left, x1: right, threshold: null, contrast: 1.0, options: { tessedit_pageseg_mode: '6' } },
+          { name: 'raw-inner-4x-line', family: 'raw-inner', lang: 'deu', scale: 4, x0: left + inset1, x1: right - inset1, threshold: null, contrast: 1.0, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'bw165-full-4x-line', family: 'bw165', lang: 'deu', scale: 4, x0: left, x1: right, threshold: 165, contrast: 1.15, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'bw185-full-4x-line', family: 'bw185', lang: 'deu', scale: 4, x0: left, x1: right, threshold: 185, contrast: 1.10, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'bw205-full-5x-line', family: 'bw205', lang: 'deu', scale: 5, x0: left, x1: right, threshold: 205, contrast: 1.05, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'bw185-inner-5x-line', family: 'bw185-inner', lang: 'deu', scale: 5, x0: left + inset2, x1: right - inset2, threshold: 185, contrast: 1.10, options: { tessedit_pageseg_mode: '7' } },
+          { name: 'eng-bw185-full-4x-line', family: 'eng-bw185', lang: 'eng', scale: 4, x0: left, x1: right, threshold: 185, contrast: 1.10, options: { tessedit_pageseg_mode: '7' } }
         ];
         const votes = new Map();
+        const families = new Map();
         const display = new Map();
         const log = [];
 
-        if (status) status.textContent = `${descriptor.label}-Zelle Zeile ${ride.sourceRow} wird vollständig nachgelesen …`;
+        if (status) status.textContent = `${descriptor.label}-Zelle Zeile ${ride.sourceRow} wird mehrstufig nachgelesen …`;
         try {
           for (const attempt of attempts) {
-            const crop = cropCanvasRegion(imageCanvas, attempt.x0, y0 - padY, attempt.x1, y1 + padY, attempt.scale);
+            const rawCrop = cropCanvasRegion(imageCanvas, attempt.x0, y0 - padY, attempt.x1, y1 + padY, attempt.scale);
+            const crop = attempt.threshold === null
+              ? rawCrop
+              : prepareHeaderlessPriceCrop(rawCrop, attempt.threshold, attempt.contrast);
             const second = await Tesseract.recognize(crop, attempt.lang, attempt.options);
             const rawText = routeOcrText(second?.data?.text || (second?.data?.words || []).map(word => word?.text || '').join(' '));
             const candidate = routeOcrText(rawText);
-            log.push({ mode: attempt.name, candidate });
+            log.push({ mode: attempt.name, family: attempt.family, candidate });
             if (!candidate || !routeCompletionIsSafe(original, candidate)) continue;
             const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
             votes.set(key, (votes.get(key) || 0) + 1);
+            if (!families.has(key)) families.set(key, new Set());
+            families.get(key).add(attempt.family);
             if (!display.has(key)) display.set(key, candidate);
           }
         } catch (_) {
@@ -3314,6 +3329,7 @@
         const winner = ranked[0] || null;
         const runner = ranked[1] || null;
         if (!winner || winner[1] < 2) continue;
+        if ((families.get(winner[0])?.size || 0) < 2) continue;
         if (runner && winner[1] === runner[1]) continue;
         const candidate = routeOcrText(display.get(winner[0]) || '');
         if (!routeCompletionIsSafe(original, candidate)) continue;
@@ -3857,36 +3873,48 @@
       const y1 = Number(rowMeta.y1 || 0);
       const rowHeight = Math.max(18, y1 - y0);
       const cellWidth = Math.max(8, right - left);
-      const padY = Math.max(2, rowHeight * 0.16);
-      const regions = [
-        { name: 'full-2x', x0: left, x1: right, scale: 2 },
-        { name: 'inner-3x', x0: left + cellWidth * 0.025, x1: right - cellWidth * 0.025, scale: 3 },
-        { name: 'tight-3x', x0: left + cellWidth * 0.06, x1: right - cellWidth * 0.06, scale: 3 }
-      ];
-      const modes = [
-        { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
-        { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+      const padY = Math.max(2, rowHeight * 0.12);
+      // CORE-007D9B: komplette Flugzelle in mehreren Skalierungen und
+      // Schwellenwerten lesen. Auch hier wird die Zellgrenze nicht überschritten.
+      // Die Kandidaten müssen denselben numerischen Flugteil wie die Primärlesung
+      // besitzen; dadurch kann eine Nachbarzelle keinen fachlich anderen Flug erzeugen.
+      const specs = [
+        { name: 'raw-full-3x-line', family: 'raw', x0: left, x1: right, scale: 3, threshold: null, contrast: 1.0, mode: '7' },
+        { name: 'raw-full-4x-word', family: 'raw', x0: left, x1: right, scale: 4, threshold: null, contrast: 1.0, mode: '8' },
+        { name: 'raw-inner-4x-line', family: 'raw-inner', x0: left + cellWidth * 0.012, x1: right - cellWidth * 0.012, scale: 4, threshold: null, contrast: 1.0, mode: '7' },
+        { name: 'bw155-full-4x-line', family: 'bw155', x0: left, x1: right, scale: 4, threshold: 155, contrast: 1.18, mode: '7' },
+        { name: 'bw175-full-4x-line', family: 'bw175', x0: left, x1: right, scale: 4, threshold: 175, contrast: 1.12, mode: '7' },
+        { name: 'bw190-full-5x-line', family: 'bw190', x0: left, x1: right, scale: 5, threshold: 190, contrast: 1.08, mode: '7' },
+        { name: 'bw205-full-5x-word', family: 'bw205', x0: left, x1: right, scale: 5, threshold: 205, contrast: 1.05, mode: '8' },
+        { name: 'bw185-inner-5x-rawline', family: 'bw185-inner', x0: left + cellWidth * 0.012, x1: right - cellWidth * 0.012, scale: 5, threshold: 185, contrast: 1.10, mode: '13' }
       ];
       const votes = new Map();
+      const families = new Map();
       const attempts = [];
 
-      if (status) status.textContent = `Auffällige Flugzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      if (status) status.textContent = `Auffällige Flugzelle Zeile ${ride.sourceRow} wird mehrstufig nachgelesen …`;
       try {
-        for (const region of regions) {
-          const crop = cropCanvasRegion(imageCanvas, region.x0, y0 - padY, region.x1, y1 + padY, region.scale);
-          for (const mode of modes) {
-            const second = await Tesseract.recognize(crop, 'eng', mode.options);
-            const raw = String(second?.data?.text || '').trim().replace(/\s+/g, ' ').slice(0, 48);
-            const candidates = [...new Set(
-              flightCandidatesFromOcrResult(second)
-                .map(normalizeFlightNumber)
-                .filter(candidate => candidate && sameAlphabeticFlightNumericIdentity(initial, candidate))
-            )];
-            attempts.push({ region: region.name, mode: mode.name, raw, candidates: candidates.slice() });
-            if (candidates.length !== 1) continue;
-            const candidate = candidates[0];
-            votes.set(candidate, (votes.get(candidate) || 0) + 1);
-          }
+        for (const spec of specs) {
+          const rawCrop = cropCanvasRegion(imageCanvas, spec.x0, y0 - padY, spec.x1, y1 + padY, spec.scale);
+          const crop = spec.threshold === null
+            ? rawCrop
+            : prepareHeaderlessPriceCrop(rawCrop, spec.threshold, spec.contrast);
+          const second = await Tesseract.recognize(crop, 'eng', {
+            tessedit_pageseg_mode: spec.mode,
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+          });
+          const raw = String(second?.data?.text || '').trim().replace(/\s+/g, ' ').slice(0, 64);
+          const candidates = [...new Set(
+            flightCandidatesFromOcrResult(second)
+              .map(normalizeFlightNumber)
+              .filter(candidate => candidate && sameAlphabeticFlightNumericIdentity(initial, candidate))
+          )];
+          attempts.push({ region: spec.name, family: spec.family, raw, candidates: candidates.slice() });
+          if (candidates.length !== 1) continue;
+          const candidate = candidates[0];
+          votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          if (!families.has(candidate)) families.set(candidate, new Set());
+          families.get(candidate).add(spec.family);
         }
       } catch (_) {
         ride.flightUnusualOcrAttempts = attempts;
@@ -3898,7 +3926,7 @@
       const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       const winner = ranked[0] || null;
       const runner = ranked[1] || null;
-      if (!winner || winner[1] < 2 || (runner && winner[1] === runner[1])) {
+      if (!winner || winner[1] < 2 || (families.get(winner[0])?.size || 0) < 2 || (runner && winner[1] === runner[1])) {
         ride.flightOcrUnusualNeedsReview = true;
         continue;
       }
