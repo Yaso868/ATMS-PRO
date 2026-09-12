@@ -3,6 +3,7 @@
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
+  // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
 
   // CORE-007D1 · 12.09.2026: Kopfzeilenlose ATMS-Ausschnitte behalten den strengen Geometrie-Guard, koennen aber bei wenigen schwachen Kernzellen eine gezielte Zell-Zweit-OCR ausfuehren. Nur eindeutiger Mehrfach-Konsens wird uebernommen; bei zu vielen/weiterhin unklaren Zellen bleibt der sichere Abbruch bestehen. Keine Werte-Hardcodes.
@@ -3624,6 +3625,63 @@
     return out;
   }
 
+  // CORE-007D6: Wiederkehrende OCR-Texte nur dann vereinheitlichen, wenn
+  // sich ihre Schreibweisen ausschließlich durch Trenner/Leerzeichen oder Groß-/
+  // Kleinschreibung unterscheiden. Inhaltliche Buchstaben-/Ziffern-Abweichungen,
+  // Diakritik-Abweichungen oder Einzelbeobachtungen bleiben unangetastet.
+  function repeatedTextSignature(value) {
+    const text = cellText(value).normalize('NFC').trim();
+    if (!text) return '';
+    return text
+      .toLocaleLowerCase('de-DE')
+      .replace(/[\s·._\-–—/:\\|]+/g, '');
+  }
+
+  function applyRepeatedTextConsistency(rides) {
+    if (!Array.isArray(rides) || rides.length < 3) return rides;
+
+    const fields = ['customer', 'company'];
+    const out = rides.map(ride => ({ ...ride }));
+
+    fields.forEach(field => {
+      const groups = new Map();
+      out.forEach((ride, index) => {
+        const raw = cellText(ride?.[field]).normalize('NFC').trim();
+        const signature = repeatedTextSignature(raw);
+        // Kurze Codes/Initialen bleiben bewusst unberührt.
+        if (!raw || signature.length < 4) return;
+        if (!groups.has(signature)) groups.set(signature, []);
+        groups.get(signature).push({ index, raw });
+      });
+
+      groups.forEach(entries => {
+        if (entries.length < 3) return;
+        const counts = new Map();
+        entries.forEach(entry => counts.set(entry.raw, (counts.get(entry.raw) || 0) + 1));
+        const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de-DE'));
+        const winner = ranked[0] || null;
+        const runner = ranked[1] || null;
+
+        // Mindestens zwei identische Beobachtungen und eine eindeutige Mehrheit.
+        if (!winner || winner[1] < 2 || (runner && winner[1] <= runner[1])) return;
+
+        entries.forEach(entry => {
+          if (entry.raw === winner[0]) return;
+          // Durch die gemeinsame Signature sind nur Separator-/Case-Varianten erlaubt.
+          out[entry.index][field] = winner[0];
+          out[entry.index].repeatedTextConsistency = {
+            ...(out[entry.index].repeatedTextConsistency || {}),
+            [field]: { from: entry.raw, to: winner[0], evidenceCount: winner[1] }
+          };
+          // Legacy-/UI-Alias nach einer Textvereinheitlichung erneut synchronisieren.
+          out[entry.index].partner = cellText(out[entry.index].customer) || cellText(out[entry.index].company);
+        });
+      });
+    });
+
+    return out;
+  }
+
   async function readImagePlan(file) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
     const canvas = await preprocessImage(file);
@@ -4153,6 +4211,7 @@
           result.imageMeta,
           mappingInfo.mapping
         );
+        preparedRides = applyRepeatedTextConsistency(preparedRides);
       }
 
       state.matrix = matrix;
