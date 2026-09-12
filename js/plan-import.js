@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-007A · 12.09.2026: OCR CLEAN ANALYSIS. Sicher per Mehrfach-Konsens aufgeloeste Zeit-/Fahrer-OCR-Korrekturen bleiben als interne Diagnose-Metadaten erhalten, erscheinen aber nicht mehr als offene Hinweise. Fehlende/noch zu verifizierende Flugorte werden als eigener Bereich 'Flugprüfung offen' geführt und nicht als OCR-Hinweis gezählt. Nur ungelöste OCR-/Datenprobleme bleiben als Hinweis oder Fehler sichtbar. Keine Werte werden geraten oder hart codiert.
   // CORE-006Z · 12.09.2026: OCR TIME & DRIVER REFERENCE GUARD. Verdächtige 00:00–05:59-DISPO-Zeiten werden vor der Folgetag-Entscheidung ausschließlich in ihrer eigenen Uhrzeitzelle lokal nachgelesen und nur bei eindeutigem Mehrfach-Konsens korrigiert. Die rechte Fahrer-Spalte erhält zusätzlich eine spaltenweite deutsche Zweit-OCR mit konservativer Konsens-/Kompatibilitätsprüfung für Diakritik und optionale einbuchstabige Namenszusätze. 'Taxi' ist in der Fahrerposition ein zulässiger operativer Eintrag. Keine Namen, Zeiten oder Flugnummern werden hart codiert.
   // CORE-006N · 10.09.2026: Fahrer-Spaltenlogik an reale ATMS-Planlisten gehaertet. Erste Wg-Spalte = Fahrzeug. Fahrer = explizite Fahrer-Spalte, rechte zweite Name-Spalte ODER – bei aktuellen Listen wie 09.09.2026 – die rechte zweite Wg-Spalte nach Ort. Die sichtbare Kopfzeile bleibt geometrisch erhalten; keine Fahrtzeilen gehen durch Umbenennen der letzten Spalte verloren.
   // CORE-006M · 10.09.2026: Zwischenstand; reine Umbenennung der letzten Wg-Spalte in Name erwies sich bei realen Planlisten mit sichtbarer rechter Wg-Kopfzeile als zu streng und wurde durch CORE-006N ersetzt.
@@ -849,9 +850,9 @@
     rides.forEach(ride => {
       const row = ride.sourceRow;
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
-      if (ride.timeRecoveredFromTargetedOcr && ride.timeOcrInitial && normalizeTime(ride.timeOcrInitial) !== normalizeTime(ride.time)) {
-        issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.timeOcrInitial} durch lokale zweite OCR als ${ride.time} korrigiert – Original bitte einmal prüfen` });
-      }
+      // CORE-007A: Eine per eindeutigem Mehrfach-Konsens korrigierte Zeit ist bereits
+      // gelöst. timeOcrInitial/timeRecoveredFromTargetedOcr bleiben als interne Diagnose
+      // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
       if (ride.dispoTime && ride.timeMirror && normalizeTime(ride.dispoTime) !== normalizeTime(ride.timeMirror)) {
         issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.dispoTime} und gespiegelte DISPO-Zeit ${ride.timeMirror} weichen ab – Original-Planliste prüfen` });
       }
@@ -859,11 +860,10 @@
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
       if (!ride.driver) {
         issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
-      } else if (ride.driverRecoveredFromBoundaryNormalization) {
-        issues.push({ level: 'warning', row, text: `Fahrer ${ride.driver} nach Entfernen reiner OCR-Randzeichen erkannt – Original bitte einmal prüfen` });
-      } else if (ride.driverRecoveredFromTargetedOcr) {
-        issues.push({ level: 'warning', row, text: `Fahrer ${ride.driver} durch lokale zweite OCR aus der Fahrerzelle erkannt – Original bitte einmal prüfen` });
       } else if (ride.driverNeedsManualCheck) {
+        // CORE-007A: Nur wirklich ungelöste Fahrer-OCR bleibt sichtbar.
+        // Erfolgreiche Boundary-/Targeted-OCR-Korrekturen sind bereits verifiziert
+        // und bleiben ausschließlich als Diagnose-Metadaten am Ride erhalten.
         issues.push({ level: 'warning', row, text: `Fahrer „${ride.driver}“ OCR-auffällig – Original-Planliste prüfen` });
       }
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
@@ -880,19 +880,10 @@
           text: `Flugort „${normalizeFlightLocation(ride.flightLocation)}“ vorhanden, aber Flugnummer fehlt – Original-Planliste prüfen; Ort bleibt erhalten`
         });
       }
-      if (ride.flightRecoveredFromAmbiguousOcr && ride.flightNumber) {
-        issues.push({
-          level: 'warning',
-          row,
-          text: `Flugnummer ${ride.flightOcrInitialAmbiguous} durch lokalen OCR-Konsens als ${ride.flightNumber} korrigiert – aktuelle Flugprüfung empfohlen`
-        });
-      } else if (ride.flightRecoveredFromTargetedOcr && ride.flightNumber) {
-        issues.push({
-          level: 'warning',
-          row,
-          text: `Flugnummer ${ride.flightNumber} durch lokale zweite OCR aus der Flugzelle erkannt – aktuelle Flugprüfung empfohlen`
-        });
-      } else if (ride.flightRecoveredFromRow && ride.flightNumber) {
+      // CORE-007A: Erfolgreich per lokalem Mehrfach-Konsens wiederhergestellte
+      // Flugnummern werden nicht mehr als OCR-Problem gezählt. Falls der Flugort noch
+      // fehlt/unsicher ist, erscheint das weiter unten separat als 'Flugprüfung offen'.
+      if (ride.flightRecoveredFromRow && ride.flightNumber) {
         issues.push({
           level: 'warning',
           row,
@@ -987,20 +978,24 @@
     manualFlightChecks.forEach(group => {
       const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
       issues.push({
-        level: 'warning',
+        level: 'info',
+        kind: 'flight_check',
         row: rows[0],
         rows,
-        text: `Flugort für ${group.flightNumber} bleibt ${group.location || 'vorhanden'} – Gemini-Prüfung unsicher, manuell prüfen`
+        flightNumber: group.flightNumber,
+        text: `Flugort für ${group.flightNumber} bleibt ${group.location || 'vorhanden'} – Flugprüfung noch offen`
       });
     });
 
     missingFlightLocations.forEach(group => {
       const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
       issues.push({
-        level: 'warning',
+        level: 'info',
+        kind: 'flight_check',
         row: rows[0],
         rows,
-        text: `Flugort für ${group.flightNumber} fehlt – aktuelle Gemini-Prüfung empfohlen`
+        flightNumber: group.flightNumber,
+        text: `Flugort für ${group.flightNumber} fehlt – aktuelle Flugprüfung offen`
       });
     });
 
@@ -3069,8 +3064,10 @@
   function render() {
     refreshIssuesAfterFlightSync();
     const rides = state.rides, issues = state.issues;
-    const errors = issues.filter(issue => issue.level === 'error').length;
-    const warnings = issues.filter(issue => issue.level === 'warning').length;
+    const flightChecks = issues.filter(issue => issue.kind === 'flight_check');
+    const actionableIssues = issues.filter(issue => issue.kind !== 'flight_check');
+    const errors = actionableIssues.filter(issue => issue.level === 'error').length;
+    const warnings = actionableIssues.filter(issue => issue.level === 'warning').length;
     $('planAnalysis').classList.remove('hidden');
     updatePlanDateSummary();
     $('planRideCount').textContent = rides.length;
@@ -3085,8 +3082,8 @@
     }
     if ($('copyFlightCheckBtn')) $('copyFlightCheckBtn').disabled = !rides.some(ride => ride.flightNumber);
 
-    $('planIssues').innerHTML = issues.length
-      ? issues.slice(0, 20).map(issue => {
+    const actionableHtml = actionableIssues.length
+      ? actionableIssues.slice(0, 20).map(issue => {
           const rows = Array.isArray(issue.rows) && issue.rows.length ? issue.rows : [issue.row];
           const rowLabel = rows.length === 1
             ? `Zeile ${rows[0]}`
@@ -3130,7 +3127,17 @@
 
           return `<div class="plan-issue ${issue.level}"><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>`;
         }).join('')
-      : '<div class="plan-issue ok">✓ Keine kritischen Probleme erkannt.</div>';
+      : '<div class="plan-issue ok">✓ OCR-Analyse sauber: Keine ungelösten OCR-Hinweise.</div>';
+
+    const flightCheckHtml = flightChecks.length
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(72,156,255,.45);background:rgba(7,33,63,.45)">
+          <div><b>✈ Flugprüfung offen: ${escapeHtml(String(flightChecks.length))}</b></div>
+          <div style="font-size:12px;opacity:.82;margin-top:5px">Diese Punkte stammen aus fehlenden oder noch nicht verifizierten Flugorten und zählen nicht als OCR-Fehler.</div>
+          <div style="font-size:12px;line-height:1.5;margin-top:7px">${flightChecks.map(issue => escapeHtml(issue.flightNumber || '')).filter(Boolean).join(' · ')}</div>
+        </div>`
+      : '<div class="plan-issue ok" style="margin-top:10px">✓ Keine Flugprüfung offen.</div>';
+
+    $('planIssues').innerHTML = actionableHtml + flightCheckHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
@@ -3155,7 +3162,7 @@
     });
 
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
-      const rowIssues = issues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
+      const rowIssues = actionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
       const status = rowIssues.some(issue => issue.level === 'error') ? 'Fehler' : rowIssues.length ? 'Prüfen' : 'OK';
       const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
       return `<tr>
@@ -3171,13 +3178,15 @@
       </tr>`;
     }).join('');
 
-    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || issues.some(issue => issue.kind === 'price');
-    const unresolvedPriceIssues = issues.filter(issue => issue.kind === 'price').length;
+    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || actionableIssues.some(issue => issue.kind === 'price');
+    const unresolvedPriceIssues = actionableIssues.filter(issue => issue.kind === 'price').length;
     $('importStatus').textContent = errors
       ? `${rides.length} Fahrten erkannt. ${errors} Fehler müssen vor dem Import behoben werden.`
       : unresolvedPriceIssues
         ? `${rides.length} Fahrten erkannt. ${unresolvedPriceIssues} auffälliger Preis muss vor der Übernahme bestätigt werden.`
-        : `${rides.length} Fahrten erkannt und geprüft. Bereit zur Übernahme.`;
+        : flightChecks.length
+          ? `${rides.length} Fahrten erkannt und OCR-geprüft. ${flightChecks.length} Flugprüfung(en) offen. Bereit zur Übernahme.`
+          : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`;
   }
 
   async function analyze() {
