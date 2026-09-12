@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-007D9C · 12.09.2026: GRIDLINE CELL BOUNDARY RECOVERY. Für gezielte Routen-/Flugzellen-Nachlesung werden sichtbare vertikale Tabellenlinien lokal um die bereits bekannte Spaltengeometrie gesucht. Nur deutlich vertikal wiederkehrende Kanten innerhalb eines engen Erwartungskorridors dürfen eine Zellgrenze verfeinern; sonst bleibt die bisherige Grenze unverändert. Die verfeinerten Grenzen werden ausschließlich für die Zweit-OCR verwendet, nicht für die Primärmatrix. Keine Flugnummern-/Orts-Hardcodes, kein Raten; Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
   // CORE-007D9B · 12.09.2026: WIDE CELL MULTISCALE OCR RECOVERY. Für bereits nachgewiesene rechts abgeschnittene Von-/Nach-Zellen und ungewöhnliche Flugdesignatoren werden ausschließlich die konkreten Tabellenzellen in mehreren Skalierungen, PSM-Modi und binarisierten Kontrastvarianten erneut gelesen. Routen-Erweiterungen benötigen weiterhin einen eindeutigen tokenweisen Suffix-Konsens; zusätzlich muss derselbe Gewinner aus mindestens zwei unterschiedlichen Bildvarianten stammen. Flugnummern werden nur bei identischem Zahlenteil/Suffix und eindeutigem Mehrfach-Konsens ersetzt. Keine Wörterbuchkorrektur, kein EWS→EW-Hardcode, kein Raten. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
   // CORE-007D9A · 12.09.2026: FULL ROUTE CELL RECOVERY & FLIGHT OCR DIAGNOSTICS. Von-/Nach-Zellen werden bei möglicher Rechtsabschneidung pro einzelner Tabellenzelle und mit enger Zeilenhoehe mehrfach vollständig nachgelesen; übernommen werden nur eindeutige Konsens-Erweiterungen mit vollständigen Suffix-Tokens. Unvollständige Einzelbuchstaben/-fragmente dürfen keine Route mehr verschlechtern. Bei ungewöhnlichen Flugdesignatoren werden die tatsächlich erkannten lokalen OCR-Kandidaten diagnostisch ausgegeben, ohne aus Minderheits-/Einzeltreffern eine Flugnummer zu raten. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE-, Persistenz- und Flugverifikationslogik bleiben unverändert.
   // CORE-007D9 · 12.09.2026: FLIGHT NUMBER & ROUTE CELL RECOVERY. Auffällige alphabetische Flugdesignatoren mit mehr als zwei Zeichen werden ausschließlich in ihrer eigenen Flugzelle lokal nachgelesen; eine Korrektur darf nur bei eindeutigem Mehrfach-Konsens mit identischem numerischem Flugteil erfolgen. Von-/Nach-Zellen dürfen nur um eindeutig mehrfach gelesene, reine Suffix-Tokens vervollständigt werden (kein Wörterbuch, keine Orts-/Hotel-Hardcodes). Flugorte aus der Planliste bleiben sichtbar als Vergleichswert, gelten beim Bildimport aber bis zu einer aktuellen verifizierten Flugprüfung als ungeprüft. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
@@ -2320,6 +2321,160 @@
   }
 
 
+  // CORE-007D9C: Die OCR-Kopfzeile liefert gute ungefähre Spaltenpositionen,
+  // kann bei schmalen Zellen aber die echte senkrechte Tabellenlinie um wenige
+  // Pixel verfehlen. Genau das kann das letzte Wort einer Route abschneiden oder
+  // Nachbarzeichen in eine Flugzelle ziehen. Für die Zweit-OCR wird deshalb nur
+  // in einem engen Korridor um jede erwartete Grenze nach einer vertikal über
+  // mehrere Datenzeilen wiederkehrenden Bildkante gesucht. Die Primärmatrix bleibt
+  // vollständig unangetastet.
+  function gridlineSampleRows(imageMeta, height) {
+    const metas = Object.values(imageMeta?.rowMetaByMatrixIndex || {})
+      .map(meta => ({
+        y0: Number(meta?.y0),
+        y1: Number(meta?.y1),
+        cy: Number(meta?.cy)
+      }))
+      .filter(meta => [meta.y0, meta.y1, meta.cy].every(Number.isFinite) && meta.y1 > meta.y0)
+      .sort((a,b) => a.cy - b.cy);
+    if (!metas.length) return [];
+
+    const gaps = [];
+    for (let i = 1; i < metas.length; i++) {
+      const gap = metas[i].cy - metas[i - 1].cy;
+      if (Number.isFinite(gap) && gap > 4) gaps.push(gap);
+    }
+    gaps.sort((a,b) => a - b);
+    const medianGap = gaps.length
+      ? gaps[Math.floor(gaps.length / 2)]
+      : Math.max(16, Math.max(...metas.map(meta => meta.y1 - meta.y0)) * 1.8);
+    const offset = Math.max(3, Math.min(medianGap * 0.31, 18));
+    const rows = [];
+    metas.forEach(meta => {
+      [meta.cy - offset, meta.cy + offset].forEach(y => {
+        const yy = Math.round(y);
+        if (yy > 2 && yy < height - 3) rows.push(yy);
+      });
+    });
+    return [...new Set(rows)].sort((a,b) => a - b);
+  }
+
+  function detectGridlineBoundaries(imageCanvas, imageMeta) {
+    if (!imageCanvas || !imageMeta) return null;
+    if (imageMeta._core007d9cGridlineBoundaries) return imageMeta._core007d9cGridlineBoundaries;
+
+    const expected = (imageMeta.boundaries || []).map(Number);
+    if (expected.length < 4 || expected.some(value => !Number.isFinite(value))) return null;
+    const width = Number(imageCanvas.width || 0);
+    const height = Number(imageCanvas.height || 0);
+    if (width < 200 || height < 60) return null;
+    const sampleRows = gridlineSampleRows(imageMeta, height);
+    if (sampleRows.length < 4) return null;
+
+    let pixels;
+    try {
+      pixels = imageCanvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, width, height).data;
+    } catch (_) {
+      return null;
+    }
+
+    const edgeScore = x => {
+      const xi = Math.max(2, Math.min(width - 3, Math.round(x)));
+      let sum = 0;
+      let strong = 0;
+      let used = 0;
+      for (const y of sampleRows) {
+        const row = y * width;
+        const left2 = pixels[(row + xi - 2) * 4];
+        const left1 = pixels[(row + xi - 1) * 4];
+        const right1 = pixels[(row + xi + 1) * 4];
+        const right2 = pixels[(row + xi + 2) * 4];
+        if (![left2, left1, right1, right2].every(Number.isFinite)) continue;
+        const gradient = Math.max(
+          Math.abs(right1 - left1),
+          Math.abs(right2 - left2),
+          Math.abs(right2 - left1),
+          Math.abs(right1 - left2)
+        );
+        sum += gradient;
+        if (gradient >= 18) strong++;
+        used++;
+      }
+      return used ? { mean: sum / used, strongRatio: strong / used } : { mean: 0, strongRatio: 0 };
+    };
+
+    const refined = expected.slice();
+    const accepted = Array(expected.length).fill(false);
+    const details = [];
+    // Aussenkanten werden nicht verschoben; nur innere Spaltengrenzen koennen
+    // verfeinert werden. Ein enger Radius verhindert, dass Textkanten als neue
+    // Tabellenlinie missverstanden werden.
+    for (let i = 1; i < expected.length - 1; i++) {
+      const leftGap = expected[i] - expected[i - 1];
+      const rightGap = expected[i + 1] - expected[i];
+      if (!(leftGap > 6 && rightGap > 6)) continue;
+      const radius = Math.max(5, Math.min(width * 0.018, Math.min(leftGap, rightGap) * 0.20));
+      const start = Math.max(2, Math.floor(expected[i] - radius));
+      const end = Math.min(width - 3, Math.ceil(expected[i] + radius));
+      let bestX = Math.round(expected[i]);
+      let best = edgeScore(bestX);
+      const localMeans = [];
+      for (let x = start; x <= end; x++) {
+        const score = edgeScore(x);
+        localMeans.push(score.mean);
+        if (score.mean > best.mean || (score.mean === best.mean && score.strongRatio > best.strongRatio)) {
+          best = score;
+          bestX = x;
+        }
+      }
+      localMeans.sort((a,b) => a - b);
+      const median = localMeans.length ? localMeans[Math.floor(localMeans.length / 2)] : 0;
+      // Relative Evidenz ist hier wichtiger als ein fixer Grauwert, weil Tabellenlinien
+      // je nach Screenshot/Skalierung unterschiedlich stark antialiasen. Trotzdem
+      // muessen mehrere Zeilen dieselbe Kante tragen.
+      const relativeLift = best.mean - median;
+      const safe = best.strongRatio >= 0.10 && best.mean >= 7 && relativeLift >= 2.5;
+      if (safe) {
+        refined[i] = bestX;
+        accepted[i] = true;
+      }
+      details.push({ index: i, expected: expected[i], refined: safe ? bestX : expected[i], safe, mean: best.mean, strongRatio: best.strongRatio, relativeLift });
+    }
+
+    // Globale Plausibilitaet: keine Grenze darf die Reihenfolge umkehren oder eine
+    // Spalte auf weniger als 35 % ihrer erwarteten Breite zusammendruecken.
+    for (let i = 1; i < refined.length; i++) {
+      const expectedGap = expected[i] - expected[i - 1];
+      const actualGap = refined[i] - refined[i - 1];
+      if (!(actualGap > Math.max(4, expectedGap * 0.35))) {
+        const fallback = { boundaries: expected.slice(), accepted: Array(expected.length).fill(false), details, safe: false };
+        imageMeta._core007d9cGridlineBoundaries = fallback;
+        return fallback;
+      }
+    }
+
+    const result = { boundaries: refined, accepted, details, safe: accepted.some(Boolean), sampleRows: sampleRows.length };
+    imageMeta._core007d9cGridlineBoundaries = result;
+    return result;
+  }
+
+  function gridAwareCellBounds(imageCanvas, imageMeta, column) {
+    const fallback = imageMeta?.boundaries || [];
+    const leftFallback = Number(fallback[column]);
+    const rightFallback = Number(fallback[column + 1]);
+    if (!Number.isFinite(leftFallback) || !Number.isFinite(rightFallback) || rightFallback <= leftFallback) return null;
+    const grid = detectGridlineBoundaries(imageCanvas, imageMeta);
+    if (!grid?.safe) return { left: leftFallback, right: rightFallback, source: 'header-geometry' };
+    const leftSafe = column === 0 || Boolean(grid.accepted?.[column]);
+    const rightSafe = column + 1 === fallback.length - 1 || Boolean(grid.accepted?.[column + 1]);
+    if (!leftSafe || !rightSafe) return { left: leftFallback, right: rightFallback, source: 'header-geometry' };
+    const left = Number(grid.boundaries[column]);
+    const right = Number(grid.boundaries[column + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left + 4) return { left: leftFallback, right: rightFallback, source: 'header-geometry' };
+    return { left, right, source: 'gridline', grid };
+  }
+
+
   function headerlessCellFieldForColumn(column) {
     const map = {
       0: 'price', 1: 'time', 2: 'pickup', 3: 'destination',
@@ -3263,8 +3418,10 @@
     for (const descriptor of fields) {
       const column = mapping?.[descriptor.field];
       if (column === undefined) continue;
-      const left = Number(boundaries[column]);
-      const right = Number(boundaries[column + 1]);
+      const cellBounds = gridAwareCellBounds(imageCanvas, imageMeta, column);
+      if (!cellBounds) continue;
+      const left = Number(cellBounds.left);
+      const right = Number(cellBounds.right);
       if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
       const cellWidth = Math.max(8, right - left);
 
@@ -3311,7 +3468,7 @@
             const second = await Tesseract.recognize(crop, attempt.lang, attempt.options);
             const rawText = routeOcrText(second?.data?.text || (second?.data?.words || []).map(word => word?.text || '').join(' '));
             const candidate = routeOcrText(rawText);
-            log.push({ mode: attempt.name, family: attempt.family, candidate });
+            log.push({ mode: attempt.name, family: attempt.family, candidate, bounds: cellBounds.source });
             if (!candidate || !routeCompletionIsSafe(original, candidate)) continue;
             const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
             votes.set(key, (votes.get(key) || 0) + 1);
@@ -3861,9 +4018,13 @@
         continue;
       }
 
-      const boundaries = imageMeta.boundaries || [];
-      const left = Number(boundaries[colIndex]);
-      const right = Number(boundaries[colIndex + 1]);
+      const cellBounds = gridAwareCellBounds(imageCanvas, imageMeta, colIndex);
+      if (!cellBounds) {
+        ride.flightOcrUnusualNeedsReview = true;
+        continue;
+      }
+      const left = Number(cellBounds.left);
+      const right = Number(cellBounds.right);
       if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) {
         ride.flightOcrUnusualNeedsReview = true;
         continue;
@@ -3909,7 +4070,7 @@
               .map(normalizeFlightNumber)
               .filter(candidate => candidate && sameAlphabeticFlightNumericIdentity(initial, candidate))
           )];
-          attempts.push({ region: spec.name, family: spec.family, raw, candidates: candidates.slice() });
+          attempts.push({ region: spec.name, family: spec.family, raw, candidates: candidates.slice(), bounds: cellBounds.source });
           if (candidates.length !== 1) continue;
           const candidate = candidates[0];
           votes.set(candidate, (votes.get(candidate) || 0) + 1);
