@@ -1819,7 +1819,7 @@
   }
 
   function formatHeaderlessOcrDiagnostic(diag) {
-    if (!diag || typeof diag !== 'object') return 'CORE-007D4 Diagnose: Grund=unknown';
+    if (!diag || typeof diag !== 'object') return 'CORE-007D5 Diagnose: Grund=unknown';
     const num = value => Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
     const parts = [
       `Grund=${cellText(diag.rejectReason) || 'unknown'}`,
@@ -1837,17 +1837,42 @@
       const rec = diag.priceAnchorRecovery;
       parts.push(`PreisNachlese=${num(rec.recoveredRows)}/${num(rec.attemptedRows)}`);
     }
-    return `CORE-007D4 Diagnose: ${parts.join(' · ')}`;
+    return `CORE-007D5 Diagnose: ${parts.join(' · ')}`;
   }
 
   let headerlessPriceAnchorRecoveryDiagnostic = null;
+
+  function prepareHeaderlessPriceCrop(sourceCanvas, threshold = null, contrast = 1.0) {
+    if (!sourceCanvas || threshold === null || threshold === undefined || !Number.isFinite(Number(threshold))) return sourceCanvas;
+    const out = document.createElement('canvas');
+    out.width = sourceCanvas.width;
+    out.height = sourceCanvas.height;
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(sourceCanvas, 0, 0);
+    const image = ctx.getImageData(0, 0, out.width, out.height);
+    const data = image.data;
+    const t = Math.max(80, Math.min(235, Number(threshold)));
+    const c = Math.max(0.7, Math.min(1.8, Number(contrast) || 1));
+    for (let i = 0; i < data.length; i += 4) {
+      let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      gray = 128 + (gray - 128) * c;
+      const value = gray < t ? 0 : 255;
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+      data[i + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    return out;
+  }
 
   async function recoverHeaderlessPriceAnchorsTargeted(words, imageCanvas, width) {
     headerlessPriceAnchorRecoveryDiagnostic = {
       attemptedRows: 0,
       recoveredRows: 0,
       skipped: '',
-      recovered: []
+      recovered: [],
+      strategy: 'price_cell_consensus_v2'
     };
 
     if (!Array.isArray(words) || !imageCanvas || !window.Tesseract || !Number.isFinite(Number(width)) || Number(width) < 500) {
@@ -1882,12 +1907,10 @@
     headerlessPriceAnchorRecoveryDiagnostic.existingPriceAnchors = existingPriceAnchors;
     headerlessPriceAnchorRecoveryDiagnostic.timeAnchors = timeAnchoredLines.length;
 
-    // Der normale Headerless-Guard ist bereits zufrieden; keine zusätzliche OCR nötig.
     if (existingPriceAnchors >= 2) {
       headerlessPriceAnchorRecoveryDiagnostic.skipped = 'enough_existing_price_anchors';
       return words;
     }
-    // Ohne mindestens zwei sichere Zeitanker wird nichts rekonstruiert.
     if (timeAnchoredLines.length < 2) {
       headerlessPriceAnchorRecoveryDiagnostic.skipped = 'insufficient_time_anchors';
       return words;
@@ -1915,13 +1938,19 @@
       const rowY0 = Math.min(...y0s);
       const rowY1 = Math.max(...y1s);
       const rowHeight = Math.max(12, rowY1 - rowY0);
-      const padY = Math.max(2, rowHeight * 0.22);
-      const padX = Math.max(2, width * 0.004);
+      const cellWidth = Math.max(20, right - left);
 
+      // CORE-007D5: mehrere bewusst unterschiedliche Innenausschnitte der
+      // Preiszelle. Zellrahmen/Eurozeichen werden teilweise abgeschnitten und
+      // farbige Schrift wird in mehreren Schwellenvarianten kontrastiert.
+      // Es wird weiterhin NUR ein explizit dezimal erkanntes Ergebnis akzeptiert.
       const attemptsSpec = [
-        { scale: 2, mode: '7' },
-        { scale: 3, mode: '7' },
-        { scale: 3, mode: '6' }
+        { id: 'raw-wide',     insetL: 0.02, insetR: 0.04, padY: 0.18, scale: 3, mode: '7', threshold: null, contrast: 1.0 },
+        { id: 'raw-inner',    insetL: 0.04, insetR: 0.14, padY: 0.12, scale: 4, mode: '7', threshold: null, contrast: 1.0 },
+        { id: 'bw165-inner',  insetL: 0.04, insetR: 0.14, padY: 0.12, scale: 4, mode: '7', threshold: 165, contrast: 1.15 },
+        { id: 'bw185-inner',  insetL: 0.03, insetR: 0.12, padY: 0.15, scale: 4, mode: '7', threshold: 185, contrast: 1.10 },
+        { id: 'bw205-tight',  insetL: 0.06, insetR: 0.16, padY: 0.08, scale: 5, mode: '7', threshold: 205, contrast: 1.05 },
+        { id: 'bw185-single', insetL: 0.03, insetR: 0.12, padY: 0.12, scale: 4, mode: '13', threshold: 185, contrast: 1.10 }
       ];
       const votes = new Map();
       const attempts = [];
@@ -1929,14 +1958,24 @@
       headerlessPriceAnchorRecoveryDiagnostic.attemptedRows++;
 
       for (const spec of attemptsSpec) {
-        const crop = cropCanvasRegion(
+        const x0 = left + cellWidth * spec.insetL;
+        const x1 = right - cellWidth * spec.insetR;
+        const py = rowHeight * spec.padY;
+        if (!(x1 > x0 + 8)) {
+          attempts.push({ id: spec.id, candidate: null, skipped: 'crop_too_narrow' });
+          continue;
+        }
+        const rawCrop = cropCanvasRegion(
           imageCanvas,
-          Math.max(0, left - padX),
-          Math.max(0, rowY0 - padY),
-          Math.min(imageCanvas.width, right + padX),
-          Math.min(imageCanvas.height, rowY1 + padY),
+          Math.max(0, x0),
+          Math.max(0, rowY0 - py),
+          Math.min(imageCanvas.width, x1),
+          Math.min(imageCanvas.height, rowY1 + py),
           spec.scale
         );
+        const crop = spec.threshold !== null && spec.threshold !== undefined && Number.isFinite(Number(spec.threshold))
+          ? prepareHeaderlessPriceCrop(rawCrop, spec.threshold, spec.contrast)
+          : rawCrop;
         try {
           const result = await Tesseract.recognize(crop, 'eng', {
             tessedit_pageseg_mode: spec.mode,
@@ -1944,12 +1983,12 @@
           });
           const candidates = priceCandidatesFromOcrResult(result);
           const candidate = candidates.length === 1 ? candidates[0] : null;
-          attempts.push({ scale: spec.scale, mode: spec.mode, candidate });
+          attempts.push({ id: spec.id, candidate });
           if (!Number.isFinite(candidate)) continue;
           const key = (Math.round(candidate * 100) / 100).toFixed(2);
           votes.set(key, (votes.get(key) || 0) + 1);
         } catch (_) {
-          attempts.push({ scale: spec.scale, mode: spec.mode, candidate: null });
+          attempts.push({ id: spec.id, candidate: null, error: true });
         }
       }
 
@@ -1978,7 +2017,8 @@
           y0: rowY0,
           y1: rowY1
         },
-        _atmsHeaderlessRecoveredPriceAnchor: true
+        _atmsHeaderlessRecoveredPriceAnchor: true,
+        _atmsHeaderlessPriceConsensusVersion: 'CORE-007D5'
       });
       headerlessPriceAnchorRecoveryDiagnostic.recoveredRows++;
       headerlessPriceAnchorRecoveryDiagnostic.recovered.push({
@@ -2002,7 +2042,7 @@
     // aufgebaut. Akzeptiert wird er erst nach der strengen Mehrzeilenvalidierung.
     const headerlessLines = hasSafeHeader ? null : groupOcrLines(words, 0);
     const headerlessDiagnostic = hasSafeHeader ? null : {
-      version: 'CORE-007D4',
+      version: 'CORE-007D5',
       headerScore: Number(header?.score || 0),
       headerAnchors: Number(header?.anchors?.length || 0),
       wordCount: Array.isArray(words) ? words.length : 0,
