@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-007D · 12.09.2026: HEADERLESS PLAN SAFE OCR. Bildausschnitte ohne sichtbare Kopfzeile dürfen ausschließlich dann als bekanntes 13-Spalten-ATMS-Preislayout rekonstruiert werden, wenn mehrere Datenzeilen gemeinsam Preis-, DISPO-Zeit-, Routen-, Fahrzeug-/Personen-, Flug- und Fahrer-Geometrie plausibel bestätigen. Die Spaltengrenzen werden aus einer normierten ATMS-Layoutvorlage anhand der im Bild tatsächlich erkannten Preis-/Zeitanker skaliert und anschließend erneut gegen die Datenzeilen validiert. Bei unklarer Struktur bleibt der bisherige sichere Abbruch bestehen. Keine Namen, Flugnummern, Orte oder Zeiten werden hart codiert.
   // CORE-007B · 12.09.2026: OCR CONFIDENCE DISPLAY. Die interne technische Struktur-Konfidenz bleibt unverändert als Sicherheitswert erhalten, wird bei Bildimport aber nicht mehr missverständlich als allgemeine '% Erkennung' ausgegeben. Sichtbar sind stattdessen der reale OCR-Analysezustand, Anzahl OCR-geprüfter Fahrten sowie offene Hinweise/Fehler. Keine künstliche 100-%-Anzeige.
   // CORE-007A · 12.09.2026: OCR CLEAN ANALYSIS. Sicher per Mehrfach-Konsens aufgeloeste Zeit-/Fahrer-OCR-Korrekturen bleiben als interne Diagnose-Metadaten erhalten, erscheinen aber nicht mehr als offene Hinweise. Fehlende/noch zu verifizierende Flugorte werden als eigener Bereich 'Flugprüfung offen' geführt und nicht als OCR-Hinweis gezählt. Nur ungelöste OCR-/Datenprobleme bleiben als Hinweis oder Fehler sichtbar. Keine Werte werden geraten oder hart codiert.
   // CORE-006Z · 12.09.2026: OCR TIME & DRIVER REFERENCE GUARD. Verdächtige 00:00–05:59-DISPO-Zeiten werden vor der Folgetag-Entscheidung ausschließlich in ihrer eigenen Uhrzeitzelle lokal nachgelesen und nur bei eindeutigem Mehrfach-Konsens korrigiert. Die rechte Fahrer-Spalte erhält zusätzlich eine spaltenweite deutsche Zweit-OCR mit konservativer Konsens-/Kompatibilitätsprüfung für Diakritik und optionale einbuchstabige Namenszusätze. 'Taxi' ist in der Fahrerposition ein zulässiger operativer Eintrag. Keine Namen, Zeiten oder Flugnummern werden hart codiert.
@@ -1066,7 +1067,7 @@
   // Es gibt KEINE feste flexible Spalten-Annahme mehr.
   // Die wiederholte Uhrzeit-Spalte ist optional; Spalten dürfen verschoben werden.
 
-  function groupOcrLines(words) {
+  function groupOcrLines(words, minConfidence = 18) {
     const usable = (words || []).filter(w => {
       const value = cellText(w.text);
       const conf = Number(w.confidence ?? w.conf ?? 0);
@@ -1075,7 +1076,11 @@
       // CORE-005A: Farbige Planzeilen koennen einzelne schwach erkannte Woerter liefern.
       // Mit fester Tabellenstruktur ist 18 als Grundschwelle sicherer; Zeitanker duerfen
       // noch etwas schwaecher sein, damit keine komplette Fahrtzeile verschwindet.
-      return value && w.bbox && (conf >= 18 || (plausibleTime && conf >= 10));
+      // CORE-007D darf NUR fuer den bereits geometrisch streng validierten
+      // kopfzeilenlosen Fallback zusaetzlich einen losen Durchlauf mit minConfidence=0
+      // verwenden. Der normale Kopfzeilenpfad bleibt unveraendert streng.
+      const floor = Number.isFinite(Number(minConfidence)) ? Number(minConfidence) : 18;
+      return value && w.bbox && (conf >= floor || (plausibleTime && conf >= Math.min(10, floor)));
     }).map(w => ({
       text: cellText(w.text),
       key: cleanKey(w.text),
@@ -1465,27 +1470,228 @@
     };
   }
 
+
+  // CORE-007D: Sicherer Fallback fuer Bildausschnitte ohne Kopfzeile.
+  // Die normierten Grenzen beschreiben ausschließlich das bereits bekannte
+  // 13-Spalten-ATMS-Preislayout. Sie werden NICHT blind verwendet: Zuerst werden
+  // mehrere echte Preis-/Zeitanker aus den OCR-Daten bestimmt, die Vorlage daran
+  // skaliert und anschließend jede erkannte Datenzeile semantisch gegengeprueft.
+  // Bei fehlender/mehrdeutiger Evidenz wird weiterhin abgebrochen.
+  const ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS = [
+    0.0052083333, 0.06640625, 0.1106770833, 0.263671875,
+    0.3984375, 0.48828125, 0.5475260417, 0.611328125,
+    0.671875, 0.7180989583, 0.7584635417, 0.822265625,
+    0.9296875, 0.9954427083
+  ];
+
+  function medianNumber(values) {
+    const list = (values || []).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    if (!list.length) return null;
+    const mid = Math.floor(list.length / 2);
+    return list.length % 2 ? list[mid] : (list[mid - 1] + list[mid]) / 2;
+  }
+
+  function headerlessPriceLike(value) {
+    const text = cellText(value)
+      .replace(/[Oo]/g, '0')
+      .replace(/\s+/g, '')
+      .replace(/€/g, '');
+    return /(?:^|\D)\d{1,4}(?:[.,]\d{3})*[.,]\d{2}(?:\D|$)/.test(text);
+  }
+
+  function headerlessTimeLike(value) {
+    const text = cellText(value).replace(/[Oo]/g, '0').replace(/[Il]/g, '1').trim();
+    // Dezimalpreise wie 65,45 duerfen niemals als 06:54/65:45-Zeitanker dienen.
+    // Kompaktzeit ist nur zulaessig, wenn der komplette OCR-Token wirklich nur
+    // aus 3-4 Ziffern besteht.
+    return looksLikeTime(text) || /^\d{3,4}$/.test(text);
+  }
+
+  function headerlessLineAnchor(line, predicate, minX = -Infinity, maxX = Infinity) {
+    const hits = (line?.words || []).filter(word => {
+      const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+      return cx >= minX && cx <= maxX && predicate(word.text);
+    });
+    if (!hits.length) return null;
+    const first = hits[0];
+    return (Number(first.x0 || 0) + Number(first.x1 || 0)) / 2;
+  }
+
+  function headerlessCellsFromLine(line, boundaries, columnCount) {
+    const cells = Array(columnCount).fill('').map(()=>[]);
+    (line?.words || []).forEach(word => {
+      const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+      let col = boundaries.findIndex((right, i) => i > 0 && cx < right) - 1;
+      if (col < 0) col = 0;
+      if (col >= cells.length) col = cells.length - 1;
+      cells[col].push({ text: cellText(word.text), x0: Number(word.x0 || 0) });
+    });
+    return cells.map(parts => parts.sort((a,b)=>a.x0-b.x0).map(item=>item.text).join(' ').replace(/\s+/g,' ').trim());
+  }
+
+  function headerlessDriverLike(value) {
+    const text = cellText(value)
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ]+|[^A-Za-zÄÖÜäöüßÀ-ÿ]+$/g, '')
+      .trim();
+    if (!text) return false;
+    // In der echten Fahrer-Spalte ist auch der operative Wert "Taxi" erlaubt.
+    if (/^taxi$/i.test(text)) return true;
+    return /^[A-Za-zÄÖÜäöüßÀ-ÿ][A-Za-zÄÖÜäöüßÀ-ÿ\- ]{1,39}$/.test(text);
+  }
+
+  function headerlessCoreRowCheck(row) {
+    if (!Array.isArray(row) || row.length < ATMS_IMAGE_SCHEMA_13_PRICE.length) return { ok: false, flight: false };
+
+    const priceRaw = cellText(row[0]);
+    const timeRaw = cellText(row[1]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const pickup = cellText(row[2]);
+    const destination = cellText(row[3]);
+    const customer = cellText(row[4]);
+    const company = cellText(row[5]);
+    const arrival = normalizeFlightNumber(row[6]);
+    const departure = normalizeFlightNumber(row[7]);
+    const vehicle = cellText(row[8]);
+    const persons = parseNumber(row[9]);
+    const driver = cellText(row[12]);
+
+    const priceOk = headerlessPriceLike(priceRaw) && parseNumber(priceRaw) > 0;
+    const timeOk = headerlessTimeLike(timeRaw) && Boolean(normalizeTime(timeRaw));
+    const routeOk = Boolean(pickup && destination && /[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(pickup + destination));
+    const identityOk = Boolean(customer && company && /[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(customer + company));
+    const vehicleOk = Boolean(vehicle && !/^\d+(?:[.,]\d+)?$/.test(vehicle) && /[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(vehicle));
+    const personsOk = Number.isFinite(persons) && persons >= 1 && persons <= 99;
+    const driverOk = headerlessDriverLike(driver);
+    const flight = Boolean(arrival || departure);
+
+    // Falls eine Flugnummer erkannt wurde, darf sie nur in genau einer der beiden
+    // benachbarten Flugspalten stehen. Richtung/Flughafen wird spaeter weiterhin
+    // aus den echten Routendaten bestimmt; hier wird nichts geraten.
+    const flightColumnsOk = !(arrival && departure);
+
+    return {
+      ok: priceOk && timeOk && routeOk && identityOk && vehicleOk && personsOk && driverOk && flightColumnsOk,
+      flight
+    };
+  }
+
+  function inferHeaderlessAtmsPriceLayout(lines, width) {
+    const usableLines = (lines || []).filter(line => (line?.words || []).length >= 5);
+    if (usableLines.length < 2 || !Number.isFinite(Number(width)) || Number(width) < 500) return null;
+
+    const priceCenters = [];
+    const timeCenters = [];
+    const pairedLines = [];
+
+    usableLines.forEach(line => {
+      const priceX = headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16);
+      const timeX = headerlessLineAnchor(line, headerlessTimeLike, 0, width * 0.24);
+      if (!Number.isFinite(priceX) || !Number.isFinite(timeX) || timeX <= priceX) return;
+      priceCenters.push(priceX);
+      timeCenters.push(timeX);
+      pairedLines.push(line);
+    });
+
+    // Mindestens zwei voneinander getrennte echte Datenzeilen muessen Preis UND
+    // DISPO-Zeit an plausiblen linken Positionen bestaetigen.
+    if (pairedLines.length < 2) return null;
+
+    const observedPrice = medianNumber(priceCenters);
+    const observedTime = medianNumber(timeCenters);
+    if (!Number.isFinite(observedPrice) || !Number.isFinite(observedTime)) return null;
+
+    const templatePriceCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1]) / 2;
+    const templateTimeCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[2]) / 2;
+
+    // Der Bildausschnitt muss nahezu die komplette Tabellenbreite enthalten.
+    // Deshalb wird NICHT aus der Textbreite eines Preises hoch-/runterskaliert
+    // ("124,95 €" ist naturgemaess breiter als "65,45 €"). Nur eine kleine
+    // horizontale Verschiebung wird anhand der stabilen DISPO-Zeitspalte kalibriert.
+    const scalePx = width;
+    const offsetPx = observedTime - scalePx * templateTimeCenter;
+    const expectedPrice = offsetPx + scalePx * templatePriceCenter;
+    if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.04) return null;
+    if (Math.abs(observedPrice - expectedPrice) > width * 0.035) return null;
+
+    const boundaries = ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS.map(ratio => offsetPx + scalePx * ratio);
+    if (boundaries.some((value,index) => !Number.isFinite(value) || (index && value <= boundaries[index - 1]))) return null;
+    if (boundaries[0] < -width * 0.03 || boundaries[0] > width * 0.06) return null;
+    if (boundaries[boundaries.length - 1] < width * 0.92 || boundaries[boundaries.length - 1] > width * 1.04) return null;
+
+    const candidateRows = [];
+    usableLines.forEach(line => {
+      const row = headerlessCellsFromLine(line, boundaries, ATMS_IMAGE_SCHEMA_13_PRICE.length);
+      const check = headerlessCoreRowCheck(row);
+      if (check.ok) candidateRows.push({ line, row, flight: check.flight });
+    });
+
+    // Mindestens zwei sichere Zeilen UND mindestens 75 % der Preis/Zeit-geankerten
+    // Zeilen muessen die komplette Semantik bestaetigen. Zusaetzlich muss wenigstens
+    // ein realer Flug erkannt sein. Sonst bleibt der bestehende sichere Abbruch.
+    const required = Math.max(2, Math.ceil(pairedLines.length * 0.75));
+    if (candidateRows.length < required || !candidateRows.some(item => item.flight)) return null;
+
+    const anchors = ATMS_IMAGE_SCHEMA_13_PRICE.map((slot,index) => ({
+      label: slot.label,
+      key: slot.key,
+      x: (boundaries[index] + boundaries[index + 1]) / 2,
+      synthetic: true,
+      headerless: true
+    }));
+
+    return {
+      anchors,
+      boundaries,
+      semantic: imageSemanticColumns(anchors),
+      lines: usableLines,
+      standard: true,
+      syntheticCount: anchors.length,
+      headerlessAtms: true,
+      validation: {
+        anchoredRows: pairedLines.length,
+        verifiedRows: candidateRows.length,
+        requiredRows: required
+      }
+    };
+  }
+
   function imageWordsToMatrix(words, width) {
     const lines = groupOcrLines(words);
     const header = detectImageHeaderLine(lines);
+    const hasSafeHeader = Boolean(header && header.score >= 6 && header.anchors.length >= 6);
+    // Nur wenn die normale sichere Kopfzeilenerkennung scheitert, wird ein zweiter
+    // OCR-Zeilensatz mit niedrigerer Wort-Konfidenz fuer die Headerless-Geometrie
+    // aufgebaut. Akzeptiert wird er erst nach der strengen Mehrzeilenvalidierung.
+    const headerlessLines = hasSafeHeader ? null : groupOcrLines(words, 0);
+    const headerlessLayout = hasSafeHeader ? null : inferHeaderlessAtmsPriceLayout(headerlessLines, width);
 
-    if (!header || header.score < 6 || header.anchors.length < 6) {
-      throw new Error('Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden. Bitte vollständige Kopfzeile mit hochladen.');
+    if (!hasSafeHeader && !headerlessLayout) {
+      throw new Error('Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden und der Ausschnitt ohne Kopfzeile war geometrisch nicht eindeutig genug. Bitte vollständige Kopfzeile mit hochladen.');
     }
 
-    const forceNoPriceMirror = hasNoPriceMirrorDataEvidence(lines, header);
-    const completed = completeAtmsImageAnchors(
-      header.anchors,
-      width,
-      forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null
-    );
-    const { sorted: anchors, boundaries } = anchorsToBoundaries(completed.anchors, width);
+    const forceNoPriceMirror = hasSafeHeader ? hasNoPriceMirrorDataEvidence(lines, header) : false;
+    const completed = hasSafeHeader
+      ? completeAtmsImageAnchors(
+          header.anchors,
+          width,
+          forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null
+        )
+      : {
+          anchors: headerlessLayout.anchors,
+          standard: true,
+          syntheticCount: headerlessLayout.syntheticCount
+        };
+    const layout = hasSafeHeader
+      ? anchorsToBoundaries(completed.anchors, width)
+      : { sorted: headerlessLayout.anchors, boundaries: headerlessLayout.boundaries };
+    const anchors = layout.sorted;
+    const boundaries = layout.boundaries;
     const semantic = imageSemanticColumns(anchors);
     const headerRow = anchors.map(anchor => anchor.label);
     const rows = [headerRow];
     const rowMetaByMatrixIndex = {};
+    const dataLines = hasSafeHeader ? lines.slice(header.index + 1) : headerlessLayout.lines;
 
-    lines.slice(header.index + 1).forEach(line => {
+    dataLines.forEach(line => {
       const cells = Array(anchors.length).fill('').map(()=>[]);
       (line.words || []).forEach(word => {
         const cx = (word.x0 + word.x1) / 2;
@@ -1635,7 +1841,9 @@
       standardAtms: completed.standard,
       schemaColumns: anchors.length,
       forcedNoPriceMirror: Boolean(forceNoPriceMirror),
-      syntheticAnchorCount: completed.syntheticCount
+      syntheticAnchorCount: completed.syntheticCount,
+      headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
+      headerlessValidation: headerlessLayout?.validation || null
     };
     return rows;
   }
@@ -3247,11 +3455,18 @@
       if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
       if (result.imageOcr) {
         const syntheticCount = Number(result.imageMeta?.syntheticAnchorCount || 0);
-        const structuralCap = syntheticCount ? Math.max(0.80, 0.98 - syntheticCount * 0.03) : 0.99;
+        const headerlessAtms = Boolean(result.imageMeta?.headerlessAtms);
+        // Kopfzeilenlose Ausschnitte bleiben intern bewusst konservativer bewertet.
+        // Die Prozentzahl wird seit CORE-007B nicht als Erfolgsquote angezeigt.
+        const structuralCap = headerlessAtms
+          ? 0.82
+          : (syntheticCount ? Math.max(0.80, 0.98 - syntheticCount * 0.03) : 0.99);
         mappingInfo = {
           ...mappingInfo,
           confidence: Math.min(Number(mappingInfo.confidence || 0), structuralCap),
-          profile: mappingInfo.confidence >= 0.85 ? 'ATMS Bildimport Flex' : 'ATMS Bildimport – Prüfung nötig'
+          profile: headerlessAtms
+            ? 'ATMS Bildimport Flex · Kopfzeile sicher rekonstruiert'
+            : (mappingInfo.confidence >= 0.85 ? 'ATMS Bildimport Flex' : 'ATMS Bildimport – Prüfung nötig')
         };
       }
       const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
