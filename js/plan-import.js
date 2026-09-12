@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  // CORE-007D9 · 12.09.2026: FLIGHT NUMBER & ROUTE CELL RECOVERY. Auffällige alphabetische Flugdesignatoren mit mehr als zwei Zeichen werden ausschließlich in ihrer eigenen Flugzelle lokal nachgelesen; eine Korrektur darf nur bei eindeutigem Mehrfach-Konsens mit identischem numerischem Flugteil erfolgen. Von-/Nach-Zellen dürfen nur um eindeutig mehrfach gelesene, reine Suffix-Tokens vervollständigt werden (kein Wörterbuch, keine Orts-/Hotel-Hardcodes). Flugorte aus der Planliste bleiben sichtbar als Vergleichswert, gelten beim Bildimport aber bis zu einer aktuellen verifizierten Flugprüfung als ungeprüft. Storno-, Preis-, Fahrer-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
+
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
@@ -825,9 +827,19 @@
       dispoAbholzeit: dispatcherTime,
       dispatcherNote: dispatcherTime ? `Disponentenzeit aus Ort-Spalte: ${sourceFlightLocationRaw}` : '',
       sourceFlightLocationRaw,
+      // CORE-007D9: Ein Flugort aus der hochgeladenen Bild-Planliste ist ein
+      // Vergleichswert, keine datumsspezifische Verifikation. Er bleibt sichtbar,
+      // wird aber bis zu einer echten aktuellen Flugprüfung ausdrücklich offen geführt.
+      locationFromPlan: options.imageOcr && flightLocation ? flightLocation : '',
+      flightLocationFromPlan: Boolean(options.imageOcr && flightLocation),
       flightRecoveredFromRow: Boolean(recoveredFlight),
       flightRecoveryAmbiguous,
-      flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
+      flightNeedsManualCheck: Boolean(
+        recoveredFlight ||
+        flightRecoveryAmbiguous ||
+        (options.imageOcr && flightNumber && flightLocation)
+      ),
+      flightCheckConfidence: options.imageOcr && flightNumber && flightLocation ? 'uncertain' : '',
       vehicle: getVehicleValue(row, mapping, options),
       persons: getPersonsValue(row, mapping, options),
       price: findPriceValue(row, mapping, options),
@@ -908,6 +920,9 @@
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
         issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
+      }
+      if (ride.flightOcrUnusualNeedsReview && ride.flightNumber) {
+        issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} hat einen ungewöhnlich langen alphabetischen Designator – lokale OCR war nicht eindeutig; Original bitte prüfen` });
       }
 
       // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
@@ -3182,6 +3197,124 @@
     return out;
   }
 
+  // CORE-007D9: Reine OCR-Abschneidungen am rechten Rand einer Von-/Nach-Zelle
+  // dürfen nur ergänzt werden, wenn der vorhandene Wert tokenweise vollständig
+  // am Anfang des lokal mehrfach identisch gelesenen Kandidaten steht. Es werden
+  // ausschließlich fehlende Suffix-Tokens ergänzt; bestehende Zeichen/Wörter
+  // werden niemals ersetzt oder aufgrund eines Wörterbuchs geraten.
+  function routeCompletionTokens(value) {
+    return routeOcrText(value)
+      .normalize('NFKC')
+      .toLocaleLowerCase('de-DE')
+      .match(/[a-zäöüßà-ÿ0-9]+/g) || [];
+  }
+
+  function routeCompletionIsSafe(originalValue, candidateValue) {
+    const original = routeOcrText(originalValue);
+    const candidate = routeOcrText(candidateValue);
+    if (!original || !candidate || candidate.length <= original.length) return false;
+    const left = routeCompletionTokens(original);
+    const right = routeCompletionTokens(candidate);
+    if (!left.length || right.length <= left.length) return false;
+    // Maximal wenige fehlende End-Tokens nachlesen; lange fremde Zellinhalte sperren.
+    if (right.length - left.length > 3 || candidate.length - original.length > 24) return false;
+    for (let i = 0; i < left.length; i++) {
+      if (left[i] !== right[i]) return false;
+    }
+    return true;
+  }
+
+  async function recoverTruncatedRoutesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const fields = [
+      { field: 'pickup', label: 'Von' },
+      { field: 'destination', label: 'Nach' }
+    ];
+
+    for (const descriptor of fields) {
+      const column = mapping?.[descriptor.field];
+      if (column === undefined) continue;
+      const left = Number(boundaries[column]);
+      const right = Number(boundaries[column + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const rowsWithMeta = out.map(ride => {
+        const matrixIndex = Number(ride.sourceRow || 0) - 1;
+        const meta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+        if (!meta) return null;
+        const y0 = Number(meta.y0);
+        const y1 = Number(meta.y1);
+        const cy = Number(meta.cy ?? ((y0 + y1) / 2));
+        if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
+        return { sourceRow: Number(ride.sourceRow), meta: { y0, y1, cy } };
+      }).filter(Boolean);
+      if (!rowsWithMeta.length) continue;
+
+      const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
+      const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
+      const cellWidth = Math.max(8, right - left);
+      // Anders als CORE-006L wird der rechte Zellrand hier bewusst nicht stark
+      // beschnitten, weil genau dort fehlende Suffix-Tokens liegen können.
+      const attempts = [
+        { name: 'deu-full-psm4', lang: 'deu', scale: 2, x0: left, x1: right, options: { tessedit_pageseg_mode: '4' } },
+        { name: 'deu-full-psm6', lang: 'deu', scale: 3, x0: left, x1: right, options: { tessedit_pageseg_mode: '6' } },
+        { name: 'deu-inner-psm6', lang: 'deu', scale: 2, x0: left + Math.max(1, cellWidth * 0.008), x1: right - Math.max(1, cellWidth * 0.004), options: { tessedit_pageseg_mode: '6' } }
+      ];
+      const votesByRow = new Map();
+      const displayByRowKey = new Map();
+      const attemptLogByRow = new Map();
+
+      if (status) status.textContent = `${descriptor.label}-Zellen werden auf abgeschnittene End-Tokens geprüft …`;
+      try {
+        for (const attempt of attempts) {
+          const crop = cropCanvasRegion(imageCanvas, attempt.x0, minY, attempt.x1, maxY, attempt.scale);
+          const second = await Tesseract.recognize(crop, attempt.lang, attempt.options);
+          const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
+          rowsWithMeta.forEach(item => {
+            const candidate = routeOcrText(rowCandidates.get(item.sourceRow) || '');
+            const log = attemptLogByRow.get(item.sourceRow) || [];
+            log.push({ mode: attempt.name, candidate });
+            attemptLogByRow.set(item.sourceRow, log);
+            if (!candidate) return;
+            const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+            const rowVotes = votesByRow.get(item.sourceRow) || new Map();
+            rowVotes.set(key, (rowVotes.get(key) || 0) + 1);
+            votesByRow.set(item.sourceRow, rowVotes);
+            const displayKey = `${item.sourceRow}|${key}`;
+            if (!displayByRowKey.has(displayKey)) displayByRowKey.set(displayKey, candidate);
+          });
+        }
+      } catch (_) {
+        // Sicherheitsnetz: Der Primärwert bleibt bei fehlender Sprachdatei/OCR unverändert.
+      }
+
+      out.forEach(ride => {
+        const sourceRow = Number(ride.sourceRow);
+        const original = routeOcrText(ride[descriptor.field]);
+        ride[`${descriptor.field}CompletionOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
+        if (!original) return;
+        const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
+          .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
+        const winner = ranked[0] || null;
+        const runner = ranked[1] || null;
+        if (!winner || winner[1] < 2) return;
+        if (runner && winner[1] === runner[1]) return;
+        const candidate = routeOcrText(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
+        if (!routeCompletionIsSafe(original, candidate)) return;
+        ride[`${descriptor.field}RawOcr`] = ride[`${descriptor.field}RawOcr`] || original;
+        ride[descriptor.field] = candidate;
+        ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
+        ride[`${descriptor.field}RecoveredFromSuffixOcr`] = true;
+        ride[`${descriptor.field}RecoverySource`] = 'targeted_route_suffix_consensus';
+        ride.rideType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      });
+    }
+    return out;
+  }
+
   // CORE-005R: Preis-Kandidaten werden nur aus expliziten Dezimaldarstellungen
   // der gezielt ausgeschnittenen Preiszelle gewonnen. Eine verlorene Dezimalstelle
   // (z. B. reines "4760") wird NICHT erraten oder automatisch verschoben.
@@ -3652,6 +3785,130 @@
       } else {
         ride.flightOcrAmbiguityNeedsReview = true;
       }
+    }
+    return out;
+  }
+
+  // CORE-007D9: Ein rein alphabetischer Flugdesignator mit mehr als zwei
+  // Buchstaben ist in den aktuellen ATMS-Planlisten OCR-auffällig. Er wird nicht
+  // pauschal gekürzt. Stattdessen wird ausschließlich dieselbe Flugzelle lokal
+  // nachgelesen. Eine alternative Lesart darf nur gewinnen, wenn der numerische
+  // Flugteil (und ein eventueller Suffixbuchstabe) identisch bleibt.
+  function alphabeticFlightParts(value) {
+    const flight = normalizeFlightNumber(value);
+    const match = flight.match(/^([A-Z]{2,4})(\d{1,4})([A-Z]?)$/);
+    return match ? { flight, designator: match[1], number: match[2], suffix: match[3] || '' } : null;
+  }
+
+  function hasUnusualAlphabeticFlightDesignator(value) {
+    const parts = alphabeticFlightParts(value);
+    return Boolean(parts && parts.designator.length > 2);
+  }
+
+  function sameAlphabeticFlightNumericIdentity(leftValue, rightValue) {
+    const left = alphabeticFlightParts(leftValue);
+    const right = alphabeticFlightParts(rightValue);
+    return Boolean(left && right && left.number === right.number && left.suffix === right.suffix);
+  }
+
+  async function recoverUnusualFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeFlightNumber(ride.flightNumber);
+      if (!initial || !hasUnusualAlphabeticFlightDesignator(initial)) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) {
+        ride.flightOcrUnusualNeedsReview = true;
+        continue;
+      }
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) {
+        ride.flightOcrUnusualNeedsReview = true;
+        continue;
+      }
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.16);
+      const regions = [
+        { name: 'full-2x', x0: left, x1: right, scale: 2 },
+        { name: 'inner-3x', x0: left + cellWidth * 0.025, x1: right - cellWidth * 0.025, scale: 3 },
+        { name: 'tight-3x', x0: left + cellWidth * 0.06, x1: right - cellWidth * 0.06, scale: 3 }
+      ];
+      const modes = [
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+      ];
+      const votes = new Map();
+      const attempts = [];
+
+      if (status) status.textContent = `Auffällige Flugzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      try {
+        for (const region of regions) {
+          const crop = cropCanvasRegion(imageCanvas, region.x0, y0 - padY, region.x1, y1 + padY, region.scale);
+          for (const mode of modes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = [...new Set(
+              flightCandidatesFromOcrResult(second)
+                .map(normalizeFlightNumber)
+                .filter(candidate => candidate && sameAlphabeticFlightNumericIdentity(initial, candidate))
+            )];
+            attempts.push({ region: region.name, mode: mode.name, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.flightUnusualOcrAttempts = attempts;
+        ride.flightOcrUnusualNeedsReview = true;
+        continue;
+      }
+
+      ride.flightUnusualOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+      if (!winner || winner[1] < 2 || (runner && winner[1] === runner[1])) {
+        ride.flightOcrUnusualNeedsReview = true;
+        continue;
+      }
+
+      const recovered = winner[0];
+      if (recovered === initial) {
+        // Mehrfach-Konsens bestätigt den Primärwert; keine automatische Verkürzung.
+        ride.flightOcrUnusualNeedsReview = false;
+        ride.flightUnusualConfirmedByTargetedOcr = true;
+        continue;
+      }
+      if (!sameAlphabeticFlightNumericIdentity(initial, recovered)) {
+        ride.flightOcrUnusualNeedsReview = true;
+        continue;
+      }
+
+      ride.flightNumber = recovered;
+      if (routeType === 'arrival') ride.arrivalFlight = recovered;
+      if (routeType === 'departure') ride.departureFlight = recovered;
+      ride.flightDirection = routeType;
+      ride.flightOcrInitialUnusual = initial;
+      ride.flightRecoveredFromUnusualOcr = true;
+      ride.flightOcrUnusualNeedsReview = false;
+      ride.flightNeedsManualCheck = true;
+      ride.flightCheckConfidence = 'uncertain';
     }
     return out;
   }
@@ -4141,6 +4398,22 @@
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
   }
 
+  function enforcePlanFlightLocationsAsUnverified(rides) {
+    return (Array.isArray(rides) ? rides : []).map(ride => {
+      if (!ride?.sourceImageOcr || !ride?.flightNumber || !ride?.flightLocationFromPlan) return ride;
+      // Eine Verifikation muss ein echtes Prüfdatum besitzen. Ein bloßer Ort aus
+      // der Bild-Planliste darf durch prepareRides() nicht still auf VERIFIED springen.
+      const hasCurrentVerification = ride.flightCheckConfidence === 'verified' && Boolean(cellText(ride.flightCheckedAt));
+      if (hasCurrentVerification) return ride;
+      return {
+        ...ride,
+        locationFromPlan: ride.locationFromPlan || ride.flightLocation || '',
+        flightNeedsManualCheck: true,
+        flightCheckConfidence: 'uncertain'
+      };
+    });
+  }
+
   async function analyze() {
     if (!state.file) return;
     try {
@@ -4255,6 +4528,12 @@
           result.imageMeta,
           mappingInfo.mapping
         );
+        preparedRides = await recoverTruncatedRoutesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
         preparedRides = await recoverMissingDriversTargeted(
           preparedRides,
           result.imageCanvas,
@@ -4279,12 +4558,19 @@
           result.imageMeta,
           mappingInfo.mapping
         );
+        preparedRides = await recoverUnusualFlightNumbersTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
         preparedRides = applyRepeatedTextConsistency(preparedRides);
       }
 
       state.matrix = matrix;
       state.rides = assignRideDates(preparedRides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
+      state.rides = enforcePlanFlightLocationsAsUnverified(state.rides);
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
