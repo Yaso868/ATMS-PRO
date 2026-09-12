@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
+
   // CORE-007D1 · 12.09.2026: Kopfzeilenlose ATMS-Ausschnitte behalten den strengen Geometrie-Guard, koennen aber bei wenigen schwachen Kernzellen eine gezielte Zell-Zweit-OCR ausfuehren. Nur eindeutiger Mehrfach-Konsens wird uebernommen; bei zu vielen/weiterhin unklaren Zellen bleibt der sichere Abbruch bestehen. Keine Werte-Hardcodes.
   // CORE-007D · 12.09.2026: HEADERLESS PLAN SAFE OCR. Bildausschnitte ohne sichtbare Kopfzeile dürfen ausschließlich dann als bekanntes 13-Spalten-ATMS-Preislayout rekonstruiert werden, wenn mehrere Datenzeilen gemeinsam Preis-, DISPO-Zeit-, Routen-, Fahrzeug-/Personen-, Flug- und Fahrer-Geometrie plausibel bestätigen. Die Spaltengrenzen werden aus einer normierten ATMS-Layoutvorlage anhand der im Bild tatsächlich erkannten Preis-/Zeitanker skaliert und anschließend erneut gegen die Datenzeilen validiert. Bei unklarer Struktur bleibt der bisherige sichere Abbruch bestehen. Keine Namen, Flugnummern, Orte oder Zeiten werden hart codiert.
   // CORE-007B · 12.09.2026: OCR CONFIDENCE DISPLAY. Die interne technische Struktur-Konfidenz bleibt unverändert als Sicherheitswert erhalten, wird bei Bildimport aber nicht mehr missverständlich als allgemeine '% Erkennung' ausgegeben. Sichtbar sind stattdessen der reale OCR-Analysezustand, Anzahl OCR-geprüfter Fahrten sowie offene Hinweise/Fehler. Keine künstliche 100-%-Anzeige.
@@ -1591,73 +1593,155 @@
     };
   }
 
+  function headerlessRecurringColumnEvidence(lines, boundaries) {
+    const columnCount = Math.max(0, (boundaries || []).length - 1);
+    if (!Array.isArray(lines) || lines.length < 2 || columnCount !== ATMS_IMAGE_SCHEMA_13_PRICE.length) {
+      return { safe: false, rowCount: 0, counts: [], stableColumns: 0 };
+    }
+
+    const counts = Array(columnCount).fill(0);
+    let usableRows = 0;
+    let leftAnchoredRows = 0;
+    let routeRows = 0;
+    let rightRows = 0;
+    let flightRows = 0;
+
+    lines.forEach(line => {
+      const words = Array.isArray(line?.words) ? line.words : [];
+      if (words.length < 4) return;
+      const occupied = Array(columnCount).fill(false);
+      words.forEach(word => {
+        const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+        if (!Number.isFinite(cx)) return;
+        let col = boundaries.findIndex((right, index) => index > 0 && cx < right) - 1;
+        if (col < 0) col = 0;
+        if (col >= columnCount) col = columnCount - 1;
+        occupied[col] = true;
+      });
+
+      const occupiedCount = occupied.filter(Boolean).length;
+      if (occupiedCount < 4) return;
+      usableRows++;
+      occupied.forEach((value, index) => { if (value) counts[index]++; });
+
+      if (occupied[0] && occupied[1]) leftAnchoredRows++;
+      if (occupied[2] && occupied[3]) routeRows++;
+      if (occupied[12]) rightRows++;
+      if (occupied[6] || occupied[7]) flightRows++;
+    });
+
+    if (usableRows < 2) return { safe: false, rowCount: usableRows, counts, stableColumns: 0 };
+
+    const majority = Math.max(2, Math.ceil(usableRows * 0.60));
+    const half = Math.max(2, Math.ceil(usableRows * 0.50));
+    const stableColumns = counts.filter(count => count >= half).length;
+
+    // Sicherheitsprinzip: Nicht ein einzelner Wert beweist das Layout, sondern
+    // mehrere Zeilen muessen dieselben X-Korridore wiederholen. Preis+Zeit links,
+    // Von+Nach in der Mitte sowie Fahrer rechts sind dabei Pflicht. Flugspalten
+    // muessen bei mindestens zwei Zeilen belegt sein. Leere Ort-/Spiegelzeit-Zellen
+    // sind ausdruecklich erlaubt und zaehlen nicht gegen das Layout.
+    const safe =
+      leftAnchoredRows >= majority &&
+      routeRows >= majority &&
+      rightRows >= half &&
+      flightRows >= Math.min(2, usableRows) &&
+      counts[4] >= half &&
+      counts[5] >= half &&
+      counts[8] >= half &&
+      stableColumns >= 8;
+
+    return {
+      safe,
+      rowCount: usableRows,
+      counts,
+      stableColumns,
+      majority,
+      leftAnchoredRows,
+      routeRows,
+      rightRows,
+      flightRows
+    };
+  }
+
   function inferHeaderlessAtmsPriceLayout(lines, width) {
-    const usableLines = (lines || []).filter(line => (line?.words || []).length >= 5);
+    const usableLines = (lines || []).filter(line => (line?.words || []).length >= 4);
     if (usableLines.length < 2 || !Number.isFinite(Number(width)) || Number(width) < 500) return null;
 
     const priceCenters = [];
     const timeCenters = [];
-    const pairedLines = [];
+    const priceLines = new Set();
+    const timeLines = new Set();
 
-    usableLines.forEach(line => {
+    usableLines.forEach((line, index) => {
       const priceX = headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16);
       const timeX = headerlessLineAnchor(line, headerlessTimeLike, 0, width * 0.24);
-      if (!Number.isFinite(priceX) || !Number.isFinite(timeX) || timeX <= priceX) return;
-      priceCenters.push(priceX);
-      timeCenters.push(timeX);
-      pairedLines.push(line);
+      if (Number.isFinite(priceX)) {
+        priceCenters.push(priceX);
+        priceLines.add(index);
+      }
+      if (Number.isFinite(timeX)) {
+        timeCenters.push(timeX);
+        timeLines.add(index);
+      }
     });
 
-    // Mindestens zwei voneinander getrennte echte Datenzeilen muessen Preis UND
-    // DISPO-Zeit an plausiblen linken Positionen bestaetigen.
-    if (pairedLines.length < 2) return null;
+    // CORE-007D2: Preis und Zeit muessen weiterhin jeweils mehrfach vorkommen,
+    // muessen aber nicht mehr zwingend schon in derselben ersten OCR-Zeile erkannt
+    // worden sein. So darf eine schwache Einzelzelle nicht die gesamte Geometrie
+    // verwerfen, bevor die gezielte Zell-OCR greifen kann.
+    if (priceCenters.length < 2 || timeCenters.length < 2) return null;
 
     const observedPrice = medianNumber(priceCenters);
     const observedTime = medianNumber(timeCenters);
-    if (!Number.isFinite(observedPrice) || !Number.isFinite(observedTime)) return null;
+    if (!Number.isFinite(observedPrice) || !Number.isFinite(observedTime) || observedTime <= observedPrice) return null;
 
     const templatePriceCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1]) / 2;
     const templateTimeCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[2]) / 2;
 
-    // Der Bildausschnitt muss nahezu die komplette Tabellenbreite enthalten.
-    // Deshalb wird NICHT aus der Textbreite eines Preises hoch-/runterskaliert
-    // ("124,95 €" ist naturgemaess breiter als "65,45 €"). Nur eine kleine
-    // horizontale Verschiebung wird anhand der stabilen DISPO-Zeitspalte kalibriert.
     const scalePx = width;
     const offsetPx = observedTime - scalePx * templateTimeCenter;
     const expectedPrice = offsetPx + scalePx * templatePriceCenter;
-    if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.04) return null;
-    if (Math.abs(observedPrice - expectedPrice) > width * 0.035) return null;
+    if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.05) return null;
+    if (Math.abs(observedPrice - expectedPrice) > width * 0.04) return null;
 
     const boundaries = ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS.map(ratio => offsetPx + scalePx * ratio);
     if (boundaries.some((value,index) => !Number.isFinite(value) || (index && value <= boundaries[index - 1]))) return null;
-    if (boundaries[0] < -width * 0.03 || boundaries[0] > width * 0.06) return null;
-    if (boundaries[boundaries.length - 1] < width * 0.92 || boundaries[boundaries.length - 1] > width * 1.04) return null;
+    if (boundaries[0] < -width * 0.04 || boundaries[0] > width * 0.07) return null;
+    if (boundaries[boundaries.length - 1] < width * 0.91 || boundaries[boundaries.length - 1] > width * 1.05) return null;
 
-    const candidateRows = [];
-    const provisionalRows = [];
-    pairedLines.forEach(line => {
-      const row = headerlessCellsFromLine(line, boundaries, ATMS_IMAGE_SCHEMA_13_PRICE.length);
-      const check = headerlessCoreRowCheck(row);
-      provisionalRows.push({ line, row, check });
-      if (check.ok) candidateRows.push({ line, row, flight: check.flight });
-    });
-
-    // CORE-007D1: Die Geometrie darf bereits als PROVISORISCH sicher gelten, wenn
-    // mehrere Preis-/Zeit-geankerte Zeilen die volle Tabellenbreite tragen. Eine
-    // schwache Einzelzelle darf dann spaeter gezielt nachgelesen werden. Die
-    // eigentliche Datenfreigabe erfolgt aber erst NACH dieser Zell-Zweit-OCR.
-    const required = Math.max(2, Math.ceil(pairedLines.length * 0.75));
-    const semanticValidated = candidateRows.length >= required && candidateRows.some(item => item.flight);
-    const fullSpanRows = pairedLines.filter(line => {
+    // Datenzeilen fuer die eigentliche Matrix: alle ausreichend breiten OCR-Zeilen,
+    // die mindestens einen linken Preis-/Zeitanker besitzen. Damit bleibt eine
+    // einzelne schwach gelesene Preis- ODER Zeit-Zelle spaeter gezielt reparierbar.
+    const candidateLines = usableLines.filter((line, index) => {
+      if (!priceLines.has(index) && !timeLines.has(index)) return false;
       const words = line?.words || [];
       if (!words.length) return false;
-      const minX = Math.min(...words.map(word => Number(word.x0 || 0)));
-      const maxX = Math.max(...words.map(word => Number(word.x1 || 0)));
-      return minX <= width * 0.10 && maxX >= width * 0.88;
-    }).length;
-    const provisionalGeometrySafe = fullSpanRows >= required;
-    if (!semanticValidated && !provisionalGeometrySafe) return null;
+      const xs0 = words.map(word => Number(word.x0 || 0)).filter(Number.isFinite);
+      const xs1 = words.map(word => Number(word.x1 || 0)).filter(Number.isFinite);
+      if (!xs0.length || !xs1.length) return false;
+      const minX = Math.min(...xs0);
+      const maxX = Math.max(...xs1);
+      return minX <= width * 0.20 && maxX >= width * 0.45;
+    });
+    if (candidateLines.length < 2) return null;
+
+    const semanticRows = [];
+    candidateLines.forEach(line => {
+      const row = headerlessCellsFromLine(line, boundaries, ATMS_IMAGE_SCHEMA_13_PRICE.length);
+      const check = headerlessCoreRowCheck(row);
+      semanticRows.push({ line, row, check });
+    });
+
+    const required = Math.max(2, Math.ceil(candidateLines.length * 0.75));
+    const verifiedRows = semanticRows.filter(item => item.check.ok);
+    const semanticValidated = verifiedRows.length >= required && verifiedRows.some(item => item.check.flight);
+
+    // Neue CORE-007D2-Sicherheitsstufe: wiederkehrende X-Korridore ueber mehrere
+    // Zeilen. Das ist staerker als eine einzelne OCR-Zeile und gleichzeitig
+    // toleranter gegen eine schwache Personen-/Fahrerzelle.
+    const recurring = headerlessRecurringColumnEvidence(candidateLines, boundaries);
+    if (!semanticValidated && !recurring.safe) return null;
 
     const anchors = ATMS_IMAGE_SCHEMA_13_PRICE.map((slot,index) => ({
       label: slot.label,
@@ -1671,17 +1755,17 @@
       anchors,
       boundaries,
       semantic: imageSemanticColumns(anchors),
-      lines: pairedLines,
+      lines: candidateLines,
       standard: true,
       syntheticCount: anchors.length,
       headerlessAtms: true,
       needsCellRecovery: !semanticValidated,
       validation: {
-        anchoredRows: pairedLines.length,
-        fullSpanRows,
-        verifiedRows: candidateRows.length,
+        anchoredRows: candidateLines.length,
+        verifiedRows: verifiedRows.length,
         requiredRows: required,
-        semanticValidated
+        semanticValidated,
+        recurring
       }
     };
   }
