@@ -3,6 +3,8 @@
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
+  // CORE-007D8A1 · 13.09.2026: OCR DIAGNOSTIC SELF-CHECK. Baut ausschließlich auf CORE-007D8A/CORE-007D8 auf und ergänzt einen sichtbaren Selbstcheck der Diagnose-Pipeline. Er protokolliert, ob Rohwörter, Zellgrenzen, Row-Metadaten, Mapping und Ride↔Matrix-Zuordnung tatsächlich vorhanden sind. Keine OCR-Korrektur, keine Änderung an Importfreigabe, Hinweisen/Fehlern, Storno, PLAN/DISPO/LIVE, Flugprüfung oder Persistenz.
+  // CORE-007D8A · 13.09.2026: OCR CELL RAW DIAGNOSTICS. Reine Diagnose-Erweiterung auf stabilem CORE-007D8: Für Bild-/OCR-Importe werden die unveränderten Primär-OCR-Wörter samt Koordinaten innerhalb und direkt neben den gemappten Von-/Nach-/Flugzellen sichtbar protokolliert. Die Diagnose liest nur bereits vorhandene OCR-Daten; sie korrigiert keinen Wert, ändert keine Spaltengrenze und beeinflusst weder Importfreigabe noch Hinweise/Fehler, Storno, PLAN/DISPO/LIVE, Flugprüfung oder Persistenz.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -46,7 +48,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {} };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -2263,7 +2265,17 @@
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
       headerlessValidation: headerlessLayout?.validation || null,
-      headerlessDiagnostic: headerlessLayout?.diagnostics || headerlessDiagnostic || null
+      headerlessDiagnostic: headerlessLayout?.diagnostics || headerlessDiagnostic || null,
+      // CORE-007D8A: Nur fuer sichtbare Diagnose. Diese Rohwoerter werden nirgends
+      // in die Matrix, Fahrtdaten oder Importentscheidung zurueckgeschrieben.
+      rawOcrWords: (Array.isArray(words) ? words : []).filter(word => cellText(word?.text) && word?.bbox).map(word => ({
+        text: cellText(word.text),
+        confidence: Number(word.confidence ?? word.conf ?? 0),
+        x0: Number(word.bbox.x0 || 0),
+        x1: Number(word.bbox.x1 || 0),
+        y0: Number(word.bbox.y0 || 0),
+        y1: Number(word.bbox.y1 || 0)
+      }))
     };
     return rows;
   }
@@ -3713,6 +3725,160 @@
     return out;
   }
 
+  function diagnosticFlightPrefixLength(value) {
+    const flight = normalizeFlightNumber(value);
+    const match = flight.match(/^([A-Z]+)(\d{1,4}[A-Z]?)$/);
+    return match ? match[1].length : 0;
+  }
+
+  function formatRawDiagnosticWords(words) {
+    const list = Array.isArray(words) ? words : [];
+    if (!list.length) return '∅';
+    return list.map(word => {
+      const text = cellText(word?.text).replace(/\s+/g, ' ');
+      const conf = Number.isFinite(Number(word?.confidence)) ? Math.round(Number(word.confidence)) : 0;
+      return `${text}@${Math.round(Number(word?.x0 || 0))}-${Math.round(Number(word?.x1 || 0))}/${conf}`;
+    }).join(' | ');
+  }
+
+  function rawWordsForDiagnosticCell(imageMeta, rowMeta, columnIndex) {
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[columnIndex + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return null;
+
+    const y0 = Number(rowMeta.y0 || 0);
+    const y1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, y1 - y0);
+    const cyMin = y0 - rowHeight * 0.25;
+    const cyMax = y1 + rowHeight * 0.25;
+    const width = Math.max(8, right - left);
+    const spill = Math.max(10, width * 0.32);
+
+    const rowWords = rawWords.filter(word => {
+      const cy = (Number(word.y0 || 0) + Number(word.y1 || 0)) / 2;
+      return cy >= cyMin && cy <= cyMax;
+    });
+    const byX = word => (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+    const inCell = rowWords.filter(word => {
+      const cx = byX(word);
+      return cx >= left && cx < right;
+    }).sort((a,b) => Number(a.x0||0) - Number(b.x0||0));
+    const leftSpill = rowWords.filter(word => {
+      const cx = byX(word);
+      return cx >= left - spill && cx < left;
+    }).sort((a,b) => Number(a.x0||0) - Number(b.x0||0));
+    const rightSpill = rowWords.filter(word => {
+      const cx = byX(word);
+      return cx >= right && cx <= right + spill;
+    }).sort((a,b) => Number(a.x0||0) - Number(b.x0||0));
+
+    return {
+      left, right, y0, y1,
+      inCell: formatRawDiagnosticWords(inCell),
+      leftSpill: formatRawDiagnosticWords(leftSpill),
+      rightSpill: formatRawDiagnosticWords(rightSpill)
+    };
+  }
+
+  function buildOcrCellRawDiagnostics(rides, imageMeta, mapping) {
+    // CORE-007D8A: Reine Beobachtung. Kein Ride wird hier mutiert.
+    if (!Array.isArray(rides) || !imageMeta || !mapping || !Array.isArray(imageMeta.rawOcrWords)) return [];
+    const diagnostics = [];
+
+    rides.forEach(ride => {
+      const matrixIndex = Number(ride?.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) return;
+
+      ['pickup', 'destination'].forEach(field => {
+        const columnIndex = mapping?.[field];
+        if (columnIndex === undefined || columnIndex === null) return;
+        const raw = rawWordsForDiagnosticCell(imageMeta, rowMeta, columnIndex);
+        if (!raw) return;
+        diagnostics.push({
+          kind: 'route',
+          sourceRow: Number(ride.sourceRow || 0),
+          time: cellText(ride.dispoTime || ride.time),
+          field,
+          value: cellText(ride?.[field]),
+          ...raw
+        });
+      });
+
+      const flight = normalizeFlightNumber(ride?.flightNumber);
+      // Drei oder mehr Buchstaben vor dem Zahlenteil sind fuer ATMS auffaellig genug,
+      // um die Rohzelle sichtbar zu machen. Es wird dadurch NICHT gewarnt/korrigiert.
+      if (flight && diagnosticFlightPrefixLength(flight) >= 3) {
+        const field = ride?.arrivalFlight ? 'arrivalFlight' : ride?.departureFlight ? 'departureFlight' : '';
+        const columnIndex = field ? mapping?.[field] : undefined;
+        if (columnIndex !== undefined && columnIndex !== null) {
+          const raw = rawWordsForDiagnosticCell(imageMeta, rowMeta, columnIndex);
+          if (raw) diagnostics.push({
+            kind: 'flight',
+            sourceRow: Number(ride.sourceRow || 0),
+            time: cellText(ride.dispoTime || ride.time),
+            field,
+            value: flight,
+            ...raw
+          });
+        }
+      }
+    });
+
+    return diagnostics;
+  }
+
+  function buildOcrDiagnosticSelfCheck(rides, imageMeta, mapping, diagnostics) {
+    // CORE-007D8A1: Reiner Selbstcheck der Diagnose-Pipeline. Keine Datenmutation.
+    const safeRides = Array.isArray(rides) ? rides : [];
+    const rawWords = Array.isArray(imageMeta?.rawOcrWords) ? imageMeta.rawOcrWords : [];
+    const boundaries = Array.isArray(imageMeta?.boundaries) ? imageMeta.boundaries : [];
+    const rowMetaMap = imageMeta?.rowMetaByMatrixIndex && typeof imageMeta.rowMetaByMatrixIndex === 'object'
+      ? imageMeta.rowMetaByMatrixIndex
+      : {};
+    const rowMetaKeys = Object.keys(rowMetaMap).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    const sourceRows = safeRides.map(ride => Number(ride?.sourceRow || 0)).filter(Number.isFinite);
+    const matrixIndices = sourceRows.map(row => row - 1);
+    const matchedRows = matrixIndices.filter(index => rowMetaMap[index]).length;
+    const routeColumns = ['pickup','destination'].filter(field => Number.isInteger(Number(mapping?.[field])));
+    const expectedRouteCells = safeRides.length * routeColumns.length;
+    const producedRouteCells = (Array.isArray(diagnostics) ? diagnostics : []).filter(item => item?.kind === 'route').length;
+    const suspiciousFlights = safeRides.filter(ride => diagnosticFlightPrefixLength(ride?.flightNumber) >= 3).length;
+    const producedFlightCells = (Array.isArray(diagnostics) ? diagnostics : []).filter(item => item?.kind === 'flight').length;
+    const reasons = [];
+    if (!safeRides.length) reasons.push('keine Fahrten');
+    if (!rawWords.length) reasons.push('keine rawOcrWords');
+    if (boundaries.length < 2) reasons.push('keine Zellgrenzen');
+    if (!rowMetaKeys.length) reasons.push('keine rowMetaByMatrixIndex');
+    if (!routeColumns.length) reasons.push('Von/Nach-Mapping fehlt');
+    if (safeRides.length && matchedRows === 0) reasons.push('Ride↔Matrix-Zuordnung 0 Treffer');
+    if (expectedRouteCells > 0 && producedRouteCells === 0) reasons.push('0 Routenzellen erzeugt');
+    if (suspiciousFlights > 0 && producedFlightCells === 0) reasons.push('auffällige Flugzelle nicht erzeugt');
+    if (!reasons.length && !(Array.isArray(diagnostics) && diagnostics.length)) reasons.push('Diagnose leer trotz vollständiger Pipeline');
+
+    return {
+      status: reasons.length ? 'CHECK' : 'READY',
+      rides: safeRides.length,
+      rawWords: rawWords.length,
+      boundaries: boundaries.length,
+      rowMetaCount: rowMetaKeys.length,
+      rowMetaKeys: rowMetaKeys.slice(0, 30),
+      sourceRows: sourceRows.slice(0, 30),
+      matrixIndices: matrixIndices.slice(0, 30),
+      matchedRows,
+      routeColumns,
+      expectedRouteCells,
+      producedRouteCells,
+      suspiciousFlights,
+      producedFlightCells,
+      diagnosticEntries: Array.isArray(diagnostics) ? diagnostics.length : 0,
+      mapping: Object.fromEntries(['pickup','destination','arrivalFlight','departureFlight'].map(field => [field, mapping?.[field] ?? null])),
+      reasons
+    };
+  }
+
   async function readImagePlan(file) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
     const canvas = await preprocessImage(file);
@@ -4086,7 +4252,29 @@
         </div>`
       : '';
 
-    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml;
+    const rawDiagnostics = Array.isArray(state.ocrCellDiagnostics) ? state.ocrCellDiagnostics : [];
+    const rawDiagnosticHtml = rawDiagnostics.length
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(69,180,255,.42);background:rgba(10,42,62,.38)">
+          <div><b>🧪 CORE-007D8A OCR-Rohdiagnose</b></div>
+          <div style="font-size:12px;opacity:.84;margin-top:5px">Nur Diagnose: Primär-OCR-Wörter und aktuelle Zellgrenzen. Keine Korrektur, keine Änderung der Importentscheidung.</div>
+          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${rawDiagnostics.map(item => {
+            const label = item.kind === 'flight' ? 'Flug' : item.field === 'pickup' ? 'Von' : 'Nach';
+            return escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''} · ${label}="${item.value || '–'}" · X=${Math.round(item.left)}-${Math.round(item.right)} · IN=[${item.inCell}] · L=[${item.leftSpill}] · R=[${item.rightSpill}]`);
+          }).join('<br>')}</div>
+        </div>`
+      : '';
+
+    const selfCheck = state.ocrDiagnosticSelfCheck;
+    const selfCheckHtml = selfCheck
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(255,199,69,.5);background:rgba(62,43,10,.38)">
+          <div><b>🧪 CORE-007D8A1 Diagnose-Selbstcheck · ${escapeHtml(selfCheck.status || 'CHECK')}</b></div>
+          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(
+            `Fahrten=${selfCheck.rides} · Rohwörter=${selfCheck.rawWords} · Grenzen=${selfCheck.boundaries} · RowMeta=${selfCheck.rowMetaCount} · Ride↔Matrix=${selfCheck.matchedRows}/${selfCheck.rides} · Routenzellen=${selfCheck.producedRouteCells}/${selfCheck.expectedRouteCells} · AuffälligeFlüge=${selfCheck.suspiciousFlights} · Flugzellen=${selfCheck.producedFlightCells} · Einträge=${selfCheck.diagnosticEntries}`
+          )}<br>${escapeHtml(`sourceRows=[${(selfCheck.sourceRows||[]).join(',')}] · matrixIndices=[${(selfCheck.matrixIndices||[]).join(',')}] · rowMetaKeys=[${(selfCheck.rowMetaKeys||[]).join(',')}]`)}<br>${escapeHtml(`Mapping=${JSON.stringify(selfCheck.mapping || {})}`)}<br>${escapeHtml(`Grund=${(selfCheck.reasons||[]).join(' | ') || 'keiner'}`)}</div>
+        </div>`
+      : '';
+
+    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + rawDiagnosticHtml + selfCheckHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
@@ -4152,6 +4340,8 @@
         if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
         const planDate = currentPlanDate();
         state.cancelledRows = [];
+        state.ocrCellDiagnostics = [];
+        state.ocrDiagnosticSelfCheck = null;
         state.rides = result.rows.map((ride, index) => {
           const withDate = { ...ride, planDate: cellText(ride?.planDate) || planDate, date: cellText(ride?.date) || planDate };
           return window.norm ? window.norm(withDate, index) : withDate;
@@ -4280,6 +4470,20 @@
           mappingInfo.mapping
         );
         preparedRides = applyRepeatedTextConsistency(preparedRides);
+        state.ocrCellDiagnostics = buildOcrCellRawDiagnostics(
+          preparedRides,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        state.ocrDiagnosticSelfCheck = buildOcrDiagnosticSelfCheck(
+          preparedRides,
+          result.imageMeta,
+          mappingInfo.mapping,
+          state.ocrCellDiagnostics
+        );
+      } else {
+        state.ocrCellDiagnostics = [];
+        state.ocrDiagnosticSelfCheck = null;
       }
 
       state.matrix = matrix;
@@ -4303,6 +4507,8 @@
     state.matrix = [];
     state.rides = [];
     state.cancelledRows = [];
+    state.ocrCellDiagnostics = [];
+    state.ocrDiagnosticSelfCheck = null;
     state.issues = [];
     state.meta = {};
     state.priceDecisions = {};
