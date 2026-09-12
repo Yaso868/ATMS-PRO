@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  // CORE-007B · 12.09.2026: OCR CONFIDENCE DISPLAY. Die interne technische Struktur-Konfidenz bleibt unverändert als Sicherheitswert erhalten, wird bei Bildimport aber nicht mehr missverständlich als allgemeine '% Erkennung' ausgegeben. Sichtbar sind stattdessen der reale OCR-Analysezustand, Anzahl OCR-geprüfter Fahrten sowie offene Hinweise/Fehler. Keine künstliche 100-%-Anzeige.
   // CORE-007A · 12.09.2026: OCR CLEAN ANALYSIS. Sicher per Mehrfach-Konsens aufgeloeste Zeit-/Fahrer-OCR-Korrekturen bleiben als interne Diagnose-Metadaten erhalten, erscheinen aber nicht mehr als offene Hinweise. Fehlende/noch zu verifizierende Flugorte werden als eigener Bereich 'Flugprüfung offen' geführt und nicht als OCR-Hinweis gezählt. Nur ungelöste OCR-/Datenprobleme bleiben als Hinweis oder Fehler sichtbar. Keine Werte werden geraten oder hart codiert.
   // CORE-006Z · 12.09.2026: OCR TIME & DRIVER REFERENCE GUARD. Verdächtige 00:00–05:59-DISPO-Zeiten werden vor der Folgetag-Entscheidung ausschließlich in ihrer eigenen Uhrzeitzelle lokal nachgelesen und nur bei eindeutigem Mehrfach-Konsens korrigiert. Die rechte Fahrer-Spalte erhält zusätzlich eine spaltenweite deutsche Zweit-OCR mit konservativer Konsens-/Kompatibilitätsprüfung für Diakritik und optionale einbuchstabige Namenszusätze. 'Taxi' ist in der Fahrerposition ein zulässiger operativer Eintrag. Keine Namen, Zeiten oder Flugnummern werden hart codiert.
   // CORE-006N · 10.09.2026: Fahrer-Spaltenlogik an reale ATMS-Planlisten gehaertet. Erste Wg-Spalte = Fahrzeug. Fahrer = explizite Fahrer-Spalte, rechte zweite Name-Spalte ODER – bei aktuellen Listen wie 09.09.2026 – die rechte zweite Wg-Spalte nach Ort. Die sichtbare Kopfzeile bleibt geometrisch erhalten; keine Fahrtzeilen gehen durch Umbenennen der letzten Spalte verloren.
@@ -2873,10 +2874,33 @@
     const labels = Object.entries(mappingInfo.mapping).map(([field, index]) => `${field}: ${headers[index]?.label || `Spalte ${index + 1}`}`);
     const el = $('planProfileInfo');
     const imageMode = Boolean(state.file && isImageFile(state.file));
-    // CORE-005A: Mapping-Konfidenz allein kann bei OCR nicht beweisen, dass jede
-    // Datenzeile vorhanden ist. Deshalb Bildimport nie pauschal als 100 % ausgeben.
+    // CORE-005A/007B: Mapping-Konfidenz ist eine technische Struktur-Sicherheit,
+    // keine belegte Trefferquote aller Fahrtdaten. Sie bleibt intern erhalten,
+    // wird beim Bildimport aber nicht mehr als allgemeine '% Erkennung' angezeigt.
     const shownConfidence = imageMode ? Math.min(Number(mappingInfo.confidence || 0), 0.99) : Number(mappingInfo.confidence || 0);
-    if (el) el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(shownConfidence * 100)} % Erkennung</span><small>${escapeHtml(labels.join(' · '))}</small>`;
+    if (!el) return;
+
+    if (!imageMode) {
+      el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(shownConfidence * 100)} % Struktur-Sicherheit</span><small>${escapeHtml(labels.join(' · '))}</small>`;
+      return;
+    }
+
+    const issues = Array.isArray(state.issues) ? state.issues : [];
+    const actionable = issues.filter(issue => issue.kind !== 'flight_check');
+    const errors = actionable.filter(issue => issue.level === 'error').length;
+    const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const rideCount = Array.isArray(state.rides) ? state.rides.length : 0;
+    const clean = rideCount > 0 && errors === 0 && warnings === 0;
+    const headline = clean
+      ? '✓ OCR-Analyse sauber'
+      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+    const detail = rideCount
+      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
+      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+
+    // Technischen Wert maschinenlesbar behalten, ohne ihn als Erfolgsquote auszugeben.
+    el.dataset.structureConfidence = String(Math.round(shownConfidence * 100));
+    el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${escapeHtml(headline)}</span><small>${escapeHtml(detail)}<br>${escapeHtml(labels.join(' · '))}</small>`;
   }
 
   function syncFlightLocationsFromSavedRides() {
