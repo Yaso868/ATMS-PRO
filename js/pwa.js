@@ -247,7 +247,22 @@
     // DISPO-Zeit und reiner Listen-Flugzeit ableiten. Die Listen-Flugzeit
     // bleibt rechts sichtbar, die Mitte zeigt eindeutig "KEINE LIVE-DATEN".
     if(listedFlightTime){
-      return {plan:baseTime,leftLabel:'Dispo',current:listedFlightTime,sideLabel:'Flugzeit',key:'unknown',label:'KEINE LIVE-DATEN'};
+      const hasFlightNumber=[
+        ride?.flightNumber,
+        ride?.arrivalFlight,
+        ride?.departureFlight
+      ].some(value=>{
+        const v=String(value||'').trim();
+        return Boolean(v && v!=='-' && v!=='–');
+      });
+      return {
+        plan:baseTime,
+        leftLabel:'Dispo',
+        current:listedFlightTime,
+        sideLabel:hasFlightNumber?'Flugzeit':'Listenzeit',
+        key:'unknown',
+        label:'KEINE LIVE-DATEN'
+      };
     }
 
     // Ohne LIVE-Zeit und ohne Listen-Flugzeit ebenfalls keine Delay-/On-Time-
