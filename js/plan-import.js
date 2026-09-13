@@ -12,6 +12,7 @@
   // CORE-007D8A1F1D6 · 13.09.2026: PRICE MIRROR MATCHED-TIME GUARD. Falls D5 wegen enger Header-Anker den Mirror nicht erkennt, wird das 14-Spalten-Preisschema nur dann zusätzlich freigegeben, wenn in mindestens zwei echten Datenzeilen dieselbe plausible DISPO-Zeit einmal links vor Von und ein zweites Mal rechts von Firma vor Pers/Ort beobachtet wird. Damit stammt die Schemaentscheidung aus wiederholter zeileninterner Zeit-Evidenz statt aus einem festen X-Wert. Keine Flugnummern, Orte, Zeiten oder Airlines werden hart codiert. Der Diagnose-Selbstcheck zeigt SchemaCols/PriceMirror/Evidence sichtbar an.
   // CORE-007D8A1F1D7 · 13.09.2026: PRICE MIRROR ROW-FLIGHT GUARD. D6 konnte den Mirror-Fallback vorzeitig verlassen, wenn der Flug-Header selbst vom OCR fehlte, obwohl die Datenzeilen Flugnummern sauber enthielten. Der Mirror-Nachweis wird deshalb jetzt unabhängig vom Flug-Header aus wiederholter Zeilenevidenz geführt: gleiche DISPO-Zeit links und nach Firma, wobei die rechte Zeit in mindestens zwei Zeilen vor einer tatsächlich erkannten Flugnummer derselben Zeile liegen muss. Keine festen X-Werte, Flugnummern, Orte, Zeiten oder Airlines; alle bisherigen Schutzschwellen bleiben erhalten.
   // CORE-007D8A1F1D8 · 13.09.2026: PRICE MIRROR HEADER-INDEPENDENT ROW-PAIR GUARD. Wenn Von/Firma in der Roh-Kopfzeile fehlen, darf die Mirror-Erkennung nicht mehr abbrechen. Das 14-Spalten-Preisschema wird zusätzlich nur dann freigegeben, wenn mindestens zwei echte Datenzeilen zwei identische plausible Zeiten in stabilen linken/rechten X-Korridoren enthalten und die rechte Zeit jeweils vor einer real erkannten Flugnummer derselben Zeile liegt. Damit ist weder ein Von-/Firma-/Flug-Header noch ein fester X-Wert erforderlich; keine Flugnummern, Orte, Zeiten oder Airlines werden hart codiert.
+  // CORE-007D8A1F1D8P1 · 13.09.2026: FLIGHT PREFIX COLUMN CONSENSUS GUARD. Wenn eine auffällige 3-/4-Buchstaben-Flugpräfix-Lesart lokal zwischen Primärform und einer sicheren 2-stelligen Ein-Zeichen-Löschalternative unentschieden bleibt, darf die 2-stellige Alternative nur dann übernommen werden, wenn sie in mindestens einem engen Zell-Crop mit Mehrfach-Modus-Konsens gelesen wurde UND derselbe 2-stellige Designator in mindestens zwei weiteren Fahrten derselben Flugrichtung sauber wiederkehrt. Keine Airline-/Flugnummern-Hardcodes; Zahlenteil, Zellbezug und Richtung müssen unverändert übereinstimmen.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -4206,6 +4207,33 @@
     return singleDeletionPrefixMatch(initialMatch[1], candidateMatch[1]);
   }
 
+  function repeatedFlightDesignatorEvidence(rides, currentIndex, routeType, candidateValue) {
+    const candidate = normalizeFlightNumber(candidateValue);
+    const candidateMatch = candidate.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
+    if (!candidateMatch) return { count: 0, rows: [], designator: '' };
+    const designator = candidateMatch[1];
+    const rows = [];
+    (Array.isArray(rides) ? rides : []).forEach((otherRide, index) => {
+      if (index === currentIndex) return;
+      const otherFlight = normalizeFlightNumber(otherRide?.flightNumber);
+      const otherMatch = otherFlight.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
+      if (!otherMatch || otherMatch[1] !== designator) return;
+      const otherRouteType = classifyRide(
+        otherRide?.pickup,
+        otherRide?.destination,
+        otherRide?.arrivalFlight,
+        otherRide?.departureFlight
+      );
+      if (routeType && otherRouteType !== routeType) return;
+      rows.push(Number(otherRide?.sourceRow || 0));
+    });
+    return {
+      count: new Set(rows.filter(Boolean)).size,
+      rows: [...new Set(rows.filter(Boolean))].sort((a,b) => a-b),
+      designator
+    };
+  }
+
   // CORE-007D8A1F1: Drei oder mehr Buchstaben vor dem Zahlenteil werden NICHT
   // pauschal gekürzt. Nur die konkrete Flugzelle wird erneut gelesen. Eine alternative
   // 2-stellige Lesart muss denselben Zahlenteil besitzen, durch genau eine Zeichenlöschung
@@ -4293,9 +4321,27 @@
       const initialVotes = Number(votes.get(initial) || 0);
       if (!winner) continue;
       const supportingCrops = cropSupport.get(winner[0])?.size || 0;
-      if (winner[1] < 3 || supportingCrops < 2) continue;
-      if (winner[1] <= initialVotes) continue;
-      if (runner && winner[1] <= runner[1]) continue;
+      const repeatedDesignator = repeatedFlightDesignatorEvidence(out, i, routeType, winner[0]);
+      const standardConsensus = Boolean(
+        winner[1] >= 3 &&
+        supportingCrops >= 2 &&
+        winner[1] > initialVotes &&
+        (!runner || winner[1] > runner[1])
+      );
+      // CORE-007D8A1F1D8P1: Ein einzelner Crop darf allein niemals korrigieren.
+      // Falls die Crop-Geometrien 1:1 zwischen langer Primärlesart und sicherer
+      // 2-stelliger Alternative geteilt sind, ist eine Übernahme nur erlaubt,
+      // wenn die Alternative innerhalb mindestens eines engen Crops in allen
+      // OCR-Modi stabil ist (>=3 Stimmen) UND derselbe 2-stellige Designator in
+      // mindestens zwei ANDEREN Fahrten derselben Richtung sauber vorkommt.
+      // Der Zahlenteil ist bereits durch safeLongPrefixFlightAlternative identisch.
+      const columnConsensus = Boolean(
+        winner[1] >= 3 &&
+        supportingCrops >= 1 &&
+        repeatedDesignator.count >= 2 &&
+        (!runner || winner[1] > runner[1])
+      );
+      if (!standardConsensus && !columnConsensus) continue;
 
       const recovered = winner[0];
       ride.flightNumber = recovered;
@@ -4304,7 +4350,14 @@
       ride.flightDirection = routeType;
       ride.flightLongPrefixOcrInitial = initial;
       ride.flightRecoveredFromLongPrefixOcr = true;
-      ride.flightLongPrefixOcrEvidence = { votes: winner[1], crops: supportingCrops, initialVotes };
+      ride.flightLongPrefixOcrEvidence = {
+        votes: winner[1],
+        crops: supportingCrops,
+        initialVotes,
+        mode: standardConsensus ? 'multi_crop_consensus' : 'targeted_crop_plus_repeated_column_designator',
+        repeatedDesignator: repeatedDesignator.designator,
+        repeatedDesignatorRows: repeatedDesignator.rows
+      };
     }
 
     return out;
@@ -4554,7 +4607,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8',
+      version: 'CORE-007D8A1F1D8P1',
       status,
       reason,
       rides: rideList.length,
@@ -4987,7 +5040,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P1 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
