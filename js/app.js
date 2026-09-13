@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P2 · 13.09.2026: PLAN IMPORT FILE LISTENER CLEANUP – Der Legacy-Datei-Listener in app.js greift nicht mehr in den modernen Planlisten-Import ein. Bild/Excel/CSV werden nicht mehr als JSON-Text gelesen; der korrekte Status „Planliste analysieren“ aus plan-import.js bleibt sichtbar. JSON-Fallback bleibt nur bei fehlendem Planlisten-Modul erhalten. Keine Änderung an OCR, Flugprüfung, PLAN/DISPO/LIVE, Persistenz, Routing oder Fahrerlogik.
 // CORE-007D7 · 12.09.2026: NON-FLIGHT LIST TIME LABEL – Die letzte Listen-Uhrzeit bleibt unverändert gespeichert. Mit Flugnummer heißt sie „Flugzeit Liste“, ohne Flugnummer neutral „Listenzeit“. Keine Änderung an OCR, PLAN/DISPO/LIVE, Flugprüfung, Persistenz oder Reihenfolge.
 // CORE-007C · 12.09.2026: LIVE STATUS CONSISTENCY – Fahrtenkarte und Cockpit zeigen bei bestaetigtem scheduled-LIVE mit echter Estimated-/Actual-Zeit und 0 Minuten Abweichung konsistent „Pünktlich“. Reines scheduled ohne aktuelle Zeit bleibt „Keine Live-Daten“. Keine Änderung an PLAN/DISPO/LIVE-Berechnung, Flugprüfung, Persistenz, GPS, Routing oder Driver Availability Guard.
 // CORE-006Y · 11.09.2026: DRIVER AVAILABILITY GUARD – Ersatzfahrer werden nur vorgeschlagen, wenn sie aktiv sind, Trackingfreigabe haben und nach aktueller Live-Dispo keine eigenen offenen Fahrten besitzen. Vor „Lösung übernehmen“ wird dieselbe Verfügbarkeitsprüfung erneut ausgeführt; bei Konflikt bleibt nur „Dispo manuell informieren“. PLAN/DISPO/LIVE, Fluglogik, GPS, Routing, Persistenz, Past-Ride-Guard und CORE-006W bleiben unverändert.
@@ -2497,7 +2498,24 @@ function initApp(){
     const search=safeEl('search');if(search)search.addEventListener('input',render);
     bindClick('mapBtn',()=>{if(active)openGoogleMapsRoute(active,null)});
     bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));save();openCockpit(active.id)});
-    const fileInput=safeEl('fileInput');if(fileInput)fileInput.addEventListener('change',async e=>{const f=e.target.files&&e.target.files[0];if(!f)return;safeEl('jsonInput').value=await f.text();safeEl('importStatus').textContent='Datei geladen. Jetzt „Fahrten laden“ tippen.'});
+    // CORE-007D8A1F1D8P2: Der moderne Planlisten-Import (plan-import.js) besitzt den
+    // fileInput vollständig. Der alte JSON-Fallback darf dessen Auswahlstatus nicht mehr
+    // überschreiben und darf Bild-/Excel-/CSV-Dateien nicht mehr als Text einlesen.
+    const fileInput=safeEl('fileInput');
+    if(fileInput)fileInput.addEventListener('change',async e=>{
+      const f=e.target.files&&e.target.files[0];if(!f)return;
+      if(typeof window.ATMSPlanImportHasStagedRides==='function')return;
+      const name=String(f.name||'').toLowerCase();
+      if(!name.endsWith('.json')){
+        const status=safeEl('importStatus');
+        if(status)status.textContent='Planlisten-Analysemodul nicht verfügbar. Bitte ATMS PRO vollständig neu laden.';
+        return;
+      }
+      const jsonInput=safeEl('jsonInput');
+      if(jsonInput)jsonInput.value=await f.text();
+      const status=safeEl('importStatus');
+      if(status)status.textContent='ATMS-JSON geladen. Jetzt „JSON laden“ tippen.';
+    });
     bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
     document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));showView('settings');safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
