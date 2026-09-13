@@ -6,6 +6,7 @@
   // CORE-007D8A · 13.09.2026: OCR CELL RAW DIAGNOSTICS. Reine Diagnose-Erweiterung auf stabilem CORE-007D8: Für Bild-/OCR-Importe werden die unveränderten Primär-OCR-Wörter samt Koordinaten innerhalb und direkt neben den gemappten Von-/Nach-/Flugzellen sichtbar protokolliert. Die Diagnose liest nur bereits vorhandene OCR-Daten; sie korrigiert keinen Wert, ändert keine Spaltengrenze und beeinflusst weder Importfreigabe noch Hinweise/Fehler, Storno, PLAN/DISPO/LIVE, Flugprüfung oder Persistenz.
   // CORE-007D8A1 · 13.09.2026: OCR DIAGNOSTIC SELF-CHECK. Reine Diagnose auf Basis CORE-007D8A: Der Analysebereich zeigt nun IMMER einen Selbstcheck mit Anzahl Rohwörter, Zellgrenzen, Row-Meta-Schlüsseln, Ride-sourceRows, Mapping-Spalten und Treffern der Rohdiagnose. Wenn die Rohdiagnose leer bleibt, wird ein technischer Grund sichtbar statt den Diagnoseblock still auszublenden. Keine Fahrtdaten, OCR-Werte, Hinweise/Fehler oder Importentscheidungen werden verändert.
   // CORE-007D8A1F1 · 13.09.2026: DIAGNOSTIC-GUIDED OCR FIX. Auf Basis der D8A1-Rohdiagnose werden Routenwörter, die die rechte Zellgrenze sichtbar überlappen, nur bei wiederholter identischer Geometrie-Evidenz in mindestens zwei Fahrten derselben Route ergänzt. Auffällige Flugnummern mit 3+ Buchstaben vor dem Zahlenteil werden ausschließlich in ihrer eigenen Flugzelle lokal erneut gelesen; eine Verkürzung auf einen 2-stelligen Designator wird nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei verschiedenen Crops und identischem Zahlenteil übernommen. Keine Werte-/Flugnummern-/Orts-Hardcodes; Storno, Preis, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
+  // CORE-007D8A1F1D3 · 13.09.2026: FLIGHT OCR CANDIDATE BOUNDARY FIX. Ausschließlich die gezielte Gegenprüfung auffälliger langer Flugpräfixe wertet OCR-data.text und OCR-Wörter getrennt aus, damit identische Doppelrepräsentationen nicht zu einer künstlich zusammengezogenen Zeichenfolge werden. Die bestehenden Mehrfach-Konsens-Schwellen bleiben unverändert; keine Airline-/Flugnummern-Hardcodes.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -2617,6 +2618,26 @@
     return flightCandidatesFromRow([joined]);
   }
 
+  // CORE-007D8A1F1D3: Für die gezielte Gegenprüfung langer Flugpräfixe werden
+  // data.text und die einzelnen OCR-Wörter getrennt ausgewertet. Der allgemeine
+  // Legacy-Extractor oben bleibt unangetastet. Hintergrund: Bei identischem
+  // data.text + word.text konnte das bisherige Zusammenfügen nach anschließendem
+  // Entfernen der Leerzeichen aus "EW5449 EW5449" fälschlich "EW5449EW5449"
+  // machen und dadurch trotz eindeutigem Roh-OCR keinen gültigen Kandidaten liefern.
+  function flightCandidatesFromOcrResultPreserveBoundaries(result) {
+    const found = new Set();
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    parts.forEach(part => {
+      flightCandidatesFromRow([part]).forEach(candidate => {
+        const normalized = normalizeFlightNumber(candidate);
+        if (normalized) found.add(normalized);
+      });
+    });
+    return [...found];
+  }
+
   function rideTimeCandidatesFromOcrResult(result) {
     const parts = [];
     if (result?.data?.text) parts.push(result.data.text);
@@ -3837,12 +3858,11 @@
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           for (const mode of ocrModes) {
             const second = await Tesseract.recognize(crop, 'eng', mode.options);
-            const candidates = [...new Set(flightCandidatesFromOcrResult(second)
+            const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
               .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
-            // CORE-007D8A1F1D2: Nur Diagnose. Wir speichern zusätzlich den rohen
-            // Text und die Wortausgabe derselben lokalen OCR-Ausführung, damit klar
-            // wird, ob der Crop leer gelesen wird oder erst die Flugnummern-Extraktion
-            // keinen Kandidaten akzeptiert. Keine Änderung an Stimmen/Recovery-Regeln.
+            // CORE-007D8A1F1D3: Rohtrace bleibt sichtbar. Zusätzlich nutzt diese gezielte
+            // Flug-Gegenprüfung jetzt den Boundary-erhaltenden Kandidaten-Extractor.
+            // Keine Flugnummern-/Airline-Hardcodes; Stimmen/Recovery-Schwellen bleiben gleich.
             const rawText = cellText(second?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
             const rawWords = (Array.isArray(second?.data?.words) ? second.data.words : [])
               .map(word => cellText(word?.text).replace(/\s+/g, ' ').trim())
@@ -4081,7 +4101,7 @@
     const flightPrefixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromLongPrefixOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
 
-    // CORE-007D8A1F1D2: reine Diagnose der bereits ausgeführten lokalen
+    // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
     // irgendeinen OCR-Wert oder eine Importentscheidung zu verändern.
     const flightOcrTraces = rideList.filter(ride => {
@@ -4129,7 +4149,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D2',
+      version: 'CORE-007D8A1F1D3',
       status,
       reason,
       rides: rideList.length,
@@ -4550,7 +4570,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D2 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D3 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
