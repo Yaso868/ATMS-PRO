@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P4 · 13.09.2026: REPEATED DRIVER FRAGMENT CONSENSUS GUARD. Wenn die Fahrerzelle nur einen einzelnen Großbuchstaben liefert, darf ATMS ihn ausschließlich dann automatisch wiederherstellen, wenn derselbe Buchstabe als finaler Namenszusatz genau EINEM bereits sauber erkannten Fahrer derselben Planliste entspricht und dieser vollständige Fahrer mindestens zweimal unabhängig in anderen Zeilen vorkommt. Keine Fahrer-Namen werden hart codiert; mehrdeutige oder einmalige Treffer bleiben manuell prüfbar. Die echte DISPO-/Mirror-Abweichung einer Planzeile bleibt unverändert als Hinweis erhalten.
   'use strict';
   // CORE-007D8A1F1D8P3 · 13.09.2026: TARGETED HEADER BAND OCR RECOVERY. Wenn die Vollbild-OCR trotz sichtbar vollständiger Kopfzeile keinen sicheren Header liefert, wird ausschließlich der schmale Tabellenkopf direkt oberhalb der ersten mehrfach belegten Preis-/Zeit-Datenzeile lokal vergrößert nachgelesen. Die Nachlese wird nur übernommen, wenn sie selbst erneut einen strengen ATMS-Header mit Preis, Von/Nach und Flugspalte bestätigt; andernfalls bleibt der bisherige sichere Abbruch unverändert. Keine Fahrtdaten, Preise, Namen, Flugnummern, Orte oder Spaltenpositionen werden hart codiert. CORE-007D8A1F1D8P1, Storno, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
 
@@ -3571,6 +3572,53 @@
     return out;
   }
 
+
+  // CORE-007D8A1F1D8P4: Ein einzelner Fahrer-Buchstabe ist bereits nach den
+  // bestehenden Regeln kein gültiger Fahrername. Er darf nur anhand derselben
+  // Planliste ergänzt werden, wenn genau EIN vollständiger, sauber erkannter Fahrer
+  // diesen Buchstaben als finalen Namenszusatz trägt und mindestens zweimal in
+  // anderen Zeilen vorkommt. Dadurch wird z. B. ein abgeschnittener Initial-Zusatz
+  // wiederhergestellt, ohne Namen zu raten oder zu hardcodieren.
+  function recoverRepeatedDriverFragmentConsensus(rides) {
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const support = new Map();
+
+    out.forEach(ride => {
+      if (ride?.driverNeedsManualCheck) return;
+      const candidate = normalizeDriverCandidate(ride?.driver);
+      if (!candidate) return;
+      const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+      const current = support.get(key) || { display: candidate, count: 0 };
+      current.count += 1;
+      support.set(key, current);
+    });
+
+    out.forEach(ride => {
+      const fragment = cellText(ride?.driver).trim();
+      if (!/^[A-ZÄÖÜ]$/.test(fragment)) return;
+
+      const matches = [...support.values()].filter(entry => {
+        if (entry.count < 2) return false;
+        const tokens = cellText(entry.display).split(/\s+/).filter(Boolean);
+        if (tokens.length < 2) return false;
+        return tokens[tokens.length - 1] === fragment;
+      });
+
+      if (matches.length !== 1) return;
+
+      const recovered = normalizeDriverCandidate(matches[0].display);
+      if (!recovered) return;
+
+      ride.driverRawOcr = ride.driverRawOcr || fragment;
+      ride.driver = recovered;
+      ride.driverNeedsManualCheck = false;
+      ride.driverRecoveredFromRepeatedColumnConsensus = true;
+      ride.driverRecoverySource = 'repeated_driver_fragment_consensus';
+    });
+
+    return out;
+  }
+
   // CORE-006L: Ortsnamen werden nicht per Wörterbuch oder Sonderfall korrigiert.
   // Stattdessen werden die beiden Routen-Spalten mit deutscher OCR lokal noch einmal
   // gelesen. Eine Änderung ist nur erlaubt, wenn zwei unabhängige Spalten-Durchläufe
@@ -4724,6 +4772,8 @@
     });
     const flightPrefixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromLongPrefixOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
+    const driverFragmentRecoveries = rideList.filter(ride => ride?.driverRecoveredFromRepeatedColumnConsensus)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.driverRawOcr) || '∅'}→${cellText(ride?.driver)}`);
 
     // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
@@ -4773,7 +4823,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P3',
+      version: 'CORE-007D8A1F1D8P4',
       status,
       reason,
       rides: rideList.length,
@@ -4793,6 +4843,7 @@
       suspiciousFlights,
       routeBoundaryRecoveries,
       flightPrefixRecoveries,
+      driverFragmentRecoveries,
       flightOcrTraces,
       diagnosticItems: diagList.length
     };
@@ -4815,6 +4866,7 @@
       `FlightDiag=${check.flightDiagnostics}`,
       `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
+      `DriverFragmentFix=[${list(check.driverFragmentRecoveries)}]`,
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `SchemaCols=${check.schemaColumns || 0}`,
@@ -5213,7 +5265,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P3 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P4 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
@@ -5436,6 +5488,7 @@
           mappingInfo.mapping
         );
         assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
+        preparedRides = recoverRepeatedDriverFragmentConsensus(preparedRides);
         preparedRides = await recoverMissingFlightNumbersTargeted(
           preparedRides,
           result.imageCanvas,
