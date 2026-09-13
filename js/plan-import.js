@@ -4071,6 +4071,40 @@
     const flightPrefixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromLongPrefixOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
 
+    // CORE-007D8A1F1D1: reine Diagnose der bereits ausgeführten lokalen
+    // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
+    // irgendeinen OCR-Wert oder eine Importentscheidung zu verändern.
+    const flightOcrTraces = rideList.filter(ride => {
+      const flight = normalizeFlightNumber(ride?.flightNumber);
+      return flight && diagnosticFlightPrefixLength(flight) >= 3 && Array.isArray(ride?.flightLongPrefixOcrAttempts);
+    }).map(ride => {
+      const initial = normalizeFlightNumber(ride?.flightLongPrefixOcrInitial || ride?.flightNumber);
+      const attempts = Array.isArray(ride?.flightLongPrefixOcrAttempts) ? ride.flightLongPrefixOcrAttempts : [];
+      const votes = new Map();
+      const cropSupport = new Map();
+      attempts.forEach(attempt => {
+        const crop = Number(attempt?.crop || 0);
+        (Array.isArray(attempt?.candidates) ? attempt.candidates : []).forEach(candidateRaw => {
+          const candidate = normalizeFlightNumber(candidateRaw);
+          if (!candidate) return;
+          votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          if (!cropSupport.has(candidate)) cropSupport.set(candidate, new Set());
+          if (crop) cropSupport.get(candidate).add(crop);
+        });
+      });
+      const voteText = [...votes.entries()]
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([candidate, count]) => `${candidate}:${count}/${cropSupport.get(candidate)?.size || 0}c`)
+        .join(',') || '∅';
+      const attemptText = attempts.map(attempt => {
+        const candidates = Array.isArray(attempt?.candidates) && attempt.candidates.length
+          ? attempt.candidates.map(normalizeFlightNumber).filter(Boolean).join('/')
+          : '∅';
+        return `c${Number(attempt?.crop || 0)}-${cellText(attempt?.mode) || '?'}=${candidates}`;
+      }).join(',') || '∅';
+      return `${Number(ride?.sourceRow || 0)}:${initial}{votes=${voteText}; ${attemptText}}`;
+    });
+
     let reason = 'ok';
     if (!imageMeta) reason = 'image_meta_missing';
     else if (!rawWords.length) reason = 'raw_ocr_words_missing';
@@ -4083,7 +4117,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1',
+      version: 'CORE-007D8A1F1D1',
       status,
       reason,
       rides: rideList.length,
@@ -4099,6 +4133,7 @@
       suspiciousFlights,
       routeBoundaryRecoveries,
       flightPrefixRecoveries,
+      flightOcrTraces,
       diagnosticItems: diagList.length
     };
   }
@@ -4120,6 +4155,7 @@
       `FlightDiag=${check.flightDiagnostics}`,
       `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
+      `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `Mapping={${check.mappingSnapshot || '∅'}}`
     ].join(' · ');
@@ -4502,7 +4538,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D1 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
