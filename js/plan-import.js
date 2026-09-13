@@ -7,6 +7,7 @@
   // CORE-007D8A1 · 13.09.2026: OCR DIAGNOSTIC SELF-CHECK. Reine Diagnose auf Basis CORE-007D8A: Der Analysebereich zeigt nun IMMER einen Selbstcheck mit Anzahl Rohwörter, Zellgrenzen, Row-Meta-Schlüsseln, Ride-sourceRows, Mapping-Spalten und Treffern der Rohdiagnose. Wenn die Rohdiagnose leer bleibt, wird ein technischer Grund sichtbar statt den Diagnoseblock still auszublenden. Keine Fahrtdaten, OCR-Werte, Hinweise/Fehler oder Importentscheidungen werden verändert.
   // CORE-007D8A1F1 · 13.09.2026: DIAGNOSTIC-GUIDED OCR FIX. Auf Basis der D8A1-Rohdiagnose werden Routenwörter, die die rechte Zellgrenze sichtbar überlappen, nur bei wiederholter identischer Geometrie-Evidenz in mindestens zwei Fahrten derselben Route ergänzt. Auffällige Flugnummern mit 3+ Buchstaben vor dem Zahlenteil werden ausschließlich in ihrer eigenen Flugzelle lokal erneut gelesen; eine Verkürzung auf einen 2-stelligen Designator wird nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei verschiedenen Crops und identischem Zahlenteil übernommen. Keine Werte-/Flugnummern-/Orts-Hardcodes; Storno, Preis, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D3 · 13.09.2026: FLIGHT OCR CANDIDATE BOUNDARY FIX. Ausschließlich die gezielte Gegenprüfung auffälliger langer Flugpräfixe wertet OCR-data.text und OCR-Wörter getrennt aus, damit identische Doppelrepräsentationen nicht zu einer künstlich zusammengezogenen Zeichenfolge werden. Die bestehenden Mehrfach-Konsens-Schwellen bleiben unverändert; keine Airline-/Flugnummern-Hardcodes.
+  // CORE-007D8A1F1D4 · 13.09.2026: FILE SELECTION / STALE ANALYSIS GUARD. Jede neue Dateiauswahl invalidiert laufende Analyse-Laeufe und leert den gestagten Vorschau-/Diagnosezustand. Der Datei-Input wird vor dem Oeffnen geleert, damit auch dieselbe Datei erneut sicher ein change-Ereignis ausloest. Asynchrone Ergebnisse duerfen state/render nur noch committen, wenn Datei-, Auswahl- und Analyse-Revision weiterhin exakt zum gestarteten Lauf gehoeren. OCR-Erkennung, Storno, Flugpruefung, PLAN/DISPO/LIVE und Persistenz bleiben unveraendert.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -50,11 +51,45 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, fileSelectionRevision: 0, analysisRevision: 0 };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
   const cellText = value => value === null || value === undefined ? '' : String(value).trim();
+
+  function resetStagedAnalysisState() {
+    state.matrix = [];
+    state.rides = [];
+    state.cancelledRows = [];
+    state.issues = [];
+    state.meta = {};
+    state.mapping = null;
+    state.priceDecisions = {};
+    state.dateBoundaryDecision = '';
+    state.dateInfo = {};
+    state.ocrCellDiagnostics = [];
+    state.ocrDiagnosticSelfCheck = null;
+    try { window.ATMSCore007D8A1DiagnosticSelfCheck = null; } catch (_) {}
+  }
+
+  function analysisStillCurrent(file, fileSelectionRevision, analysisRevision) {
+    return Boolean(
+      file &&
+      state.file === file &&
+      state.fileSelectionRevision === fileSelectionRevision &&
+      state.analysisRevision === analysisRevision
+    );
+  }
+
+  function staleAnalysisError() {
+    const error = new Error('stale_analysis_discarded');
+    error.name = 'ATMSStaleAnalysisError';
+    return error;
+  }
+
+  function assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision) {
+    if (!analysisStillCurrent(file, fileSelectionRevision, analysisRevision)) throw staleAnalysisError();
+  }
 
   function berlinToday() {
     try {
@@ -4193,13 +4228,15 @@
     ].join(' · ');
   }
 
-  async function readImagePlan(file) {
+  async function readImagePlan(file, options = {}) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
+    const isCurrent = typeof options.isCurrent === 'function' ? options.isCurrent : () => true;
     const canvas = await preprocessImage(file);
+    if (!isCurrent()) throw staleAnalysisError();
     const status = $('importStatus');
     const result = await Tesseract.recognize(canvas, 'eng', {
       logger: message => {
-        if (!status) return;
+        if (!status || !isCurrent()) return;
         if (message.status === 'recognizing text') {
           status.textContent = `Bild wird gelesen … ${Math.round((message.progress || 0) * 100)} %`;
         } else if (message.status) {
@@ -4207,6 +4244,7 @@
         }
       }
     });
+    if (!isCurrent()) throw staleAnalysisError();
     let words = result?.data?.words || [];
     // CORE-007D4: Nur wenn kein sicherer Header vorhanden ist und die erste OCR
     // trotz mehrerer Zeitanker zu wenige Preisanker liefert, wird der linke
@@ -4214,12 +4252,15 @@
     // als OCR-Anker ergänzt; die unveränderten Headerless-Sicherheitsguards
     // entscheiden anschließend weiterhin über Annahme oder Abbruch.
     words = await recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width);
+    if (!isCurrent()) throw staleAnalysisError();
     let matrix = imageWordsToMatrix(words, canvas.width);
     if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
     if (matrix._atmsImageMeta) {
       matrix = await recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta);
+      if (!isCurrent()) throw staleAnalysisError();
       if (matrix._atmsImageMeta?.headerlessAtms) {
         matrix = await recoverHeaderlessCellsTargeted(matrix, canvas, matrix._atmsImageMeta);
+        if (!isCurrent()) throw staleAnalysisError();
         const recovery = matrix._atmsImageMeta?.headerlessCellRecovery;
         if (!recovery?.accepted) {
           const reason = cellText(recovery?.reason) || 'cell_recovery_not_accepted';
@@ -4239,8 +4280,8 @@
     };
   }
 
-  async function readFile(file) {
-    if (isImageFile(file)) return readImagePlan(file);
+  async function readFile(file, options = {}) {
+    if (isImageFile(file)) return readImagePlan(file, options);
     const extension = file.name.toLowerCase().split('.').pop();
     if (extension === 'json') {
       const object = JSON.parse(await file.text());
@@ -4640,10 +4681,25 @@
 
   async function analyze() {
     if (!state.file) return;
+    const file = state.file;
+    const fileSelectionRevision = state.fileSelectionRevision;
+    const analysisRevision = ++state.analysisRevision;
+    const isCurrent = () => analysisStillCurrent(file, fileSelectionRevision, analysisRevision);
+    const analyzeButton = $('analyzePlanBtn');
+
+    resetStagedAnalysisState();
+    $('planAnalysis')?.classList.add('hidden');
+    if ($('importPlanBtn')) $('importPlanBtn').disabled = true;
+    if (analyzeButton) {
+      analyzeButton.disabled = true;
+      analyzeButton.setAttribute('aria-busy', 'true');
+    }
+
     try {
       currentPlanDate();
-      $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
-      const result = await readFile(state.file);
+      $('importStatus').textContent = isImageFile(file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
+      const result = await readFile(file, { isCurrent });
+      assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
       if (result.kind === 'json') {
         const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
         if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
@@ -4707,7 +4763,7 @@
         if (result.imageOcr) {
           const cancelled = detectCancelledPlanRow(row, mappingInfo.mapping);
           if (cancelled) {
-            const preview = makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: true });
+            const preview = makeRide(row, sourceRow, mappingInfo.mapping, file.name, { imageOcr: true });
             cancelledRows.push({
               sourceRow,
               time: preview.dispoTime || preview.time || normalizeTime(valueAt(row, mappingInfo.mapping, 'time')),
@@ -4721,14 +4777,15 @@
           }
         }
 
-        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: Boolean(result.imageOcr) }));
+        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, file.name, { imageOcr: Boolean(result.imageOcr) }));
       });
-      state.cancelledRows = cancelledRows;
       if (!rides.length) throw new Error(cancelledRows.length
         ? 'Alle erkannten Datenzeilen sind sicher als Storno markiert; es gibt keine aktive Fahrt zur Übernahme.'
         : 'Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
       let preparedRides = rides;
+      let ocrCellDiagnostics = [];
+      let ocrDiagnosticSelfCheck = null;
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
         preparedRides = await recoverMissingRideTimesTargeted(
           preparedRides,
@@ -4736,18 +4793,21 @@
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = await recoverSuspiciousRideTimesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = await recoverSuspiciousPricesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = recoverRouteBoundarySpillover(
           preparedRides,
           result.imageMeta,
@@ -4759,82 +4819,90 @@
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = await recoverMissingDriversTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = await recoverDriverColumnConsensusTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = await recoverMissingFlightNumbersTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = await recoverAmbiguousFlightNumbersTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = await recoverSuspiciousLongFlightPrefixesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
         preparedRides = applyRepeatedTextConsistency(preparedRides);
-        state.ocrCellDiagnostics = buildOcrCellRawDiagnostics(
+        ocrCellDiagnostics = buildOcrCellRawDiagnostics(
           preparedRides,
           result.imageMeta,
           mappingInfo.mapping
         );
-        state.ocrDiagnosticSelfCheck = buildOcrDiagnosticSelfCheck(
+        ocrDiagnosticSelfCheck = buildOcrDiagnosticSelfCheck(
           preparedRides,
           result.imageMeta,
           mappingInfo.mapping,
-          state.ocrCellDiagnostics
+          ocrCellDiagnostics
         );
-        try { window.ATMSCore007D8A1DiagnosticSelfCheck = { ...state.ocrDiagnosticSelfCheck }; } catch (_) {}
-      } else {
-        state.ocrCellDiagnostics = [];
-        state.ocrDiagnosticSelfCheck = null;
       }
 
+      assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
       state.matrix = matrix;
+      state.cancelledRows = cancelledRows;
+      state.ocrCellDiagnostics = ocrCellDiagnostics;
+      state.ocrDiagnosticSelfCheck = ocrDiagnosticSelfCheck;
+      try { window.ATMSCore007D8A1DiagnosticSelfCheck = ocrDiagnosticSelfCheck ? { ...ocrDiagnosticSelfCheck } : null; } catch (_) {}
       state.rides = assignRideDates(preparedRides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
       localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
+      assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
       renderMapping(headers, mappingInfo);
       render();
     } catch (error) {
+      if (error?.name === 'ATMSStaleAnalysisError') return;
+      if (!isCurrent()) return;
       $('importStatus').textContent = `Fehler: ${error.message}`;
       $('planAnalysis').classList.add('hidden');
       $('importPlanBtn').disabled = true;
+    } finally {
+      if (isCurrent() && analyzeButton) {
+        analyzeButton.disabled = !state.file;
+        analyzeButton.removeAttribute('aria-busy');
+      }
     }
   }
 
   function selectFile(file) {
+    state.fileSelectionRevision += 1;
+    state.analysisRevision += 1;
     state.file = file;
-    state.matrix = [];
-    state.rides = [];
-    state.cancelledRows = [];
-    state.ocrCellDiagnostics = [];
-    state.ocrDiagnosticSelfCheck = null;
-    state.issues = [];
-    state.meta = {};
-    state.priceDecisions = {};
-    state.dateBoundaryDecision = '';
-    state.dateInfo = {};
+    resetStagedAnalysisState();
     if (file) {
       const detectedFileDate = detectPlanDateFromFile(file);
       if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
@@ -4991,7 +5059,13 @@
     if (!input) return;
     ensurePlanDateControl();
     currentPlanDate();
-    input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
+    // CORE-007D8A1F1D4: Browser/Android duerfen dieselbe Datei erneut waehlen.
+    // Das Leeren VOR dem Picker verhindert, dass ein identischer Pfad das change-Event verschluckt.
+    input.addEventListener('click', () => { input.value = ''; });
+    input.addEventListener('change', event => {
+      const file = event.target.files && event.target.files[0];
+      if (file) selectFile(file);
+    });
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
     $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
