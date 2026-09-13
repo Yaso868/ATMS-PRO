@@ -5,6 +5,7 @@
 
   // CORE-007D8A · 13.09.2026: OCR CELL RAW DIAGNOSTICS. Reine Diagnose-Erweiterung auf stabilem CORE-007D8: Für Bild-/OCR-Importe werden die unveränderten Primär-OCR-Wörter samt Koordinaten innerhalb und direkt neben den gemappten Von-/Nach-/Flugzellen sichtbar protokolliert. Die Diagnose liest nur bereits vorhandene OCR-Daten; sie korrigiert keinen Wert, ändert keine Spaltengrenze und beeinflusst weder Importfreigabe noch Hinweise/Fehler, Storno, PLAN/DISPO/LIVE, Flugprüfung oder Persistenz.
   // CORE-007D8A1 · 13.09.2026: OCR DIAGNOSTIC SELF-CHECK. Reine Diagnose auf Basis CORE-007D8A: Der Analysebereich zeigt nun IMMER einen Selbstcheck mit Anzahl Rohwörter, Zellgrenzen, Row-Meta-Schlüsseln, Ride-sourceRows, Mapping-Spalten und Treffern der Rohdiagnose. Wenn die Rohdiagnose leer bleibt, wird ein technischer Grund sichtbar statt den Diagnoseblock still auszublenden. Keine Fahrtdaten, OCR-Werte, Hinweise/Fehler oder Importentscheidungen werden verändert.
+  // CORE-007D8A1F1 · 13.09.2026: DIAGNOSTIC-GUIDED OCR FIX. Auf Basis der D8A1-Rohdiagnose werden Routenwörter, die die rechte Zellgrenze sichtbar überlappen, nur bei wiederholter identischer Geometrie-Evidenz in mindestens zwei Fahrten derselben Route ergänzt. Auffällige Flugnummern mit 3+ Buchstaben vor dem Zahlenteil werden ausschließlich in ihrer eigenen Flugzelle lokal erneut gelesen; eine Verkürzung auf einen 2-stelligen Designator wird nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei verschiedenen Crops und identischem Zahlenteil übernommen. Keine Werte-/Flugnummern-/Orts-Hardcodes; Storno, Preis, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -2266,8 +2267,10 @@
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
       headerlessValidation: headerlessLayout?.validation || null,
       headerlessDiagnostic: headerlessLayout?.diagnostics || headerlessDiagnostic || null,
-      // CORE-007D8A: Nur fuer sichtbare Diagnose. Diese Rohwoerter werden nirgends
-      // in die Matrix, Fahrtdaten oder Importentscheidung zurueckgeschrieben.
+      // CORE-007D8A: Rohwoerter wurden fuer die sichtbare Diagnose konserviert.
+      // CORE-007D8A1F1 darf daraus ausschließlich wiederholt bestätigte Wörter
+      // zurückgewinnen, deren Bounding-Box die rechte Routen-Zellgrenze selbst überlappt.
+      // Vollständig benachbarte Zellen bleiben ausgeschlossen.
       rawOcrWords: (Array.isArray(words) ? words : []).filter(word => cellText(word?.text) && word?.bbox).map(word => ({
         text: cellText(word.text),
         confidence: Number(word.confidence ?? word.conf ?? 0),
@@ -3099,6 +3102,100 @@
     return byRow;
   }
 
+  // CORE-007D8A1F1: Sichere Rückgewinnung eines Wortes, dessen Bounding-Box
+  // die rechte Zellgrenze sichtbar überlappt. Ein einzelner Randtreffer reicht NIE:
+  // dieselbe Basisroute + dasselbe Randwort müssen in mindestens zwei verschiedenen
+  // Fahrten geometrisch gleich beobachtet werden. Vollständig rechts liegende Wörter
+  // (also echte Nachbarzellen) werden ausdrücklich nicht übernommen.
+  function recoverRouteBoundarySpillover(rides, imageMeta, mapping) {
+    if (!Array.isArray(rides) || !imageMeta || !mapping || !Array.isArray(imageMeta.rawOcrWords)) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const out = rides.map(ride => ({ ...ride }));
+    const evidence = new Map();
+    const descriptors = [
+      { field: 'pickup', label: 'Von' },
+      { field: 'destination', label: 'Nach' }
+    ];
+
+    descriptors.forEach(descriptor => {
+      const column = mapping?.[descriptor.field];
+      const left = Number(boundaries[column]);
+      const right = Number(boundaries[Number(column) + 1]);
+      if (column === undefined || !Number.isFinite(left) || !Number.isFinite(right) || right <= left) return;
+      const cellWidth = Math.max(8, right - left);
+      const maxLeftReach = Math.max(12, Math.min(64, cellWidth * 0.18));
+      const maxRightReach = Math.max(12, Math.min(72, cellWidth * 0.22));
+
+      out.forEach((ride, rideIndex) => {
+        const original = routeOcrText(ride?.[descriptor.field]);
+        if (!original) return;
+        const matrixIndex = Number(ride?.sourceRow || 0) - 1;
+        const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+        if (!rowMeta) return;
+        const y0 = Number(rowMeta.y0 || 0);
+        const y1 = Number(rowMeta.y1 || 0);
+        const rowHeight = Math.max(8, y1 - y0);
+        const cyMin = y0 - rowHeight * 0.22;
+        const cyMax = y1 + rowHeight * 0.22;
+
+        const straddling = imageMeta.rawOcrWords.filter(word => {
+          const text = routeOcrText(word?.text);
+          const confidence = Number(word?.confidence || 0);
+          const x0 = Number(word?.x0);
+          const x1 = Number(word?.x1);
+          const wy0 = Number(word?.y0);
+          const wy1 = Number(word?.y1);
+          if (!text || confidence < 70 || ![x0, x1, wy0, wy1].every(Number.isFinite) || x1 <= x0) return false;
+          if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ0-9][A-Za-zÄÖÜäöüßÀ-ÿ0-9'’\-]{1,23}$/.test(text)) return false;
+          const cy = (wy0 + wy1) / 2;
+          if (cy < cyMin || cy > cyMax) return false;
+          const cx = (x0 + x1) / 2;
+          if (!(x0 < right && x1 > right && cx >= right)) return false;
+          if (x0 < right - maxLeftReach || x1 > right + maxRightReach) return false;
+          const overlapRatio = (right - x0) / Math.max(1, x1 - x0);
+          return overlapRatio >= 0.25;
+        }).sort((a,b) => Number(a.x0 || 0) - Number(b.x0 || 0));
+
+        // Mehrere gleichzeitig überlappende Wörter wären strukturell nicht eindeutig.
+        if (straddling.length !== 1) return;
+        const token = routeOcrText(straddling[0].text);
+        const originalBase = routeOcrBase(original);
+        const tokenBase = routeOcrBase(token);
+        if (!tokenBase || originalBase.split(/\s+/).includes(tokenBase)) return;
+
+        const key = `${descriptor.field}|${originalBase}|${tokenBase}`;
+        if (!evidence.has(key)) evidence.set(key, []);
+        evidence.get(key).push({
+          rideIndex,
+          sourceRow: Number(ride?.sourceRow || 0),
+          field: descriptor.field,
+          original,
+          token,
+          confidence: Number(straddling[0].confidence || 0)
+        });
+      });
+    });
+
+    evidence.forEach(entries => {
+      const distinctRows = new Set(entries.map(item => item.sourceRow));
+      if (distinctRows.size < 2) return;
+      entries.forEach(item => {
+        const ride = out[item.rideIndex];
+        const original = routeOcrText(ride?.[item.field]);
+        if (!original || routeOcrBase(original) !== routeOcrBase(item.original)) return;
+        const recovered = routeOcrText(`${original} ${item.token}`);
+        if (!recovered || recovered === original) return;
+        ride[`${item.field}RawBoundaryOcr`] = original;
+        ride[item.field] = recovered;
+        ride[`${item.field}RecoveredFromBoundaryOcr`] = true;
+        ride[`${item.field}BoundaryRecoverySource`] = 'repeated_right_boundary_overlap';
+        ride[`${item.field}BoundaryRecoveryEvidence`] = distinctRows.size;
+      });
+    });
+
+    return out;
+  }
+
   async function recoverRouteDiacriticsTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const boundaries = imageMeta.boundaries || [];
@@ -3668,6 +3765,119 @@
     return out;
   }
 
+  function singleDeletionPrefixMatch(longPrefix, shortPrefix) {
+    if (!longPrefix || !shortPrefix || longPrefix.length !== shortPrefix.length + 1) return false;
+    for (let drop = 0; drop < longPrefix.length; drop++) {
+      if (longPrefix.slice(0, drop) + longPrefix.slice(drop + 1) === shortPrefix) return true;
+    }
+    return false;
+  }
+
+  function safeLongPrefixFlightAlternative(initialValue, candidateValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const candidate = normalizeFlightNumber(candidateValue);
+    const initialMatch = initial.match(/^([A-Z]{3,4})(\d{1,4}[A-Z]?)$/);
+    const candidateMatch = candidate.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
+    if (!initialMatch || !candidateMatch || candidate === initial) return false;
+    if (initialMatch[2] !== candidateMatch[2]) return false;
+    return singleDeletionPrefixMatch(initialMatch[1], candidateMatch[1]);
+  }
+
+  // CORE-007D8A1F1: Drei oder mehr Buchstaben vor dem Zahlenteil werden NICHT
+  // pauschal gekürzt. Nur die konkrete Flugzelle wird erneut gelesen. Eine alternative
+  // 2-stellige Lesart muss denselben Zahlenteil besitzen, durch genau eine Zeichenlöschung
+  // aus dem Primärpräfix entstehen, mindestens drei Stimmen UND Evidenz aus mindestens
+  // zwei verschiedenen Crop-Geometrien erhalten und stärker als die Primärlesart sein.
+  async function recoverSuspiciousLongFlightPrefixesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeFlightNumber(ride?.flightNumber);
+      if (!initial || diagnosticFlightPrefixLength(initial) < 3) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) continue;
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.16);
+      const padX = Math.max(2, cellWidth * 0.03);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + cellWidth * 0.04, y0 - rowHeight * 0.12, right - cellWidth * 0.04, y1 + rowHeight * 0.12, 2],
+        [left + cellWidth * 0.10, y0 - rowHeight * 0.08, right - cellWidth * 0.10, y1 + rowHeight * 0.08, 3]
+      ];
+      const ocrModes = [
+        { name: 'default', options: {} },
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+      ];
+
+      if (status) status.textContent = `Auffällige Flugzelle Zeile ${ride.sourceRow} wird lokal gegengeprüft …`;
+      const votes = new Map();
+      const cropSupport = new Map();
+      const attempts = [];
+      try {
+        for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
+          const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = [...new Set(flightCandidatesFromOcrResult(second)
+              .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
+            attempts.push({ crop: cropIndex + 1, mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+            if (!cropSupport.has(candidate)) cropSupport.set(candidate, new Set());
+            cropSupport.get(candidate).add(cropIndex);
+          }
+        }
+      } catch (_) {
+        ride.flightLongPrefixOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.flightLongPrefixOcrAttempts = attempts;
+      const alternatives = [...votes.entries()]
+        .filter(([candidate]) => candidate !== initial && safeLongPrefixFlightAlternative(initial, candidate))
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = alternatives[0] || null;
+      const runner = alternatives[1] || null;
+      const initialVotes = Number(votes.get(initial) || 0);
+      if (!winner) continue;
+      const supportingCrops = cropSupport.get(winner[0])?.size || 0;
+      if (winner[1] < 3 || supportingCrops < 2) continue;
+      if (winner[1] <= initialVotes) continue;
+      if (runner && winner[1] <= runner[1]) continue;
+
+      const recovered = winner[0];
+      ride.flightNumber = recovered;
+      if (routeType === 'arrival') ride.arrivalFlight = recovered;
+      if (routeType === 'departure') ride.departureFlight = recovered;
+      ride.flightDirection = routeType;
+      ride.flightLongPrefixOcrInitial = initial;
+      ride.flightRecoveredFromLongPrefixOcr = true;
+      ride.flightLongPrefixOcrEvidence = { votes: winner[1], crops: supportingCrops, initialVotes };
+    }
+
+    return out;
+  }
+
   // CORE-007D6: Wiederkehrende OCR-Texte nur dann vereinheitlichen, wenn
   // sich ihre Schreibweisen ausschließlich durch Trenner/Leerzeichen oder Groß-/
   // Kleinschreibung unterscheiden. Inhaltliche Buchstaben-/Ziffern-Abweichungen,
@@ -3851,6 +4061,15 @@
       const flight = normalizeFlightNumber(ride?.flightNumber);
       return flight && diagnosticFlightPrefixLength(flight) >= 3;
     }).map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightNumber)}`);
+    const routeBoundaryRecoveries = [];
+    rideList.forEach(ride => {
+      ['pickup', 'destination'].forEach(field => {
+        if (!ride?.[`${field}RecoveredFromBoundaryOcr`]) return;
+        routeBoundaryRecoveries.push(`${Number(ride?.sourceRow || 0)}:${field}=${cellText(ride?.[field])}`);
+      });
+    });
+    const flightPrefixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromLongPrefixOcr)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
 
     let reason = 'ok';
     if (!imageMeta) reason = 'image_meta_missing';
@@ -3864,7 +4083,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1',
+      version: 'CORE-007D8A1F1',
       status,
       reason,
       rides: rideList.length,
@@ -3878,6 +4097,8 @@
       routeDiagnostics,
       flightDiagnostics,
       suspiciousFlights,
+      routeBoundaryRecoveries,
+      flightPrefixRecoveries,
       diagnosticItems: diagList.length
     };
   }
@@ -3897,6 +4118,8 @@
       `matched=[${list(check.matchedMatrixIndexes)}]`,
       `RouteDiag=${check.routeDiagnostics}`,
       `FlightDiag=${check.flightDiagnostics}`,
+      `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
+      `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `Mapping={${check.mappingSnapshot || '∅'}}`
     ].join(' · ');
@@ -4279,7 +4502,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
@@ -4457,6 +4680,11 @@
           result.imageMeta,
           mappingInfo.mapping
         );
+        preparedRides = recoverRouteBoundarySpillover(
+          preparedRides,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
         preparedRides = await recoverRouteDiacriticsTargeted(
           preparedRides,
           result.imageCanvas,
@@ -4482,6 +4710,12 @@
           mappingInfo.mapping
         );
         preparedRides = await recoverAmbiguousFlightNumbersTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        preparedRides = await recoverSuspiciousLongFlightPrefixesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
