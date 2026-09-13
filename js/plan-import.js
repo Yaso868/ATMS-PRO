@@ -3,8 +3,8 @@
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
-  // CORE-007D8A1 · 13.09.2026: OCR DIAGNOSTIC SELF-CHECK. Baut ausschließlich auf CORE-007D8A/CORE-007D8 auf und ergänzt einen sichtbaren Selbstcheck der Diagnose-Pipeline. Er protokolliert, ob Rohwörter, Zellgrenzen, Row-Metadaten, Mapping und Ride↔Matrix-Zuordnung tatsächlich vorhanden sind. Keine OCR-Korrektur, keine Änderung an Importfreigabe, Hinweisen/Fehlern, Storno, PLAN/DISPO/LIVE, Flugprüfung oder Persistenz.
   // CORE-007D8A · 13.09.2026: OCR CELL RAW DIAGNOSTICS. Reine Diagnose-Erweiterung auf stabilem CORE-007D8: Für Bild-/OCR-Importe werden die unveränderten Primär-OCR-Wörter samt Koordinaten innerhalb und direkt neben den gemappten Von-/Nach-/Flugzellen sichtbar protokolliert. Die Diagnose liest nur bereits vorhandene OCR-Daten; sie korrigiert keinen Wert, ändert keine Spaltengrenze und beeinflusst weder Importfreigabe noch Hinweise/Fehler, Storno, PLAN/DISPO/LIVE, Flugprüfung oder Persistenz.
+  // CORE-007D8A1 · 13.09.2026: OCR DIAGNOSTIC SELF-CHECK. Reine Diagnose auf Basis CORE-007D8A: Der Analysebereich zeigt nun IMMER einen Selbstcheck mit Anzahl Rohwörter, Zellgrenzen, Row-Meta-Schlüsseln, Ride-sourceRows, Mapping-Spalten und Treffern der Rohdiagnose. Wenn die Rohdiagnose leer bleibt, wird ein technischer Grund sichtbar statt den Diagnoseblock still auszublenden. Keine Fahrtdaten, OCR-Werte, Hinweise/Fehler oder Importentscheidungen werden verändert.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -3831,52 +3831,75 @@
   }
 
   function buildOcrDiagnosticSelfCheck(rides, imageMeta, mapping, diagnostics) {
-    // CORE-007D8A1: Reiner Selbstcheck der Diagnose-Pipeline. Keine Datenmutation.
-    const safeRides = Array.isArray(rides) ? rides : [];
+    // CORE-007D8A1: Ausschließlich Beobachtung. Keine Eingabedaten werden mutiert.
+    const rideList = Array.isArray(rides) ? rides : [];
     const rawWords = Array.isArray(imageMeta?.rawOcrWords) ? imageMeta.rawOcrWords : [];
     const boundaries = Array.isArray(imageMeta?.boundaries) ? imageMeta.boundaries : [];
-    const rowMetaMap = imageMeta?.rowMetaByMatrixIndex && typeof imageMeta.rowMetaByMatrixIndex === 'object'
+    const rowMeta = imageMeta?.rowMetaByMatrixIndex && typeof imageMeta.rowMetaByMatrixIndex === 'object'
       ? imageMeta.rowMetaByMatrixIndex
       : {};
-    const rowMetaKeys = Object.keys(rowMetaMap).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
-    const sourceRows = safeRides.map(ride => Number(ride?.sourceRow || 0)).filter(Number.isFinite);
-    const matrixIndices = sourceRows.map(row => row - 1);
-    const matchedRows = matrixIndices.filter(index => rowMetaMap[index]).length;
-    const routeColumns = ['pickup','destination'].filter(field => Number.isInteger(Number(mapping?.[field])));
-    const expectedRouteCells = safeRides.length * routeColumns.length;
-    const producedRouteCells = (Array.isArray(diagnostics) ? diagnostics : []).filter(item => item?.kind === 'route').length;
-    const suspiciousFlights = safeRides.filter(ride => diagnosticFlightPrefixLength(ride?.flightNumber) >= 3).length;
-    const producedFlightCells = (Array.isArray(diagnostics) ? diagnostics : []).filter(item => item?.kind === 'flight').length;
-    const reasons = [];
-    if (!safeRides.length) reasons.push('keine Fahrten');
-    if (!rawWords.length) reasons.push('keine rawOcrWords');
-    if (boundaries.length < 2) reasons.push('keine Zellgrenzen');
-    if (!rowMetaKeys.length) reasons.push('keine rowMetaByMatrixIndex');
-    if (!routeColumns.length) reasons.push('Von/Nach-Mapping fehlt');
-    if (safeRides.length && matchedRows === 0) reasons.push('Ride↔Matrix-Zuordnung 0 Treffer');
-    if (expectedRouteCells > 0 && producedRouteCells === 0) reasons.push('0 Routenzellen erzeugt');
-    if (suspiciousFlights > 0 && producedFlightCells === 0) reasons.push('auffällige Flugzelle nicht erzeugt');
-    if (!reasons.length && !(Array.isArray(diagnostics) && diagnostics.length)) reasons.push('Diagnose leer trotz vollständiger Pipeline');
+    const rowMetaKeys = Object.keys(rowMeta).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    const sourceRows = rideList.map(ride => Number(ride?.sourceRow || 0)).filter(Number.isFinite);
+    const matrixIndexes = sourceRows.map(row => row - 1);
+    const matchedMatrixIndexes = matrixIndexes.filter(index => Boolean(rowMeta[index]));
+    const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','flightTime','driver']
+      .map(field => `${field}=${mapping?.[field] ?? '–'}`).join(', ');
+    const diagList = Array.isArray(diagnostics) ? diagnostics : [];
+    const routeDiagnostics = diagList.filter(item => item?.kind === 'route').length;
+    const flightDiagnostics = diagList.filter(item => item?.kind === 'flight').length;
+    const suspiciousFlights = rideList.filter(ride => {
+      const flight = normalizeFlightNumber(ride?.flightNumber);
+      return flight && diagnosticFlightPrefixLength(flight) >= 3;
+    }).map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightNumber)}`);
 
+    let reason = 'ok';
+    if (!imageMeta) reason = 'image_meta_missing';
+    else if (!rawWords.length) reason = 'raw_ocr_words_missing';
+    else if (boundaries.length < 2) reason = 'cell_boundaries_missing';
+    else if (!rowMetaKeys.length) reason = 'row_meta_missing';
+    else if (!mapping || mapping.pickup === undefined || mapping.destination === undefined) reason = 'route_mapping_missing';
+    else if (rideList.length && !matchedMatrixIndexes.length) reason = 'source_row_to_row_meta_mismatch';
+    else if (rideList.length && routeDiagnostics === 0) reason = 'route_diagnostics_empty_despite_targets';
+    else if (suspiciousFlights.length && flightDiagnostics === 0) reason = 'suspicious_flight_diagnostic_missing';
+
+    const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      status: reasons.length ? 'CHECK' : 'READY',
-      rides: safeRides.length,
+      version: 'CORE-007D8A1',
+      status,
+      reason,
+      rides: rideList.length,
       rawWords: rawWords.length,
       boundaries: boundaries.length,
-      rowMetaCount: rowMetaKeys.length,
-      rowMetaKeys: rowMetaKeys.slice(0, 30),
-      sourceRows: sourceRows.slice(0, 30),
-      matrixIndices: matrixIndices.slice(0, 30),
-      matchedRows,
-      routeColumns,
-      expectedRouteCells,
-      producedRouteCells,
+      rowMetaKeys,
+      sourceRows,
+      matrixIndexes,
+      matchedMatrixIndexes,
+      mappingSnapshot,
+      routeDiagnostics,
+      flightDiagnostics,
       suspiciousFlights,
-      producedFlightCells,
-      diagnosticEntries: Array.isArray(diagnostics) ? diagnostics.length : 0,
-      mapping: Object.fromEntries(['pickup','destination','arrivalFlight','departureFlight'].map(field => [field, mapping?.[field] ?? null])),
-      reasons
+      diagnosticItems: diagList.length
     };
+  }
+
+  function formatOcrDiagnosticSelfCheck(check) {
+    if (!check) return 'Selbstcheck nicht ausgeführt';
+    const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
+    return [
+      `Status=${check.status}`,
+      `Grund=${check.reason}`,
+      `Rides=${check.rides}`,
+      `Rohwörter=${check.rawWords}`,
+      `Grenzen=${check.boundaries}`,
+      `RowMetaKeys=[${list(check.rowMetaKeys)}]`,
+      `sourceRows=[${list(check.sourceRows)}]`,
+      `matrixIndex=[${list(check.matrixIndexes)}]`,
+      `matched=[${list(check.matchedMatrixIndexes)}]`,
+      `RouteDiag=${check.routeDiagnostics}`,
+      `FlightDiag=${check.flightDiagnostics}`,
+      `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
+      `Mapping={${check.mappingSnapshot || '∅'}}`
+    ].join(' · ');
   }
 
   async function readImagePlan(file) {
@@ -4253,28 +4276,23 @@
       : '';
 
     const rawDiagnostics = Array.isArray(state.ocrCellDiagnostics) ? state.ocrCellDiagnostics : [];
-    const rawDiagnosticHtml = rawDiagnostics.length
-      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(69,180,255,.42);background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A OCR-Rohdiagnose</b></div>
-          <div style="font-size:12px;opacity:.84;margin-top:5px">Nur Diagnose: Primär-OCR-Wörter und aktuelle Zellgrenzen. Keine Korrektur, keine Änderung der Importentscheidung.</div>
-          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${rawDiagnostics.map(item => {
-            const label = item.kind === 'flight' ? 'Flug' : item.field === 'pickup' ? 'Von' : 'Nach';
-            return escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''} · ${label}="${item.value || '–'}" · X=${Math.round(item.left)}-${Math.round(item.right)} · IN=[${item.inCell}] · L=[${item.leftSpill}] · R=[${item.rightSpill}]`);
-          }).join('<br>')}</div>
-        </div>`
-      : '';
-
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
-      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(255,199,69,.5);background:rgba(62,43,10,.38)">
-          <div><b>🧪 CORE-007D8A1 Diagnose-Selbstcheck · ${escapeHtml(selfCheck.status || 'CHECK')}</b></div>
-          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(
-            `Fahrten=${selfCheck.rides} · Rohwörter=${selfCheck.rawWords} · Grenzen=${selfCheck.boundaries} · RowMeta=${selfCheck.rowMetaCount} · Ride↔Matrix=${selfCheck.matchedRows}/${selfCheck.rides} · Routenzellen=${selfCheck.producedRouteCells}/${selfCheck.expectedRouteCells} · AuffälligeFlüge=${selfCheck.suspiciousFlights} · Flugzellen=${selfCheck.producedFlightCells} · Einträge=${selfCheck.diagnosticEntries}`
-          )}<br>${escapeHtml(`sourceRows=[${(selfCheck.sourceRows||[]).join(',')}] · matrixIndices=[${(selfCheck.matrixIndices||[]).join(',')}] · rowMetaKeys=[${(selfCheck.rowMetaKeys||[]).join(',')}]`)}<br>${escapeHtml(`Mapping=${JSON.stringify(selfCheck.mapping || {})}`)}<br>${escapeHtml(`Grund=${(selfCheck.reasons||[]).join(' | ') || 'keiner'}`)}</div>
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
+          <div><b>🧪 CORE-007D8A1 Diagnose-Selbstcheck</b></div>
+          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
+    const rawDiagnosticHtml = `<div class="plan-issue" style="margin-top:10px;border-color:rgba(69,180,255,.42);background:rgba(10,42,62,.38)">
+          <div><b>🧪 CORE-007D8A OCR-Rohdiagnose</b></div>
+          <div style="font-size:12px;opacity:.84;margin-top:5px">Nur Diagnose: Primär-OCR-Wörter und aktuelle Zellgrenzen. Keine Korrektur, keine Änderung der Importentscheidung.</div>
+          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${rawDiagnostics.length ? rawDiagnostics.map(item => {
+            const label = item.kind === 'flight' ? 'Flug' : item.field === 'pickup' ? 'Von' : 'Nach';
+            return escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''} · ${label}="${item.value || '–'}" · X=${Math.round(item.left)}-${Math.round(item.right)} · IN=[${item.inCell}] · L=[${item.leftSpill}] · R=[${item.rightSpill}]`);
+          }).join('<br>') : escapeHtml('Keine Rohdiagnose-Einträge erzeugt – technischen Grund im Diagnose-Selbstcheck oben prüfen.')}</div>
+        </div>`;
 
-    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + rawDiagnosticHtml + selfCheckHtml;
+    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + selfCheckHtml + rawDiagnosticHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
@@ -4481,6 +4499,7 @@
           mappingInfo.mapping,
           state.ocrCellDiagnostics
         );
+        try { window.ATMSCore007D8A1DiagnosticSelfCheck = { ...state.ocrDiagnosticSelfCheck }; } catch (_) {}
       } else {
         state.ocrCellDiagnostics = [];
         state.ocrDiagnosticSelfCheck = null;
