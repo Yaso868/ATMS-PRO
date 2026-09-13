@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  // CORE-007D8A1F1D8P3 · 13.09.2026: TARGETED HEADER BAND OCR RECOVERY. Wenn die Vollbild-OCR trotz sichtbar vollständiger Kopfzeile keinen sicheren Header liefert, wird ausschließlich der schmale Tabellenkopf direkt oberhalb der ersten mehrfach belegten Preis-/Zeit-Datenzeile lokal vergrößert nachgelesen. Die Nachlese wird nur übernommen, wenn sie selbst erneut einen strengen ATMS-Header mit Preis, Von/Nach und Flugspalte bestätigt; andernfalls bleibt der bisherige sichere Abbruch unverändert. Keine Fahrtdaten, Preise, Namen, Flugnummern, Orte oder Spaltenpositionen werden hart codiert. CORE-007D8A1F1D8P1, Storno, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
@@ -2266,6 +2267,10 @@
     if (diag.recurringRowCount !== undefined) {
       parts.push(`X=${num(diag.leftAnchoredRows)}/${num(diag.routeRows)}/${num(diag.rightRows)}/${num(diag.flightRows)}`);
     }
+    if (diag.headerBandRecovery) {
+      const rec = diag.headerBandRecovery;
+      parts.push(`HeaderNachlese=${rec.accepted ? 'JA' : 'NEIN'}/${num(rec.bestScore)}/${num(rec.bestAnchors)}`);
+    }
     if (diag.priceAnchorRecovery) {
       const rec = diag.priceAnchorRecovery;
       parts.push(`PreisNachlese=${num(rec.recoveredRows)}/${num(rec.attemptedRows)}`);
@@ -2273,6 +2278,7 @@
     return `CORE-007D5 Diagnose: ${parts.join(' · ')}`;
   }
 
+  let imageHeaderBandRecoveryDiagnostic = null;
   let headerlessPriceAnchorRecoveryDiagnostic = null;
 
   function prepareHeaderlessPriceCrop(sourceCanvas, threshold = null, contrast = 1.0) {
@@ -2297,6 +2303,163 @@
     }
     ctx.putImageData(image, 0, 0);
     return out;
+  }
+
+  async function recoverImageHeaderBandTargeted(words, imageCanvas, width) {
+    imageHeaderBandRecoveryDiagnostic = {
+      strategy: 'targeted_header_band_v1',
+      attempted: false,
+      accepted: false,
+      skipped: '',
+      cropY0: null,
+      cropY1: null,
+      firstDataY0: null,
+      rowHeight: null,
+      bestScore: 0,
+      bestAnchors: 0,
+      bestAttempt: '',
+      attempts: []
+    };
+
+    if (!Array.isArray(words) || !imageCanvas || !window.Tesseract || !Number.isFinite(Number(width)) || Number(width) < 500) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'missing_words_canvas_or_width';
+      return words;
+    }
+
+    const strictHeader = detectImageHeaderLine(groupOcrLines(words));
+    if (strictHeader && strictHeader.score >= 6 && strictHeader.anchors.length >= 6) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'safe_header_already_present';
+      return words;
+    }
+
+    // Die erste echte Datenzeile wird ausschließlich aus wiederkehrender Preis-/Zeit-
+    // Evidenz bestimmt. Dadurch ist die Kopfband-Lage bildabhängig und nicht hart codiert.
+    const looseLines = groupOcrLines(words, 0).filter(line => (line?.words || []).length >= 4);
+    const dataLines = looseLines.filter(line => {
+      const priceX = headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16);
+      const timeX = headerlessLineAnchor(line, headerlessTimeLike, 0, width * 0.24);
+      return Number.isFinite(priceX) && Number.isFinite(timeX);
+    }).sort((a,b) => Number(a.cy || 0) - Number(b.cy || 0));
+
+    if (dataLines.length < 2) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'insufficient_price_time_data_rows';
+      return words;
+    }
+
+    const firstData = dataLines[0];
+    const firstWords = firstData.words || [];
+    const y0s = firstWords.map(word => Number(word.y0)).filter(Number.isFinite);
+    const y1s = firstWords.map(word => Number(word.y1)).filter(Number.isFinite);
+    if (!y0s.length || !y1s.length) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'first_data_row_without_geometry';
+      return words;
+    }
+
+    const firstDataY0 = Math.min(...y0s);
+    const firstDataY1 = Math.max(...y1s);
+    const rowHeight = Math.max(10, firstDataY1 - firstDataY0);
+    const cropY1 = Math.max(1, firstDataY0 - Math.max(1, rowHeight * 0.08));
+    const bandHeight = Math.max(rowHeight * 2.20, imageCanvas.height * 0.10);
+    const cropY0 = Math.max(0, cropY1 - bandHeight);
+
+    Object.assign(imageHeaderBandRecoveryDiagnostic, {
+      attempted: true,
+      cropY0: Math.round(cropY0),
+      cropY1: Math.round(cropY1),
+      firstDataY0: Math.round(firstDataY0),
+      rowHeight: Math.round(rowHeight * 10) / 10
+    });
+
+    if (!(cropY1 > cropY0 + Math.max(8, rowHeight * 0.8))) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'header_band_too_small';
+      return words;
+    }
+
+    const attemptsSpec = [
+      { id: 'raw-eng-psm6', lang: 'eng', mode: '6', threshold: null, contrast: 1.0, scale: 4 },
+      { id: 'bw190-eng-psm6', lang: 'eng', mode: '6', threshold: 190, contrast: 1.12, scale: 4 },
+      { id: 'raw-deu-psm6', lang: 'deu', mode: '6', threshold: null, contrast: 1.0, scale: 4 },
+      { id: 'raw-eng-psm11', lang: 'eng', mode: '11', threshold: null, contrast: 1.0, scale: 4 }
+    ];
+
+    let best = null;
+    for (const spec of attemptsSpec) {
+      const rawCrop = cropCanvasRegion(imageCanvas, 0, cropY0, width, cropY1, spec.scale);
+      const crop = spec.threshold === null
+        ? rawCrop
+        : prepareHeaderlessPriceCrop(rawCrop, spec.threshold, spec.contrast);
+      try {
+        const result = await Tesseract.recognize(crop, spec.lang, { tessedit_pageseg_mode: spec.mode });
+        const mapped = (result?.data?.words || []).filter(word => word?.bbox && cellText(word?.text)).map(word => ({
+          ...word,
+          confidence: Math.max(80, Number(word.confidence ?? word.conf ?? 0)),
+          bbox: {
+            x0: Number(word.bbox.x0 || 0) / spec.scale,
+            x1: Number(word.bbox.x1 || 0) / spec.scale,
+            y0: cropY0 + Number(word.bbox.y0 || 0) / spec.scale,
+            y1: cropY0 + Number(word.bbox.y1 || 0) / spec.scale
+          },
+          _atmsHeaderBandRecovered: true,
+          _atmsHeaderBandRecoveryAttempt: spec.id
+        }));
+        const candidate = detectImageHeaderLine(groupOcrLines(mapped, 0));
+        const anchors = candidate?.anchors || [];
+        const keys = new Set(anchors.map(anchor => anchor.key));
+        const flightHeader = keys.has('flugang') || keys.has('flugausg');
+        const critical = keys.has('preis') && keys.has('uhrzeit') && keys.has('von') && keys.has('nach') && flightHeader;
+        const accepted = Boolean(candidate && candidate.score >= 8 && anchors.length >= 8 && critical);
+        const attemptDiag = {
+          id: spec.id,
+          score: Number(candidate?.score || 0),
+          anchors: anchors.length,
+          critical,
+          accepted,
+          labels: anchors.map(anchor => anchor.label).join('|')
+        };
+        imageHeaderBandRecoveryDiagnostic.attempts.push(attemptDiag);
+        const rank = Number(candidate?.score || 0) * 100 + anchors.length;
+        if (!best || rank > best.rank) best = { rank, accepted, candidate, mapped, spec, attemptDiag };
+      } catch (error) {
+        imageHeaderBandRecoveryDiagnostic.attempts.push({ id: spec.id, error: true, message: cellText(error?.message || error) });
+      }
+    }
+
+    if (!best) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'no_header_band_ocr_result';
+      return words;
+    }
+
+    imageHeaderBandRecoveryDiagnostic.bestScore = Number(best.candidate?.score || 0);
+    imageHeaderBandRecoveryDiagnostic.bestAnchors = Number(best.candidate?.anchors?.length || 0);
+    imageHeaderBandRecoveryDiagnostic.bestAttempt = best.spec.id;
+
+    if (!best.accepted) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'targeted_header_not_strictly_verified';
+      return words;
+    }
+
+    // Nur den bereits lokal neu gelesenen Kopfbereich ersetzen. Datenzeilen bleiben
+    // vollständig aus der Primär-OCR erhalten und werden niemals durch diesen Patch verändert.
+    const kept = words.filter(word => {
+      const box = word?.bbox;
+      if (!box) return true;
+      const cy = (Number(box.y0 || 0) + Number(box.y1 || 0)) / 2;
+      return !(Number.isFinite(cy) && cy >= cropY0 - 2 && cy <= cropY1 + 2);
+    });
+    const recoveredHeaderWords = best.mapped.filter(word => {
+      const cy = (Number(word?.bbox?.y0 || 0) + Number(word?.bbox?.y1 || 0)) / 2;
+      const headerCy = Number(best.candidate?.line?.cy || NaN);
+      return Number.isFinite(cy) && Number.isFinite(headerCy) && Math.abs(cy - headerCy) <= Math.max(8, rowHeight * 0.8);
+    });
+
+    if (!recoveredHeaderWords.length) {
+      imageHeaderBandRecoveryDiagnostic.skipped = 'verified_header_without_words';
+      return words;
+    }
+
+    imageHeaderBandRecoveryDiagnostic.accepted = true;
+    imageHeaderBandRecoveryDiagnostic.recoveredWords = recoveredHeaderWords.length;
+    return [...kept, ...recoveredHeaderWords];
   }
 
   async function recoverHeaderlessPriceAnchorsTargeted(words, imageCanvas, width) {
@@ -2479,6 +2642,7 @@
       headerScore: Number(header?.score || 0),
       headerAnchors: Number(header?.anchors?.length || 0),
       wordCount: Array.isArray(words) ? words.length : 0,
+      headerBandRecovery: imageHeaderBandRecoveryDiagnostic ? { ...imageHeaderBandRecoveryDiagnostic } : null,
       priceAnchorRecovery: headerlessPriceAnchorRecoveryDiagnostic ? { ...headerlessPriceAnchorRecoveryDiagnostic } : null
     };
     const headerlessLayout = hasSafeHeader ? null : inferHeaderlessAtmsPriceLayout(headerlessLines, width, headerlessDiagnostic);
@@ -2666,6 +2830,7 @@
       forcedNoPriceMirror: Boolean(forceNoPriceMirror),
       forcedPriceMirror: Boolean(forcePriceMirror),
       priceMirrorDataEvidence: priceMirrorDataEvidenceDiagnostic ? { ...priceMirrorDataEvidenceDiagnostic } : null,
+      headerBandRecovery: imageHeaderBandRecoveryDiagnostic ? { ...imageHeaderBandRecoveryDiagnostic } : null,
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
@@ -4542,6 +4707,7 @@
     const schemaColumns = Number(imageMeta?.schemaColumns || 0);
     const forcedPriceMirror = Boolean(imageMeta?.forcedPriceMirror);
     const priceMirrorEvidence = imageMeta?.priceMirrorDataEvidence || null;
+    const headerBandRecovery = imageMeta?.headerBandRecovery || null;
     const diagList = Array.isArray(diagnostics) ? diagnostics : [];
     const routeDiagnostics = diagList.filter(item => item?.kind === 'route').length;
     const flightDiagnostics = diagList.filter(item => item?.kind === 'flight').length;
@@ -4607,7 +4773,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P1',
+      version: 'CORE-007D8A1F1D8P3',
       status,
       reason,
       rides: rideList.length,
@@ -4621,6 +4787,7 @@
       schemaColumns,
       forcedPriceMirror,
       priceMirrorEvidence,
+      headerBandRecovery,
       routeDiagnostics,
       flightDiagnostics,
       suspiciousFlights,
@@ -4653,6 +4820,7 @@
       `SchemaCols=${check.schemaColumns || 0}`,
       `PriceMirror=${check.forcedPriceMirror ? 'JA' : 'NEIN'}`,
       `MirrorEvidence=${check.priceMirrorEvidence ? `${Number(check.priceMirrorEvidence.matchedRows ?? check.priceMirrorEvidence.evidenceRows ?? 0)}/${check.priceMirrorEvidence.reason || '–'}` : '∅'}`,
+      `HeaderBandFix=${check.headerBandRecovery?.accepted ? `JA/${check.headerBandRecovery.bestAttempt || '–'}/${Number(check.headerBandRecovery.bestScore || 0)}` : 'NEIN'}`,
       `Mapping={${check.mappingSnapshot || '∅'}}`
     ].join(' · ');
   }
@@ -4675,6 +4843,11 @@
     });
     if (!isCurrent()) throw staleAnalysisError();
     let words = result?.data?.words || [];
+    // CORE-007D8A1F1D8P3: Wenn die Vollbild-OCR den sichtbar vorhandenen Tabellenkopf
+    // verfehlt, wird nur das schmale Kopfband oberhalb der ersten mehrfach belegten
+    // Preis-/Zeit-Datenzeile lokal nachgelesen. Datenzeilen bleiben unangetastet.
+    words = await recoverImageHeaderBandTargeted(words, canvas, canvas.width);
+    if (!isCurrent()) throw staleAnalysisError();
     // CORE-007D4: Nur wenn kein sicherer Header vorhanden ist und die erste OCR
     // trotz mehrerer Zeitanker zu wenige Preisanker liefert, wird der linke
     // Preiskorridor zeilenweise gezielt nachgelesen. Das Ergebnis wird lediglich
@@ -5040,7 +5213,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P1 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P3 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
