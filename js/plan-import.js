@@ -3839,7 +3839,17 @@
             const second = await Tesseract.recognize(crop, 'eng', mode.options);
             const candidates = [...new Set(flightCandidatesFromOcrResult(second)
               .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
-            attempts.push({ crop: cropIndex + 1, mode: mode.name, scale, candidates: candidates.slice() });
+            // CORE-007D8A1F1D2: Nur Diagnose. Wir speichern zusätzlich den rohen
+            // Text und die Wortausgabe derselben lokalen OCR-Ausführung, damit klar
+            // wird, ob der Crop leer gelesen wird oder erst die Flugnummern-Extraktion
+            // keinen Kandidaten akzeptiert. Keine Änderung an Stimmen/Recovery-Regeln.
+            const rawText = cellText(second?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+            const rawWords = (Array.isArray(second?.data?.words) ? second.data.words : [])
+              .map(word => cellText(word?.text).replace(/\s+/g, ' ').trim())
+              .filter(Boolean)
+              .join(' ')
+              .slice(0, 80);
+            attempts.push({ crop: cropIndex + 1, mode: mode.name, scale, rawText, rawWords, candidates: candidates.slice() });
             if (candidates.length !== 1) continue;
             const candidate = candidates[0];
             votes.set(candidate, (votes.get(candidate) || 0) + 1);
@@ -4071,7 +4081,7 @@
     const flightPrefixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromLongPrefixOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
 
-    // CORE-007D8A1F1D1: reine Diagnose der bereits ausgeführten lokalen
+    // CORE-007D8A1F1D2: reine Diagnose der bereits ausgeführten lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
     // irgendeinen OCR-Wert oder eine Importentscheidung zu verändern.
     const flightOcrTraces = rideList.filter(ride => {
@@ -4100,7 +4110,9 @@
         const candidates = Array.isArray(attempt?.candidates) && attempt.candidates.length
           ? attempt.candidates.map(normalizeFlightNumber).filter(Boolean).join('/')
           : '∅';
-        return `c${Number(attempt?.crop || 0)}-${cellText(attempt?.mode) || '?'}=${candidates}`;
+        const rawText = cellText(attempt?.rawText).replace(/\s+/g, ' ').trim() || '∅';
+        const rawWords = cellText(attempt?.rawWords).replace(/\s+/g, ' ').trim() || '∅';
+        return `c${Number(attempt?.crop || 0)}-${cellText(attempt?.mode) || '?'}={raw:${rawText}; words:${rawWords}; cand:${candidates}}`;
       }).join(',') || '∅';
       return `${Number(ride?.sourceRow || 0)}:${initial}{votes=${voteText}; ${attemptText}}`;
     });
@@ -4117,7 +4129,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D1',
+      version: 'CORE-007D8A1F1D2',
       status,
       reason,
       rides: rideList.length,
@@ -4538,7 +4550,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D1 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D2 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
