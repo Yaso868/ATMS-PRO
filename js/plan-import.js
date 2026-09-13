@@ -8,6 +8,7 @@
   // CORE-007D8A1F1 · 13.09.2026: DIAGNOSTIC-GUIDED OCR FIX. Auf Basis der D8A1-Rohdiagnose werden Routenwörter, die die rechte Zellgrenze sichtbar überlappen, nur bei wiederholter identischer Geometrie-Evidenz in mindestens zwei Fahrten derselben Route ergänzt. Auffällige Flugnummern mit 3+ Buchstaben vor dem Zahlenteil werden ausschließlich in ihrer eigenen Flugzelle lokal erneut gelesen; eine Verkürzung auf einen 2-stelligen Designator wird nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei verschiedenen Crops und identischem Zahlenteil übernommen. Keine Werte-/Flugnummern-/Orts-Hardcodes; Storno, Preis, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D3 · 13.09.2026: FLIGHT OCR CANDIDATE BOUNDARY FIX. Ausschließlich die gezielte Gegenprüfung auffälliger langer Flugpräfixe wertet OCR-data.text und OCR-Wörter getrennt aus, damit identische Doppelrepräsentationen nicht zu einer künstlich zusammengezogenen Zeichenfolge werden. Die bestehenden Mehrfach-Konsens-Schwellen bleiben unverändert; keine Airline-/Flugnummern-Hardcodes.
   // CORE-007D8A1F1D4 · 13.09.2026: FILE SELECTION / STALE ANALYSIS GUARD. Jede neue Dateiauswahl invalidiert laufende Analyse-Laeufe und leert den gestagten Vorschau-/Diagnosezustand. Der Datei-Input wird vor dem Oeffnen geleert, damit auch dieselbe Datei erneut sicher ein change-Ereignis ausloest. Asynchrone Ergebnisse duerfen state/render nur noch committen, wenn Datei-, Auswahl- und Analyse-Revision weiterhin exakt zum gestarteten Lauf gehoeren. OCR-Erkennung, Storno, Flugpruefung, PLAN/DISPO/LIVE und Persistenz bleiben unveraendert.
+  // CORE-007D8A1F1D5 · 13.09.2026: PRICE MIRROR DATA EVIDENCE. Wenn bei einer Preis-Planliste die mittlere gespiegelte Uhrzeit in der Kopfzeile vom OCR fehlt, darf das 14-Spalten-Preisschema jetzt zusaetzlich durch wiederholte echte Zeitwerte zwischen Firma und erster Flugspalte in mindestens zwei Datenzeilen bestaetigt werden. Dadurch bleiben Flug ang./Flug ausg., Wg, Pers, Flugzeit, Ort und Fahrer geometrisch korrekt ausgerichtet. Keine Flugnummern, Orte, Zeiten oder Airlines werden hart codiert; bestehende OCR-, Storno-, PLAN/DISPO/LIVE-, Flugpruefungs- und Persistenzlogik bleibt unveraendert.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -1422,6 +1423,54 @@
     return false;
   }
 
+  function hasPriceMirrorDataEvidence(lines, header) {
+    const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
+    if (!anchors.length) return false;
+    if (!anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) return false;
+
+    // Wenn die Kopfzeile bereits drei Uhrzeit-Anker besitzt, ist das 14er-Schema
+    // ohnehin eindeutig und chooseAtmsImageSchema() übernimmt es direkt.
+    const timeAnchors = anchors.filter(anchor => anchor.key === 'uhrzeit' || anchor.key === 'zeit');
+    if (timeAnchors.length >= 3) return false;
+
+    const firma = anchors.find(anchor => anchor.key === 'firma');
+    const firstFlight = anchors.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    if (!firma || !firstFlight || !(firstFlight.x > firma.x)) return false;
+
+    const left = Number(firma.x);
+    const right = Number(firstFlight.x);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right - left < 8) return false;
+
+    let evidenceRows = 0;
+    for (const line of (lines || []).slice((header.index || 0) + 1)) {
+      const regionWords = (line.words || []).filter(word => {
+        const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+        return cx > left && cx < right;
+      });
+      if (!regionWords.length) continue;
+
+      const joined = regionWords
+        .map(word => cellText(word.text))
+        .join('')
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il]/g, '1');
+
+      const matches = joined.match(/(?:^|\D)([0-2]?\d[:.]?[0-5]\d)(?!\d)/g) || [];
+      const plausible = matches.some(token => {
+        const digits = token.replace(/\D/g, '');
+        if (digits.length < 3 || digits.length > 4) return false;
+        const padded = digits.padStart(4, '0');
+        const hh = Number(padded.slice(0, 2));
+        const mm = Number(padded.slice(2));
+        return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
+      });
+
+      if (plausible) evidenceRows++;
+      if (evidenceRows >= 2) return true;
+    }
+    return false;
+  }
+
   function completeAtmsImageAnchors(observed, width, forcedSchema = null) {
     const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
     const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
@@ -2126,11 +2175,15 @@
     }
 
     const forceNoPriceMirror = hasSafeHeader ? hasNoPriceMirrorDataEvidence(lines, header) : false;
+    const forcePriceMirror = hasSafeHeader ? hasPriceMirrorDataEvidence(lines, header) : false;
+    const forcedSchema = forcePriceMirror
+      ? ATMS_IMAGE_SCHEMA_14_PRICE
+      : (forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null);
     const completed = hasSafeHeader
       ? completeAtmsImageAnchors(
           header.anchors,
           width,
-          forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null
+          forcedSchema
         )
       : {
           anchors: headerlessLayout.anchors,
@@ -2298,6 +2351,7 @@
       standardAtms: completed.standard,
       schemaColumns: anchors.length,
       forcedNoPriceMirror: Boolean(forceNoPriceMirror),
+      forcedPriceMirror: Boolean(forcePriceMirror),
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
