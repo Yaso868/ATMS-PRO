@@ -9,6 +9,7 @@
   // CORE-007D8A1F1D3 · 13.09.2026: FLIGHT OCR CANDIDATE BOUNDARY FIX. Ausschließlich die gezielte Gegenprüfung auffälliger langer Flugpräfixe wertet OCR-data.text und OCR-Wörter getrennt aus, damit identische Doppelrepräsentationen nicht zu einer künstlich zusammengezogenen Zeichenfolge werden. Die bestehenden Mehrfach-Konsens-Schwellen bleiben unverändert; keine Airline-/Flugnummern-Hardcodes.
   // CORE-007D8A1F1D4 · 13.09.2026: FILE SELECTION / STALE ANALYSIS GUARD. Jede neue Dateiauswahl invalidiert laufende Analyse-Laeufe und leert den gestagten Vorschau-/Diagnosezustand. Der Datei-Input wird vor dem Oeffnen geleert, damit auch dieselbe Datei erneut sicher ein change-Ereignis ausloest. Asynchrone Ergebnisse duerfen state/render nur noch committen, wenn Datei-, Auswahl- und Analyse-Revision weiterhin exakt zum gestarteten Lauf gehoeren. OCR-Erkennung, Storno, Flugpruefung, PLAN/DISPO/LIVE und Persistenz bleiben unveraendert.
   // CORE-007D8A1F1D5 · 13.09.2026: PRICE MIRROR DATA EVIDENCE. Wenn bei einer Preis-Planliste die mittlere gespiegelte Uhrzeit in der Kopfzeile vom OCR fehlt, darf das 14-Spalten-Preisschema jetzt zusaetzlich durch wiederholte echte Zeitwerte zwischen Firma und erster Flugspalte in mindestens zwei Datenzeilen bestaetigt werden. Dadurch bleiben Flug ang./Flug ausg., Wg, Pers, Flugzeit, Ort und Fahrer geometrisch korrekt ausgerichtet. Keine Flugnummern, Orte, Zeiten oder Airlines werden hart codiert; bestehende OCR-, Storno-, PLAN/DISPO/LIVE-, Flugpruefungs- und Persistenzlogik bleibt unveraendert.
+  // CORE-007D8A1F1D6 · 13.09.2026: PRICE MIRROR MATCHED-TIME GUARD. Falls D5 wegen enger Header-Anker den Mirror nicht erkennt, wird das 14-Spalten-Preisschema nur dann zusätzlich freigegeben, wenn in mindestens zwei echten Datenzeilen dieselbe plausible DISPO-Zeit einmal links vor Von und ein zweites Mal rechts von Firma vor Pers/Ort beobachtet wird. Damit stammt die Schemaentscheidung aus wiederholter zeileninterner Zeit-Evidenz statt aus einem festen X-Wert. Keine Flugnummern, Orte, Zeiten oder Airlines werden hart codiert. Der Diagnose-Selbstcheck zeigt SchemaCols/PriceMirror/Evidence sichtbar an.
   // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
   // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
   // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
@@ -1423,7 +1424,97 @@
     return false;
   }
 
-  function hasPriceMirrorDataEvidence(lines, header) {
+  let priceMirrorDataEvidenceDiagnostic = null;
+
+  function strictOcrTimeValue(value) {
+    const raw = cellText(value).replace(/[Oo]/g, '0').replace(/[Il]/g, '1').trim();
+    if (!raw) return '';
+    const colon = raw.match(/^(?:[^0-9]*)([0-2]?\d)[:.]([0-5]\d)(?:[^0-9]*)$/);
+    if (colon) {
+      const hh = Number(colon[1]);
+      const mm = Number(colon[2]);
+      if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+    }
+    const compactMatch = raw.match(/^(?:[^0-9]*)(\d{3,4})(?:[^0-9]*)$/);
+    if (!compactMatch) return '';
+    const digits = compactMatch[1].padStart(4, '0');
+    const hh = Number(digits.slice(0, 2));
+    const mm = Number(digits.slice(2));
+    return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59
+      ? `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`
+      : '';
+  }
+
+  function hasPriceMirrorMatchedTimeEvidence(lines, header, width) {
+    const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
+    const diag = { mode: 'matched_time', matchedRows: 0, candidates: 0, mirrorXs: [], accepted: false, reason: '' };
+    if (!anchors.length || !anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) {
+      diag.reason = 'price_header_missing';
+      return diag;
+    }
+    const pickup = anchors.find(anchor => anchor.key === 'von');
+    const firma = anchors.find(anchor => anchor.key === 'firma');
+    const persons = anchors.find(anchor => anchor.key === 'pers');
+    const location = anchors.find(anchor => anchor.key === 'ort');
+    const rightGuard = persons || location;
+    if (!pickup || !firma || !rightGuard || !(rightGuard.x > firma.x)) {
+      diag.reason = 'required_header_anchors_missing';
+      return diag;
+    }
+    const safeWidth = Number(width) || 0;
+    const primaryMin = anchors.find(anchor => anchor.key === 'preis')?.x ?? 0;
+    const primaryMax = Number(pickup.x);
+    const mirrorMin = Number(firma.x);
+    const mirrorMax = Number(rightGuard.x);
+    if (![primaryMin, primaryMax, mirrorMin, mirrorMax].every(Number.isFinite) || primaryMax <= primaryMin || mirrorMax <= mirrorMin) {
+      diag.reason = 'invalid_time_corridors';
+      return diag;
+    }
+
+    const dataLines = (lines || []).slice((header.index || 0) + 1);
+    dataLines.forEach((line, lineOffset) => {
+      const words = Array.isArray(line?.words) ? line.words : [];
+      const timeWords = words.map(word => {
+        const value = strictOcrTimeValue(word?.text);
+        const x0 = Number(word?.x0);
+        const x1 = Number(word?.x1);
+        const cx = (x0 + x1) / 2;
+        return value && [x0, x1, cx].every(Number.isFinite) ? { value, cx, text: cellText(word?.text) } : null;
+      }).filter(Boolean);
+      const primary = timeWords.filter(item => item.cx > primaryMin && item.cx < primaryMax);
+      const mirror = timeWords.filter(item => item.cx > mirrorMin && item.cx < mirrorMax);
+      if (!primary.length || !mirror.length) return;
+      diag.candidates += 1;
+      const matches = [];
+      primary.forEach(left => mirror.forEach(right => { if (left.value === right.value) matches.push({ left, right }); }));
+      if (!matches.length) return;
+      matches.sort((a,b) => Math.abs(a.right.cx - mirrorMin) - Math.abs(b.right.cx - mirrorMin));
+      const best = matches[0];
+      diag.matchedRows += 1;
+      diag.mirrorXs.push(best.right.cx);
+      if (!diag.rows) diag.rows = [];
+      diag.rows.push({ line: (header.index || 0) + 2 + lineOffset, time: best.left.value, mirrorX: Math.round(best.right.cx) });
+    });
+
+    if (diag.matchedRows < 2) {
+      diag.reason = 'fewer_than_two_matching_rows';
+      return diag;
+    }
+    const xs = diag.mirrorXs.slice().sort((a,b)=>a-b);
+    const spread = xs[xs.length - 1] - xs[0];
+    const maxSpread = Math.max(18, safeWidth > 0 ? safeWidth * 0.035 : 36);
+    diag.spread = spread;
+    diag.maxSpread = maxSpread;
+    if (spread > maxSpread) {
+      diag.reason = 'mirror_time_x_not_stable';
+      return diag;
+    }
+    diag.accepted = true;
+    diag.reason = 'matched_primary_and_mirror_time';
+    return diag;
+  }
+
+  function hasPriceMirrorDataEvidence(lines, header, width) {
     const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
     if (!anchors.length) return false;
     if (!anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) return false;
@@ -1466,9 +1557,18 @@
       });
 
       if (plausible) evidenceRows++;
-      if (evidenceRows >= 2) return true;
+      if (evidenceRows >= 2) {
+        priceMirrorDataEvidenceDiagnostic = { mode: 'header_corridor', accepted: true, evidenceRows, reason: 'two_time_rows_between_firma_and_flight' };
+        return true;
+      }
     }
-    return false;
+
+    // CORE-007D8A1F1D6: D5 kann bei ungenauem Header-Anker zu eng schneiden.
+    // Zweite Freigabe nur über zeileninterne Gleichheit der primären DISPO-Zeit
+    // und der wiederholten Zeit nach Firma, stabil an derselben X-Position.
+    const matched = hasPriceMirrorMatchedTimeEvidence(lines, header, width);
+    priceMirrorDataEvidenceDiagnostic = matched;
+    return Boolean(matched.accepted);
   }
 
   function completeAtmsImageAnchors(observed, width, forcedSchema = null) {
@@ -2175,7 +2275,7 @@
     }
 
     const forceNoPriceMirror = hasSafeHeader ? hasNoPriceMirrorDataEvidence(lines, header) : false;
-    const forcePriceMirror = hasSafeHeader ? hasPriceMirrorDataEvidence(lines, header) : false;
+    const forcePriceMirror = hasSafeHeader ? hasPriceMirrorDataEvidence(lines, header, width) : false;
     const forcedSchema = forcePriceMirror
       ? ATMS_IMAGE_SCHEMA_14_PRICE
       : (forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null);
@@ -2352,6 +2452,7 @@
       schemaColumns: anchors.length,
       forcedNoPriceMirror: Boolean(forceNoPriceMirror),
       forcedPriceMirror: Boolean(forcePriceMirror),
+      priceMirrorDataEvidence: priceMirrorDataEvidenceDiagnostic ? { ...priceMirrorDataEvidenceDiagnostic } : null,
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
@@ -4173,6 +4274,9 @@
     const matchedMatrixIndexes = matrixIndexes.filter(index => Boolean(rowMeta[index]));
     const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','flightTime','driver']
       .map(field => `${field}=${mapping?.[field] ?? '–'}`).join(', ');
+    const schemaColumns = Number(imageMeta?.schemaColumns || 0);
+    const forcedPriceMirror = Boolean(imageMeta?.forcedPriceMirror);
+    const priceMirrorEvidence = imageMeta?.priceMirrorDataEvidence || null;
     const diagList = Array.isArray(diagnostics) ? diagnostics : [];
     const routeDiagnostics = diagList.filter(item => item?.kind === 'route').length;
     const flightDiagnostics = diagList.filter(item => item?.kind === 'flight').length;
@@ -4238,7 +4342,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D3',
+      version: 'CORE-007D8A1F1D6',
       status,
       reason,
       rides: rideList.length,
@@ -4249,6 +4353,9 @@
       matrixIndexes,
       matchedMatrixIndexes,
       mappingSnapshot,
+      schemaColumns,
+      forcedPriceMirror,
+      priceMirrorEvidence,
       routeDiagnostics,
       flightDiagnostics,
       suspiciousFlights,
@@ -4278,6 +4385,9 @@
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
+      `SchemaCols=${check.schemaColumns || 0}`,
+      `PriceMirror=${check.forcedPriceMirror ? 'JA' : 'NEIN'}`,
+      `MirrorEvidence=${check.priceMirrorEvidence ? `${Number(check.priceMirrorEvidence.matchedRows ?? check.priceMirrorEvidence.evidenceRows ?? 0)}/${check.priceMirrorEvidence.reason || '–'}` : '∅'}`,
       `Mapping={${check.mappingSnapshot || '∅'}}`
     ].join(' · ');
   }
@@ -4665,7 +4775,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D3 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D6 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
