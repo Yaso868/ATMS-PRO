@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P13 · 14.09.2026: NAME + FLIGHT LOCATION DIACRITIC RECOVERY. Die bereits bewährte sichere deutsche Diakritik-Nachlese für Von/Nach wird auf die Spalten Name und Ort erweitert. Ein Wert wird nur ersetzt, wenn zwei gezielte deutsche OCR-Durchläufe exakt denselben Kandidaten liefern und sich der Kandidat ausschließlich durch eine sichere lateinische Diakritik vom Primärwert unterscheidet (z. B. Bergstrom→Bergström, Goteborg→Göteborg). Keine Namen oder Orte werden hardcodiert oder per Wörterbuch geraten.
   // CORE-007D8A1F1D8P12 · 14.09.2026: OCR SUMMARY LIVE REFRESH. Nach manueller Auflösung einer Firmen-/Preisprüfung wurden Zähler und Hinweis-Liste bereits korrekt neu berechnet, aber die obere OCR-Zusammenfassung („OCR-Analyse · … Hinweise“ / „Fahrten OCR-geprüft …“) blieb auf dem Stand vor der Bestätigung. P12 aktualisiert ausschließlich diese beiden Anzeigezeilen bei jedem render(); Fahrtdaten, Importentscheidung, OCR, Flug/LIVE und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P11 · 14.09.2026: MANUAL COMPANY CONFIRMATION GATE. Wenn die Firmenzelle trotz aller lokalen OCR-Gegenprüfungen unsicher bleibt, darf die Fahrt nicht mehr mit einer still falschen/duplizierten Firma übernommen werden. ATMS zeigt direkt im Analysebereich ein Eingabefeld „Firma laut Original-Planliste“ mit dem Button „Firma übernehmen“. Bis zur Bestätigung bleibt „Geprüfte Fahrten übernehmen“ gesperrt. Die manuelle Eingabe ändert ausschließlich die Firma dieser einen Fahrt; Name, Route, Flug, Preis, Zeiten, Fahrer, Fahrzeug, LIVE und Persistenzlogik bleiben unverändert.
   // CORE-007D8A1F1D8P10 · 14.09.2026: COMPANY UNANIMOUS DIRECT-OCR GUARD. P9 zeigte, dass selbst mehrere nearest-neighbor-Crops denselben falschen Firmenwert „KoeinBus“ bestätigen können. Ab P10 darf eine verdächtige Firma-Zelle nur dann automatisch korrigiert werden, wenn ALLE direkten Originalbild-OCR-Versuche (tight + nearest, ohne Kontrastfilter) exakt denselben Firmenwert liefern. Sobald direkte Original-Crops unterschiedliche, ähnlich aussehende Lesarten liefern, wird NICHT automatisch übernommen; stattdessen bleibt ein sichtbarer OCR-Hinweis mit Kandidaten. Keine Firmenbezeichnung wird geraten oder hart codiert.
@@ -4378,7 +4379,9 @@
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
     const fields = [
       { field: 'pickup', label: 'Von' },
-      { field: 'destination', label: 'Nach' }
+      { field: 'destination', label: 'Nach' },
+      { field: 'customer', label: 'Name' },
+      { field: 'flightLocation', label: 'Ort' }
     ];
 
     for (const descriptor of fields) {
@@ -4412,7 +4415,7 @@
       const displayByRowKey = new Map();
       const attemptLogByRow = new Map();
 
-      if (status) status.textContent = `${descriptor.label}-Ortszellen werden lokal mit deutscher OCR gegengeprüft …`;
+      if (status) status.textContent = `${descriptor.label}-Zellen werden lokal mit deutscher OCR gegengeprüft …`;
 
       try {
         for (const attempt of attempts) {
@@ -5312,6 +5315,18 @@
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
     const driverFragmentRecoveries = rideList.filter(ride => ride?.driverRecoveredFromRepeatedColumnConsensus)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.driverRawOcr) || '∅'}→${cellText(ride?.driver)}`);
+    const diacriticRecoveries = [];
+    rideList.forEach(ride => {
+      ['pickup','destination','customer','flightLocation'].forEach(field => {
+        if (!ride?.[`${field}RecoveredFromTargetedOcr`]) return;
+        const before = cellText(ride?.[`${field}RawOcr`] || '');
+        const after = cellText(ride?.[field] || '');
+        if (before && after && before !== after) {
+          diacriticRecoveries.push(`${Number(ride?.sourceRow || 0)}:${field}:${before}→${after}`);
+        }
+      });
+    });
+
     const companyCellRecoveries = rideList.filter(ride => ride?.companyRecoveredFromTargetedOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.companyBeforeTargetedOcr) || '∅'}→${cellText(ride?.company)}`);
     const companyOcrTraces = rideList
@@ -5374,7 +5389,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P12',
+      version: 'CORE-007D8A1F1D8P13',
       status,
       reason,
       rides: rideList.length,
@@ -5395,6 +5410,7 @@
       routeBoundaryRecoveries,
       flightPrefixRecoveries,
       driverFragmentRecoveries,
+      diacriticRecoveries,
       companyCellRecoveries,
       companyOcrTraces,
       flightOcrTraces,
@@ -5420,6 +5436,7 @@
       `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
       `DriverFragmentFix=[${list(check.driverFragmentRecoveries)}]`,
+      `DiacriticFix=[${list(check.diacriticRecoveries)}]`,
       `CompanyCellFix=[${list(check.companyCellRecoveries)}]`,
       `CompanyOCRTrace=[${list(check.companyOcrTraces)}]`,
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
@@ -5906,7 +5923,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P12 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P13 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
