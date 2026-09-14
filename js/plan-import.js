@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P6 · 14.09.2026: COMPANY COLUMN BLEED CONSENSUS GUARD. P5 zeigte, dass die Firma-Zelle nicht leer war, sondern durch OCR-Spaltenübersprechen fälschlich denselben Text wie die Name-Zelle tragen konnte. ATMS liest die Firma-Zelle jetzt gezielt lokal nach, wenn Firma fehlt ODER exakt dem Kunden/Name entspricht. Eine Korrektur erfolgt nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei lokalen OCR-Versuchen; kein Firmenname wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P5 · 14.09.2026: TARGETED COMPANY CELL OCR RECOVERY. Wenn die normale Bild-OCR in einer vorhandenen Firma-Spalte eine einzelne Firmenzelle leer lässt, obwohl die Fahrt ansonsten sauber erkannt wurde, liest ATMS ausschließlich diese konkrete Firma-Zelle lokal erneut. Übernommen wird nur ein eindeutiger Mehrfach-Konsens aus mindestens zwei gezielten OCR-Versuchen. Firmenbezeichnungen werden nicht geraten oder hart codiert. Bestehende P3/P4-, Flug-, Zeit-, Preis-, Storno- und Persistenzlogik bleibt unverändert.
   // CORE-007D8A1F1D8P4 · 13.09.2026: REPEATED DRIVER FRAGMENT CONSENSUS GUARD. Wenn die Fahrerzelle nur einen einzelnen Großbuchstaben liefert, darf ATMS ihn ausschließlich dann automatisch wiederherstellen, wenn derselbe Buchstabe als finaler Namenszusatz genau EINEM bereits sauber erkannten Fahrer derselben Planliste entspricht und dieser vollständige Fahrer mindestens zweimal unabhängig in anderen Zeilen vorkommt. Keine Fahrer-Namen werden hart codiert; mehrdeutige oder einmalige Treffer bleiben manuell prüfbar. Die echte DISPO-/Mirror-Abweichung einer Planzeile bleibt unverändert als Hinweis erhalten.
   'use strict';
@@ -864,6 +865,14 @@
       company,
       companyRawOcr,
       companyOcrMissing: Boolean(options.imageOcr && mapping?.company !== undefined && !companyRawOcr),
+      companyOcrSuspicious: Boolean(
+        options.imageOcr &&
+        mapping?.company !== undefined &&
+        (
+          !companyRawOcr ||
+          Boolean(customer && cleanKey(companyRawOcr) === cleanKey(customer))
+        )
+      ),
       partner: customer || company,
       arrivalFlight,
       departureFlight,
@@ -3354,7 +3363,7 @@
 
     for (let i = 0; i < out.length; i++) {
       const ride = out[i];
-      if (!ride?.companyOcrMissing) continue;
+      if (!ride?.companyOcrSuspicious && !ride?.companyOcrMissing) continue;
 
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
@@ -3414,8 +3423,16 @@
       const recovered = normalizeCompanyOcrCandidate(displayByKey.get(winner[0]) || '');
       if (!recovered) continue;
 
+      const customerKey = cleanKey(ride?.customer || '');
+      const recoveredKey = cleanKey(recovered);
+      // Wenn die lokale Nachlese lediglich erneut den Namen links daneben liest,
+      // ist die Firma-Zelle weiterhin nicht sicher aufgelöst.
+      if (customerKey && recoveredKey === customerKey) continue;
+
+      ride.companyBeforeTargetedOcr = cellText(ride?.companyRawOcr || ride?.company || '');
       ride.company = recovered;
       ride.companyOcrMissing = false;
+      ride.companyOcrSuspicious = false;
       ride.companyRecoveredFromTargetedOcr = true;
       ride.companyRecoverySource = 'targeted_company_cell_consensus';
     }
@@ -4898,7 +4915,7 @@
     const driverFragmentRecoveries = rideList.filter(ride => ride?.driverRecoveredFromRepeatedColumnConsensus)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.driverRawOcr) || '∅'}→${cellText(ride?.driver)}`);
     const companyCellRecoveries = rideList.filter(ride => ride?.companyRecoveredFromTargetedOcr)
-      .map(ride => `${Number(ride?.sourceRow || 0)}:∅→${cellText(ride?.company)}`);
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.companyBeforeTargetedOcr) || '∅'}→${cellText(ride?.company)}`);
 
     // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
@@ -4948,7 +4965,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P5',
+      version: 'CORE-007D8A1F1D8P6',
       status,
       reason,
       rides: rideList.length,
@@ -5392,7 +5409,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P5 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P6 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
