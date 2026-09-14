@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P9 · 14.09.2026: COMPANY NEAREST-NEIGHBOR CROSS-GEOMETRY GUARD. P8 zeigte, dass verschiedene Kontrastvarianten denselben falschen OCR-Wert systematisch bestätigen können. Deshalb dürfen Kontrastvarianten ab P9 NICHT mehr selbstständig eine Firma automatisch übernehmen. Für verdächtige Firma-Zellen nutzt ATMS zusätzlich mehrere eng begrenzte Originalbild-Crops mit nearest-neighbor-Vergrößerung ohne Glättung. Automatisch übernommen wird nur ein EXAKT identischer Wert, der in mindestens zwei unterschiedlichen Crop-Geometrien durch deutsche OCR bestätigt wird. Kein Firmenname wird geraten oder hart codiert; ohne diesen Konsens bleibt ein sichtbarer OCR-Hinweis.
   // CORE-007D8A1F1D8P8 · 14.09.2026: COMPANY CONTRAST ENSEMBLE + SAFE AMBIGUITY WARNING. P7 lieferte für dieselbe Firma mehrere sehr nahe OCR-Lesarten (u. a. KoeiInBus/KoeinBus/KoeinBu). P8 ergänzt ausschließlich für verdächtige Firma-Zellen eine lokale kontrast-/kanalbasierte Nachlese. Automatisch übernommen wird weiterhin NUR ein exakt identischer Firmenwert, der aus mindestens zwei unterschiedlichen Kontrastvarianten bestätigt wird. Gibt es keinen sicheren Konsens, bleibt der vorhandene Wert unverändert und ATMS zeigt nun einen sichtbaren OCR-Hinweis statt den Firmenfehler still zu verschlucken. Keine Firmenbezeichnung wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P7 · 14.09.2026: COMPANY TARGETED DEU OCR + TRACE. Der P6-Test zeigte, dass die Firma-Zelle bei EW9395 weiterhin als Kundenname durchgereicht wurde. Die gezielte Firmen-Nachlese nutzt jetzt mehrere enge Zell-Crops mit deutscher OCR (deu), verlangt Mehrfach-Konsens über mindestens zwei unterschiedliche Crop-Geometrien und protokolliert die Kandidaten im Diagnose-Selbstcheck. Keine Firmenbezeichnung wird geraten oder hart codiert; ohne eindeutigen Konsens bleibt der bisherige Wert unverändert.
   // CORE-007D8A1F1D8P6 · 14.09.2026: COMPANY COLUMN BLEED CONSENSUS GUARD. P5 zeigte, dass die Firma-Zelle nicht leer war, sondern durch OCR-Spaltenübersprechen fälschlich denselben Text wie die Name-Zelle tragen konnte. ATMS liest die Firma-Zelle jetzt gezielt lokal nach, wenn Firma fehlt ODER exakt dem Kunden/Name entspricht. Eine Korrektur erfolgt nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei lokalen OCR-Versuchen; kein Firmenname wird geraten oder hart codiert.
@@ -3451,6 +3452,21 @@
       .map(entry => entry.display);
   }
 
+
+  function cropCanvasRegionNearest(source, x0, y0, x1, y1, scale = 8) {
+    const sx = Math.max(0, Math.floor(x0));
+    const sy = Math.max(0, Math.floor(y0));
+    const sw = Math.max(1, Math.min(source.width - sx, Math.ceil(x1 - x0)));
+    const sh = Math.max(1, Math.min(source.height - sy, Math.ceil(y1 - y0)));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(sw * scale));
+    out.height = Math.max(1, Math.round(sh * scale));
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    return out;
+  }
+
   async function recoverMissingCompaniesTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const companyCol = mapping?.company;
@@ -3616,15 +3632,111 @@
         // Kontrast-Nachlese ist rein additiv; bei Fehler bleibt P7 unverändert.
       }
 
-      // Ein Firmenwert ist nur dann sicher, wenn mindestens zwei voneinander
-      // verschiedene Kontrastvarianten exakt denselben Wert liefern.
-      const contrastWinner = [...exactContrastVotes.entries()]
-        .map(([key, ids]) => ({ key, support: ids.size }))
-        .filter(entry => entry.support >= 2)
-        .sort((a,b) => b.support - a.support || a.key.localeCompare(b.key))[0];
+      // P9: Kontrast-OCR bleibt ab hier nur Diagnose. P8 hat gezeigt, dass
+      // verschiedene Kontrastfilter denselben falschen Wert systematisch bestätigen
+      // können. Eine automatische Übernahme aus exactContrastVotes ist daher verboten.
 
-      if (contrastWinner) {
-        const recovered = normalizeCompanyOcrCandidate(exactContrastDisplay.get(contrastWinner.key) || '');
+      // P9: Originalbild ohne Glättung in mehreren, leicht unterschiedlichen
+      // Zell-Geometrien. Nur exakter Cross-Geometry-Konsens darf übernehmen.
+      const nearestGeometryVotes = new Map();
+      const nearestDisplay = new Map();
+      const nearestGeometries = [
+        {
+          id: 'nearest-wide',
+          x0: left - Math.max(2, cellWidth * 0.035),
+          y0: y0,
+          x1: right + Math.max(2, cellWidth * 0.045),
+          y1: y1
+        },
+        {
+          id: 'nearest-inner',
+          x0: left - Math.max(1, cellWidth * 0.015),
+          y0: y0 + Math.max(0, rowHeight * 0.035),
+          x1: right + Math.max(1, cellWidth * 0.025),
+          y1: y1 - Math.max(0, rowHeight * 0.035)
+        },
+        {
+          id: 'nearest-mid',
+          x0: left - Math.max(2, cellWidth * 0.025),
+          y0: y0 + Math.max(0, rowHeight * 0.015),
+          x1: right + Math.max(2, cellWidth * 0.035),
+          y1: y1 - Math.max(0, rowHeight * 0.015)
+        }
+      ];
+
+      try {
+        for (const region of nearestGeometries) {
+          const crop = cropCanvasRegionNearest(
+            imageCanvas,
+            region.x0, region.y0, region.x1, region.y1,
+            8
+          );
+
+          const geometryCandidates = new Map();
+          for (const mode of [
+            { name:'psm8-deu', options:{ tessedit_pageseg_mode:'8' } },
+            { name:'psm13-deu', options:{ tessedit_pageseg_mode:'13' } }
+          ]) {
+            const second = await Tesseract.recognize(crop, 'deu', mode.options);
+            const candidates = companyCandidatesFromOcrResult(second);
+            const rawText = cellText(second?.data?.text)
+              .replace(/[\r\n\t]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 60);
+
+            attempts.push({
+              crop: region.id,
+              mode: mode.name,
+              scale: 8,
+              raw: rawText,
+              candidates: candidates.slice(0, 3)
+            });
+
+            if (candidates.length !== 1) continue;
+            const candidate = normalizeCompanyOcrCandidate(candidates[0]);
+            const key = cleanKey(candidate);
+            if (!key) continue;
+
+            const customerKey = cleanKey(ride?.customer || '');
+            if (customerKey && key === customerKey) continue;
+
+            const current = geometryCandidates.get(key) || {
+              display: candidate,
+              modes: new Set()
+            };
+            current.modes.add(mode.name);
+            geometryCandidates.set(key, current);
+          }
+
+          // Eine einzelne Geometrie zählt höchstens eine Stimme je exaktem Wert.
+          for (const [key, entry] of geometryCandidates.entries()) {
+            nearestDisplay.set(key, nearestDisplay.get(key) || entry.display);
+            if (!nearestGeometryVotes.has(key)) nearestGeometryVotes.set(key, new Set());
+            nearestGeometryVotes.get(key).add(region.id);
+          }
+        }
+      } catch (_) {
+        // Rein additiv: bei OCR-Fehler bleibt der Wert unverändert und wird gewarnt.
+      }
+
+      const nearestRanked = [...nearestGeometryVotes.entries()]
+        .map(([key, ids]) => ({
+          key,
+          support: ids.size,
+          display: nearestDisplay.get(key) || ''
+        }))
+        .sort((a,b) => b.support - a.support || a.key.localeCompare(b.key, 'de-DE'));
+
+      const nearestWinner = nearestRanked[0] || null;
+      const nearestRunner = nearestRanked[1] || null;
+
+      if (
+        nearestWinner &&
+        nearestWinner.support >= 2 &&
+        (!nearestRunner || nearestWinner.support > nearestRunner.support)
+      ) {
+        const recovered = normalizeCompanyOcrCandidate(nearestWinner.display);
         if (recovered) {
           ride.companyBeforeTargetedOcr = cellText(ride?.companyRawOcr || ride?.company || '');
           ride.company = recovered;
@@ -3632,9 +3744,9 @@
           ride.companyOcrSuspicious = false;
           ride.companyNeedsManualCheck = false;
           ride.companyRecoveredFromTargetedOcr = true;
-          ride.companyRecoverySource = 'targeted_company_contrast_exact_consensus';
+          ride.companyRecoverySource = 'targeted_company_nearest_cross_geometry_exact_consensus';
           ride.companyRecoveryEvidence = {
-            contrastVariants: contrastWinner.support
+            nearestGeometries: nearestWinner.support
           };
           ride.companyTargetedOcrAttempts = attempts;
           continue;
@@ -5224,7 +5336,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P8',
+      version: 'CORE-007D8A1F1D8P9',
       status,
       reason,
       rides: rideList.length,
@@ -5670,7 +5782,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P8 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P9 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
