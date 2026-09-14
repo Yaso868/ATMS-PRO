@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P16 · 14.09.2026: LIVE IMPORT STATUS CLARITY. Die Meldung nach „✓ Live-Flugdaten übernehmen“ unterscheidet nun zwischen bestätigtem Flugstatus und tatsächlich gesetzter LIVE-Zeit. Ein bestätigtes scheduled ohne Estimated-/Actual-Zeit oder belastbare Abweichung wird nicht mehr sprachlich wie eine echte LIVE-Zeit dargestellt. Reine Anzeige-/Rückmeldekorrektur; LIVE-Berechnung, PLAN/DISPO, Flugprüfung, OCR und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P15 · 14.09.2026: STAGED GEMINI PROMPT SOURCE GUARD. Wenn eine neue Planliste bereits analysiert, aber noch nicht übernommen ist, fängt plan-import.js den sichtbaren Button „🤖 Gemini-Prüfauftrag kopieren“ ab und erzeugt den Prüfauftrag aus den aktuell analysierten state.rides statt aus dem alten gespeicherten Fahrtenbestand. Ohne aktive Analyse bleibt der bisherige app.js-Ablauf unverändert. Keine Änderung an OCR, Fahrtdaten, Flugergebnis-Übernahme, LIVE oder Persistenz.
   // CORE-007D8A1F1D8P14 · 14.09.2026: CUSTOMER/PARTNER DIACRITIC SYNC. P13 korrigierte customer korrekt von Bergstrom→Bergström, aber das beim Import separat gehaltene Anzeige-/Partnerfeld blieb auf dem alten OCR-Wert. P14 synchronisiert partner ausschließlich dann mit, wenn customer sicher per Diakritik-Recovery geändert wurde und partner vorher exakt dem alten customer-Wert entsprach oder leer war. Firma und alle übrigen Felder bleiben unverändert.
   // CORE-007D8A1F1D8P13 · 14.09.2026: NAME + FLIGHT LOCATION DIACRITIC RECOVERY. Die bereits bewährte sichere deutsche Diakritik-Nachlese für Von/Nach wird auf die Spalten Name und Ort erweitert. Ein Wert wird nur ersetzt, wenn zwei gezielte deutsche OCR-Durchläufe exakt denselben Kandidaten liefern und sich der Kandidat ausschließlich durch eine sichere lateinische Diakritik vom Primärwert unterscheidet (z. B. Bergstrom→Bergström, Goteborg→Göteborg). Keine Namen oder Orte werden hardcodiert oder per Wörterbuch geraten.
@@ -6447,6 +6448,118 @@
     window.__atmsStagedGeminiPromptSourceGuard = true;
   }
 
+
+  function installLiveImportStatusClarity() {
+    if (window.__atmsLiveImportStatusClarity) return;
+
+    const cleanJsonText = value => String(value || '')
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '');
+
+    const strictLiveClock = value => {
+      if (value === null || value === undefined || value === '') return null;
+      const text = String(value).trim();
+      return /^([01]?\d|2[0-3]):[0-5]\d$/.test(text) ? text : null;
+    };
+
+    const normalizedFlightNumber = value => String(value || '').replace(/\s+/g, '').toUpperCase();
+
+    const validatedPayloadItem = item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const status = String(item.status || 'unknown').trim().toLowerCase();
+      if (!item.confirmed || status === 'unknown') return false;
+      const sources = Array.isArray(item.sources) ? item.sources : [];
+      const unique = new Set(sources
+        .map(source => String(source?.url || '').trim().toLowerCase())
+        .filter(Boolean));
+      return unique.size >= 2;
+    };
+
+    const payloadProvidesLiveTime = item => {
+      if (!validatedPayloadItem(item)) return false;
+      const direction = String(item.direction || 'unknown').trim().toLowerCase();
+      const status = String(item.status || 'unknown').trim().toLowerCase();
+      if (status === 'cancelled' || direction === 'unknown') return false;
+
+      const scheduled = strictLiveClock(item.airportScheduledTime ?? item.dusScheduledTime);
+      const estimated = strictLiveClock(item.airportEstimatedTime ?? item.dusEstimatedTime);
+      const actual = strictLiveClock(item.airportActualTime ?? item.dusActualTime);
+
+      if (direction === 'arrival') return Boolean(actual || estimated);
+      if (direction !== 'departure') return false;
+
+      const rawDelay = item.delayMinutes;
+      const hasExplicitDelay = rawDelay !== null && rawDelay !== undefined && rawDelay !== '' && Number.isFinite(Number(rawDelay));
+      const canDeriveDelay = Boolean(scheduled && (actual || estimated));
+      return status === 'on_time' || hasExplicitDelay || canDeriveDelay;
+    };
+
+    const countLiveTimeRides = payload => {
+      const items = Array.isArray(payload?.flights) ? payload.flights : [];
+      if (!items.length || typeof rides === 'undefined' || !Array.isArray(rides)) return null;
+      if (typeof flightDirectionForGemini !== 'function' || typeof flightAirportForGemini !== 'function') return null;
+
+      let count = 0;
+      for (const ride of rides) {
+        const flight = normalizedFlightNumber(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
+        if (!flight) continue;
+        const date = String(ride?.date || '').trim();
+        const direction = String(flightDirectionForGemini(ride) || 'unknown').trim().toLowerCase();
+        const airportIata = String(flightAirportForGemini(ride) || '').trim().toUpperCase();
+        const matches = items.filter(item =>
+          normalizedFlightNumber(item?.flightNumber) === flight &&
+          (!date || String(item?.date || '').trim() === date) &&
+          String(item?.direction || 'unknown').trim().toLowerCase() === direction &&
+          String(item?.airportIata || '').trim().toUpperCase() === airportIata
+        );
+        if (matches.length === 1 && payloadProvidesLiveTime(matches[0])) count++;
+      }
+      return count;
+    };
+
+    document.addEventListener('click', event => {
+      const button = event.target?.closest?.('#applyLiveFlightBtn');
+      if (!button) return;
+
+      let payload = null;
+      try {
+        payload = JSON.parse(cleanJsonText($('liveFlightResult')?.value || ''));
+      } catch (_) {
+        payload = null;
+      }
+
+      setTimeout(() => {
+        const status = $('liveFlightImportStatus');
+        const current = String(status?.textContent || '').trim();
+        if (!status || !current || /^Fehler:/i.test(current)) return;
+        if (!/Fahrt\(en\) mit bestätigten Live-Flugdaten aktualisiert/i.test(current)) return;
+
+        const updatedMatch = current.match(/^(\d+)\s+Fahrt\(en\)/i);
+        if (!updatedMatch) return;
+        const updated = Number(updatedMatch[1]);
+        const uncertainMatch = current.match(/·\s*(\d+)\s+unsicher/i);
+        const cleanedMatch = current.match(/·\s*(\d+)\s+alter künstlicher scheduled-LIVE-Wert bereinigt/i);
+        const uncertain = uncertainMatch ? Number(uncertainMatch[1]) : 0;
+        const cleanedLegacy = cleanedMatch ? Number(cleanedMatch[1]) : 0;
+        const liveTimeRides = countLiveTimeRides(payload);
+
+        const parts = [`${updated} Fahrt(en) mit bestätigtem Flugstatus gespeichert`];
+        if (liveTimeRides !== null) parts.push(`${liveTimeRides} Fahrt(en) mit LIVE-Zeit`);
+        if (uncertain) parts.push(`${uncertain} unsicher`);
+        if (cleanedLegacy) parts.push(`${cleanedLegacy} alter künstlicher scheduled-LIVE-Wert bereinigt`);
+        status.textContent = `${parts.join(' · ')}.`;
+
+        if (typeof window.showToast === 'function') {
+          const liveText = liveTimeRides === null ? '' : ` · ${liveTimeRides} mit LIVE-Zeit`;
+          window.showToast(`${updated} Flugstatus gespeichert${liveText}`, 'ok');
+        }
+      }, 0);
+    }, true);
+
+    window.__atmsLiveImportStatusClarity = true;
+  }
+
   async function copyFlightCheckPrompt() {
     if (!state.rides.length || !window.ATMSFlight) return;
     const prompt = window.ATMSFlight.buildGeminiPrompt(state.rides);
@@ -6473,6 +6586,7 @@
     ensurePlanDateControl();
     currentPlanDate();
     installStagedGeminiPromptSourceGuard();
+    installLiveImportStatusClarity();
     // CORE-007D8A1F1D4: Browser/Android duerfen dieselbe Datei erneut waehlen.
     // Das Leeren VOR dem Picker verhindert, dass ein identischer Pfad das change-Event verschluckt.
     input.addEventListener('click', () => { input.value = ''; });
