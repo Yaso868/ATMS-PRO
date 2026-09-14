@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P5 · 14.09.2026: TARGETED COMPANY CELL OCR RECOVERY. Wenn die normale Bild-OCR in einer vorhandenen Firma-Spalte eine einzelne Firmenzelle leer lässt, obwohl die Fahrt ansonsten sauber erkannt wurde, liest ATMS ausschließlich diese konkrete Firma-Zelle lokal erneut. Übernommen wird nur ein eindeutiger Mehrfach-Konsens aus mindestens zwei gezielten OCR-Versuchen. Firmenbezeichnungen werden nicht geraten oder hart codiert. Bestehende P3/P4-, Flug-, Zeit-, Preis-, Storno- und Persistenzlogik bleibt unverändert.
   // CORE-007D8A1F1D8P4 · 13.09.2026: REPEATED DRIVER FRAGMENT CONSENSUS GUARD. Wenn die Fahrerzelle nur einen einzelnen Großbuchstaben liefert, darf ATMS ihn ausschließlich dann automatisch wiederherstellen, wenn derselbe Buchstabe als finaler Namenszusatz genau EINEM bereits sauber erkannten Fahrer derselben Planliste entspricht und dieser vollständige Fahrer mindestens zweimal unabhängig in anderen Zeilen vorkommt. Keine Fahrer-Namen werden hart codiert; mehrdeutige oder einmalige Treffer bleiben manuell prüfbar. Die echte DISPO-/Mirror-Abweichung einer Planzeile bleibt unverändert als Hinweis erhalten.
   'use strict';
   // CORE-007D8A1F1D8P3 · 13.09.2026: TARGETED HEADER BAND OCR RECOVERY. Wenn die Vollbild-OCR trotz sichtbar vollständiger Kopfzeile keinen sicheren Header liefert, wird ausschließlich der schmale Tabellenkopf direkt oberhalb der ersten mehrfach belegten Preis-/Zeit-Datenzeile lokal vergrößert nachgelesen. Die Nachlese wird nur übernommen, wenn sie selbst erneut einen strengen ATMS-Header mit Preis, Von/Nach und Flugspalte bestätigt; andernfalls bleibt der bisherige sichere Abbruch unverändert. Keine Fahrtdaten, Preise, Namen, Flugnummern, Orte oder Spaltenpositionen werden hart codiert. CORE-007D8A1F1D8P1, Storno, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
@@ -805,7 +806,8 @@
     const pickup = cellText(valueAt(row, mapping, 'pickup'));
     const destination = cellText(valueAt(row, mapping, 'destination'));
     const customer = cellText(valueAt(row, mapping, 'customer'));
-    const company = cellText(valueAt(row, mapping, 'company')) || customer || 'WT';
+    const companyRawOcr = cellText(valueAt(row, mapping, 'company'));
+    const company = companyRawOcr || customer || 'WT';
 
     let recoveredFlight = '';
     let flightRecoveryAmbiguous = false;
@@ -860,6 +862,8 @@
       destination,
       customer,
       company,
+      companyRawOcr,
+      companyOcrMissing: Boolean(options.imageOcr && mapping?.company !== undefined && !companyRawOcr),
       partner: customer || company,
       arrivalFlight,
       departureFlight,
@@ -3300,6 +3304,125 @@
     return normalized !== raw;
   }
 
+
+  function normalizeCompanyOcrCandidate(value) {
+    const text = cellText(value)
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[|:;,.]+|[|:;,.]+$/g, '')
+      .trim();
+    if (!text || text.length < 2 || text.length > 48) return '';
+    if (looksLikeTime(text) || looksLikeFlight(text)) return '';
+    if (/^[€$£]?\s*\d+(?:[.,]\d+)?\s*$/.test(text)) return '';
+    if (/^(pkw|van|bus|sprinter)$/i.test(text)) return '';
+    if (!/[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(text)) return '';
+    if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ0-9&+.'’\-\/ ]+$/.test(text)) return '';
+    return text;
+  }
+
+  function companyCandidatesFromOcrResult(result) {
+    const candidates = [];
+    const add = value => {
+      const normalized = normalizeCompanyOcrCandidate(value);
+      if (normalized) candidates.push(normalized);
+    };
+
+    add(result?.data?.text || '');
+    const words = (result?.data?.words || []).map(word => cellText(word?.text)).filter(Boolean);
+    if (words.length) add(words.join(' '));
+
+    const unique = new Map();
+    candidates.forEach(candidate => {
+      const key = cleanKey(candidate);
+      if (key && !unique.has(key)) unique.set(key, candidate);
+    });
+    return [...unique.values()];
+  }
+
+  async function recoverMissingCompaniesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const companyCol = mapping?.company;
+    if (companyCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[companyCol]);
+    const right = Number(boundaries[companyCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (!ride?.companyOcrMissing) continue;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.16);
+      const padX = Math.max(1, cellWidth * 0.035);
+
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 3]
+      ];
+      const modes = [
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8' } }
+      ];
+
+      if (status) status.textContent = `Firmenzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+
+      const votes = new Map();
+      const displayByKey = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of modes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = companyCandidatesFromOcrResult(second);
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = candidates[0];
+            const key = cleanKey(candidate);
+            if (!key) continue;
+            displayByKey.set(key, displayByKey.get(key) || candidate);
+            votes.set(key, (votes.get(key) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.companyTargetedOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.companyTargetedOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Sicherheitsregel: Kein Einzel-Treffer und kein Gleichstand.
+      if (!winner || winner[1] < 2) continue;
+      if (runner && winner[1] === runner[1]) continue;
+
+      const recovered = normalizeCompanyOcrCandidate(displayByKey.get(winner[0]) || '');
+      if (!recovered) continue;
+
+      ride.company = recovered;
+      ride.companyOcrMissing = false;
+      ride.companyRecoveredFromTargetedOcr = true;
+      ride.companyRecoverySource = 'targeted_company_cell_consensus';
+    }
+
+    return out;
+  }
+
   async function recoverMissingDriversTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const driverCol = mapping?.driver;
@@ -4750,7 +4873,7 @@
     const sourceRows = rideList.map(ride => Number(ride?.sourceRow || 0)).filter(Number.isFinite);
     const matrixIndexes = sourceRows.map(row => row - 1);
     const matchedMatrixIndexes = matrixIndexes.filter(index => Boolean(rowMeta[index]));
-    const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','flightTime','driver']
+    const mappingSnapshot = ['pickup','destination','customer','company','arrivalFlight','departureFlight','time','flightTime','driver']
       .map(field => `${field}=${mapping?.[field] ?? '–'}`).join(', ');
     const schemaColumns = Number(imageMeta?.schemaColumns || 0);
     const forcedPriceMirror = Boolean(imageMeta?.forcedPriceMirror);
@@ -4774,6 +4897,8 @@
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
     const driverFragmentRecoveries = rideList.filter(ride => ride?.driverRecoveredFromRepeatedColumnConsensus)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.driverRawOcr) || '∅'}→${cellText(ride?.driver)}`);
+    const companyCellRecoveries = rideList.filter(ride => ride?.companyRecoveredFromTargetedOcr)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:∅→${cellText(ride?.company)}`);
 
     // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
@@ -4823,7 +4948,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P4',
+      version: 'CORE-007D8A1F1D8P5',
       status,
       reason,
       rides: rideList.length,
@@ -4844,6 +4969,7 @@
       routeBoundaryRecoveries,
       flightPrefixRecoveries,
       driverFragmentRecoveries,
+      companyCellRecoveries,
       flightOcrTraces,
       diagnosticItems: diagList.length
     };
@@ -4867,6 +4993,7 @@
       `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
       `DriverFragmentFix=[${list(check.driverFragmentRecoveries)}]`,
+      `CompanyCellFix=[${list(check.companyCellRecoveries)}]`,
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `SchemaCols=${check.schemaColumns || 0}`,
@@ -5265,7 +5392,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P4 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P5 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
@@ -5468,6 +5595,13 @@
           mappingInfo.mapping
         );
         preparedRides = await recoverRouteDiacriticsTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        );
+        assertAnalysisCurrent(file, fileSelectionRevision, analysisRevision);
+        preparedRides = await recoverMissingCompaniesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
