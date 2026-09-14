@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P11 · 14.09.2026: MANUAL COMPANY CONFIRMATION GATE. Wenn die Firmenzelle trotz aller lokalen OCR-Gegenprüfungen unsicher bleibt, darf die Fahrt nicht mehr mit einer still falschen/duplizierten Firma übernommen werden. ATMS zeigt direkt im Analysebereich ein Eingabefeld „Firma laut Original-Planliste“ mit dem Button „Firma übernehmen“. Bis zur Bestätigung bleibt „Geprüfte Fahrten übernehmen“ gesperrt. Die manuelle Eingabe ändert ausschließlich die Firma dieser einen Fahrt; Name, Route, Flug, Preis, Zeiten, Fahrer, Fahrzeug, LIVE und Persistenzlogik bleiben unverändert.
   // CORE-007D8A1F1D8P10 · 14.09.2026: COMPANY UNANIMOUS DIRECT-OCR GUARD. P9 zeigte, dass selbst mehrere nearest-neighbor-Crops denselben falschen Firmenwert „KoeinBus“ bestätigen können. Ab P10 darf eine verdächtige Firma-Zelle nur dann automatisch korrigiert werden, wenn ALLE direkten Originalbild-OCR-Versuche (tight + nearest, ohne Kontrastfilter) exakt denselben Firmenwert liefern. Sobald direkte Original-Crops unterschiedliche, ähnlich aussehende Lesarten liefern, wird NICHT automatisch übernommen; stattdessen bleibt ein sichtbarer OCR-Hinweis mit Kandidaten. Keine Firmenbezeichnung wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P9 · 14.09.2026: COMPANY NEAREST-NEIGHBOR CROSS-GEOMETRY GUARD. P8 zeigte, dass verschiedene Kontrastvarianten denselben falschen OCR-Wert systematisch bestätigen können. Deshalb dürfen Kontrastvarianten ab P9 NICHT mehr selbstständig eine Firma automatisch übernehmen. Für verdächtige Firma-Zellen nutzt ATMS zusätzlich mehrere eng begrenzte Originalbild-Crops mit nearest-neighbor-Vergrößerung ohne Glättung. Automatisch übernommen wird nur ein EXAKT identischer Wert, der in mindestens zwei unterschiedlichen Crop-Geometrien durch deutsche OCR bestätigt wird. Kein Firmenname wird geraten oder hart codiert; ohne diesen Konsens bleibt ein sichtbarer OCR-Hinweis.
   // CORE-007D8A1F1D8P8 · 14.09.2026: COMPANY CONTRAST ENSEMBLE + SAFE AMBIGUITY WARNING. P7 lieferte für dieselbe Firma mehrere sehr nahe OCR-Lesarten (u. a. KoeiInBus/KoeinBus/KoeinBu). P8 ergänzt ausschließlich für verdächtige Firma-Zellen eine lokale kontrast-/kanalbasierte Nachlese. Automatisch übernommen wird weiterhin NUR ein exakt identischer Firmenwert, der aus mindestens zwei unterschiedlichen Kontrastvarianten bestätigt wird. Gibt es keinen sicheren Konsens, bleibt der vorhandene Wert unverändert und ATMS zeigt nun einen sichtbaren OCR-Hinweis statt den Firmenfehler still zu verschlucken. Keine Firmenbezeichnung wird geraten oder hart codiert.
@@ -969,10 +970,21 @@
         issues.push({ level: 'warning', row, text: `Fahrer „${ride.driver}“ OCR-auffällig – Original-Planliste prüfen` });
       }
       if (ride.companyNeedsManualCheck) {
-        const candidates = Array.isArray(ride.companyOcrCandidateSummary) && ride.companyOcrCandidateSummary.length
-          ? ` (OCR-Kandidaten: ${ride.companyOcrCandidateSummary.join(' / ')})`
+        const candidateList = Array.isArray(ride.companyOcrCandidateSummary)
+          ? ride.companyOcrCandidateSummary.slice(0, 3)
+          : [];
+        const candidates = candidateList.length
+          ? ` (OCR-Kandidaten: ${candidateList.join(' / ')})`
           : '';
-        issues.push({ level: 'warning', row, text: `Firma OCR-unsicher${candidates} – Original-Planliste prüfen` });
+        issues.push({
+          level: 'warning',
+          kind: 'company',
+          row,
+          rideId: ride.id,
+          currentCompany: cellText(ride.company || ''),
+          companyCandidates: candidateList,
+          text: `Firma OCR-unsicher${candidates} – Original-Planliste prüfen`
+        });
       }
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
@@ -5361,7 +5373,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P10',
+      version: 'CORE-007D8A1F1D8P11',
       status,
       reason,
       rides: rideList.length,
@@ -5718,6 +5730,36 @@
     render();
   }
 
+
+  function resolveCompanyIssue(rideId, value) {
+    const ride = state.rides.find(item => String(item.id) === String(rideId));
+    if (!ride) return;
+
+    const company = normalizeCompanyOcrCandidate(value);
+    if (!company) {
+      if (typeof window.showToast === 'function') {
+        window.showToast('Bitte die Firma laut Original-Planliste eingeben', 'warn');
+      }
+      return;
+    }
+
+    ride.companyBeforeManualConfirmation = cellText(ride.company || '');
+    ride.company = company;
+    ride.companyRawOcr = company;
+    ride.companyOcrMissing = false;
+    ride.companyOcrSuspicious = false;
+    ride.companyNeedsManualCheck = false;
+    ride.companyManuallyConfirmed = true;
+    ride.companyRecoverySource = 'manual_original_plan_confirmation';
+
+    state.issues = validate(state.rides);
+    render();
+
+    if (typeof window.showToast === 'function') {
+      window.showToast(`Firma „${company}“ übernommen`, 'ok');
+    }
+  }
+
   function render() {
     refreshIssuesAfterFlightSync();
     const rides = state.rides, issues = state.issues;
@@ -5754,6 +5796,20 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
                 <button type="button" class="date-boundary-btn" data-date-action="next_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(String(issue.count))} Fahrt(en) → ${escapeHtml(formatPlanDate(issue.nextDate))}</button>
                 <button type="button" class="date-boundary-btn" data-date-action="same_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">Alle bleiben ${escapeHtml(formatPlanDate(issue.baseDate))}</button>
+              </div>
+            </div>`;
+          }
+
+          if (issue.kind === 'company') {
+            const candidateHint = Array.isArray(issue.companyCandidates) && issue.companyCandidates.length
+              ? `<div style="font-size:11px;opacity:.72;margin-top:7px">OCR-Kandidaten nur zur Orientierung: ${issue.companyCandidates.map(item => escapeHtml(item)).join(' / ')}</div>`
+              : '';
+            return `<div class="plan-issue ${issue.level}" style="padding-bottom:12px">
+              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              ${candidateHint}
+              <input type="text" class="company-manual-input" data-ride-id="${escapeHtml(issue.rideId)}" placeholder="Firma laut Original-Planliste" autocomplete="off" style="width:100%;box-sizing:border-box;margin-top:10px;padding:11px;border-radius:10px">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                <button type="button" class="company-review-btn" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">Firma übernehmen</button>
               </div>
             </div>`;
           }
@@ -5807,7 +5863,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P10 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P11 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
@@ -5844,6 +5900,17 @@
       });
     });
 
+    $('planIssues').querySelectorAll('.company-review-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const input = Array.from($('planIssues').querySelectorAll('.company-manual-input'))
+          .find(item => String(item.dataset.rideId) === String(button.dataset.rideId));
+        resolveCompanyIssue(
+          button.dataset.rideId,
+          input?.value || ''
+        );
+      });
+    });
+
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
       const rowIssues = actionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
       const status = rowIssues.some(issue => issue.level === 'error') ? 'Fehler' : rowIssues.length ? 'Prüfen' : 'OK';
@@ -5861,8 +5928,9 @@
       </tr>`;
     }).join('');
 
-    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || actionableIssues.some(issue => issue.kind === 'price');
     const unresolvedPriceIssues = actionableIssues.filter(issue => issue.kind === 'price').length;
+    const unresolvedCompanyIssues = actionableIssues.filter(issue => issue.kind === 'company').length;
+    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || unresolvedPriceIssues > 0 || unresolvedCompanyIssues > 0;
     const cancelledSuffix = cancelledRows.length
       ? ` ${cancelledRows.length} Storno-Zeile${cancelledRows.length === 1 ? '' : 'n'} sicher ausgeschlossen.`
       : '';
@@ -5870,6 +5938,8 @@
       ? `${rides.length} Fahrten erkannt. ${errors} Fehler müssen vor dem Import behoben werden.`
       : unresolvedPriceIssues
         ? `${rides.length} Fahrten erkannt. ${unresolvedPriceIssues} auffälliger Preis muss vor der Übernahme bestätigt werden.`
+        : unresolvedCompanyIssues
+          ? `${rides.length} Fahrten erkannt. ${unresolvedCompanyIssues} Firmenangabe muss vor der Übernahme mit der Original-Planliste bestätigt werden.`
         : flightChecks.length
           ? `${rides.length} Fahrten erkannt und OCR-geprüft. ${flightChecks.length} Flugprüfung(en) offen. Bereit zur Übernahme.`
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
