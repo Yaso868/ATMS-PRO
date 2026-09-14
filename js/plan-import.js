@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P8 · 14.09.2026: COMPANY CONTRAST ENSEMBLE + SAFE AMBIGUITY WARNING. P7 lieferte für dieselbe Firma mehrere sehr nahe OCR-Lesarten (u. a. KoeiInBus/KoeinBus/KoeinBu). P8 ergänzt ausschließlich für verdächtige Firma-Zellen eine lokale kontrast-/kanalbasierte Nachlese. Automatisch übernommen wird weiterhin NUR ein exakt identischer Firmenwert, der aus mindestens zwei unterschiedlichen Kontrastvarianten bestätigt wird. Gibt es keinen sicheren Konsens, bleibt der vorhandene Wert unverändert und ATMS zeigt nun einen sichtbaren OCR-Hinweis statt den Firmenfehler still zu verschlucken. Keine Firmenbezeichnung wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P7 · 14.09.2026: COMPANY TARGETED DEU OCR + TRACE. Der P6-Test zeigte, dass die Firma-Zelle bei EW9395 weiterhin als Kundenname durchgereicht wurde. Die gezielte Firmen-Nachlese nutzt jetzt mehrere enge Zell-Crops mit deutscher OCR (deu), verlangt Mehrfach-Konsens über mindestens zwei unterschiedliche Crop-Geometrien und protokolliert die Kandidaten im Diagnose-Selbstcheck. Keine Firmenbezeichnung wird geraten oder hart codiert; ohne eindeutigen Konsens bleibt der bisherige Wert unverändert.
   // CORE-007D8A1F1D8P6 · 14.09.2026: COMPANY COLUMN BLEED CONSENSUS GUARD. P5 zeigte, dass die Firma-Zelle nicht leer war, sondern durch OCR-Spaltenübersprechen fälschlich denselben Text wie die Name-Zelle tragen konnte. ATMS liest die Firma-Zelle jetzt gezielt lokal nach, wenn Firma fehlt ODER exakt dem Kunden/Name entspricht. Eine Korrektur erfolgt nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei lokalen OCR-Versuchen; kein Firmenname wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P5 · 14.09.2026: TARGETED COMPANY CELL OCR RECOVERY. Wenn die normale Bild-OCR in einer vorhandenen Firma-Spalte eine einzelne Firmenzelle leer lässt, obwohl die Fahrt ansonsten sauber erkannt wurde, liest ATMS ausschließlich diese konkrete Firma-Zelle lokal erneut. Übernommen wird nur ein eindeutiger Mehrfach-Konsens aus mindestens zwei gezielten OCR-Versuchen. Firmenbezeichnungen werden nicht geraten oder hart codiert. Bestehende P3/P4-, Flug-, Zeit-, Preis-, Storno- und Persistenzlogik bleibt unverändert.
@@ -964,6 +965,12 @@
         // Erfolgreiche Boundary-/Targeted-OCR-Korrekturen sind bereits verifiziert
         // und bleiben ausschließlich als Diagnose-Metadaten am Ride erhalten.
         issues.push({ level: 'warning', row, text: `Fahrer „${ride.driver}“ OCR-auffällig – Original-Planliste prüfen` });
+      }
+      if (ride.companyNeedsManualCheck) {
+        const candidates = Array.isArray(ride.companyOcrCandidateSummary) && ride.companyOcrCandidateSummary.length
+          ? ` (OCR-Kandidaten: ${ride.companyOcrCandidateSummary.join(' / ')})`
+          : '';
+        issues.push({ level: 'warning', row, text: `Firma OCR-unsicher${candidates} – Original-Planliste prüfen` });
       }
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
@@ -3349,6 +3356,101 @@
     return [...unique.values()];
   }
 
+
+  function companyPercentile(values, q) {
+    if (!Array.isArray(values) || !values.length) return 128;
+    const sorted = values.slice().sort((a,b) => a - b);
+    const idx = Math.max(0, Math.min(sorted.length - 1, Math.round((sorted.length - 1) * q)));
+    return sorted[idx];
+  }
+
+  function companyContrastVariantCanvas(sourceCanvas, options = {}) {
+    const width = Math.max(1, sourceCanvas.width);
+    const height = Math.max(1, sourceCanvas.height);
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    const src = sourceCtx.getImageData(0, 0, width, height);
+    const data = src.data;
+
+    const channel = options.channel || 'blue';
+    const amount = Number(options.amount ?? 2);
+    const percentile = Number(options.percentile ?? 0.18);
+    const plane = new Float32Array(width * height);
+    const vals = [];
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const p = (y * width + x);
+        const i = p * 4;
+        const r = data[i], g = data[i+1], b = data[i+2];
+        let v;
+        if (channel === 'red') v = r;
+        else if (channel === 'green') v = g;
+        else if (channel === 'gray') v = 0.299*r + 0.587*g + 0.114*b;
+        else v = b;
+        plane[p] = v;
+        vals.push(v);
+      }
+    }
+
+    // Kleine lokale Unsharp-Maske, komplett on-device.
+    const sharp = new Float32Array(width * height);
+    const at = (x,y) => plane[Math.max(0, Math.min(height-1,y))*width + Math.max(0, Math.min(width-1,x))];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const center = at(x,y);
+        const blur = (
+          at(x-1,y-1) + 2*at(x,y-1) + at(x+1,y-1) +
+          2*at(x-1,y) + 4*center + 2*at(x+1,y) +
+          at(x-1,y+1) + 2*at(x,y+1) + at(x+1,y+1)
+        ) / 16;
+        sharp[y*width+x] = Math.max(0, Math.min(255, center + amount*(center-blur)));
+      }
+    }
+
+    const threshold = companyPercentile(vals, percentile);
+    const scale = Math.max(4, Number(options.scale || 8));
+    const binary = document.createElement('canvas');
+    binary.width = width;
+    binary.height = height;
+    const bctx = binary.getContext('2d', { willReadFrequently: true });
+    const out = bctx.createImageData(width, height);
+    for (let p = 0; p < sharp.length; p++) {
+      const v = sharp[p] < threshold ? 0 : 255;
+      const i = p*4;
+      out.data[i] = v;
+      out.data[i+1] = v;
+      out.data[i+2] = v;
+      out.data[i+3] = 255;
+    }
+    bctx.putImageData(out, 0, 0);
+
+    const scaled = document.createElement('canvas');
+    scaled.width = width * scale;
+    scaled.height = height * scale;
+    const sctx = scaled.getContext('2d', { willReadFrequently: true });
+    sctx.imageSmoothingEnabled = false;
+    sctx.drawImage(binary, 0, 0, scaled.width, scaled.height);
+    return scaled;
+  }
+
+  function companyBestTraceCandidates(attempts) {
+    const seen = new Map();
+    (attempts || []).forEach(attempt => {
+      (attempt?.candidates || []).forEach(candidate => {
+        const normalized = normalizeCompanyOcrCandidate(candidate);
+        const key = cleanKey(normalized);
+        if (!key) return;
+        const current = seen.get(key) || { display: normalized, count: 0 };
+        current.count += 1;
+        seen.set(key, current);
+      });
+    });
+    return [...seen.values()]
+      .sort((a,b) => b.count - a.count || a.display.localeCompare(b.display, 'de-DE'))
+      .slice(0, 3)
+      .map(entry => entry.display);
+  }
+
   async function recoverMissingCompaniesTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const companyCol = mapping?.company;
@@ -3459,6 +3561,86 @@
         continue;
       }
 
+      // P8: Wenn die normalen lokalen Lesarten keinen exakten Mehrfach-Konsens
+      // ergeben, probieren wir zusätzliche kontrast-/kanalbasierte Varianten.
+      // Diese Varianten dürfen ausschließlich einen EXAKT identischen Wert bestätigen.
+      const exactContrastVotes = new Map();
+      const exactContrastDisplay = new Map();
+      try {
+        const baseRegion = regions[0];
+        const rawCell = cropCanvasRegion(
+          imageCanvas,
+          baseRegion.x0, baseRegion.y0, baseRegion.x1, baseRegion.y1,
+          1
+        );
+        const contrastSpecs = [
+          { id:'blue-a', channel:'blue', amount:1.5, percentile:0.16 },
+          { id:'blue-b', channel:'blue', amount:2.0, percentile:0.18 },
+          { id:'blue-c', channel:'blue', amount:2.5, percentile:0.20 },
+          { id:'green-a', channel:'green', amount:2.0, percentile:0.18 },
+          { id:'gray-a', channel:'gray', amount:2.0, percentile:0.18 }
+        ];
+
+        for (const spec of contrastSpecs) {
+          const prepared = companyContrastVariantCanvas(rawCell, spec);
+          for (const lang of ['eng','deu']) {
+            const second = await Tesseract.recognize(prepared, lang, { tessedit_pageseg_mode: '7' });
+            const candidates = companyCandidatesFromOcrResult(second);
+            const rawText = cellText(second?.data?.text)
+              .replace(/[\r\n\t]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 60);
+
+            attempts.push({
+              crop: `contrast-${spec.id}`,
+              mode: `psm7-${lang}`,
+              scale: 8,
+              raw: rawText,
+              candidates: candidates.slice(0, 3)
+            });
+
+            if (candidates.length !== 1) continue;
+            const candidate = normalizeCompanyOcrCandidate(candidates[0]);
+            const key = cleanKey(candidate);
+            if (!key) continue;
+            const customerKey = cleanKey(ride?.customer || '');
+            if (customerKey && key === customerKey) continue;
+
+            exactContrastDisplay.set(key, exactContrastDisplay.get(key) || candidate);
+            if (!exactContrastVotes.has(key)) exactContrastVotes.set(key, new Set());
+            exactContrastVotes.get(key).add(spec.id);
+          }
+        }
+      } catch (_) {
+        // Kontrast-Nachlese ist rein additiv; bei Fehler bleibt P7 unverändert.
+      }
+
+      // Ein Firmenwert ist nur dann sicher, wenn mindestens zwei voneinander
+      // verschiedene Kontrastvarianten exakt denselben Wert liefern.
+      const contrastWinner = [...exactContrastVotes.entries()]
+        .map(([key, ids]) => ({ key, support: ids.size }))
+        .filter(entry => entry.support >= 2)
+        .sort((a,b) => b.support - a.support || a.key.localeCompare(b.key))[0];
+
+      if (contrastWinner) {
+        const recovered = normalizeCompanyOcrCandidate(exactContrastDisplay.get(contrastWinner.key) || '');
+        if (recovered) {
+          ride.companyBeforeTargetedOcr = cellText(ride?.companyRawOcr || ride?.company || '');
+          ride.company = recovered;
+          ride.companyOcrMissing = false;
+          ride.companyOcrSuspicious = false;
+          ride.companyNeedsManualCheck = false;
+          ride.companyRecoveredFromTargetedOcr = true;
+          ride.companyRecoverySource = 'targeted_company_contrast_exact_consensus';
+          ride.companyRecoveryEvidence = {
+            contrastVariants: contrastWinner.support
+          };
+          ride.companyTargetedOcrAttempts = attempts;
+          continue;
+        }
+      }
+
       ride.companyTargetedOcrAttempts = attempts;
       const ranked = [...votes.entries()]
         .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de-DE'));
@@ -3487,6 +3669,7 @@
       ride.company = recovered;
       ride.companyOcrMissing = false;
       ride.companyOcrSuspicious = false;
+      ride.companyNeedsManualCheck = false;
       ride.companyRecoveredFromTargetedOcr = true;
       ride.companyRecoverySource = 'targeted_company_cell_deu_multi_crop_consensus';
       ride.companyRecoveryEvidence = {
@@ -3494,6 +3677,13 @@
         crops: winnerCrops
       };
     }
+
+    out.forEach(ride => {
+      if ((ride?.companyOcrSuspicious || ride?.companyOcrMissing) && !ride?.companyRecoveredFromTargetedOcr) {
+        ride.companyNeedsManualCheck = true;
+        ride.companyOcrCandidateSummary = companyBestTraceCandidates(ride?.companyTargetedOcrAttempts || []);
+      }
+    });
 
     return out;
   }
@@ -5034,7 +5224,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P7',
+      version: 'CORE-007D8A1F1D8P8',
       status,
       reason,
       rides: rideList.length,
@@ -5480,7 +5670,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P7 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P8 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
