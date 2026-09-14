@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P14 · 14.09.2026: CUSTOMER/PARTNER DIACRITIC SYNC. P13 korrigierte customer korrekt von Bergstrom→Bergström, aber das beim Import separat gehaltene Anzeige-/Partnerfeld blieb auf dem alten OCR-Wert. P14 synchronisiert partner ausschließlich dann mit, wenn customer sicher per Diakritik-Recovery geändert wurde und partner vorher exakt dem alten customer-Wert entsprach oder leer war. Firma und alle übrigen Felder bleiben unverändert.
   // CORE-007D8A1F1D8P13 · 14.09.2026: NAME + FLIGHT LOCATION DIACRITIC RECOVERY. Die bereits bewährte sichere deutsche Diakritik-Nachlese für Von/Nach wird auf die Spalten Name und Ort erweitert. Ein Wert wird nur ersetzt, wenn zwei gezielte deutsche OCR-Durchläufe exakt denselben Kandidaten liefern und sich der Kandidat ausschließlich durch eine sichere lateinische Diakritik vom Primärwert unterscheidet (z. B. Bergstrom→Bergström, Goteborg→Göteborg). Keine Namen oder Orte werden hardcodiert oder per Wörterbuch geraten.
   // CORE-007D8A1F1D8P12 · 14.09.2026: OCR SUMMARY LIVE REFRESH. Nach manueller Auflösung einer Firmen-/Preisprüfung wurden Zähler und Hinweis-Liste bereits korrekt neu berechnet, aber die obere OCR-Zusammenfassung („OCR-Analyse · … Hinweise“ / „Fahrten OCR-geprüft …“) blieb auf dem Stand vor der Bestätigung. P12 aktualisiert ausschließlich diese beiden Anzeigezeilen bei jedem render(); Fahrtdaten, Importentscheidung, OCR, Flug/LIVE und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P11 · 14.09.2026: MANUAL COMPANY CONFIRMATION GATE. Wenn die Firmenzelle trotz aller lokalen OCR-Gegenprüfungen unsicher bleibt, darf die Fahrt nicht mehr mit einer still falschen/duplizierten Firma übernommen werden. ATMS zeigt direkt im Analysebereich ein Eingabefeld „Firma laut Original-Planliste“ mit dem Button „Firma übernehmen“. Bis zur Bestätigung bleibt „Geprüfte Fahrten übernehmen“ gesperrt. Die manuelle Eingabe ändert ausschließlich die Firma dieser einen Fahrt; Name, Route, Flug, Preis, Zeiten, Fahrer, Fahrzeug, LIVE und Persistenzlogik bleiben unverändert.
@@ -4460,6 +4461,20 @@
         if (!routeChangedDiacriticTokenIsSafe(original, candidate)) return;
 
         ride[`${descriptor.field}RawOcr`] = original;
+
+        // CORE-007D8A1F1D8P14:
+        // `partner` ist für die Kartenanzeige ein separates Legacy-/Kompatibilitätsfeld.
+        // Wenn es noch exakt den alten Kundennamen enthält, muss eine sichere
+        // customer-Diakritik-Korrektur dort mitgeführt werden. Andernfalls darf
+        // partner (z. B. bei bewusst abweichenden Daten) nicht überschrieben werden.
+        if (descriptor.field === 'customer') {
+          const oldPartner = cellText(ride?.partner || '');
+          if (!oldPartner || cleanKey(oldPartner) === cleanKey(original)) {
+            ride.partner = candidate;
+            ride.partnerRecoveredFromCustomerDiacritic = true;
+          }
+        }
+
         ride[descriptor.field] = candidate;
         ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
         ride[`${descriptor.field}RecoverySource`] = 'targeted_route_diacritic_consensus';
@@ -5327,6 +5342,10 @@
       });
     });
 
+    const partnerSyncRecoveries = rideList
+      .filter(ride => ride?.partnerRecoveredFromCustomerDiacritic)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.customerRawOcr) || '∅'}→${cellText(ride?.partner)}`);
+
     const companyCellRecoveries = rideList.filter(ride => ride?.companyRecoveredFromTargetedOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.companyBeforeTargetedOcr) || '∅'}→${cellText(ride?.company)}`);
     const companyOcrTraces = rideList
@@ -5389,7 +5408,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P13',
+      version: 'CORE-007D8A1F1D8P14',
       status,
       reason,
       rides: rideList.length,
@@ -5411,6 +5430,7 @@
       flightPrefixRecoveries,
       driverFragmentRecoveries,
       diacriticRecoveries,
+      partnerSyncRecoveries,
       companyCellRecoveries,
       companyOcrTraces,
       flightOcrTraces,
@@ -5437,6 +5457,7 @@
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
       `DriverFragmentFix=[${list(check.driverFragmentRecoveries)}]`,
       `DiacriticFix=[${list(check.diacriticRecoveries)}]`,
+      `PartnerSync=[${list(check.partnerSyncRecoveries)}]`,
       `CompanyCellFix=[${list(check.companyCellRecoveries)}]`,
       `CompanyOCRTrace=[${list(check.companyOcrTraces)}]`,
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
@@ -5923,7 +5944,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P13 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P14 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
