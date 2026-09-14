@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P12 · 14.09.2026: OCR SUMMARY LIVE REFRESH. Nach manueller Auflösung einer Firmen-/Preisprüfung wurden Zähler und Hinweis-Liste bereits korrekt neu berechnet, aber die obere OCR-Zusammenfassung („OCR-Analyse · … Hinweise“ / „Fahrten OCR-geprüft …“) blieb auf dem Stand vor der Bestätigung. P12 aktualisiert ausschließlich diese beiden Anzeigezeilen bei jedem render(); Fahrtdaten, Importentscheidung, OCR, Flug/LIVE und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P11 · 14.09.2026: MANUAL COMPANY CONFIRMATION GATE. Wenn die Firmenzelle trotz aller lokalen OCR-Gegenprüfungen unsicher bleibt, darf die Fahrt nicht mehr mit einer still falschen/duplizierten Firma übernommen werden. ATMS zeigt direkt im Analysebereich ein Eingabefeld „Firma laut Original-Planliste“ mit dem Button „Firma übernehmen“. Bis zur Bestätigung bleibt „Geprüfte Fahrten übernehmen“ gesperrt. Die manuelle Eingabe ändert ausschließlich die Firma dieser einen Fahrt; Name, Route, Flug, Preis, Zeiten, Fahrer, Fahrzeug, LIVE und Persistenzlogik bleiben unverändert.
   // CORE-007D8A1F1D8P10 · 14.09.2026: COMPANY UNANIMOUS DIRECT-OCR GUARD. P9 zeigte, dass selbst mehrere nearest-neighbor-Crops denselben falschen Firmenwert „KoeinBus“ bestätigen können. Ab P10 darf eine verdächtige Firma-Zelle nur dann automatisch korrigiert werden, wenn ALLE direkten Originalbild-OCR-Versuche (tight + nearest, ohne Kontrastfilter) exakt denselben Firmenwert liefern. Sobald direkte Original-Crops unterschiedliche, ähnlich aussehende Lesarten liefern, wird NICHT automatisch übernommen; stattdessen bleibt ein sichtbarer OCR-Hinweis mit Kandidaten. Keine Firmenbezeichnung wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P9 · 14.09.2026: COMPANY NEAREST-NEIGHBOR CROSS-GEOMETRY GUARD. P8 zeigte, dass verschiedene Kontrastvarianten denselben falschen OCR-Wert systematisch bestätigen können. Deshalb dürfen Kontrastvarianten ab P9 NICHT mehr selbstständig eine Firma automatisch übernehmen. Für verdächtige Firma-Zellen nutzt ATMS zusätzlich mehrere eng begrenzte Originalbild-Crops mit nearest-neighbor-Vergrößerung ohne Glättung. Automatisch übernommen wird nur ein EXAKT identischer Wert, der in mindestens zwei unterschiedlichen Crop-Geometrien durch deutsche OCR bestätigt wird. Kein Firmenname wird geraten oder hart codiert; ohne diesen Konsens bleibt ein sichtbarer OCR-Hinweis.
@@ -5373,7 +5374,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P11',
+      version: 'CORE-007D8A1F1D8P12',
       status,
       reason,
       rides: rideList.length,
@@ -5546,6 +5547,47 @@
     // Technischen Wert maschinenlesbar behalten, ohne ihn als Erfolgsquote auszugeben.
     el.dataset.structureConfidence = String(Math.round(shownConfidence * 100));
     el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${escapeHtml(headline)}</span><small>${escapeHtml(detail)}<br>${escapeHtml(labels.join(' · '))}</small>`;
+  }
+
+
+  function refreshImageOcrSummary() {
+    const imageMode = Boolean(state.file && isImageFile(state.file));
+    if (!imageMode) return;
+
+    const el = $('planProfileInfo');
+    if (!el) return;
+
+    const issues = Array.isArray(state.issues) ? state.issues : [];
+    const actionable = issues.filter(issue => issue.kind !== 'flight_check');
+    const errors = actionable.filter(issue => issue.level === 'error').length;
+    const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const rideCount = Array.isArray(state.rides) ? state.rides.length : 0;
+    const clean = rideCount > 0 && errors === 0 && warnings === 0;
+
+    const headline = clean
+      ? '✓ OCR-Analyse sauber'
+      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+    const detail = rideCount
+      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
+      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+
+    const span = el.querySelector('span');
+    if (span) span.textContent = headline;
+
+    const small = el.querySelector('small');
+    if (small) {
+      const br = small.querySelector('br');
+      if (br) {
+        let firstText = small.firstChild;
+        if (!firstText || firstText.nodeType !== Node.TEXT_NODE) {
+          firstText = document.createTextNode('');
+          small.insertBefore(firstText, br);
+        }
+        firstText.nodeValue = detail;
+      } else {
+        small.textContent = detail;
+      }
+    }
   }
 
   function syncFlightLocationsFromSavedRides() {
@@ -5770,6 +5812,7 @@
     const warnings = actionableIssues.filter(issue => issue.level === 'warning').length;
     $('planAnalysis').classList.remove('hidden');
     updatePlanDateSummary();
+    refreshImageOcrSummary();
     $('planRideCount').textContent = rides.length;
     $('planDriverCount').textContent = new Set(rides.map(ride => ride.driver).filter(Boolean)).size;
     $('planWarningCount').textContent = warnings;
@@ -5863,7 +5906,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P11 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P12 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
