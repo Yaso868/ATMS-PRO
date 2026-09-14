@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P10 · 14.09.2026: COMPANY UNANIMOUS DIRECT-OCR GUARD. P9 zeigte, dass selbst mehrere nearest-neighbor-Crops denselben falschen Firmenwert „KoeinBus“ bestätigen können. Ab P10 darf eine verdächtige Firma-Zelle nur dann automatisch korrigiert werden, wenn ALLE direkten Originalbild-OCR-Versuche (tight + nearest, ohne Kontrastfilter) exakt denselben Firmenwert liefern. Sobald direkte Original-Crops unterschiedliche, ähnlich aussehende Lesarten liefern, wird NICHT automatisch übernommen; stattdessen bleibt ein sichtbarer OCR-Hinweis mit Kandidaten. Keine Firmenbezeichnung wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P9 · 14.09.2026: COMPANY NEAREST-NEIGHBOR CROSS-GEOMETRY GUARD. P8 zeigte, dass verschiedene Kontrastvarianten denselben falschen OCR-Wert systematisch bestätigen können. Deshalb dürfen Kontrastvarianten ab P9 NICHT mehr selbstständig eine Firma automatisch übernehmen. Für verdächtige Firma-Zellen nutzt ATMS zusätzlich mehrere eng begrenzte Originalbild-Crops mit nearest-neighbor-Vergrößerung ohne Glättung. Automatisch übernommen wird nur ein EXAKT identischer Wert, der in mindestens zwei unterschiedlichen Crop-Geometrien durch deutsche OCR bestätigt wird. Kein Firmenname wird geraten oder hart codiert; ohne diesen Konsens bleibt ein sichtbarer OCR-Hinweis.
   // CORE-007D8A1F1D8P8 · 14.09.2026: COMPANY CONTRAST ENSEMBLE + SAFE AMBIGUITY WARNING. P7 lieferte für dieselbe Firma mehrere sehr nahe OCR-Lesarten (u. a. KoeiInBus/KoeinBus/KoeinBu). P8 ergänzt ausschließlich für verdächtige Firma-Zellen eine lokale kontrast-/kanalbasierte Nachlese. Automatisch übernommen wird weiterhin NUR ein exakt identischer Firmenwert, der aus mindestens zwei unterschiedlichen Kontrastvarianten bestätigt wird. Gibt es keinen sicheren Konsens, bleibt der vorhandene Wert unverändert und ATMS zeigt nun einen sichtbaren OCR-Hinweis statt den Firmenfehler still zu verschlucken. Keine Firmenbezeichnung wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P7 · 14.09.2026: COMPANY TARGETED DEU OCR + TRACE. Der P6-Test zeigte, dass die Firma-Zelle bei EW9395 weiterhin als Kundenname durchgereicht wurde. Die gezielte Firmen-Nachlese nutzt jetzt mehrere enge Zell-Crops mit deutscher OCR (deu), verlangt Mehrfach-Konsens über mindestens zwei unterschiedliche Crop-Geometrien und protokolliert die Kandidaten im Diagnose-Selbstcheck. Keine Firmenbezeichnung wird geraten oder hart codiert; ohne eindeutigen Konsens bleibt der bisherige Wert unverändert.
@@ -3467,6 +3468,42 @@
     return out;
   }
 
+
+  function companyUnanimousDirectOcrConsensus(attempts, customerValue) {
+    const customerKey = cleanKey(customerValue || '');
+    const direct = (attempts || []).filter(attempt => {
+      const crop = cellText(attempt?.crop);
+      return crop.startsWith('tight-') || crop === 'inner' || crop.startsWith('nearest-');
+    });
+
+    const keys = [];
+    const display = new Map();
+    const geometries = new Set();
+
+    direct.forEach(attempt => {
+      const candidates = Array.isArray(attempt?.candidates) ? attempt.candidates : [];
+      if (candidates.length !== 1) return;
+      const candidate = normalizeCompanyOcrCandidate(candidates[0]);
+      const key = cleanKey(candidate);
+      if (!key || (customerKey && key === customerKey)) return;
+      keys.push(key);
+      display.set(key, display.get(key) || candidate);
+      geometries.add(cellText(attempt?.crop));
+    });
+
+    if (keys.length < 4 || geometries.size < 2) return null;
+
+    const unique = [...new Set(keys)];
+    if (unique.length !== 1) return null;
+
+    return {
+      key: unique[0],
+      display: display.get(unique[0]) || '',
+      attempts: keys.length,
+      geometries: geometries.size
+    };
+  }
+
   async function recoverMissingCompaniesTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const companyCol = mapping?.company;
@@ -3720,23 +3757,10 @@
         // Rein additiv: bei OCR-Fehler bleibt der Wert unverändert und wird gewarnt.
       }
 
-      const nearestRanked = [...nearestGeometryVotes.entries()]
-        .map(([key, ids]) => ({
-          key,
-          support: ids.size,
-          display: nearestDisplay.get(key) || ''
-        }))
-        .sort((a,b) => b.support - a.support || a.key.localeCompare(b.key, 'de-DE'));
+      const directConsensus = companyUnanimousDirectOcrConsensus(attempts, ride?.customer || '');
 
-      const nearestWinner = nearestRanked[0] || null;
-      const nearestRunner = nearestRanked[1] || null;
-
-      if (
-        nearestWinner &&
-        nearestWinner.support >= 2 &&
-        (!nearestRunner || nearestWinner.support > nearestRunner.support)
-      ) {
-        const recovered = normalizeCompanyOcrCandidate(nearestWinner.display);
+      if (directConsensus) {
+        const recovered = normalizeCompanyOcrCandidate(directConsensus.display);
         if (recovered) {
           ride.companyBeforeTargetedOcr = cellText(ride?.companyRawOcr || ride?.company || '');
           ride.company = recovered;
@@ -3744,9 +3768,10 @@
           ride.companyOcrSuspicious = false;
           ride.companyNeedsManualCheck = false;
           ride.companyRecoveredFromTargetedOcr = true;
-          ride.companyRecoverySource = 'targeted_company_nearest_cross_geometry_exact_consensus';
+          ride.companyRecoverySource = 'targeted_company_unanimous_direct_ocr_consensus';
           ride.companyRecoveryEvidence = {
-            nearestGeometries: nearestWinner.support
+            directAttempts: directConsensus.attempts,
+            directGeometries: directConsensus.geometries
           };
           ride.companyTargetedOcrAttempts = attempts;
           continue;
@@ -5336,7 +5361,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P9',
+      version: 'CORE-007D8A1F1D8P10',
       status,
       reason,
       rides: rideList.length,
@@ -5782,7 +5807,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P9 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P10 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
