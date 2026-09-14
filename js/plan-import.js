@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P15 · 14.09.2026: STAGED GEMINI PROMPT SOURCE GUARD. Wenn eine neue Planliste bereits analysiert, aber noch nicht übernommen ist, fängt plan-import.js den sichtbaren Button „🤖 Gemini-Prüfauftrag kopieren“ ab und erzeugt den Prüfauftrag aus den aktuell analysierten state.rides statt aus dem alten gespeicherten Fahrtenbestand. Ohne aktive Analyse bleibt der bisherige app.js-Ablauf unverändert. Keine Änderung an OCR, Fahrtdaten, Flugergebnis-Übernahme, LIVE oder Persistenz.
   // CORE-007D8A1F1D8P14 · 14.09.2026: CUSTOMER/PARTNER DIACRITIC SYNC. P13 korrigierte customer korrekt von Bergstrom→Bergström, aber das beim Import separat gehaltene Anzeige-/Partnerfeld blieb auf dem alten OCR-Wert. P14 synchronisiert partner ausschließlich dann mit, wenn customer sicher per Diakritik-Recovery geändert wurde und partner vorher exakt dem alten customer-Wert entsprach oder leer war. Firma und alle übrigen Felder bleiben unverändert.
   // CORE-007D8A1F1D8P13 · 14.09.2026: NAME + FLIGHT LOCATION DIACRITIC RECOVERY. Die bereits bewährte sichere deutsche Diakritik-Nachlese für Von/Nach wird auf die Spalten Name und Ort erweitert. Ein Wert wird nur ersetzt, wenn zwei gezielte deutsche OCR-Durchläufe exakt denselben Kandidaten liefern und sich der Kandidat ausschließlich durch eine sichere lateinische Diakritik vom Primärwert unterscheidet (z. B. Bergstrom→Bergström, Goteborg→Göteborg). Keine Namen oder Orte werden hardcodiert oder per Wörterbuch geraten.
   // CORE-007D8A1F1D8P12 · 14.09.2026: OCR SUMMARY LIVE REFRESH. Nach manueller Auflösung einer Firmen-/Preisprüfung wurden Zähler und Hinweis-Liste bereits korrekt neu berechnet, aber die obere OCR-Zusammenfassung („OCR-Analyse · … Hinweise“ / „Fahrten OCR-geprüft …“) blieb auf dem Stand vor der Bestätigung. P12 aktualisiert ausschließlich diese beiden Anzeigezeilen bei jedem render(); Fahrtdaten, Importentscheidung, OCR, Flug/LIVE und Persistenz bleiben unverändert.
@@ -6389,6 +6390,63 @@
     }
   }
 
+  function buildGlobalGeminiPromptFromStagedPlan() {
+    if (!state.rides.length || typeof window.buildGeminiFlightPrompt !== 'function') {
+      throw new Error('Gemini-Prüfauftrag ist noch nicht verfügbar.');
+    }
+    // app.js hält den produktiven Prompt-Builder und den gespeicherten Bestand in `rides`.
+    // Für die rein synchrone Prompt-Erzeugung wird deshalb nur kurz die aktuelle Analyse
+    // als Quelle eingesetzt und der produktive Bestand in jedem Fall sofort wiederhergestellt.
+    const savedRides = rides;
+    try {
+      rides = state.rides;
+      return window.buildGeminiFlightPrompt();
+    } finally {
+      rides = savedRides;
+    }
+  }
+
+  async function copyGlobalGeminiPromptFromStagedPlan() {
+    const prompt = buildGlobalGeminiPromptFromStagedPlan();
+    const count = typeof window.flightCheckItems === 'function'
+      ? window.flightCheckItems(state.rides).length
+      : state.rides.filter(ride => cellText(ride?.flightNumber)).length;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      const fallback = $('geminiFlightPromptFallback');
+      if (fallback) fallback.classList.add('hidden');
+      const status = $('geminiFlightStatus');
+      if (status) status.textContent = `${count} Flugprüfung(en) aus der aktuell analysierten Planliste kopiert. Jetzt in Gemini einfügen.`;
+      if (typeof window.showToast === 'function') window.showToast('Gemini-Flugprüfung der aktuellen Analyse kopiert', 'ok');
+    } catch (_) {
+      const fallback = $('geminiFlightPromptFallback');
+      if (fallback) {
+        fallback.value = prompt;
+        fallback.classList.remove('hidden');
+        fallback.select();
+      }
+      const status = $('geminiFlightStatus');
+      if (status) status.textContent = `${count} Flugprüfung(en) aus der aktuell analysierten Planliste vorbereitet. Bitte den angezeigten Prüfauftrag kopieren.`;
+      if (typeof window.showToast === 'function') window.showToast('Prüfauftrag anzeigen und manuell kopieren', 'warn');
+    }
+  }
+
+  function installStagedGeminiPromptSourceGuard() {
+    if (window.__atmsStagedGeminiPromptSourceGuard) return;
+    document.addEventListener('click', event => {
+      const button = event.target?.closest?.('#copyGeminiFlightBtn');
+      if (!button || !stagedPlanIsActive() || typeof window.buildGeminiFlightPrompt !== 'function') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      copyGlobalGeminiPromptFromStagedPlan().catch(error => {
+        const status = $('geminiFlightStatus');
+        if (status) status.textContent = `Fehler: ${cellText(error?.message) || 'Prüfauftrag konnte nicht erstellt werden.'}`;
+        if (typeof window.showToast === 'function') window.showToast('Gemini-Prüfauftrag konnte nicht erstellt werden', 'warn');
+      });
+    }, true);
+    window.__atmsStagedGeminiPromptSourceGuard = true;
+  }
+
   async function copyFlightCheckPrompt() {
     if (!state.rides.length || !window.ATMSFlight) return;
     const prompt = window.ATMSFlight.buildGeminiPrompt(state.rides);
@@ -6414,6 +6472,7 @@
     if (!input) return;
     ensurePlanDateControl();
     currentPlanDate();
+    installStagedGeminiPromptSourceGuard();
     // CORE-007D8A1F1D4: Browser/Android duerfen dieselbe Datei erneut waehlen.
     // Das Leeren VOR dem Picker verhindert, dass ein identischer Pfad das change-Event verschluckt.
     input.addEventListener('click', () => { input.value = ''; });
