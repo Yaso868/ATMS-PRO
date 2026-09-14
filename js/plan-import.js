@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P7 · 14.09.2026: COMPANY TARGETED DEU OCR + TRACE. Der P6-Test zeigte, dass die Firma-Zelle bei EW9395 weiterhin als Kundenname durchgereicht wurde. Die gezielte Firmen-Nachlese nutzt jetzt mehrere enge Zell-Crops mit deutscher OCR (deu), verlangt Mehrfach-Konsens über mindestens zwei unterschiedliche Crop-Geometrien und protokolliert die Kandidaten im Diagnose-Selbstcheck. Keine Firmenbezeichnung wird geraten oder hart codiert; ohne eindeutigen Konsens bleibt der bisherige Wert unverändert.
   // CORE-007D8A1F1D8P6 · 14.09.2026: COMPANY COLUMN BLEED CONSENSUS GUARD. P5 zeigte, dass die Firma-Zelle nicht leer war, sondern durch OCR-Spaltenübersprechen fälschlich denselben Text wie die Name-Zelle tragen konnte. ATMS liest die Firma-Zelle jetzt gezielt lokal nach, wenn Firma fehlt ODER exakt dem Kunden/Name entspricht. Eine Korrektur erfolgt nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei lokalen OCR-Versuchen; kein Firmenname wird geraten oder hart codiert.
   // CORE-007D8A1F1D8P5 · 14.09.2026: TARGETED COMPANY CELL OCR RECOVERY. Wenn die normale Bild-OCR in einer vorhandenen Firma-Spalte eine einzelne Firmenzelle leer lässt, obwohl die Fahrt ansonsten sauber erkannt wurde, liest ATMS ausschließlich diese konkrete Firma-Zelle lokal erneut. Übernommen wird nur ein eindeutiger Mehrfach-Konsens aus mindestens zwei gezielten OCR-Versuchen. Firmenbezeichnungen werden nicht geraten oder hart codiert. Bestehende P3/P4-, Flug-, Zeit-, Preis-, Storno- und Persistenzlogik bleibt unverändert.
   // CORE-007D8A1F1D8P4 · 13.09.2026: REPEATED DRIVER FRAGMENT CONSENSUS GUARD. Wenn die Fahrerzelle nur einen einzelnen Großbuchstaben liefert, darf ATMS ihn ausschließlich dann automatisch wiederherstellen, wenn derselbe Buchstabe als finaler Namenszusatz genau EINEM bereits sauber erkannten Fahrer derselben Planliste entspricht und dieser vollständige Fahrer mindestens zweimal unabhängig in anderen Zeilen vorkommt. Keine Fahrer-Namen werden hart codiert; mehrdeutige oder einmalige Treffer bleiben manuell prüfbar. Die echte DISPO-/Mirror-Abweichung einer Planzeile bleibt unverändert als Hinweis erhalten.
@@ -3371,39 +3372,86 @@
 
       const y0 = Number(rowMeta.y0 || 0);
       const y1 = Number(rowMeta.y1 || 0);
-      const rowHeight = Math.max(18, y1 - y0);
+      const rowHeight = Math.max(12, y1 - y0);
       const cellWidth = Math.max(8, right - left);
-      const padY = Math.max(2, rowHeight * 0.16);
       const padX = Math.max(1, cellWidth * 0.035);
 
+      // P7: Die Firmenzelle ist schmal. Zu große vertikale Ausschnitte nehmen
+      // Tabellenlinien/benachbarte Zeilen mit und können l/i verwechseln.
+      // Deshalb drei voneinander verschiedene, enge Geometrien.
       const regions = [
-        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
-        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 3]
+        {
+          id: 'tight-a',
+          x0: left + padX,
+          y0: y0 - Math.max(1, rowHeight * 0.06),
+          x1: right - padX,
+          y1: y1 + Math.max(1, rowHeight * 0.06),
+          scale: 3
+        },
+        {
+          id: 'tight-b',
+          x0: left + Math.max(1, cellWidth * 0.045),
+          y0: y0,
+          x1: right - Math.max(1, cellWidth * 0.045),
+          y1: y1,
+          scale: 4
+        },
+        {
+          id: 'inner',
+          x0: left + Math.max(1, cellWidth * 0.06),
+          y0: y0 + Math.max(0, rowHeight * 0.06),
+          x1: right - Math.max(1, cellWidth * 0.06),
+          y1: y1 - Math.max(0, rowHeight * 0.04),
+          scale: 4
+        }
       ];
       const modes = [
         { name: 'single-line', options: { tessedit_pageseg_mode: '7' } },
-        { name: 'single-word', options: { tessedit_pageseg_mode: '8' } }
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8' } },
+        { name: 'raw-line', options: { tessedit_pageseg_mode: '13' } }
       ];
 
-      if (status) status.textContent = `Firmenzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      if (status) status.textContent = `Firmenzelle Zeile ${ride.sourceRow} wird lokal mit deutscher OCR nachgelesen …`;
 
       const votes = new Map();
+      const cropSupport = new Map();
       const displayByKey = new Map();
       const attempts = [];
 
       try {
-        for (const [x0, cy0, x1, cy1, scale] of regions) {
-          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+        for (const region of regions) {
+          const crop = cropCanvasRegion(
+            imageCanvas,
+            region.x0, region.y0, region.x1, region.y1,
+            region.scale
+          );
+
           for (const mode of modes) {
-            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const second = await Tesseract.recognize(crop, 'deu', mode.options);
             const candidates = companyCandidatesFromOcrResult(second);
-            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            const rawText = cellText(second?.data?.text)
+              .replace(/[\r\n\t]+/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .slice(0, 60);
+
+            attempts.push({
+              crop: region.id,
+              mode: mode.name,
+              scale: region.scale,
+              raw: rawText,
+              candidates: candidates.slice(0, 3)
+            });
+
             if (candidates.length !== 1) continue;
             const candidate = candidates[0];
             const key = cleanKey(candidate);
             if (!key) continue;
+
             displayByKey.set(key, displayByKey.get(key) || candidate);
             votes.set(key, (votes.get(key) || 0) + 1);
+            if (!cropSupport.has(key)) cropSupport.set(key, new Set());
+            cropSupport.get(key).add(region.id);
           }
         }
       } catch (_) {
@@ -3412,21 +3460,27 @@
       }
 
       ride.companyTargetedOcrAttempts = attempts;
-      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const ranked = [...votes.entries()]
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de-DE'));
       const winner = ranked[0] || null;
       const runner = ranked[1] || null;
+      if (!winner) continue;
 
-      // Sicherheitsregel: Kein Einzel-Treffer und kein Gleichstand.
-      if (!winner || winner[1] < 2) continue;
-      if (runner && winner[1] === runner[1]) continue;
+      const winnerCrops = cropSupport.get(winner[0])?.size || 0;
+
+      // Sicherheitsregel P7:
+      // - mindestens drei Stimmen,
+      // - aus mindestens zwei verschiedenen Crop-Geometrien,
+      // - eindeutiger Vorsprung,
+      // - Ergebnis darf nicht erneut nur der Kunden-/Name-Wert sein.
+      if (winner[1] < 3 || winnerCrops < 2) continue;
+      if (runner && winner[1] <= runner[1]) continue;
 
       const recovered = normalizeCompanyOcrCandidate(displayByKey.get(winner[0]) || '');
       if (!recovered) continue;
 
       const customerKey = cleanKey(ride?.customer || '');
       const recoveredKey = cleanKey(recovered);
-      // Wenn die lokale Nachlese lediglich erneut den Namen links daneben liest,
-      // ist die Firma-Zelle weiterhin nicht sicher aufgelöst.
       if (customerKey && recoveredKey === customerKey) continue;
 
       ride.companyBeforeTargetedOcr = cellText(ride?.companyRawOcr || ride?.company || '');
@@ -3434,7 +3488,11 @@
       ride.companyOcrMissing = false;
       ride.companyOcrSuspicious = false;
       ride.companyRecoveredFromTargetedOcr = true;
-      ride.companyRecoverySource = 'targeted_company_cell_consensus';
+      ride.companyRecoverySource = 'targeted_company_cell_deu_multi_crop_consensus';
+      ride.companyRecoveryEvidence = {
+        votes: winner[1],
+        crops: winnerCrops
+      };
     }
 
     return out;
@@ -4916,6 +4974,17 @@
       .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.driverRawOcr) || '∅'}→${cellText(ride?.driver)}`);
     const companyCellRecoveries = rideList.filter(ride => ride?.companyRecoveredFromTargetedOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${cellText(ride?.companyBeforeTargetedOcr) || '∅'}→${cellText(ride?.company)}`);
+    const companyOcrTraces = rideList
+      .filter(ride => Array.isArray(ride?.companyTargetedOcrAttempts) && ride.companyTargetedOcrAttempts.length)
+      .map(ride => {
+        const parts = ride.companyTargetedOcrAttempts.map(attempt => {
+          const candidate = Array.isArray(attempt?.candidates) && attempt.candidates.length
+            ? attempt.candidates.join('/')
+            : '∅';
+          return `${attempt?.crop || '?'}:${attempt?.mode || '?'}=${candidate}`;
+        });
+        return `${Number(ride?.sourceRow || 0)}:${cellText(ride?.companyRawOcr || ride?.company) || '∅'}{${parts.join(',')}}`;
+      });
 
     // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
@@ -4965,7 +5034,7 @@
 
     const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P6',
+      version: 'CORE-007D8A1F1D8P7',
       status,
       reason,
       rides: rideList.length,
@@ -4987,6 +5056,7 @@
       flightPrefixRecoveries,
       driverFragmentRecoveries,
       companyCellRecoveries,
+      companyOcrTraces,
       flightOcrTraces,
       diagnosticItems: diagList.length
     };
@@ -5011,6 +5081,7 @@
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
       `DriverFragmentFix=[${list(check.driverFragmentRecoveries)}]`,
       `CompanyCellFix=[${list(check.companyCellRecoveries)}]`,
+      `CompanyOCRTrace=[${list(check.companyOcrTraces)}]`,
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `SchemaCols=${check.schemaColumns || 0}`,
@@ -5409,7 +5480,7 @@
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
       ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P6 Diagnose-Selbstcheck</b></div>
+          <div><b>🧪 CORE-007D8A1F1D8P7 Diagnose-Selbstcheck</b></div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
         </div>`
       : '';
