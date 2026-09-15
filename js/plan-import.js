@@ -5750,23 +5750,64 @@
     return keys.size;
   }
 
-  function findCheckedFlightForRide(ride, checked) {
-    const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
-    if (!flight) return null;
+  // P21F1: Die Auswertung eines Gemini-Ergebnisses MUSS exakt dieselbe
+  // Flugidentität verwenden wie der zuvor erzeugte Prüfauftrag. Besonders bei
+  // gleicher Flugnummer in unterschiedlichen Fahrten/Flughäfen darf niemals
+  // nur über Flugnummer + Datum + eine abweichend abgeleitete Richtung gematcht
+  // werden. Identität: Flugnummer + Fahrtdatum + Airport-Ereignistag + Richtung
+  // + Airport-IATA + (falls vorhanden) Listen-Flugzeit.
+  function stagedFlightIdentityForCheck(ride) {
+    const flight = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
     const date = cellText(ride?.date);
-    const direction = stagedFlightDirection(ride);
+    let direction = 'unknown';
+    let airportIata = '';
+    try {
+      if (typeof flightDirectionForGemini === 'function') direction = String(flightDirectionForGemini(ride) || 'unknown').trim().toLowerCase();
+      else direction = stagedFlightDirection(ride);
+    } catch (_) {
+      direction = stagedFlightDirection(ride);
+    }
+    try {
+      if (typeof flightAirportForGemini === 'function') airportIata = String(flightAirportForGemini(ride) || '').trim().toUpperCase();
+    } catch (_) {
+      airportIata = '';
+    }
+    let airportEventDate = date;
+    try {
+      const ctx = typeof window.ATMSAirportEventDateContextForRide === 'function'
+        ? window.ATMSAirportEventDateContextForRide(ride)
+        : null;
+      airportEventDate = cellText(ctx?.airportEventDate || date);
+    } catch (_) {
+      airportEventDate = date;
+    }
     const flightTime = cellText(ride?.flightTime);
+    return { flight, date, airportEventDate, direction, airportIata, flightTime };
+  }
+
+  function findCheckedFlightForRide(ride, checked) {
+    const key = stagedFlightIdentityForCheck(ride);
+    if (!key.flight) return null;
     const candidates = (Array.isArray(checked) ? checked : []).filter(item => {
-      if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
+      if (normalizeFlightForCurrentCheck(item?.flightNumber) !== key.flight) return false;
+
       const checkedDate = cellText(item?.date);
-      if (date ? checkedDate !== date : Boolean(checkedDate)) return false;
+      if (key.date ? checkedDate !== key.date : Boolean(checkedDate)) return false;
+
+      const checkedEventDate = cellText(item?.airportEventDate || item?.date);
+      if (key.airportEventDate ? checkedEventDate !== key.airportEventDate : Boolean(checkedEventDate)) return false;
+
       const checkedDirection = String(item?.direction || 'unknown').trim().toLowerCase();
-      if (direction !== 'unknown' ? checkedDirection !== direction : checkedDirection !== 'unknown') return false;
+      if (checkedDirection !== key.direction) return false;
+
+      const checkedAirportIata = String(item?.airportIata || '').trim().toUpperCase();
+      if (checkedAirportIata !== key.airportIata) return false;
+
       return true;
     });
     if (!candidates.length) return null;
-    if (flightTime) {
-      const exact = candidates.filter(item => cellText(item?.flightTime) === flightTime);
+    if (key.flightTime) {
+      const exact = candidates.filter(item => cellText(item?.flightTime) === key.flightTime);
       if (exact.length === 1) return exact[0];
       if (exact.length > 1) return null;
       if (candidates.length === 1 && !cellText(candidates[0]?.flightTime)) return candidates[0];
