@@ -8,6 +8,7 @@
 // CORE-007C · 12.09.2026: LIVE STATUS CONSISTENCY – Fahrtenkarte und Cockpit zeigen bei bestaetigtem scheduled-LIVE mit echter Estimated-/Actual-Zeit und 0 Minuten Abweichung konsistent „Pünktlich“. Reines scheduled ohne aktuelle Zeit bleibt „Keine Live-Daten“. Keine Änderung an PLAN/DISPO/LIVE-Berechnung, Flugprüfung, Persistenz, GPS, Routing oder Driver Availability Guard.
 // CORE-006Y · 11.09.2026: DRIVER AVAILABILITY GUARD – Ersatzfahrer werden nur vorgeschlagen, wenn sie aktiv sind, Trackingfreigabe haben und nach aktueller Live-Dispo keine eigenen offenen Fahrten besitzen. Vor „Lösung übernehmen“ wird dieselbe Verfügbarkeitsprüfung erneut ausgeführt; bei Konflikt bleibt nur „Dispo manuell informieren“. PLAN/DISPO/LIVE, Fluglogik, GPS, Routing, Persistenz, Past-Ride-Guard und CORE-006W bleiben unverändert.
 // CORE-006X · 11.09.2026: Live-Dispo blendet vergangene Fahrten nach frei einstellbarer Nachlaufzeit aus (Standard 120 Min.); Import und Einstellungen sind getrennte Ansichten; Mobile verhindert Seiten-Overflow. PLAN/DISPO/LIVE, Fluglogik, GPS, Routing, Persistenz und CORE-006W bleiben unverändert.
+// CORE-007D8A1F1D8P20D · 15.09.2026: LIVE RELEVANCE & UI CLARITY. Standard-LIVE-Auftrag enthält nur aktuell relevante Fahrten gemäß Live-Dispo-Nachlauf; optional können alle Flüge des Plantags geprüft werden. Karten zeigen exakten Prüfzeitpunkt/Frische klarer; reine Listen-Airports werden als „Liste: IATA“ gekennzeichnet.
 // CORE-006V · 11.09.2026: GPS-Refresh in Live-Disposition. Neue Watch-Positionen aktualisieren bei sichtbarer Live-Dispo sofort Route und „LETZTE AKTUALISIERUNG“, ohne eine andere Ansicht zu öffnen oder einen neuen GPS-Watch zu starten. Fluglogik, PLAN/DISPO/LIVE, Routing-Auflösung, Schicht-/Zustimmungslogik und Persistenz bleiben unverändert.
 // CORE-006U2 · 11.09.2026: Live-Disposition unterscheidet fehlende Live-Daten von bestätigtem On-Time/Delay. Ohne bestätigte Live-Verzögerungsinformation keine Aussage „Pünktlich“ oder „Keine Verspätung erkannt“. Echte On-Time-/Delay-Daten bleiben unverändert auswertbar; PLAN/DISPO/LIVE-Import, Routing, GPS und Persistenz bleiben unverändert.
 // CORE-006U1 · 11.09.2026: Altlast-Bereinigung für frühere künstliche scheduled-LIVE=DISPO-Werte. Bei einem neuen unbestätigten Live-Prüfergebnis wird nur ein eindeutig künstlicher Altwert entfernt (vorheriger liveFlightStatus=scheduled, keine Estimated/Actual-Zeit, LIVE exakt DISPO/PLAN, keine manuelle Bestätigung). Echte LIVE-Daten, manuelle Landungen, PLAN/DISPO und übrige Logik bleiben unverändert.
@@ -593,7 +594,7 @@ function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r
 // wird konsistent "Pünktlich" angezeigt. Reines scheduled ohne aktuelle Zeit bleibt neutral.
 function flightStatusInfo(r){
   const freshness=liveSnapshotFreshness(r);
-  if(freshness.stale)return{key:'stale',label:'LIVE veraltet'};
+  if(freshness.stale)return{key:'stale',label:'Keine aktuellen Live-Daten'};
   const raw=first(r.flightStatus,r.flugstatus,r.liveStatus,r.live_status).toLowerCase();
   const delay=Number(r.delayMinutes??r.delay_minutes??r.verspaetungMinuten??r.verspätung_minuten??r.delay??0)||0;
   const liveRaw=String(r?.liveFlightStatus||'').trim().toLowerCase();
@@ -635,14 +636,20 @@ function liveAgeLabel(minutes){
   const h=Math.floor(m/60),rest=m%60;
   return rest?`vor ${h} Std. ${rest} Min.`:`vor ${h} Std.`;
 }
+function liveSnapshotClockLabel(value){
+  const raw=String(value||'').trim();if(!raw)return'';
+  const d=new Date(raw);if(Number.isNaN(d.getTime()))return'';
+  try{return new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit',hour12:false}).format(d)}catch(_){return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}
+}
 function liveFreshnessMarkup(r){
   if(!hasFlightNumber(r))return'';
   const state=liveSnapshotFreshness(r);
   const age=liveAgeLabel(state.ageMinutes);
-  if(state.manual)return `<div style="font-size:11px;font-weight:800;margin-top:4px;color:#73e6a4">✋ LIVE manuell bestätigt${age?` · ${esc(age)}`:''}</div>`;
-  if(state.stale)return `<div style="font-size:11px;font-weight:800;margin-top:4px;color:#ffc14d">⚠ LIVE veraltet${age?` · ${esc(age)}`:''}</div>`;
-  if(state.usable)return `<div style="font-size:11px;font-weight:800;margin-top:4px;opacity:.82">📡 LIVE geprüft ${esc(age||'aktuell')}</div>`;
-  if(state.timestamp)return `<div style="font-size:11px;font-weight:800;margin-top:4px;opacity:.72">📡 geprüft ${esc(age||'aktuell')} · unbestätigt</div>`;
+  const clock=liveSnapshotClockLabel(state.timestamp);
+  if(state.manual)return `<div style="font-size:11px;font-weight:800;margin-top:4px;color:#73e6a4">✋ Manuell bestätigt${clock?` ${esc(clock)}`:''}${age?` · ${esc(age)}`:''}</div>`;
+  if(state.stale)return `<div style="font-size:11px;font-weight:800;margin-top:4px;color:#ffc14d">⚠ Letzte bestätigte LIVE-Info${clock?` ${esc(clock)}`:''}${age?` · ${esc(age)}`:''}</div>`;
+  if(state.usable)return `<div style="font-size:11px;font-weight:800;margin-top:4px;opacity:.82">📡 LIVE geprüft${clock?` ${esc(clock)}`:''}${age?` · ${esc(age)}`:''}</div>`;
+  if(state.timestamp)return `<div style="font-size:11px;font-weight:800;margin-top:4px;opacity:.72">📡 Letzte Netzprüfung${clock?` ${esc(clock)}`:''} · keine aktuelle LIVE-Bestätigung</div>`;
   return'';
 }
 function ridePartnerLabel(r){
@@ -652,10 +659,15 @@ function ridePartnerLabel(r){
   return [left,right].filter(Boolean).join(' · ');
 }
 function rideAirportBadge(r){
-  const locked=String(r?.sourcePlanAirportIata||'').trim().toUpperCase();
-  const inferred=locked||String(flightAirportForGemini(r)||'').trim().toUpperCase();
-  if(!inferred)return'';
-  return `<span style="font-size:11px;font-weight:900;padding:2px 7px;border-radius:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);letter-spacing:.04em">${esc(inferred)}</span>`;
+  const source=String(r?.sourcePlanAirportIata||'').trim().toUpperCase();
+  const actual=String(flightAirportForGemini(r)||'').trim().toUpperCase();
+  if(actual){
+    return `<span title="Flughafen dieser Fahrt" style="font-size:11px;font-weight:900;padding:2px 7px;border-radius:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);letter-spacing:.04em">${esc(actual)}</span>`;
+  }
+  if(source){
+    return `<span title="Ursprungsliste; konkreter Flugairport dieser Fahrt ist nicht eindeutig" style="font-size:11px;font-weight:900;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.10);border:1px solid rgba(255,176,32,.32);color:#ffc14d;letter-spacing:.02em">Liste: ${esc(source)}</span>`;
+  }
+  return'';
 }
 function rideAirportStopName(r,routeStops){
   const airportStop=(Array.isArray(routeStops)?routeStops:[]).find(st=>isAirport(st?.name));
@@ -1717,31 +1729,51 @@ function atmsFormatDateTimeDe(value){
   const d=new Date(value);if(Number.isNaN(d.getTime()))return String(value);
   return `${d.toLocaleDateString('de-DE')} · ${d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}`;
 }
+function livePromptRideIsDone(r){
+  const id=String(r?.id||'').trim();
+  return Boolean(id&&done.has(id));
+}
+function liveFlightRelevantRides(source=rides,now=new Date()){
+  const list=Array.isArray(source)?source:[];
+  const settings=getLiveSettings();
+  return list.filter(r=>hasFlightNumber(r)&&!livePromptRideIsDone(r)&&!isPastLiveDispositionRide(r,settings,now));
+}
 function liveFlightInventoryMeta(source=rides){
   const list=Array.isArray(source)?source:[];
   const dates=[...new Set(list.map(r=>String(r?.date||'').trim()).filter(Boolean))].sort();
-  return{rideCount:list.length,flightCount:liveFlightCheckItems(list).length,dates};
+  const allItems=liveFlightCheckItems(list);
+  const relevantItems=liveFlightCheckItems(liveFlightRelevantRides(list));
+  return{rideCount:list.length,flightCount:allItems.length,relevantFlightCount:relevantItems.length,relevantRideCount:liveFlightRelevantRides(list).length,dates};
 }
 function liveFlightLastCheckMeta(){
   try{return JSON.parse(localStorage.getItem(ATMS_LIVE_LAST_CHECK_META)||'{}')||{}}catch{return{}}
 }
 function updateLiveFlightPanelContext(){
   const inventory=$('liveFlightContextStatus');
+  const meta=liveFlightInventoryMeta();
   if(inventory){
-    const meta=liveFlightInventoryMeta();
     const dateText=meta.dates.length===1?atmsFormatIsoDateDe(meta.dates[0]):meta.dates.length?meta.dates.map(atmsFormatIsoDateDe).join(' · '):'–';
-    inventory.textContent=`Aktueller Fahrtenbestand: ${meta.rideCount} Fahrt(en) · ${meta.flightCount} Flüge · Plantag ${dateText}`;
+    inventory.textContent=`Aktueller Fahrtenbestand: ${meta.rideCount} Fahrt(en) · ${meta.flightCount} Flüge · ${meta.relevantFlightCount} aktuell relevant · Plantag ${dateText}`;
   }
+  const scope=$('liveFlightScopeHint');
+  const includeAll=Boolean($('liveFlightIncludeAll')?.checked);
+  if(scope){
+    const grace=livePastRideGraceMinutes();
+    scope.textContent=includeAll?`Prüfumfang: alle ${meta.flightCount} Flüge des Plantags.`:`Standard: ${meta.relevantFlightCount} aktuell relevante Flüge · vergangene Fahrten werden nach ${grace} Min. Nachlauf nicht mehr automatisch geprüft.`;
+  }
+  const label=$('liveFlightIncludeAllLabel');
+  if(label)label.textContent=`Alle Flüge des Plantags einbeziehen (${meta.flightCount})`;
   const last=$('liveFlightLastCheck');
   if(last){
-    const meta=liveFlightLastCheckMeta();
-    if(!meta.importedAt){last.textContent='Letzte LIVE-Prüfung: –';}
+    const check=liveFlightLastCheckMeta();
+    if(!check.importedAt){last.textContent='Letzte LIVE-Prüfung: –';}
     else{
-      const checked=meta.reportedCheckedAt?atmsFormatDateTimeDe(meta.reportedCheckedAt):'–';
-      const parsed=meta.reportedCheckedAt?new Date(meta.reportedCheckedAt):null;
+      const checked=check.reportedCheckedAt?atmsFormatDateTimeDe(check.reportedCheckedAt):'–';
+      const parsed=check.reportedCheckedAt?new Date(check.reportedCheckedAt):null;
       const age=parsed&&!Number.isNaN(parsed.getTime())?Math.max(0,(Date.now()-parsed.getTime())/60000):null;
-      const freshness=age===null?'Zeitpunkt unbekannt':age>ATMS_LIVE_FRESHNESS_MINUTES?`⚠ veraltet · ${liveAgeLabel(age)}`:`aktuell · ${liveAgeLabel(age)}`;
-      last.textContent=`Letzte LIVE-Prüfung: ${checked} · ${freshness} · übernommen ${atmsFormatDateTimeDe(meta.importedAt)}`;
+      const confirmed=Number(check.confirmedRides||0);
+      const freshness=age===null?'Zeitpunkt unbekannt':age>ATMS_LIVE_FRESHNESS_MINUTES?`⚠ Prüfung nicht mehr aktuell · ${liveAgeLabel(age)}`:`${confirmed} aktuell bestätigt · ${liveAgeLabel(age)}`;
+      last.textContent=`Letzte Netzprüfung: ${checked} · ${freshness} · übernommen ${atmsFormatDateTimeDe(check.importedAt)}`;
     }
   }
 }
@@ -1770,10 +1802,17 @@ function liveFlightCheckItems(source=rides){
   }
   return [...map.values()];
 }
-function buildLiveFlightPrompt(){
-  const items=liveFlightCheckItems();
-  if(!items.length)throw new Error('Keine Flüge in den aktuell gespeicherten Fahrten gefunden.');
+function buildLiveFlightPrompt(includeAll=false){
+  const source=includeAll?rides:liveFlightRelevantRides();
+  const items=liveFlightCheckItems(source);
+  if(!items.length){
+    if(!includeAll&&liveFlightCheckItems().length)throw new Error('Keine aktuell relevanten Flüge. Für eine historische Vollprüfung „Alle Flüge des Plantags einbeziehen“ aktivieren.');
+    throw new Error('Keine Flüge in den aktuell gespeicherten Fahrten gefunden.');
+  }
+  const scopeNote=includeAll?'Prüfumfang: ALLE Flüge des Plantags.':'Prüfumfang: nur aktuell relevante, noch nicht erledigte Fahrten gemäß Live-Dispo-Nachlauf.';
   return `ATMS PRO – LIVE-FLIGHT-002 MULTI-AIRPORT strikte aktuelle Live-Flugprüfung
+
+${scopeNote}
 
 Prüfe JEDE unten aufgeführte Flugnummer für den angegebenen Flughafen-Ereignistag (airportEventDate) anhand AKTUELLER öffentlicher Webdaten. Keine historischen/typischen Routen als Live-Status verwenden.
 
@@ -1834,15 +1873,19 @@ async function copyLiveFlightPrompt(){
       return;
     }
     updateLiveFlightPanelContext();
-    const text=buildLiveFlightPrompt();
+    const includeAll=Boolean($('liveFlightIncludeAll')?.checked);
+    const source=includeAll?rides:liveFlightRelevantRides();
+    const items=liveFlightCheckItems(source);
+    const text=buildLiveFlightPrompt(includeAll);
     await navigator.clipboard.writeText(text);
-    const status=$('liveFlightImportStatus');if(status)status.textContent=`${liveFlightCheckItems().length} Live-Flugprüfung(en) kopiert. Ergebnis danach unten einfügen.`;
+    const status=$('liveFlightImportStatus');if(status)status.textContent=`${items.length} Live-Flugprüfung(en) kopiert · ${includeAll?'alle Flüge des Plantags':'nur aktuell relevante Flüge'}. Ergebnis danach unten einfügen.`;
     showToast('Live-Flugprüfauftrag kopiert','ok');
   }catch(e){
-    const text=(()=>{try{return buildLiveFlightPrompt()}catch{return''}})();
-    const box=$('liveFlightPromptFallback');if(box){box.value=text;box.classList.remove('hidden');box.select();}
-    const status=$('liveFlightImportStatus');if(status)status.textContent='Prompt anzeigen und manuell kopieren.';
-    showToast('Live-Prüfauftrag anzeigen','warn');
+    const includeAll=Boolean($('liveFlightIncludeAll')?.checked);
+    const text=(()=>{try{return buildLiveFlightPrompt(includeAll)}catch{return''}})();
+    const box=$('liveFlightPromptFallback');if(box&&text){box.value=text;box.classList.remove('hidden');box.select();}
+    const status=$('liveFlightImportStatus');if(status)status.textContent=String(e?.message||'Prompt konnte nicht kopiert werden.');
+    showToast(String(e?.message||'Live-Prüfauftrag nicht verfügbar'),'warn');
   }
 }
 function strictClockOrNull(value){
@@ -2117,10 +2160,11 @@ function ensureLiveFlightPanel(){
   if($('liveFlightPanel'))return;
   const view=$('importView'),host=$('importToolsHost');if(!view)return;
   const panel=document.createElement('section');panel.id='liveFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,199,255,.32);border-radius:14px;background:rgba(10,80,110,.10)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:3px">Letzte LIVE-Prüfung: –</div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-bottom:10px">Web-LIVE gilt 15 Min. als aktuell. Danach wird es nicht mehr für LIVE-Zeit oder Live-Dispo verwendet. Manuell bestätigte Landungen bleiben erhalten.</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:3px">Letzte LIVE-Prüfung: –</div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-bottom:10px">Web-LIVE gilt 15 Min. als aktuell. Danach wird es nicht mehr für LIVE-Zeit oder Live-Dispo verwendet. Manuell bestätigte Landungen bleiben erhalten.</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><div id="liveFlightScopeHint" style="font-size:12px;opacity:.78;line-height:1.45;margin:0 0 7px">Prüfumfang wird ermittelt …</div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:750;margin:0 0 9px"><input id="liveFlightIncludeAll" type="checkbox"><span id="liveFlightIncludeAllLabel">Alle Flüge des Plantags einbeziehen</span></label><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div>`;
   const anchor=$('geminiFlightPanel');
   if(anchor&&anchor.parentElement===host)anchor.insertAdjacentElement('afterend',panel);else if(host)host.appendChild(panel);else if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
   $('copyLiveFlightBtn')?.addEventListener('click',copyLiveFlightPrompt);
+  $('liveFlightIncludeAll')?.addEventListener('change',updateLiveFlightPanelContext);
   $('applyLiveFlightBtn')?.addEventListener('click',applyLiveFlightResult);
   installJsonInputGuard('liveFlightResult','liveFlightImportStatus','Live-Flug-JSON');
   $('liveFlightResult')?.addEventListener('input',updateLiveApplyButtonState);
