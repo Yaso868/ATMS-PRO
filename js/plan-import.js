@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P19 · 15.09.2026: MIDNIGHT FLIGHT EVENT DATE CONTEXT. Staged Gemini-Matching berücksichtigt den von app.js sicher abgeleiteten airportEventDate. Fahrtdatum und Folgetag-Entscheidung bleiben unverändert; ein Ergebnis vom falschen Flughafen-Ereignistag darf die Vorschau nicht verändern.
   // CORE-007D8A1F1D8P18 · 15.09.2026: STAGED GEMINI STATUS CLARITY. Wenn eine Gemini-Antwort bei einer aktuell analysierten, noch nicht übernommenen Planliste bereits korrekt in die Vorschau synchronisiert wurde, ersetzt plan-import.js die danach von app.js gegen den alten gespeicherten Bestand erzeugte irreführende Status-/Toast-Meldung (z. B. „0 Fahrt(en) geprüft.“) durch den tatsächlichen staged-Abgleich und kennzeichnet ausdrücklich „noch nicht in Fahrtenbestand übernommen“. Reine Anzeige-/Rückmeldekorrektur; Gemini-Schema, Matching, Flugorte/IATA, OCR, Import, LIVE und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P17 · 15.09.2026: PLANTAG IMAGE HEADER DATE FALLBACK. Wenn ein Bild-Dateiname kein Datum enthält und die rekonstruierte Tabellenmatrix selbst ebenfalls kein eindeutiges Datum liefert, darf ATMS als letzten sicheren Fallback ein eindeutig erkanntes Datum aus dem oberen Bild-/Listenbereich (z. B. „Liste 14.09.2026“) übernehmen. Mehrdeutige Datumsfunde werden verworfen; bestehende Dateiname-/Matrix-Erkennung, OCR-Fahrtdaten, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P16 · 14.09.2026: LIVE IMPORT STATUS CLARITY. Die Meldung nach „✓ Live-Flugdaten übernehmen“ unterscheidet nun zwischen bestätigtem Flugstatus und tatsächlich gesetzter LIVE-Zeit. Ein bestätigtes scheduled ohne Estimated-/Actual-Zeit oder belastbare Abweichung wird nicht mehr sprachlich wie eine echte LIVE-Zeit dargestellt. Reine Anzeige-/Rückmeldekorrektur; LIVE-Berechnung, PLAN/DISPO, Flugprüfung, OCR und Persistenz bleiben unverändert.
@@ -5751,12 +5752,18 @@
     const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
     if (!flight) return null;
     const date = cellText(ride?.date);
+    const eventContext = typeof window.ATMSAirportEventDateContextForRide === 'function'
+      ? window.ATMSAirportEventDateContextForRide(ride)
+      : { airportEventDate: date };
+    const airportEventDate = cellText(eventContext?.airportEventDate || date);
     const direction = stagedFlightDirection(ride);
     const flightTime = cellText(ride?.flightTime);
     const candidates = (Array.isArray(checked) ? checked : []).filter(item => {
       if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
       const checkedDate = cellText(item?.date);
       if (date ? checkedDate !== date : Boolean(checkedDate)) return false;
+      const checkedAirportEventDate = cellText(item?.airportEventDate || checkedDate);
+      if (airportEventDate ? checkedAirportEventDate !== airportEventDate : Boolean(checkedAirportEventDate)) return false;
       const checkedDirection = String(item?.direction || 'unknown').trim().toLowerCase();
       if (direction !== 'unknown' ? checkedDirection !== direction : checkedDirection !== 'unknown') return false;
       return true;
