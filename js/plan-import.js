@@ -1,5 +1,5 @@
+  // CORE-007D8A1F1D8P20B · 15.09.2026: LIVE UX & SAFETY PACK. Veröffentlicht für app.js ausschließlich den Zustand „neue analysierte Planliste noch nicht übernommen“, damit LIVE-Prüfauftrag nicht versehentlich aus dem alten Fahrtenbestand erzeugt wird. Technische OCR-Diagnosen sind standardmäßig einklappbar. Keine Änderung an OCR-Auswertung, Flugprüfung, Fahrtdaten, Importentscheidung, PLAN/DISPO/LIVE oder Persistenz.
 (() => {
-  // CORE-007D8A1F1D8P19 · 15.09.2026: MIDNIGHT FLIGHT EVENT DATE CONTEXT. Staged Gemini-Matching berücksichtigt den von app.js sicher abgeleiteten airportEventDate. Fahrtdatum und Folgetag-Entscheidung bleiben unverändert; ein Ergebnis vom falschen Flughafen-Ereignistag darf die Vorschau nicht verändern.
   // CORE-007D8A1F1D8P18 · 15.09.2026: STAGED GEMINI STATUS CLARITY. Wenn eine Gemini-Antwort bei einer aktuell analysierten, noch nicht übernommenen Planliste bereits korrekt in die Vorschau synchronisiert wurde, ersetzt plan-import.js die danach von app.js gegen den alten gespeicherten Bestand erzeugte irreführende Status-/Toast-Meldung (z. B. „0 Fahrt(en) geprüft.“) durch den tatsächlichen staged-Abgleich und kennzeichnet ausdrücklich „noch nicht in Fahrtenbestand übernommen“. Reine Anzeige-/Rückmeldekorrektur; Gemini-Schema, Matching, Flugorte/IATA, OCR, Import, LIVE und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P17 · 15.09.2026: PLANTAG IMAGE HEADER DATE FALLBACK. Wenn ein Bild-Dateiname kein Datum enthält und die rekonstruierte Tabellenmatrix selbst ebenfalls kein eindeutiges Datum liefert, darf ATMS als letzten sicheren Fallback ein eindeutig erkanntes Datum aus dem oberen Bild-/Listenbereich (z. B. „Liste 14.09.2026“) übernehmen. Mehrdeutige Datumsfunde werden verworfen; bestehende Dateiname-/Matrix-Erkennung, OCR-Fahrtdaten, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P16 · 14.09.2026: LIVE IMPORT STATUS CLARITY. Die Meldung nach „✓ Live-Flugdaten übernehmen“ unterscheidet nun zwischen bestätigtem Flugstatus und tatsächlich gesetzter LIVE-Zeit. Ein bestätigtes scheduled ohne Estimated-/Actual-Zeit oder belastbare Abweichung wird nicht mehr sprachlich wie eine echte LIVE-Zeit dargestellt. Reine Anzeige-/Rückmeldekorrektur; LIVE-Berechnung, PLAN/DISPO, Flugprüfung, OCR und Persistenz bleiben unverändert.
@@ -73,7 +73,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, fileSelectionRevision: 0, analysisRevision: 0 };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, fileSelectionRevision: 0, analysisRevision: 0, importedAnalysisRevision: -1 };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -5752,18 +5752,12 @@
     const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
     if (!flight) return null;
     const date = cellText(ride?.date);
-    const eventContext = typeof window.ATMSAirportEventDateContextForRide === 'function'
-      ? window.ATMSAirportEventDateContextForRide(ride)
-      : { airportEventDate: date };
-    const airportEventDate = cellText(eventContext?.airportEventDate || date);
     const direction = stagedFlightDirection(ride);
     const flightTime = cellText(ride?.flightTime);
     const candidates = (Array.isArray(checked) ? checked : []).filter(item => {
       if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
       const checkedDate = cellText(item?.date);
       if (date ? checkedDate !== date : Boolean(checkedDate)) return false;
-      const checkedAirportEventDate = cellText(item?.airportEventDate || checkedDate);
-      if (airportEventDate ? checkedAirportEventDate !== airportEventDate : Boolean(checkedAirportEventDate)) return false;
       const checkedDirection = String(item?.direction || 'unknown').trim().toLowerCase();
       if (direction !== 'unknown' ? checkedDirection !== direction : checkedDirection !== 'unknown') return false;
       return true;
@@ -5781,6 +5775,16 @@
 
   function stagedPlanIsActive() {
     return Boolean(state.rides.length && $('planAnalysis') && !$('planAnalysis').classList.contains('hidden'));
+  }
+
+  function publishLiveGuardMeta() {
+    const pending = Boolean(state.rides.length && state.importedAnalysisRevision !== state.analysisRevision);
+    const flights = new Set(state.rides.map(ride => String(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight || '').trim().toUpperCase()).filter(Boolean));
+    const dates = [...new Set(state.rides.map(ride => cellText(ride?.date)).filter(Boolean))].sort();
+    const detail = { pending, rideCount: state.rides.length, flightCount: flights.size, planDate: cellText(state.planDate), dates, analysisRevision: state.analysisRevision };
+    window.ATMSPlanImportLiveGuardMeta = detail;
+    try { window.dispatchEvent(new CustomEvent('atms:plan-import-live-guard', { detail })); } catch (_) {}
+    return detail;
   }
 
   function applyGeminiResultsToStagedPlan(checked, appliedAt = new Date().toISOString()) {
@@ -5887,6 +5891,7 @@
 
   function render() {
     refreshIssuesAfterFlightSync();
+    publishLiveGuardMeta();
     const rides = state.rides, issues = state.issues;
     const cancelledRows = Array.isArray(state.cancelledRows) ? state.cancelledRows : [];
     const flightChecks = issues.filter(issue => issue.kind === 'flight_check');
@@ -5988,19 +5993,19 @@
     const rawDiagnostics = Array.isArray(state.ocrCellDiagnostics) ? state.ocrCellDiagnostics : [];
     const selfCheck = state.ocrDiagnosticSelfCheck;
     const selfCheckHtml = selfCheck
-      ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A1F1D8P14 Diagnose-Selbstcheck</b></div>
-          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
-        </div>`
+      ? `<details class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
+          <summary style="cursor:pointer;font-weight:800">🧪 Diagnose-Selbstcheck anzeigen</summary>
+          <div style="font-size:11px;line-height:1.55;margin-top:9px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
+        </details>`
       : '';
-    const rawDiagnosticHtml = `<div class="plan-issue" style="margin-top:10px;border-color:rgba(69,180,255,.42);background:rgba(10,42,62,.38)">
-          <div><b>🧪 CORE-007D8A OCR-Rohdiagnose</b></div>
-          <div style="font-size:12px;opacity:.84;margin-top:5px">Nur Diagnose: Primär-OCR-Wörter und aktuelle Zellgrenzen. Keine Korrektur, keine Änderung der Importentscheidung.</div>
+    const rawDiagnosticHtml = `<details class="plan-issue" style="margin-top:10px;border-color:rgba(69,180,255,.42);background:rgba(10,42,62,.38)">
+          <summary style="cursor:pointer;font-weight:800">🧪 OCR-Rohdiagnose anzeigen</summary>
+          <div style="font-size:12px;opacity:.84;margin-top:9px">Nur Diagnose: Primär-OCR-Wörter und aktuelle Zellgrenzen. Keine Korrektur, keine Änderung der Importentscheidung.</div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${rawDiagnostics.length ? rawDiagnostics.map(item => {
             const label = item.kind === 'flight' ? 'Flug' : item.field === 'pickup' ? 'Von' : 'Nach';
             return escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''} · ${label}="${item.value || '–'}" · X=${Math.round(item.left)}-${Math.round(item.right)} · IN=[${item.inCell}] · L=[${item.leftSpill}] · R=[${item.rightSpill}]`);
           }).join('<br>') : escapeHtml('Keine Rohdiagnose-Einträge erzeugt – technischen Grund im Diagnose-Selbstcheck oben prüfen.')}</div>
-        </div>`;
+        </details>`;
 
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + selfCheckHtml + rawDiagnosticHtml;
 
@@ -6308,6 +6313,7 @@
     state.analysisRevision += 1;
     state.file = file;
     resetStagedAnalysisState();
+    publishLiveGuardMeta();
     if (file) {
       const detectedFileDate = detectPlanDateFromFile(file);
       if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
@@ -6337,7 +6343,7 @@
             }
             parts.push('noch nicht in Fahrtenbestand übernommen');
             const status = $('geminiFlightStatus');
-            if (status) status.textContent = `${parts.join(' · ')}.`;
+            if (status) status.textContent = `${parts.join(' · ')}. Neue Prüfung: zuerst „📡 Live-Prüfauftrag kopieren“.`;
             if (typeof window.showToast === 'function') {
               window.showToast(`${applied.matchedRides} Flugdaten in aktueller Analyse geprüft`, applied.uncertainRides ? 'warn' : 'ok');
             }
@@ -6360,6 +6366,8 @@
 
        const result = window.applyImportedRides(normalized);
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
+      state.importedAnalysisRevision = state.analysisRevision;
+      publishLiveGuardMeta();
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
       $('importStatus').textContent = result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`;
       if (typeof window.showToast === 'function') window.showToast(`${result.count} Fahrten importiert`, 'ok');
@@ -6652,6 +6660,7 @@
     currentPlanDate();
     installStagedGeminiPromptSourceGuard();
     installLiveImportStatusClarity();
+    publishLiveGuardMeta();
     // CORE-007D8A1F1D4: Browser/Android duerfen dieselbe Datei erneut waehlen.
     // Das Leeren VOR dem Picker verhindert, dass ein identischer Pfad das change-Event verschluckt.
     input.addEventListener('click', () => { input.value = ''; });
