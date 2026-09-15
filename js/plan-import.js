@@ -1,4 +1,5 @@
-  // CORE-007D8A1F1D8P21 · 15.09.2026: MULTI-PLAN UPLOAD + AIRPORT SOURCE LOCK. Mehrere Planlisten können gemeinsam ausgewählt werden; jede Datei wird weiterhin separat analysiert und erst danach zusammengeführt. Jede Fahrt behält Quelldatei und – sofern aus der jeweiligen Liste eindeutig ableitbar – den Listen-Airport (DUS/CGN/anderer IATA). Einzelupload bleibt unverändert. Bei Mehrfachimport mit ungeklärter 00:00–05:59-Folgetagentscheidung wird aus Sicherheitsgründen abgebrochen und die betroffene Liste muss zuerst einzeln bestätigt werden.
+// CORE-007D8A1F1D8P21 FINAL · 15.09.2026: ANDROID-SICHERER MULTI-PLAN-IMPORT. Einzelupload bleibt einfach; mehrere Dateien werden nacheinander vorgemerkt, pro Datei separat OCR-/Datums-/Airport-geprüft und erst danach gemeinsam übernommen. Unklare Folgetage werden direkt pro Liste bestätigt, unklarer Quell-Airport wird explizit bestätigt, DUS/CGN/andere Airports bleiben strikt getrennt. Vorschau wird je Ursprungsliste getrennt dargestellt; einzelne vorgemerkte Dateien können entfernt werden. P19/P20/P20B bleiben unverändert.
+  // CORE-007D8A1F1D8P21 BASIS · 15.09.2026: MULTI-PLAN UPLOAD + AIRPORT SOURCE LOCK. FINAL erweitert diese Basis um Android-Warteschlange, per-Liste Datumsbestätigung, Airport-Bestätigung und getrennte Vorschau.
   // CORE-007D8A1F1D8P20B · 15.09.2026: LIVE UX & SAFETY PACK. Veröffentlicht für app.js ausschließlich den Zustand „neue analysierte Planliste noch nicht übernommen“, damit LIVE-Prüfauftrag nicht versehentlich aus dem alten Fahrtenbestand erzeugt wird. Technische OCR-Diagnosen sind standardmäßig einklappbar. Keine Änderung an OCR-Auswertung, Flugprüfung, Fahrtdaten, Importentscheidung, PLAN/DISPO/LIVE oder Persistenz.
 (() => {
   // CORE-007D8A1F1D8P18 · 15.09.2026: STAGED GEMINI STATUS CLARITY. Wenn eine Gemini-Antwort bei einer aktuell analysierten, noch nicht übernommenen Planliste bereits korrekt in die Vorschau synchronisiert wurde, ersetzt plan-import.js die danach von app.js gegen den alten gespeicherten Bestand erzeugte irreführende Status-/Toast-Meldung (z. B. „0 Fahrt(en) geprüft.“) durch den tatsächlichen staged-Abgleich und kennzeichnet ausdrücklich „noch nicht in Fahrtenbestand übernommen“. Reine Anzeige-/Rückmeldekorrektur; Gemini-Schema, Matching, Flugorte/IATA, OCR, Import, LIVE und Persistenz bleiben unverändert.
@@ -6043,11 +6044,19 @@
       });
     });
 
+    let previewSourceKey = '';
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
       const rowIssues = actionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
       const status = rowIssues.some(issue => issue.level === 'error') ? 'Fehler' : rowIssues.length ? 'Prüfen' : 'OK';
       const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
-      return `<tr>
+      const sourceKey = ride.sourcePlanIndex ? `${ride.sourcePlanIndex}|${ride.sourcePlanFile || ''}|${ride.sourcePlanAirportIata || ''}` : '';
+      let sourceHeader = '';
+      if (sourceKey && sourceKey !== previewSourceKey) {
+        previewSourceKey = sourceKey;
+        const airport = cellText(ride.sourcePlanAirportIata).toUpperCase() || '???';
+        sourceHeader = `<tr><td colspan="9" style="padding:10px 8px;background:rgba(72,156,255,.10);border-top:1px solid rgba(72,156,255,.3);border-bottom:1px solid rgba(72,156,255,.22);font-weight:850"><span style="display:inline-block;padding:2px 7px;margin-right:7px;border-radius:7px;border:1px solid rgba(72,156,255,.4)">${escapeHtml(airport)}</span>${escapeHtml(airportDisplayName(airport))} · Liste ${escapeHtml(String(ride.sourcePlanIndex))}<div style="font-size:11px;opacity:.7;margin-top:2px">${escapeHtml(ride.sourcePlanFile || '')}</div></td></tr>`;
+      }
+      return sourceHeader + `<tr>
         <td>${escapeHtml(ride.time || '–')}<div style="font-size:11px;opacity:.72;margin-top:3px">${escapeHtml(formatPlanDate(ride.date))}</div></td>
         <td>${escapeHtml(ride.driver || 'Offen')}</td>
         <td>${escapeHtml(ride.pickup || '–')}</td>
@@ -6342,11 +6351,99 @@
     }).join(' · ');
   }
 
+  function airportDisplayName(iata) {
+    const code = cellText(iata).toUpperCase();
+    if (code === 'DUS') return 'Düsseldorf';
+    if (code === 'CGN') return 'Köln/Bonn';
+    return code || 'Airport';
+  }
+
   function renderMultiPlanProfile(sources) {
     const el = $('planProfileInfo');
     if (!el || !Array.isArray(sources) || sources.length < 2) return;
-    const summary = multiSourceSummaryText(sources);
-    el.innerHTML = `<b>ATMS Multi-Plan</b><span>✓ ${sources.length} Planlisten getrennt analysiert</span><small>${escapeHtml(summary)}<br>Airport-Quelltrennung aktiv · jede Fahrt behält ihre Ursprungsliste</small>`;
+    const cards = sources.map(source => {
+      const airport = source.airportIata || '???';
+      const date = source.planDate ? formatPlanDate(source.planDate) : 'Datum ?';
+      return `<div style="margin-top:7px;padding:8px 10px;border:1px solid rgba(255,255,255,.13);border-radius:10px;background:rgba(255,255,255,.035)">
+        <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><span style="font-weight:900;padding:2px 7px;border-radius:7px;border:1px solid rgba(72,156,255,.4);background:rgba(72,156,255,.12)">${escapeHtml(airport)}</span><b>${escapeHtml(airportDisplayName(airport))}</b><span style="opacity:.82">${escapeHtml(date)} · ${escapeHtml(String(source.rideCount))} Fahrt(en)</span></div>
+        <div style="font-size:11px;opacity:.72;margin-top:4px;word-break:break-word">${escapeHtml(source.fileName || '')}</div>
+      </div>`;
+    }).join('');
+    el.innerHTML = `<b>ATMS Multi-Plan</b><span>✓ ${sources.length} Planlisten getrennt analysiert</span><small>Airport-Quelltrennung aktiv · jede Fahrt behält dauerhaft ihre Ursprungsliste.</small>${cards}`;
+  }
+
+  function showMultiPlanDecisionDialog(options = {}) {
+    return new Promise(resolve => {
+      const existing = document.getElementById('atmsMultiPlanDecisionDialog');
+      if (existing) existing.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'atmsMultiPlanDecisionDialog';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;padding:14px;box-sizing:border-box';
+      const panel = document.createElement('div');
+      panel.style.cssText = 'width:min(560px,100%);max-height:88vh;overflow:auto;background:#0b2034;border:1px solid rgba(72,156,255,.42);border-radius:16px;padding:16px;box-shadow:0 18px 50px rgba(0,0,0,.45);color:#fff';
+      panel.innerHTML = `<div style="font-size:17px;font-weight:900;margin-bottom:6px">${escapeHtml(options.title || 'Planliste bestätigen')}</div><div style="font-size:13px;line-height:1.5;opacity:.9;margin-bottom:12px">${escapeHtml(options.text || '')}</div><div id="atmsMultiPlanDecisionBody"></div><div id="atmsMultiPlanDecisionButtons" style="display:grid;gap:8px;margin-top:12px"></div>`;
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+      const finish = value => { overlay.remove(); resolve(value); };
+      const body = panel.querySelector('#atmsMultiPlanDecisionBody');
+      if (typeof options.renderBody === 'function') options.renderBody(body, finish);
+      const buttons = panel.querySelector('#atmsMultiPlanDecisionButtons');
+      (options.buttons || []).forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = item.label;
+        btn.style.cssText = 'padding:12px 13px;border-radius:11px;font-weight:850;text-align:left';
+        btn.addEventListener('click', () => finish(item.value));
+        buttons.appendChild(btn);
+      });
+    });
+  }
+
+  async function requestMultiPlanDateDecision(file, info) {
+    const count = Number(info?.candidateCount || 0);
+    if (!count) return '';
+    const first = (state.rides || []).filter(r => r.dateCandidateNextDay).map(r => cellText(r.time)).filter(Boolean).sort()[0] || '00:00';
+    const last = (state.rides || []).filter(r => r.dateCandidateNextDay).map(r => cellText(r.time)).filter(Boolean).sort().slice(-1)[0] || '05:59';
+    return showMultiPlanDecisionDialog({
+      title: `Datumsprüfung · ${file?.name || 'Planliste'}`,
+      text: `${count} Fahrt(en) liegen zwischen ${first} und ${last}. Gehören diese Fahrten zum Folgetag ${formatPlanDate(info?.nextDate)}? Die Flugzeit verändert das geplante Fahrtdatum nicht.`,
+      buttons: [
+        { label: `✓ ${count} Fahrt(en) → ${formatPlanDate(info?.nextDate)}`, value: 'next_day' },
+        { label: `Alle bleiben ${formatPlanDate(info?.baseDate)}`, value: 'same_day' },
+        { label: 'Abbrechen', value: 'cancel' }
+      ]
+    });
+  }
+
+  async function requestMultiPlanAirport(file, rides) {
+    return showMultiPlanDecisionDialog({
+      title: `Airport der Planliste · ${file?.name || ''}`,
+      text: 'ATMS konnte aus dieser einzelnen Liste keinen eindeutigen Quell-Airport ableiten. Bitte einmal bestätigen. Diese Zuordnung gilt nur für diese Planliste.',
+      renderBody(body, finish) {
+        body.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button type="button" data-airport="DUS" style="padding:12px;border-radius:10px;font-weight:900">DUS · Düsseldorf</button><button type="button" data-airport="CGN" style="padding:12px;border-radius:10px;font-weight:900">CGN · Köln/Bonn</button></div><div style="display:flex;gap:8px;margin-top:10px"><input id="atmsMultiPlanAirportOther" maxlength="3" placeholder="anderer IATA-Code" style="flex:1;min-width:0;padding:11px;border-radius:10px;text-transform:uppercase"><button type="button" id="atmsMultiPlanAirportOtherBtn" style="padding:11px;border-radius:10px;font-weight:850">Übernehmen</button></div>`;
+        body.querySelectorAll('[data-airport]').forEach(btn => btn.addEventListener('click', () => finish(btn.dataset.airport)));
+        body.querySelector('#atmsMultiPlanAirportOtherBtn')?.addEventListener('click', () => {
+          const value = cellText(body.querySelector('#atmsMultiPlanAirportOther')?.value).toUpperCase();
+          if (/^[A-Z]{3}$/.test(value)) finish(value);
+          else if (typeof window.showToast === 'function') window.showToast('Bitte gültigen 3-stelligen IATA-Code eingeben', 'warn');
+        });
+      },
+      buttons: [{ label: 'Abbrechen', value: 'cancel' }]
+    });
+  }
+
+  function rideAirportSignals(ride) {
+    return [sourceAirportIataFromPlace(ride?.pickup), sourceAirportIataFromPlace(ride?.destination)].filter(Boolean);
+  }
+
+  function sourceAirportConflicts(rides, airportIata) {
+    const locked = cellText(airportIata).toUpperCase();
+    if (!locked) return [];
+    return (Array.isArray(rides) ? rides : []).filter(ride => rideAirportSignals(ride).some(signal => signal !== locked));
+  }
+
+  function unresolvedBlockingIssues(issues) {
+    return (Array.isArray(issues) ? issues : []).filter(issue => issue && (issue.level === 'error' || issue.kind === 'price' || issue.kind === 'company'));
   }
 
   async function analyzeMultipleFiles() {
@@ -6374,23 +6471,51 @@
         await analyzeCurrentFile();
         if (state.fileSelectionRevision !== selectionRevision) throw staleAnalysisError();
         if (!state.rides.length) throw new Error(`Planliste ${index + 1} (${file.name}) konnte nicht sicher analysiert werden.`);
+
         if (state.dateInfo?.requiresConfirmation) {
-          throw new Error(`Planliste ${index + 1} (${file.name}) enthält Fahrt(en) zwischen 00:00 und 05:59. Bitte diese Liste zuerst einzeln analysieren und den Folgetag bestätigen; Mehrfachimport wird bis dahin nicht zusammengeführt.`);
+          const action = await requestMultiPlanDateDecision(file, state.dateInfo);
+          if (action === 'cancel' || !action) throw new Error(`Mehrfachanalyse abgebrochen. Die Datumsentscheidung für ${file.name} wurde nicht bestätigt.`);
+          resolveDateBoundary(action);
         }
-        const airportIata = inferSourcePlanAirportIata(state.rides);
-        const rideDate = cellText(state.rides[0]?.planDate || state.rides[0]?.date || state.planDate);
-        if (rideDate) sourceDates.add(rideDate);
+
+        const blocking = unresolvedBlockingIssues(state.issues);
+        if (blocking.length) {
+          throw new Error(`Planliste ${index + 1} (${file.name}) enthält ${blocking.length} Punkt(e), die vor einer gemeinsamen Übernahme manuell bestätigt werden müssen. ATMS führt die Listen deshalb noch nicht zusammen.`);
+        }
+
+        let airportIata = inferSourcePlanAirportIata(state.rides);
+        if (!airportIata) {
+          airportIata = await requestMultiPlanAirport(file, state.rides);
+          if (airportIata === 'cancel' || !airportIata) throw new Error(`Mehrfachanalyse abgebrochen. Der Airport für ${file.name} wurde nicht bestätigt.`);
+        }
+        airportIata = cellText(airportIata).toUpperCase();
+        const conflicts = sourceAirportConflicts(state.rides, airportIata);
+        if (conflicts.length) {
+          throw new Error(`Airport-Konflikt in ${file.name}: ${conflicts.length} Fahrt(en) enthalten einen anderen Flughafen als ${airportIata}. ATMS mischt diese Liste nicht automatisch.`);
+        }
+
+        const rideDates = [...new Set((state.rides || []).map(ride => cellText(ride?.date)).filter(Boolean))].sort();
+        const sourcePlanDate = cellText(state.rides[0]?.planDate || state.planDate || rideDates[0]);
+        if (sourcePlanDate) sourceDates.add(sourcePlanDate);
         const boundRides = state.rides.map((ride, rideIndex) => ({
           ...ride,
           id: `multi-${index + 1}-${rideIndex + 1}::${ride.id}`,
           sourcePlanIndex: index + 1,
           sourcePlanFile: file.name,
           sourcePlanAirportIata: airportIata,
-          sourcePlanDate: rideDate || cellText(ride?.date)
+          sourcePlanDate: sourcePlanDate || cellText(ride?.date)
         }));
         combinedRides.push(...boundRides);
         combinedCancelled.push(...(state.cancelledRows || []).map(row => ({ ...row, sourcePlanIndex: index + 1, sourcePlanFile: file.name, sourcePlanAirportIata: airportIata })));
-        sources.push({ index: index + 1, fileName: file.name, airportIata, rideCount: boundRides.length, planDate: rideDate });
+        sources.push({
+          index: index + 1,
+          fileName: file.name,
+          airportIata,
+          rideCount: boundRides.length,
+          planDate: sourcePlanDate,
+          rideDates,
+          dateBoundaryDecision: state.dateBoundaryDecision || ''
+        });
       }
 
       state.file = files[0];
@@ -6404,7 +6529,11 @@
       state.ocrCellDiagnostics = [];
       state.ocrDiagnosticSelfCheck = null;
       state.dateBoundaryDecision = '';
-      state.dateInfo = { counts: state.rides.reduce((acc, ride) => { const d = cellText(ride?.date); if (d) acc[d] = (acc[d] || 0) + 1; return acc; }, {}), candidateCount: 0, requiresConfirmation: false };
+      state.dateInfo = {
+        counts: state.rides.reduce((acc, ride) => { const d = cellText(ride?.date); if (d) acc[d] = (acc[d] || 0) + 1; return acc; }, {}),
+        candidateCount: 0,
+        requiresConfirmation: false
+      };
       if (sourceDates.size) {
         const firstDate = [...sourceDates].sort()[0];
         state.planDate = firstDate;
@@ -6412,6 +6541,10 @@
         if (input) input.value = firstDate;
       }
       state.issues = validate(state.rides);
+      const combinedBlocking = unresolvedBlockingIssues(state.issues);
+      if (combinedBlocking.length) {
+        throw new Error(`Die zusammengeführte Vorschau enthält ${combinedBlocking.length} sicherheitsrelevante Punkt(e). ATMS übernimmt nichts, bis diese geklärt sind.`);
+      }
       render();
       renderMultiPlanProfile(sources);
       const status = $('importStatus');
@@ -6420,8 +6553,9 @@
     } catch (error) {
       if (error?.name === 'ATMSStaleAnalysisError') return;
       $('importStatus').textContent = `Fehler: ${error.message}`;
-      $('planAnalysis')?.classList.add('hidden');
       if ($('importPlanBtn')) $('importPlanBtn').disabled = true;
+      // Wenn die fehlerhafte Einzelliste bereits analysiert wurde, bleibt ihre Vorschau sichtbar.
+      if (!state.rides.length) $('planAnalysis')?.classList.add('hidden');
     } finally {
       state.multiAnalysisActive = false;
       state.file = files[0] || null;
@@ -6429,6 +6563,7 @@
         analyzeButton.disabled = files.length === 0;
         analyzeButton.removeAttribute('aria-busy');
       }
+      renderMultiPlanSelectionQueue();
     }
   }
 
@@ -6463,8 +6598,102 @@
     }
   }
 
+  function selectedFileIdentity(file) {
+    if (!file) return '';
+    return [cellText(file.name), Number(file.size || 0), Number(file.lastModified || 0), cellText(file.type)].join('::');
+  }
+
+  function addSelectedFiles(files) {
+    const incoming = Array.from(files || []).filter(Boolean);
+    if (!incoming.length) return;
+    const merged = [];
+    const seen = new Set();
+    [...(Array.isArray(state.files) ? state.files : []), ...incoming].forEach(file => {
+      const key = selectedFileIdentity(file);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      merged.push(file);
+    });
+    selectFiles(merged);
+    renderMultiPlanSelectionQueue();
+  }
+
+  function removeSelectedFileByIndex(index) {
+    const files = (Array.isArray(state.files) ? state.files : []).filter(Boolean);
+    if (index < 0 || index >= files.length) return;
+    files.splice(index, 1);
+    selectFiles(files);
+    const input = $('fileInput');
+    if (input) input.value = '';
+    renderMultiPlanSelectionQueue();
+  }
+
+  function clearSelectedFiles() {
+    state.fileSelectionRevision += 1;
+    state.analysisRevision += 1;
+    state.files = [];
+    state.file = null;
+    state.multiSources = [];
+    resetStagedAnalysisState();
+    publishLiveGuardMeta();
+    const input = $('fileInput');
+    if (input) input.value = '';
+    const analyzeButton = $('analyzePlanBtn');
+    if (analyzeButton) analyzeButton.disabled = true;
+    const importButton = $('importPlanBtn');
+    if (importButton) importButton.disabled = true;
+    $('planAnalysis')?.classList.add('hidden');
+    const status = $('importStatus');
+    if (status) status.textContent = 'Noch keine Planliste ausgewählt.';
+    renderMultiPlanSelectionQueue();
+  }
+
+  function ensureMultiPlanSelectionQueue() {
+    if ($('multiPlanSelectionQueue')) return;
+    const anchor = $('planDateControl') || $('planImportDrop') || $('analyzePlanBtn');
+    if (!anchor) return;
+    const box = document.createElement('div');
+    box.id = 'multiPlanSelectionQueue';
+    box.style.cssText = 'display:none;margin:8px 0 12px;padding:10px 12px;border:1px solid rgba(72,156,255,.28);border-radius:12px;background:rgba(7,33,63,.38);font-size:12px;line-height:1.45';
+    box.innerHTML = '<div style="font-weight:800;margin-bottom:6px">📚 Planlisten-Auswahl</div><div id="multiPlanSelectionQueueText"></div><div id="multiPlanSelectionActions" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px"><button type="button" id="multiPlanSelectionAddBtn" style="padding:9px 10px;border-radius:9px;font-weight:800">＋ Weitere Planliste hinzufügen</button><button type="button" id="multiPlanSelectionClearBtn" style="padding:9px 10px;border-radius:9px;font-weight:750">Auswahl leeren</button></div>';
+    anchor.insertAdjacentElement('afterend', box);
+    $('multiPlanSelectionAddBtn')?.addEventListener('click', () => {
+      const input = $('fileInput');
+      if (input) { input.value = ''; input.click(); }
+    });
+    $('multiPlanSelectionClearBtn')?.addEventListener('click', clearSelectedFiles);
+    box.addEventListener('click', event => {
+      const button = event.target.closest?.('[data-remove-plan-index]');
+      if (!button) return;
+      removeSelectedFileByIndex(Number(button.dataset.removePlanIndex));
+    });
+  }
+
+  function renderMultiPlanSelectionQueue() {
+    ensureMultiPlanSelectionQueue();
+    const box = $('multiPlanSelectionQueue');
+    const text = $('multiPlanSelectionQueueText');
+    const files = Array.isArray(state.files) ? state.files.filter(Boolean) : [];
+    if (box) box.style.display = files.length ? '' : 'none';
+    if (!text) return;
+    if (!files.length) {
+      text.innerHTML = '';
+      return;
+    }
+    const cards = files.map((file, index) => {
+      const detectedDate = detectPlanDateFromFile(file);
+      const dateText = detectedDate ? ` · ${formatPlanDate(detectedDate)}` : '';
+      return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;${index ? 'border-top:1px solid rgba(255,255,255,.09);' : ''}"><div style="min-width:0;flex:1"><b>${index + 1}. ${escapeHtml(file.name)}</b><div style="font-size:11px;opacity:.72">${escapeHtml(dateText ? `Plantag aus Dateiname${dateText}` : 'Plantag/Airport werden bei Analyse sicher ermittelt')}</div></div><button type="button" data-remove-plan-index="${index}" style="padding:7px 9px;border-radius:8px;font-weight:750">Entfernen</button></div>`;
+    }).join('');
+    const footer = files.length === 1
+      ? '<div style="margin-top:5px;opacity:.78">Eine Liste: einfach „Planliste analysieren“ tippen. Für DUS + CGN kannst du optional eine weitere Liste hinzufügen.</div>'
+      : `<div style="margin-top:5px;font-weight:750">${files.length} Listen vorgemerkt · jede wird getrennt geprüft und erst danach zusammengeführt.</div>`;
+    text.innerHTML = cards + footer;
+  }
+
   function selectFile(file) {
     selectFiles(file ? [file] : []);
+    renderMultiPlanSelectionQueue();
   }
 
   window.addEventListener('atms:gemini-flight-result', event => {
@@ -6799,6 +7028,8 @@
     const input = $('fileInput'), drop = $('planImportDrop');
     if (!input) return;
     ensurePlanDateControl();
+    ensureMultiPlanSelectionQueue();
+    renderMultiPlanSelectionQueue();
     currentPlanDate();
     installStagedGeminiPromptSourceGuard();
     installLiveImportStatusClarity();
@@ -6809,7 +7040,7 @@
     input.addEventListener('click', () => { input.value = ''; });
     input.addEventListener('change', event => {
       const files = event.target.files ? Array.from(event.target.files) : [];
-      if (files.length) selectFiles(files);
+      if (files.length) addSelectedFiles(files);
     });
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
@@ -6820,7 +7051,7 @@
       ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
       drop.addEventListener('drop', event => {
         const files = event.dataTransfer.files ? Array.from(event.dataTransfer.files) : [];
-        if (files.length) selectFiles(files);
+        if (files.length) addSelectedFiles(files);
       });
     }
   }
