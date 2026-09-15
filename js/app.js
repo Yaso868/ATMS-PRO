@@ -9,6 +9,7 @@
 // CORE-006Y · 11.09.2026: DRIVER AVAILABILITY GUARD – Ersatzfahrer werden nur vorgeschlagen, wenn sie aktiv sind, Trackingfreigabe haben und nach aktueller Live-Dispo keine eigenen offenen Fahrten besitzen. Vor „Lösung übernehmen“ wird dieselbe Verfügbarkeitsprüfung erneut ausgeführt; bei Konflikt bleibt nur „Dispo manuell informieren“. PLAN/DISPO/LIVE, Fluglogik, GPS, Routing, Persistenz, Past-Ride-Guard und CORE-006W bleiben unverändert.
 // CORE-006X · 11.09.2026: Live-Dispo blendet vergangene Fahrten nach frei einstellbarer Nachlaufzeit aus (Standard 120 Min.); Import und Einstellungen sind getrennte Ansichten; Mobile verhindert Seiten-Overflow. PLAN/DISPO/LIVE, Fluglogik, GPS, Routing, Persistenz und CORE-006W bleiben unverändert.
 // CORE-007D8A1F1D8P20D · 15.09.2026: LIVE RELEVANCE & UI CLARITY. Standard-LIVE-Auftrag enthält nur aktuell relevante Fahrten gemäß Live-Dispo-Nachlauf; optional können alle Flüge des Plantags geprüft werden. Karten zeigen exakten Prüfzeitpunkt/Frische klarer; reine Listen-Airports werden als „Liste: IATA“ gekennzeichnet.
+// CORE-007D8A1F1D8P20E · 15.09.2026: MANUAL DEPARTURE CONFIRMATION – Ergänzt eine sichere manuelle Bestätigung tatsächlicher Abflüge. Exakte Flugidentität wird vor Übernahme geprüft; PLAN/DISPO bleiben unverändert, kein Landepuffer, kein künstliches LIVE-Pickup. Manuelle Ankunft/Abflug-Bestätigungen bleiben gegenüber später unbestätigten Web-Snapshots autoritativ.
 // CORE-006V · 11.09.2026: GPS-Refresh in Live-Disposition. Neue Watch-Positionen aktualisieren bei sichtbarer Live-Dispo sofort Route und „LETZTE AKTUALISIERUNG“, ohne eine andere Ansicht zu öffnen oder einen neuen GPS-Watch zu starten. Fluglogik, PLAN/DISPO/LIVE, Routing-Auflösung, Schicht-/Zustimmungslogik und Persistenz bleiben unverändert.
 // CORE-006U2 · 11.09.2026: Live-Disposition unterscheidet fehlende Live-Daten von bestätigtem On-Time/Delay. Ohne bestätigte Live-Verzögerungsinformation keine Aussage „Pünktlich“ oder „Keine Verspätung erkannt“. Echte On-Time-/Delay-Daten bleiben unverändert auswertbar; PLAN/DISPO/LIVE-Import, Routing, GPS und Persistenz bleiben unverändert.
 // CORE-006U1 · 11.09.2026: Altlast-Bereinigung für frühere künstliche scheduled-LIVE=DISPO-Werte. Bei einem neuen unbestätigten Live-Prüfergebnis wird nur ein eindeutig künstlicher Altwert entfernt (vorheriger liveFlightStatus=scheduled, keine Estimated/Actual-Zeit, LIVE exakt DISPO/PLAN, keine manuelle Bestätigung). Echte LIVE-Daten, manuelle Landungen, PLAN/DISPO und übrige Logik bleiben unverändert.
@@ -86,6 +87,7 @@ function scheduleLiveFreshnessRefresh(){
   liveFreshnessTimer=setTimeout(()=>{liveFreshnessTimer=null;refreshVisibleLiveFreshness();scheduleLiveFreshnessRefresh()},Math.min(...waits));
 }
 function actualLandingTimeOf(r){return first(r.actualLandingTime,r.actual_landing_time,r.landingTimeActual,r.landing_time_actual,r.landedAt,r.landed_at,r.actualArrivalTime,r.actual_arrival_time,r.flightActualArrival,r.flight_actual_arrival,r.realArrivalTime,r.real_arrival_time)}
+function actualDepartureTimeOf(r){return first(r.actualDepartureTime,r.actual_departure_time,r.departureTimeActual,r.departure_time_actual,r.departedAt,r.departed_at,r.actualDeparture,r.actual_departure,r.flightActualDeparture,r.flight_actual_departure,r.realDepartureTime,r.real_departure_time)}
 function globalArrivalBufferMinutes(){const raw=Number(getLiveSettings().arrivalPickupBufferMinutes??15);return Number.isFinite(raw)?Math.max(0,Math.min(120,Math.round(raw))):15}
 function liveBufferMinutesOf(r){const raw=Number(r?.liveBufferOverrideMinutes??r?.live_buffer_override_minutes??r?.liveBufferMinutes??r?.live_buffer_minutes??r?.pickupBufferMinutes??r?.pickup_buffer_minutes??globalArrivalBufferMinutes());return Number.isFinite(raw)?Math.max(0,Math.min(120,Math.round(raw))):globalArrivalBufferMinutes()}
 function arrivalBufferMinutesForRide(r){const override=r?.liveBufferOverrideMinutes??r?.live_buffer_override_minutes;const raw=override===undefined||override===null||String(override).trim()===''?globalArrivalBufferMinutes():Number(override);return Number.isFinite(Number(raw))?Math.max(0,Math.min(120,Math.round(Number(raw)))):globalArrivalBufferMinutes()}
@@ -581,7 +583,8 @@ function updateRideTimeField(rideId,patch){
 window.ATMSSetDispoTime=function(rideId,time){return updateRideTimeField(rideId,{dispoTime:String(time||'').trim()})};
 window.ATMSSetLiveTime=function(rideId,time){return updateRideTimeField(rideId,{liveTime:String(time||'').trim(),liveTimeDerivedFromLanding:false})};
 window.ATMSSetActualLandingTime=function(rideId,landingTime,bufferMinutes){const patch={actualLandingTime:String(landingTime||'').trim(),liveTime:''};if(bufferMinutes!==undefined&&bufferMinutes!==null&&String(bufferMinutes).trim()!=='')patch.liveBufferOverrideMinutes=Math.max(0,Math.min(120,Math.round(Number(bufferMinutes)||0)));return updateRideTimeField(rideId,patch)};
-window.ATMSTimeSnapshot=function(rideId){const r=rides.find(x=>String(x?.id||'')===String(rideId||''));if(!r)return null;return{planTime:planTimeOf(r),dispoTime:dispoTimeOf(r),timeMirror:first(r.timeMirror,r.time_mirror),flightTime:listedFlightTimeOf(r),actualLandingTime:actualLandingTimeOf(r),liveTime:liveTimeOf(r),liveBufferMinutes:liveBufferMinutesOf(r),effectiveTime:effectiveTime(r),effectiveSource:effectiveSource(r)}};
+window.ATMSSetActualDepartureTime=function(rideId,departureTime){return updateRideTimeField(rideId,{actualDepartureTime:String(departureTime||'').trim(),liveTime:''})};
+window.ATMSTimeSnapshot=function(rideId){const r=rides.find(x=>String(x?.id||'')===String(rideId||''));if(!r)return null;return{planTime:planTimeOf(r),dispoTime:dispoTimeOf(r),timeMirror:first(r.timeMirror,r.time_mirror),flightTime:listedFlightTimeOf(r),actualLandingTime:actualLandingTimeOf(r),actualDepartureTime:actualDepartureTimeOf(r),liveTime:liveTimeOf(r),liveBufferMinutes:liveBufferMinutesOf(r),effectiveTime:effectiveTime(r),effectiveSource:effectiveSource(r)}};
 function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
@@ -646,7 +649,12 @@ function liveFreshnessMarkup(r){
   const state=liveSnapshotFreshness(r);
   const age=liveAgeLabel(state.ageMinutes);
   const clock=liveSnapshotClockLabel(state.timestamp);
-  if(state.manual)return `<div style="font-size:11px;font-weight:800;margin-top:4px;color:#73e6a4">✋ Manuell bestätigt${clock?` ${esc(clock)}`:''}${age?` · ${esc(age)}`:''}</div>`;
+  if(state.manual){
+    const manualType=String(r?.liveManualType||'').trim().toLowerCase();
+    const eventTime=strictClockOrNull(manualType==='departure'?first(actualDepartureTimeOf(r),r?.liveFlightActualTime):manualType==='arrival'?first(actualLandingTimeOf(r),r?.liveFlightActualTime):r?.liveFlightActualTime);
+    const label=manualType==='departure'?'Abflug manuell bestätigt':manualType==='arrival'?'Landung manuell bestätigt':'Manuell bestätigt';
+    return `<div style="font-size:11px;font-weight:800;margin-top:4px;color:#73e6a4">✋ ${esc(label)}${eventTime?` ${esc(eventTime)}`:''}${clock?` · erfasst ${esc(clock)}`:''}</div>`;
+  }
   if(state.stale)return `<div style="font-size:11px;font-weight:800;margin-top:4px;color:#ffc14d">⚠ Letzte bestätigte LIVE-Info${clock?` ${esc(clock)}`:''}${age?` · ${esc(age)}`:''}</div>`;
   if(state.usable)return `<div style="font-size:11px;font-weight:800;margin-top:4px;opacity:.82">📡 LIVE geprüft${clock?` ${esc(clock)}`:''}${age?` · ${esc(age)}`:''}</div>`;
   if(state.timestamp)return `<div style="font-size:11px;font-weight:800;margin-top:4px;opacity:.72">📡 Letzte Netzprüfung${clock?` ${esc(clock)}`:''} · keine aktuelle LIVE-Bestätigung</div>`;
@@ -2116,51 +2124,126 @@ function saveArrivalBufferSetting(){
   const status=$('liveArrivalBufferNote');if(status)status.textContent=`Gilt global für alle Ankunftsflüge: bestätigte Landungszeit + ${buffer} Min. = LIVE-Abholzeit.${recalculated?` ${recalculated} vorhandene LIVE-Fahrt(en) neu berechnet.`:''}`;
   showToast(`Arrival-Puffer: ${buffer} Min. gespeichert`,'ok');
 }
+function manualFlightIdentityForRide(r,direction){
+  const date=String(r?.date||'').trim();
+  const event=flightAirportEventDateContext(r);
+  const airportEventDate=String(event?.airportEventDate||date).trim();
+  const airportIata=String(flightAirportForGemini(r)||'').trim().toUpperCase();
+  const flightTime=String(listedFlightTimeOf(r)||'').trim();
+  return{date,airportEventDate,direction:String(direction||'').trim(),airportIata,flightTime,key:[date,airportEventDate,String(direction||'').trim(),airportIata,flightTime].join('|')};
+}
+function exactManualFlightMatches(flight,direction){
+  const number=flightCacheNumber(flight);
+  const candidates=rides.filter(r=>flightCacheNumber(r.flightNumber)===number&&flightDirectionForGemini(r)===direction);
+  if(!candidates.length)throw new Error(`${number} wurde in den gespeicherten ${direction==='arrival'?'Ankunfts':'Abflugs'}fahrten nicht gefunden.`);
+  const groups=new Map();
+  for(const r of candidates){
+    const identity=manualFlightIdentityForRide(r,direction);
+    if(!identity.date||!identity.airportEventDate||!identity.airportIata)throw new Error(`${number}: Datum oder Flughafen ist für die manuelle Bestätigung nicht eindeutig. Keine automatische Zuordnung.`);
+    if(!groups.has(identity.key))groups.set(identity.key,{identity,rides:[]});
+    groups.get(identity.key).rides.push(r);
+  }
+  if(groups.size!==1){
+    const labels=[...groups.values()].map(g=>`${g.identity.airportIata} · ${g.identity.airportEventDate}${g.identity.flightTime?` · Flugzeit ${g.identity.flightTime}`:''}`);
+    throw new Error(`${number} ist in mehreren Flugidentitäten vorhanden (${labels.join(' / ')}). Manuelle Übernahme aus Sicherheitsgründen blockiert.`);
+  }
+  return [...groups.values()][0];
+}
 function applyManualArrivalLanding(){
   try{
     const flight=flightCacheNumber($('manualArrivalFlight')?.value||'');
     const actual=strictClockOrNull($('manualArrivalTime')?.value||'');
     if(!flight)throw new Error('Bitte eine Flugnummer eingeben.');
     if(!actual)throw new Error('Bitte die bestätigte Landungszeit als HH:MM eingeben.');
-    const matching=rides.filter(r=>flightCacheNumber(r.flightNumber)===flight&&flightDirectionForGemini(r)==='arrival');
-    if(!matching.length)throw new Error(`${flight} wurde in den gespeicherten Ankunftsfahrten nicht gefunden.`);
-    const dates=[...new Set(matching.map(r=>String(r.date||'').trim()).filter(Boolean))];
-    if(dates.length>1)throw new Error(`${flight} kommt an mehreren Plantagen vor. Bitte zuerst nur den aktuellen Plantag laden.`);
+    const group=exactManualFlightMatches(flight,'arrival');
+    const ids=new Set(group.rides.map(r=>String(r.id)));
     const buffer=globalArrivalBufferMinutes();
     const live=clockPlusMinutes(actual,buffer);
     const checkedAt=new Date().toISOString();
     let updated=0;
     rides=rides.map(r=>{
-      if(flightCacheNumber(r.flightNumber)!==flight||flightDirectionForGemini(r)!=='arrival')return r;
+      if(!ids.has(String(r.id)))return r;
       updated++;
-      return norm({...r,
+      const history=liveHistoryPatchFromRide(r,checkedAt,'manual_arrival_confirmation');
+      return norm({...r,...history,
         actualLandingTime:actual,
+        actualDepartureTime:'',
         liveTime:live,
         live_time:live,
         flightStatus:'landed',
+        delayMinutes:null,
         landed:true,
         liveFlightStatus:'landed',
+        liveFlightScheduledTime:'',
+        liveFlightEstimatedTime:'',
         liveFlightActualTime:actual,
+        liveFlightAirportIata:group.identity.airportIata,
+        liveFlightAirportEventDate:group.identity.airportEventDate,
         liveCheckedAt:checkedAt,
         liveReportedCheckedAt:checkedAt,
         liveCurrentConfirmed:true,
         liveCurrentSource:'manual',
         liveManualConfirmed:true,
+        liveManualType:'arrival',
         liveSourceNote:'Landungszeit manuell vom Disponenten bestätigt.',
         liveSources:[]
       },0);
     });
     save();render();scheduleLiveFreshnessRefresh();
-    const status=$('manualArrivalStatus');if(status)status.textContent=`${updated} Fahrt(en) aktualisiert · ${actual} + ${buffer} Min. = LIVE ${live}.`;
-    showToast(`${flight}: LIVE ${live}`,'ok');
+    const status=$('manualArrivalStatus');if(status)status.textContent=`${updated} Fahrt(en) aktualisiert · Landung ${actual} + ${buffer} Min. = LIVE ${live}.`;
+    showToast(`${flight}: Landung ${actual} · LIVE ${live}`,'ok');
   }catch(e){const status=$('manualArrivalStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Manuelle Landungszeit nicht übernommen','warn')}
 }
+function applyManualDeparture(){
+  try{
+    const flight=flightCacheNumber($('manualDepartureFlight')?.value||'');
+    const actual=strictClockOrNull($('manualDepartureTime')?.value||'');
+    if(!flight)throw new Error('Bitte eine Flugnummer eingeben.');
+    if(!actual)throw new Error('Bitte die bestätigte Abflugzeit als HH:MM eingeben.');
+    const group=exactManualFlightMatches(flight,'departure');
+    const ids=new Set(group.rides.map(r=>String(r.id)));
+    const checkedAt=new Date().toISOString();
+    let updated=0;
+    rides=rides.map(r=>{
+      if(!ids.has(String(r.id)))return r;
+      updated++;
+      const history=liveHistoryPatchFromRide(r,checkedAt,'manual_departure_confirmation');
+      return norm({...r,...history,
+        actualLandingTime:'',
+        actualDepartureTime:actual,
+        liveTime:'',
+        live_time:'',
+        flightStatus:'departed',
+        delayMinutes:null,
+        landed:false,
+        liveFlightStatus:'departed',
+        liveFlightScheduledTime:'',
+        liveFlightEstimatedTime:'',
+        liveFlightActualTime:actual,
+        liveFlightAirportIata:group.identity.airportIata,
+        liveFlightAirportEventDate:group.identity.airportEventDate,
+        liveCheckedAt:checkedAt,
+        liveReportedCheckedAt:checkedAt,
+        liveCurrentConfirmed:true,
+        liveCurrentSource:'manual',
+        liveManualConfirmed:true,
+        liveManualType:'departure',
+        liveSourceNote:'Abflugzeit manuell vom Disponenten bestätigt.',
+        liveSources:[]
+      },0);
+    });
+    save();render();scheduleLiveFreshnessRefresh();
+    const status=$('manualDepartureStatus');if(status)status.textContent=`${updated} Fahrt(en) aktualisiert · Abflug ${actual} manuell bestätigt. PLAN/DISPO bleiben unverändert.`;
+    showToast(`${flight}: Abflug ${actual} bestätigt`,'ok');
+  }catch(e){const status=$('manualDepartureStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Manuelle Abflugzeit nicht übernommen','warn')}
+}
+
 function ensureLiveFlightPanel(){
   ensureMobileImportLayoutFix();
   if($('liveFlightPanel'))return;
   const view=$('importView'),host=$('importToolsHost');if(!view)return;
   const panel=document.createElement('section');panel.id='liveFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,199,255,.32);border-radius:14px;background:rgba(10,80,110,.10)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:3px">Letzte LIVE-Prüfung: –</div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-bottom:10px">Web-LIVE gilt 15 Min. als aktuell. Danach wird es nicht mehr für LIVE-Zeit oder Live-Dispo verwendet. Manuell bestätigte Landungen bleiben erhalten.</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><div id="liveFlightScopeHint" style="font-size:12px;opacity:.78;line-height:1.45;margin:0 0 7px">Prüfumfang wird ermittelt …</div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:750;margin:0 0 9px"><input id="liveFlightIncludeAll" type="checkbox"><span id="liveFlightIncludeAllLabel">Alle Flüge des Plantags einbeziehen</span></label><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:3px">Letzte LIVE-Prüfung: –</div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-bottom:10px">Web-LIVE gilt 15 Min. als aktuell. Danach wird es nicht mehr für LIVE-Zeit oder Live-Dispo verwendet. Manuell bestätigte Landungen und Abflüge bleiben erhalten.</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><div id="liveFlightScopeHint" style="font-size:12px;opacity:.78;line-height:1.45;margin:0 0 7px">Prüfumfang wird ermittelt …</div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:750;margin:0 0 9px"><input id="liveFlightIncludeAll" type="checkbox"><span id="liveFlightIncludeAllLabel">Alle Flüge des Plantags einbeziehen</span></label><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigter Abflug</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für einen vom Disponenten z. B. in Flightradar24 eindeutig bestätigten tatsächlichen Abflug. Ändert PLAN/DISPO nicht und verwendet keinen Landepuffer.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualDepartureFlight" placeholder="Flugnr. z. B. EW9752" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualDepartureTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualDepartureBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigten Abflug übernehmen</button><div id="manualDepartureStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Abflugzeit übernommen.</div>`;
   const anchor=$('geminiFlightPanel');
   if(anchor&&anchor.parentElement===host)anchor.insertAdjacentElement('afterend',panel);else if(host)host.appendChild(panel);else if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
   $('copyLiveFlightBtn')?.addEventListener('click',copyLiveFlightPrompt);
@@ -2171,6 +2254,7 @@ function ensureLiveFlightPanel(){
   window.addEventListener('atms:plan-import-live-guard',updateLiveFlightPanelContext);
   $('saveLiveArrivalBufferBtn')?.addEventListener('click',saveArrivalBufferSetting);
   $('applyManualArrivalBtn')?.addEventListener('click',applyManualArrivalLanding);
+  $('applyManualDepartureBtn')?.addEventListener('click',applyManualDeparture);
   updateLiveApplyButtonState();
   updateLiveFlightPanelContext();
   renderArrivalBufferSetting();
