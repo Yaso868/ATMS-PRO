@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P17 · 15.09.2026: PLANTAG IMAGE HEADER DATE FALLBACK. Wenn ein Bild-Dateiname kein Datum enthält und die rekonstruierte Tabellenmatrix selbst ebenfalls kein eindeutiges Datum liefert, darf ATMS als letzten sicheren Fallback ein eindeutig erkanntes Datum aus dem oberen Bild-/Listenbereich (z. B. „Liste 14.09.2026“) übernehmen. Mehrdeutige Datumsfunde werden verworfen; bestehende Dateiname-/Matrix-Erkennung, OCR-Fahrtdaten, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P16 · 14.09.2026: LIVE IMPORT STATUS CLARITY. Die Meldung nach „✓ Live-Flugdaten übernehmen“ unterscheidet nun zwischen bestätigtem Flugstatus und tatsächlich gesetzter LIVE-Zeit. Ein bestätigtes scheduled ohne Estimated-/Actual-Zeit oder belastbare Abweichung wird nicht mehr sprachlich wie eine echte LIVE-Zeit dargestellt. Reine Anzeige-/Rückmeldekorrektur; LIVE-Berechnung, PLAN/DISPO, Flugprüfung, OCR und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P15 · 14.09.2026: STAGED GEMINI PROMPT SOURCE GUARD. Wenn eine neue Planliste bereits analysiert, aber noch nicht übernommen ist, fängt plan-import.js den sichtbaren Button „🤖 Gemini-Prüfauftrag kopieren“ ab und erzeugt den Prüfauftrag aus den aktuell analysierten state.rides statt aus dem alten gespeicherten Fahrtenbestand. Ohne aktive Analyse bleibt der bisherige app.js-Ablauf unverändert. Keine Änderung an OCR, Fahrtdaten, Flugergebnis-Übernahme, LIVE oder Persistenz.
   // CORE-007D8A1F1D8P14 · 14.09.2026: CUSTOMER/PARTNER DIACRITIC SYNC. P13 korrigierte customer korrekt von Bergstrom→Bergström, aber das beim Import separat gehaltene Anzeige-/Partnerfeld blieb auf dem alten OCR-Wert. P14 synchronisiert partner ausschließlich dann mit, wenn customer sicher per Diakritik-Recovery geändert wurde und partner vorher exakt dem alten customer-Wert entsprach oder leer war. Firma und alle übrigen Felder bleiben unverändert.
@@ -179,6 +180,38 @@
     const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     if (ranked.length === 1 || ranked[0][1] > ranked[1][1]) return ranked[0][0];
     return '';
+  }
+
+  function detectPlanDateFromImageOcr(result, canvas) {
+    const text = cellText(result?.data?.text);
+    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 20);
+    const contextual = [];
+    const add = date => { if (date && !contextual.includes(date)) contextual.push(date); };
+
+    lines.forEach((line, index) => {
+      if (!/\b(?:liste|planliste|plantag)\b/i.test(line)) return;
+      extractPlanDateCandidates(line).forEach(add);
+      const next = lines[index + 1] || '';
+      if (next) extractPlanDateCandidates(`${line} ${next}`).forEach(add);
+    });
+    if (contextual.length === 1) return contextual[0];
+    if (contextual.length > 1) return '';
+
+    const height = Number(canvas?.height || 0);
+    const words = Array.isArray(result?.data?.words) ? result.data.words : [];
+    if (!height || !words.length) return '';
+    const topBandText = words
+      .filter(word => {
+        const y0 = Number(word?.bbox?.y0);
+        const y1 = Number(word?.bbox?.y1);
+        return Number.isFinite(y0) && Number.isFinite(y1) && y0 >= 0 && y1 <= height * 0.22;
+      })
+      .sort((a, b) => Number(a?.bbox?.y0 || 0) - Number(b?.bbox?.y0 || 0) || Number(a?.bbox?.x0 || 0) - Number(b?.bbox?.x0 || 0))
+      .map(word => cellText(word?.text))
+      .filter(Boolean)
+      .join(' ');
+    const topCandidates = extractPlanDateCandidates(topBandText);
+    return topCandidates.length === 1 ? topCandidates[0] : '';
   }
 
   function detectPlanDateFromJsonRows(rows) {
@@ -5489,6 +5522,7 @@
       }
     });
     if (!isCurrent()) throw staleAnalysisError();
+    const imageHeaderPlanDate = detectPlanDateFromImageOcr(result, canvas);
     let words = result?.data?.words || [];
     // CORE-007D8A1F1D8P3: Wenn die Vollbild-OCR den sichtbar vorhandenen Tabellenkopf
     // verfehlt, wird nur das schmale Kopfband oberhalb der ersten mehrfach belegten
@@ -5525,6 +5559,7 @@
       sheetName: 'Bild / WhatsApp',
       imageOcr: true,
       imageCanvas: canvas,
+      imageHeaderPlanDate,
       imageMeta: matrix._atmsImageMeta || null
     };
   }
@@ -6072,7 +6107,12 @@
       const matrix = result.matrix || [];
       if (!matrix.length) throw new Error('Keine Datenzeilen gefunden.');
       const detectedMatrixDate = detectPlanDateFromMatrix(matrix);
-      if (detectedMatrixDate) setDetectedPlanDate(detectedMatrixDate, result.imageOcr ? 'Bildinhalt' : 'Planliste');
+      const detectedFileDate = detectPlanDateFromFile(file);
+      const detectedImageHeaderDate = result.imageOcr && !detectedMatrixDate && !detectedFileDate
+        ? cellText(result.imageHeaderPlanDate)
+        : '';
+      const detectedContentDate = detectedMatrixDate || detectedImageHeaderDate;
+      if (detectedContentDate) setDetectedPlanDate(detectedContentDate, result.imageOcr ? 'Bildinhalt' : 'Planliste');
       const headerDetection = detectHeader(matrix);
       if (headerDetection.score < 3) throw new Error('Die Überschriften der Planliste wurden nicht eindeutig erkannt. Erwartet werden unter anderem Uhrzeit, Von und Nach.');
       const headers = uniqueHeaders(matrix[headerDetection.index]);
