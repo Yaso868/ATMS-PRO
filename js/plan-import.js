@@ -1,4 +1,5 @@
 (() => {
+  // CORE-007D8A1F1D8P18 · 15.09.2026: STAGED GEMINI STATUS CLARITY. Wenn eine Gemini-Antwort bei einer aktuell analysierten, noch nicht übernommenen Planliste bereits korrekt in die Vorschau synchronisiert wurde, ersetzt plan-import.js die danach von app.js gegen den alten gespeicherten Bestand erzeugte irreführende Status-/Toast-Meldung (z. B. „0 Fahrt(en) geprüft.“) durch den tatsächlichen staged-Abgleich und kennzeichnet ausdrücklich „noch nicht in Fahrtenbestand übernommen“. Reine Anzeige-/Rückmeldekorrektur; Gemini-Schema, Matching, Flugorte/IATA, OCR, Import, LIVE und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P17 · 15.09.2026: PLANTAG IMAGE HEADER DATE FALLBACK. Wenn ein Bild-Dateiname kein Datum enthält und die rekonstruierte Tabellenmatrix selbst ebenfalls kein eindeutiges Datum liefert, darf ATMS als letzten sicheren Fallback ein eindeutig erkanntes Datum aus dem oberen Bild-/Listenbereich (z. B. „Liste 14.09.2026“) übernehmen. Mehrdeutige Datumsfunde werden verworfen; bestehende Dateiname-/Matrix-Erkennung, OCR-Fahrtdaten, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P16 · 14.09.2026: LIVE IMPORT STATUS CLARITY. Die Meldung nach „✓ Live-Flugdaten übernehmen“ unterscheidet nun zwischen bestätigtem Flugstatus und tatsächlich gesetzter LIVE-Zeit. Ein bestätigtes scheduled ohne Estimated-/Actual-Zeit oder belastbare Abweichung wird nicht mehr sprachlich wie eine echte LIVE-Zeit dargestellt. Reine Anzeige-/Rückmeldekorrektur; LIVE-Berechnung, PLAN/DISPO, Flugprüfung, OCR und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P15 · 14.09.2026: STAGED GEMINI PROMPT SOURCE GUARD. Wenn eine neue Planliste bereits analysiert, aber noch nicht übernommen ist, fängt plan-import.js den sichtbaren Button „🤖 Gemini-Prüfauftrag kopieren“ ab und erzeugt den Prüfauftrag aus den aktuell analysierten state.rides statt aus dem alten gespeicherten Fahrtenbestand. Ohne aktive Analyse bleibt der bisherige app.js-Ablauf unverändert. Keine Änderung an OCR, Fahrtdaten, Flugergebnis-Übernahme, LIVE oder Persistenz.
@@ -6317,7 +6318,24 @@
     try {
       const checked = event?.detail?.checked;
       if (Array.isArray(checked) && checked.length) {
-        applyGeminiResultsToStagedPlan(checked, new Date().toISOString());
+        const applied = applyGeminiResultsToStagedPlan(checked, new Date().toISOString());
+        // app.js setzt seine globale Statusmeldung erst NACH diesem synchronen Event.
+        // Deshalb die korrekte staged-Meldung im nächsten Task schreiben.
+        if (stagedPlanIsActive()) {
+          setTimeout(() => {
+            if (!stagedPlanIsActive()) return;
+            const parts = [`${applied.matchedRides} Fahrt(en) in aktuell analysierter Planliste geprüft`];
+            if (applied.uncertainRides) {
+              parts.push(`${applied.uncertainRides} unsicher → vorhandener Flugort bleibt · manuell prüfen`);
+            }
+            parts.push('noch nicht in Fahrtenbestand übernommen');
+            const status = $('geminiFlightStatus');
+            if (status) status.textContent = `${parts.join(' · ')}.`;
+            if (typeof window.showToast === 'function') {
+              window.showToast(`${applied.matchedRides} Flugdaten in aktueller Analyse geprüft`, applied.uncertainRides ? 'warn' : 'ok');
+            }
+          }, 0);
+        }
       } else {
         state.issues = validate(state.rides);
         render();
