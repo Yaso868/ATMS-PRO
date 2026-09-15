@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P20 · 15.09.2026: FLIGHTRADAR24 LIVE PRIORITY – Bei widersprüchlichen aktuellen LIVE-Quellen darf ein exakt zum Flug, airportEventDate, Airport und Richtung passender operativer Flightradar24-Datensatz den LIVE-Status/die LIVE-Zeit priorisieren. Erfordert weiterhin mindestens zwei dokumentierte Quellen; allgemeine/historische FR24-Flugplaene reichen nicht. PLAN, DISPO, P19-Ereignistag, OCR, Flugort-Cache und Routing bleiben unveraendert.
 // CORE-007D8A1F1D8P19 · 15.09.2026: MIDNIGHT FLIGHT EVENT DATE CONTEXT. Fahrtdatum bleibt unverändert; wenn Fahrtzeit und Listen-Flugzeit eindeutig über Mitternacht springen, wird separat airportEventDate abgeleitet. Gemini-/LIVE-Prüfung, Ergebnis-Matching und Flug-Cache berücksichtigen diesen Ereignistag. Alte Cache-Einträge ohne airportEventDate bleiben nur für Same-Day-Fälle kompatibel. Keine Änderung an OCR, PLAN/DISPO/LIVE-Zeitberechnung, Route, Fahrer oder Fahrtdatum.
 // CORE-007D8A1F1D8P2 · 13.09.2026: PLAN IMPORT FILE LISTENER CLEANUP – Der Legacy-Datei-Listener in app.js greift nicht mehr in den modernen Planlisten-Import ein. Bild/Excel/CSV werden nicht mehr als JSON-Text gelesen; der korrekte Status „Planliste analysieren“ aus plan-import.js bleibt sichtbar. JSON-Fallback bleibt nur bei fehlendem Planlisten-Modul erhalten. Keine Änderung an OCR, Flugprüfung, PLAN/DISPO/LIVE, Persistenz, Routing oder Fahrerlogik.
 // CORE-007D7 · 12.09.2026: NON-FLIGHT LIST TIME LABEL – Die letzte Listen-Uhrzeit bleibt unverändert gespeichert. Mit Flugnummer heißt sie „Flugzeit Liste“, ohne Flugnummer neutral „Listenzeit“. Keine Änderung an OCR, PLAN/DISPO/LIVE, Flugprüfung, Persistenz oder Reihenfolge.
@@ -1640,16 +1641,19 @@ VERBINDLICHE REGELN:
 2. direction=departure: airportIata ist der Abflugairport. Relevant sind aktueller Status und die aktuelle Abflugzeit an airportIata.
 3. direction=arrival: airportIata ist der Zielairport. Relevant sind aktueller Status und die aktuelle Ankunftszeit an airportIata.
 4. date ist das ATMS-Fahrtdatum und muss unverändert zurückgegeben werden. Für den tatsächlichen Status am relevanten Airport ist airportEventDate EXAKT zu verwenden. Wenn airportEventDate von date abweicht, keine Live-Daten des Fahrtdatums anstelle des Ereignistags übernehmen.
-5. confirmed=true nur mit mindestens ZWEI voneinander unabhängigen, aktuellen/datumsspezifischen Quellen. Mindestens eine Quelle nach Möglichkeit der betroffene Airport, die Airline oder ein etablierter Live-Tracker.
+5. confirmed=true erfordert weiterhin mindestens ZWEI voneinander unabhängige, aktuelle/datumsspezifische Quellen. Mindestens eine Quelle soll nach Möglichkeit der betroffene Airport, die Airline oder ein etablierter Live-Tracker sein.
 6. Wenn airportIata fehlt/null oder direction=unknown ist: confirmed=false, status=unknown. Nicht raten.
 7. Wenn der Flug noch nicht gestartet ist und keine belastbare Schätzung existiert, Status scheduled/on_time ist erlaubt, aber Zeiten nur aus tatsächlich angezeigten aktuellen Daten übernehmen.
-8. Bei Widerspruch, unklarer Zuordnung oder weniger als 2 geeigneten Quellen: confirmed=false, status=unknown. Nicht raten.
-9. airportScheduledTime, airportEstimatedTime und airportActualTime immer als lokale Zeit des betroffenen Airports HH:MM zurückgeben oder null. Der globale ATMS-Abholpuffer wird erst lokal in der App addiert und darf nicht in diese Zeiten eingerechnet werden.
-10. delayMinutes ist die aktuelle Abweichung am Ereignis des betroffenen Airports in ganzen Minuten; wenn nicht belastbar bestimmbar, null.
-11. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden.
-12. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.
-13. airportIata aus dem Prüfeintrag unverändert zurückgeben.
-14. Antworte ausschließlich mit EINEM gültigen JSON-Objekt. Kein Markdown.
+8. Stimmen die geeigneten aktuellen Quellen überein: sourceConflict=false und resolutionMode="consensus".
+9. Widersprechen sich geeignete aktuelle Quellen bei operativem Status oder aktueller Zeit, darf Flightradar24 PRIORITÄT erhalten, aber nur wenn die verwendete FR24-Seite den EXAKTEN Flug mit airportEventDate, airportIata und Richtung eindeutig identifiziert und einen aktuellen operativen Status bzw. eine aktuelle Estimated-/Actual-Zeit für dieses Flughafenereignis zeigt. Dann: sourceConflict=true, resolutionMode="flightradar24_priority", prioritySourceUrl=exakte verwendete Flightradar24-URL. status und Zeiten müssen in diesem Modus ausschließlich aus dieser FR24-Quelle stammen.
+10. Ein allgemeiner/historischer Flightradar24-Flugplan, eine typische Route oder eine Seite ohne eindeutigen Bezug zu airportEventDate + airportIata reicht NICHT für die Priorität.
+11. Wenn ein Quellenkonflikt nicht nach Regel 9 sicher durch FR24 aufgelöst werden kann oder weniger als 2 geeignete Quellen vorliegen: confirmed=false, status=unknown, resolutionMode="unconfirmed". Nicht raten.
+12. airportScheduledTime, airportEstimatedTime und airportActualTime immer als lokale Zeit des betroffenen Airports HH:MM zurückgeben oder null. Der globale ATMS-Abholpuffer wird erst lokal in der App addiert und darf nicht in diese Zeiten eingerechnet werden.
+13. delayMinutes ist die aktuelle Abweichung am Ereignis des betroffenen Airports in ganzen Minuten; wenn nicht belastbar bestimmbar, null.
+14. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden. Bei flightradar24_priority muss die prioritySourceUrl zusätzlich als identischer sources-Eintrag vorhanden sein.
+15. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.
+16. airportIata aus dem Prüfeintrag unverändert zurückgeben.
+17. Antworte ausschließlich mit EINEM gültigen JSON-Objekt. Kein Markdown.
 
 JSON-SCHEMA:
 {
@@ -1667,6 +1671,9 @@ JSON-SCHEMA:
     "airportActualTime":"HH:MM|null",
     "delayMinutes":null,
     "confirmed":false,
+    "sourceConflict":false,
+    "resolutionMode":"consensus|flightradar24_priority|unconfirmed",
+    "prioritySourceUrl":null,
     "sources":[{"name":"","url":""}],
     "sourceNote":""
   }]
@@ -1698,6 +1705,10 @@ function minuteDeltaClock(from,to){
   const [ah,am]=a.split(':').map(Number),[bh,bm]=b.split(':').map(Number);
   let d=bh*60+bm-(ah*60+am);if(d<-720)d+=1440;if(d>720)d-=1440;return d;
 }
+function isFlightradar24Url(value){
+  const raw=String(value||'').trim();if(!raw)return false;
+  try{const host=new URL(raw,window.location.href).hostname.toLowerCase();return host==='flightradar24.com'||host.endsWith('.flightradar24.com');}catch{return false}
+}
 function parseLiveFlightResult(text){
   const obj=parseAtmsJsonObject(text,'Live-Flug-JSON');
   if(!obj||Array.isArray(obj)||typeof obj!=='object'||!Array.isArray(obj.flights)||!obj.flights.length)throw new Error('LIVE-FLIGHT-001 erwartet ein JSON-Objekt mit dem Feld "flights".');
@@ -1714,14 +1725,22 @@ function parseLiveFlightResult(text){
     const status=allowedStatus.has(String(x.status||'unknown').trim().toLowerCase())?String(x.status||'unknown').trim().toLowerCase():'unknown';
     const sources=Array.isArray(x.sources)?x.sources.map(src=>({name:String(src?.name||'').trim(),url:String(src?.url||'').trim()})).filter(src=>src.name&&src.url):[];
     const uniqueSources=new Set(sources.map(src=>src.url.toLowerCase())).size;
-    const confirmed=Boolean(x.confirmed)&&uniqueSources>=2&&status!=='unknown';
+    const sourceConflict=Boolean(x.sourceConflict);
+    const allowedResolutionModes=new Set(['consensus','flightradar24_priority','unconfirmed']);
+    const requestedResolution=String(x.resolutionMode||'consensus').trim().toLowerCase();
+    const resolutionMode=allowedResolutionModes.has(requestedResolution)?requestedResolution:'unconfirmed';
+    const prioritySourceUrl=String(x.prioritySourceUrl||'').trim();
+    const priorityMatchesSource=Boolean(prioritySourceUrl)&&sources.some(src=>src.url.toLowerCase()===prioritySourceUrl.toLowerCase());
+    const fr24PriorityValid=sourceConflict&&resolutionMode==='flightradar24_priority'&&priorityMatchesSource&&isFlightradar24Url(prioritySourceUrl);
+    const consensusValid=!sourceConflict&&resolutionMode==='consensus';
+    const confirmed=Boolean(x.confirmed)&&uniqueSources>=2&&status!=='unknown'&&(consensusValid||fr24PriorityValid);
     const scheduled=strictClockOrNull(x.airportScheduledTime??x.dusScheduledTime);
     const estimated=strictClockOrNull(x.airportEstimatedTime??x.dusEstimatedTime);
     const actual=strictClockOrNull(x.airportActualTime??x.dusActualTime);
     let delay=x.delayMinutes===null||x.delayMinutes===undefined||x.delayMinutes===''?null:Number(x.delayMinutes);
     if(!Number.isFinite(delay))delay=null;
     if(delay===null){const current=actual||estimated;if(scheduled&&current)delay=minuteDeltaClock(scheduled,current);}
-    return {flightNumber,date,airportEventDate,airportEventDateDerived,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
+    return {flightNumber,date,airportEventDate,airportEventDateDerived,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sourceConflict,resolutionMode,prioritySourceUrl:fr24PriorityValid?prioritySourceUrl:'',sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
   });
 }
 function livePickupFromCheck(ride,hit){
@@ -1814,7 +1833,10 @@ function applyLiveFlightResult(){
         liveFlightActualTime:hit.airportActualTime||'',
         liveCheckedAt:checkedAt,
         liveSourceNote:hit.sourceNote,
-        liveSources:hit.sources
+        liveSources:hit.sources,
+        liveSourceConflict:Boolean(hit.sourceConflict),
+        liveResolutionMode:hit.resolutionMode||'',
+        livePrioritySourceUrl:hit.prioritySourceUrl||''
       },0);
     });
     save();render();
