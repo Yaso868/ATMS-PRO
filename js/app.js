@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P22 · 15.09.2026: LIVE DIAGNOSIS PERSISTENCE – vollständiges letztes LIVE-Prüfergebnis inkl. unsicherer Treffer, sourceNote, Quellen und Konfliktmodus lokal sichern und per „📋 Letzte LIVE-Diagnose kopieren“ abrufbar machen. Keine Änderung an PLAN/DISPO/LIVE-Berechnung, Flugmatching, Puffer, OCR oder Bündelung.
+// CORE-007D8A1F1D8P21 · 15.09.2026: MULTI-PLAN AIRPORT SOURCE LOCK + BADGES. Quell-Airport aus getrennt analysierten Planlisten wird als zusätzlicher Guard für Flugprüfung/Bündelung genutzt; widersprechende Airport-Signale werden nicht automatisch gemischt. DUS/CGN-Badge je Fahrt. Bestehende P19/P20/P20B LIVE-Logik bleibt unverändert.
 // CORE-007D8A1F1D8P20B · 15.09.2026: LIVE UX & SAFETY PACK – verhindert Doppelübernahme leerer LIVE-JSONs, zeigt aktuellen Fahrtenbestand/letzte LIVE-Prüfung, blockiert LIVE-Prüfauftrag bei noch nicht übernommenem neuen Plan, unterscheidet in Live-Dispo bestätigten scheduled-Status ohne operative LIVE-Zeit von echten LIVE-Daten und lässt Diagnoseblöcke im Planimport standardmäßig eingeklappt. Keine Änderung an P19/P20-Flugmatching, FR24-Priorität, PLAN/DISPO/LIVE-Berechnung, OCR, Bündelung, Cache oder Persistenzlogik.
 // CORE-007D8A1F1D8P20 · 15.09.2026: FLIGHTRADAR24 LIVE PRIORITY – Bei widersprüchlichen aktuellen LIVE-Quellen darf ein exakt zum Flug, airportEventDate, Airport und Richtung passender operativer Flightradar24-Datensatz den LIVE-Status/die LIVE-Zeit priorisieren. Erfordert weiterhin mindestens zwei dokumentierte Quellen; allgemeine/historische FR24-Flugplaene reichen nicht. PLAN, DISPO, P19-Ereignistag, OCR, Flugort-Cache und Routing bleiben unveraendert.
 // CORE-007D8A1F1D8P19 · 15.09.2026: MIDNIGHT FLIGHT EVENT DATE CONTEXT. Fahrtdatum bleibt unverändert; wenn Fahrtzeit und Listen-Flugzeit eindeutig über Mitternacht springen, wird separat airportEventDate abgeleitet. Gemini-/LIVE-Prüfung, Ergebnis-Matching und Flug-Cache berücksichtigen diesen Ereignistag. Alte Cache-Einträge ohne airportEventDate bleiben nur für Same-Day-Fälle kompatibel. Keine Änderung an OCR, PLAN/DISPO/LIVE-Zeitberechnung, Route, Fahrer oder Fahrtdatum.
@@ -34,6 +36,7 @@
 // CORE-005V3 08.09.2026: Persistenz-Panel wird direkt IN das sichtbare Live-Flugdaten-Panel gemountet; vorhandene Fehlplatzierung wird automatisch verschoben.
 // CORE-005V4 08.09.2026: Kritische Safety-Schattenwerte werden bei normalen Snapshots niemals durch bloß fehlende localStorage-Keys verworfen; Startup/Import kann dadurch verlorene Flugdaten wiederherstellen.
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
+const ATMS_LIVE_LAST_DIAGNOSIS='atms_live_last_diagnosis_v1';
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -457,9 +460,9 @@ function openManualFlightEditor(){
   sheet.style.display='flex';
   setTimeout(()=>sheet.querySelector('#atmsFlightEditNo').focus(),0);
 }
-function isAirport(v){const n=normKey(v);return n.includes('dus airport')||n==='dus' || n.includes('flughafen düsseldorf')||n.includes('duesseldorf airport')}
+function isAirport(v){return Boolean(flightAirportIataFromPlace(v))}
 function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return'airport_to_hotels';if(!isAirport(r.pickup)&&isAirport(r.destination))return'hotels_to_airport';return'normal'}
-function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),dir].join('|')}
+function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),String(r?.sourcePlanAirportIata||'').toUpperCase(),dir].join('|')}
 function sameBundleGroup(a,b){const ka=bundleGroupKey(a),kb=bundleGroupKey(b);return Boolean(ka&&ka===kb)}
 function hotelLabel(name){const n=String(name||'').trim();if(/nh\s*nord/i.test(n))return 'NH Nord DUS';if(/holiday\s*inn/i.test(n))return 'Holiday Inn DUS';return n}
 function knownBundleRepair(r){
@@ -576,15 +579,28 @@ function ridePartnerLabel(r){
   if(left&&right&&left.toLowerCase()===right.toLowerCase())return left;
   return [left,right].filter(Boolean).join(' · ');
 }
+function rideAirportBadge(r){
+  const locked=String(r?.sourcePlanAirportIata||'').trim().toUpperCase();
+  const inferred=locked||String(flightAirportForGemini(r)||'').trim().toUpperCase();
+  if(!inferred)return'';
+  return `<span style="font-size:11px;font-weight:900;padding:2px 7px;border-radius:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);letter-spacing:.04em">${esc(inferred)}</span>`;
+}
+function rideAirportStopName(r,routeStops){
+  const airportStop=(Array.isArray(routeStops)?routeStops:[]).find(st=>isAirport(st?.name));
+  if(airportStop?.name)return airportStop.name;
+  const iata=String(r?.sourcePlanAirportIata||flightAirportForGemini(r)||'').trim().toUpperCase();
+  return iata?`${iata} Airport`:'Airport';
+}
 function rideCard(r,i){
   const routeStops=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>a.order-b.order):[];
-  const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`DUS Airport → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → DUS Airport`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
+  const airportStopName=rideAirportStopName(r,routeStops);
+  const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`${airportStopName} → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → ${airportStopName}`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
   const bundleFlightLabel=r.bundleDirection==='airport_to_hotels'?'Herkunft':'Zielort';
   const manualFlightCheck=Boolean(r.flightNeedsManualCheck||r.flightCheckConfidence==='uncertain');
   const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">⚠ manuell prüfen</span>`:'';
   const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${manualFlightBadge}</div>`:'';
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
-  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta">✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${stopRows}</div><div class="chev">›</div></article>`
+  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${stopRows}</div><div class="chev">›</div></article>`
 }
 function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
   // CORE-006I: Fahrtenansicht folgt der Reihenfolge der importierten Planliste.
@@ -917,9 +933,12 @@ function flightAirportIataFromPlace(value){
 function flightAirportContext(r){
   const pickupIata=flightAirportIataFromPlace(r?.pickup||r?.abholort||'');
   const destinationIata=flightAirportIataFromPlace(r?.destination||r?.zielort||r?.ziel||'');
-  if(pickupIata&&!destinationIata)return{airportIata:pickupIata,direction:'arrival'};
-  if(!pickupIata&&destinationIata)return{airportIata:destinationIata,direction:'departure'};
-  return{airportIata:'',direction:'unknown'};
+  const sourceLock=String(r?.sourcePlanAirportIata||'').trim().toUpperCase();
+  // P21: Quell-Airport darf niemals still mit einem widersprechenden Routen-Airport vermischt werden.
+  if(sourceLock&&((pickupIata&&pickupIata!==sourceLock)||(destinationIata&&destinationIata!==sourceLock)))return{airportIata:'',direction:'unknown',sourceConflict:true};
+  if(pickupIata&&!destinationIata)return{airportIata:pickupIata,direction:'arrival',sourcePlanAirportIata:sourceLock};
+  if(!pickupIata&&destinationIata)return{airportIata:destinationIata,direction:'departure',sourcePlanAirportIata:sourceLock};
+  return{airportIata:'',direction:'unknown',sourcePlanAirportIata:sourceLock};
 }
 function flightDirectionForGemini(r){return flightAirportContext(r).direction}
 function flightAirportForGemini(r){return flightAirportContext(r).airportIata}
@@ -1634,6 +1653,32 @@ function liveFlightInventoryMeta(source=rides){
 function liveFlightLastCheckMeta(){
   try{return JSON.parse(localStorage.getItem(ATMS_LIVE_LAST_CHECK_META)||'{}')||{}}catch{return{}}
 }
+function liveFlightLastDiagnosis(){
+  try{
+    const obj=JSON.parse(localStorage.getItem(ATMS_LIVE_LAST_DIAGNOSIS)||'null');
+    return obj&&typeof obj==='object'&&!Array.isArray(obj)?obj:null;
+  }catch{return null}
+}
+async function copyLastLiveDiagnosis(){
+  const diagnosis=liveFlightLastDiagnosis();
+  const status=$('liveFlightImportStatus');
+  if(!diagnosis){
+    if(status)status.textContent='Noch keine gespeicherte LIVE-Diagnose vorhanden.';
+    showToast('Keine LIVE-Diagnose vorhanden','warn');
+    return;
+  }
+  const text=JSON.stringify(diagnosis,null,2);
+  try{
+    await navigator.clipboard.writeText(text);
+    if(status)status.textContent=`Letzte LIVE-Diagnose kopiert · ${Array.isArray(diagnosis.flights)?diagnosis.flights.length:0} Flugprüfung(en).`;
+    showToast('Letzte LIVE-Diagnose kopiert','ok');
+  }catch(_){
+    const fallback=$('liveFlightPromptFallback');
+    if(fallback){fallback.value=text;fallback.classList.remove('hidden');fallback.select();}
+    if(status)status.textContent='LIVE-Diagnose wird angezeigt – bitte manuell kopieren.';
+    showToast('LIVE-Diagnose anzeigen','warn');
+  }
+}
 function updateLiveFlightPanelContext(){
   const inventory=$('liveFlightContextStatus');
   if(inventory){
@@ -1897,6 +1942,22 @@ function applyLiveFlightResult(){
     save();render();
     const reportedCheckedAt=checked.find(x=>String(x?.reportedCheckedAt||'').trim())?.reportedCheckedAt||'';
     try{localStorage.setItem(ATMS_LIVE_LAST_CHECK_META,JSON.stringify({reportedCheckedAt,importedAt:checkedAt,confirmedRides:updated,uncertainRides:uncertain}))}catch(_){}
+    const lastDiagnosis={
+      diagnosis:'ATMS PRO LIVE-FLIGHT Last Diagnosis',
+      schema:1,
+      reportedCheckedAt,
+      importedAt:checkedAt,
+      summary:{
+        resultCount:checked.length,
+        confirmedResults:checked.filter(x=>x.confirmed).length,
+        unconfirmedResults:checked.filter(x=>!x.confirmed).length,
+        matchedConfirmedRides:updated,
+        matchedUncertainRides:uncertain,
+        cleanedLegacyScheduledLive:cleanedLegacy
+      },
+      flights:checked
+    };
+    safePersistentSetItem(ATMS_LIVE_LAST_DIAGNOSIS,JSON.stringify(lastDiagnosis),'live-diagnosis');
     if(box)box.value='';
     updateLiveApplyButtonState();
     updateLiveFlightPanelContext();
@@ -1967,11 +2028,12 @@ function ensureLiveFlightPanel(){
   if($('liveFlightPanel'))return;
   const view=$('importView'),host=$('importToolsHost');if(!view)return;
   const panel=document.createElement('section');panel.id='liveFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,199,255,.32);border-radius:14px;background:rgba(10,80,110,.10)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:10px">Letzte LIVE-Prüfung: –</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:10px">Letzte LIVE-Prüfung: –</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><button type="button" id="copyLastLiveDiagnosisBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Letzte LIVE-Diagnose kopieren</button><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div>`;
   const anchor=$('geminiFlightPanel');
   if(anchor&&anchor.parentElement===host)anchor.insertAdjacentElement('afterend',panel);else if(host)host.appendChild(panel);else if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
   $('copyLiveFlightBtn')?.addEventListener('click',copyLiveFlightPrompt);
   $('applyLiveFlightBtn')?.addEventListener('click',applyLiveFlightResult);
+  $('copyLastLiveDiagnosisBtn')?.addEventListener('click',copyLastLiveDiagnosis);
   installJsonInputGuard('liveFlightResult','liveFlightImportStatus','Live-Flug-JSON');
   $('liveFlightResult')?.addEventListener('input',updateLiveApplyButtonState);
   window.addEventListener('atms:plan-import-live-guard',updateLiveFlightPanelContext);
