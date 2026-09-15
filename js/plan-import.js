@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P20C · 15.09.2026: LIVE FRESHNESS STATUS CLARITY – zeigt aktuelle LIVE-Zeiten getrennt von archivierten/veralteten Werten; Zählung berücksichtigt airportEventDate. Bestehende P21F1 Exact-Flight-Identity-Logik bleibt unverändert.
 // CORE-007D8A1F1D8P21 FINAL · 15.09.2026: ANDROID-SICHERER MULTI-PLAN-IMPORT. Einzelupload bleibt einfach; mehrere Dateien werden nacheinander vorgemerkt, pro Datei separat OCR-/Datums-/Airport-geprüft und erst danach gemeinsam übernommen. Unklare Folgetage werden direkt pro Liste bestätigt, unklarer Quell-Airport wird explizit bestätigt, DUS/CGN/andere Airports bleiben strikt getrennt. Vorschau wird je Ursprungsliste getrennt dargestellt; einzelne vorgemerkte Dateien können entfernt werden. P19/P20/P20B bleiben unverändert.
   // CORE-007D8A1F1D8P21 BASIS · 15.09.2026: MULTI-PLAN UPLOAD + AIRPORT SOURCE LOCK. FINAL erweitert diese Basis um Android-Warteschlange, per-Liste Datumsbestätigung, Airport-Bestätigung und getrennte Vorschau.
   // CORE-007D8A1F1D8P20B · 15.09.2026: LIVE UX & SAFETY PACK. Veröffentlicht für app.js ausschließlich den Zustand „neue analysierte Planliste noch nicht übernommen“, damit LIVE-Prüfauftrag nicht versehentlich aus dem alten Fahrtenbestand erzeugt wird. Technische OCR-Diagnosen sind standardmäßig einklappbar. Keine Änderung an OCR-Auswertung, Flugprüfung, Fahrtdaten, Importentscheidung, PLAN/DISPO/LIVE oder Persistenz.
@@ -6992,9 +6993,12 @@
         const date = String(ride?.date || '').trim();
         const direction = String(flightDirectionForGemini(ride) || 'unknown').trim().toLowerCase();
         const airportIata = String(flightAirportForGemini(ride) || '').trim().toUpperCase();
+        const eventContext = typeof flightAirportEventDateContext === 'function' ? flightAirportEventDateContext(ride) : null;
+        const airportEventDate = String(eventContext?.airportEventDate || date || '').trim();
         const matches = items.filter(item =>
           normalizedFlightNumber(item?.flightNumber) === flight &&
           (!date || String(item?.date || '').trim() === date) &&
+          (!airportEventDate || String(item?.airportEventDate || item?.date || '').trim() === airportEventDate) &&
           String(item?.direction || 'unknown').trim().toLowerCase() === direction &&
           String(item?.airportIata || '').trim().toUpperCase() === airportIata
         );
@@ -7024,19 +7028,29 @@
         if (!updatedMatch) return;
         const updated = Number(updatedMatch[1]);
         const uncertainMatch = current.match(/·\s*(\d+)\s+unsicher/i);
+        const currentLiveMatch = current.match(/·\s*(\d+)\s+mit aktueller LIVE-Zeit/i);
+        const archivedMatch = current.match(/·\s*(\d+)\s+alte LIVE-Werte archiviert/i);
+        const staleMatch = current.match(/·\s*(\d+)\s+veraltete Prüfergebnisse nicht als aktuell übernommen/i);
+        const manualMatch = current.match(/·\s*(\d+)\s+manuell bestätigt beibehalten/i);
         const cleanedMatch = current.match(/·\s*(\d+)\s+alter künstlicher scheduled-LIVE-Wert bereinigt/i);
         const uncertain = uncertainMatch ? Number(uncertainMatch[1]) : 0;
+        const archived = archivedMatch ? Number(archivedMatch[1]) : 0;
+        const stalePayload = staleMatch ? Number(staleMatch[1]) : 0;
+        const manualPreserved = manualMatch ? Number(manualMatch[1]) : 0;
         const cleanedLegacy = cleanedMatch ? Number(cleanedMatch[1]) : 0;
-        const liveTimeRides = countLiveTimeRides(payload);
+        const liveTimeRides = currentLiveMatch ? Number(currentLiveMatch[1]) : countLiveTimeRides(payload);
 
         const parts = [`${updated} Fahrt(en) mit bestätigtem Flugstatus gespeichert`];
-        if (liveTimeRides !== null) parts.push(`${liveTimeRides} Fahrt(en) mit LIVE-Zeit`);
+        if (liveTimeRides !== null) parts.push(`${liveTimeRides} Fahrt(en) mit aktueller LIVE-Zeit`);
         if (uncertain) parts.push(`${uncertain} unsicher`);
+        if (archived) parts.push(`${archived} alte LIVE-Werte archiviert`);
+        if (stalePayload) parts.push(`${stalePayload} veraltete Prüfergebnisse nicht als aktuell übernommen`);
+        if (manualPreserved) parts.push(`${manualPreserved} manuell bestätigt beibehalten`);
         if (cleanedLegacy) parts.push(`${cleanedLegacy} alter künstlicher scheduled-LIVE-Wert bereinigt`);
         status.textContent = `${parts.join(' · ')}.`;
 
         if (typeof window.showToast === 'function') {
-          const liveText = liveTimeRides === null ? '' : ` · ${liveTimeRides} mit LIVE-Zeit`;
+          const liveText = liveTimeRides === null ? '' : ` · ${liveTimeRides} aktuell mit LIVE-Zeit`;
           window.showToast(`${updated} Flugstatus gespeichert${liveText}`, 'ok');
         }
       }, 0);
