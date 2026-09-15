@@ -1,3 +1,4 @@
+  // CORE-007D8A1F1D8P21 · 15.09.2026: MULTI-PLAN UPLOAD + AIRPORT SOURCE LOCK. Mehrere Planlisten können gemeinsam ausgewählt werden; jede Datei wird weiterhin separat analysiert und erst danach zusammengeführt. Jede Fahrt behält Quelldatei und – sofern aus der jeweiligen Liste eindeutig ableitbar – den Listen-Airport (DUS/CGN/anderer IATA). Einzelupload bleibt unverändert. Bei Mehrfachimport mit ungeklärter 00:00–05:59-Folgetagentscheidung wird aus Sicherheitsgründen abgebrochen und die betroffene Liste muss zuerst einzeln bestätigt werden.
   // CORE-007D8A1F1D8P20B · 15.09.2026: LIVE UX & SAFETY PACK. Veröffentlicht für app.js ausschließlich den Zustand „neue analysierte Planliste noch nicht übernommen“, damit LIVE-Prüfauftrag nicht versehentlich aus dem alten Fahrtenbestand erzeugt wird. Technische OCR-Diagnosen sind standardmäßig einklappbar. Keine Änderung an OCR-Auswertung, Flugprüfung, Fahrtdaten, Importentscheidung, PLAN/DISPO/LIVE oder Persistenz.
 (() => {
   // CORE-007D8A1F1D8P18 · 15.09.2026: STAGED GEMINI STATUS CLARITY. Wenn eine Gemini-Antwort bei einer aktuell analysierten, noch nicht übernommenen Planliste bereits korrekt in die Vorschau synchronisiert wurde, ersetzt plan-import.js die danach von app.js gegen den alten gespeicherten Bestand erzeugte irreführende Status-/Toast-Meldung (z. B. „0 Fahrt(en) geprüft.“) durch den tatsächlichen staged-Abgleich und kennzeichnet ausdrücklich „noch nicht in Fahrtenbestand übernommen“. Reine Anzeige-/Rückmeldekorrektur; Gemini-Schema, Matching, Flugorte/IATA, OCR, Import, LIVE und Persistenz bleiben unverändert.
@@ -73,7 +74,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, fileSelectionRevision: 0, analysisRevision: 0, importedAnalysisRevision: -1 };
+  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, fileSelectionRevision: 0, analysisRevision: 0, importedAnalysisRevision: -1, multiAnalysisActive: false, multiSources: [] };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -6076,7 +6077,7 @@
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
   }
 
-  async function analyze() {
+  async function analyzeCurrentFile() {
     if (!state.file) return;
     const file = state.file;
     const fileSelectionRevision = state.fileSelectionRevision;
@@ -6308,21 +6309,162 @@
     }
   }
 
-  function selectFile(file) {
+
+  function sourceAirportIataFromPlace(value) {
+    const raw = cellText(value);
+    if (!raw) return '';
+    const upper = raw.toUpperCase();
+    const key = cleanKey(raw);
+    if (key.includes('dusseldorfairport') || key.includes('flughafendusseldorf')) return 'DUS';
+    if (key.includes('kolnbonn') || key.includes('flughafenkoln') || key.includes('colognebonnairport')) return 'CGN';
+    if (/\b(?:AIRPORT|FLUGHAFEN|VORFELD|AIRSIDE)\b/i.test(raw)) {
+      const tokens = upper.match(/\b[A-Z]{3}\b/g) || [];
+      if (tokens.length === 1) return tokens[0];
+    }
+    return '';
+  }
+
+  function inferSourcePlanAirportIata(rides) {
+    const seen = new Set();
+    (Array.isArray(rides) ? rides : []).forEach(ride => {
+      const pickup = sourceAirportIataFromPlace(ride?.pickup);
+      const destination = sourceAirportIataFromPlace(ride?.destination);
+      if (pickup) seen.add(pickup);
+      if (destination) seen.add(destination);
+    });
+    return seen.size === 1 ? [...seen][0] : '';
+  }
+
+  function multiSourceSummaryText(sources) {
+    return (Array.isArray(sources) ? sources : []).map(source => {
+      const airport = source.airportIata || 'Airport ?';
+      return `${airport}: ${source.rideCount} Fahrt(en)`;
+    }).join(' · ');
+  }
+
+  function renderMultiPlanProfile(sources) {
+    const el = $('planProfileInfo');
+    if (!el || !Array.isArray(sources) || sources.length < 2) return;
+    const summary = multiSourceSummaryText(sources);
+    el.innerHTML = `<b>ATMS Multi-Plan</b><span>✓ ${sources.length} Planlisten getrennt analysiert</span><small>${escapeHtml(summary)}<br>Airport-Quelltrennung aktiv · jede Fahrt behält ihre Ursprungsliste</small>`;
+  }
+
+  async function analyzeMultipleFiles() {
+    const files = Array.from(state.files || []).filter(Boolean);
+    if (files.length < 2) return analyzeCurrentFile();
+    const selectionRevision = state.fileSelectionRevision;
+    const analyzeButton = $('analyzePlanBtn');
+    const combinedRides = [];
+    const combinedCancelled = [];
+    const sources = [];
+    const sourceDates = new Set();
+    state.multiAnalysisActive = true;
+    if (analyzeButton) {
+      analyzeButton.disabled = true;
+      analyzeButton.setAttribute('aria-busy', 'true');
+    }
+    try {
+      for (let index = 0; index < files.length; index++) {
+        if (state.fileSelectionRevision !== selectionRevision) throw staleAnalysisError();
+        const file = files[index];
+        state.file = file;
+        const fileDate = detectPlanDateFromFile(file);
+        if (fileDate) setDetectedPlanDate(fileDate, 'Dateiname');
+        $('importStatus').textContent = `Planliste ${index + 1}/${files.length} wird getrennt analysiert: ${file.name}`;
+        await analyzeCurrentFile();
+        if (state.fileSelectionRevision !== selectionRevision) throw staleAnalysisError();
+        if (!state.rides.length) throw new Error(`Planliste ${index + 1} (${file.name}) konnte nicht sicher analysiert werden.`);
+        if (state.dateInfo?.requiresConfirmation) {
+          throw new Error(`Planliste ${index + 1} (${file.name}) enthält Fahrt(en) zwischen 00:00 und 05:59. Bitte diese Liste zuerst einzeln analysieren und den Folgetag bestätigen; Mehrfachimport wird bis dahin nicht zusammengeführt.`);
+        }
+        const airportIata = inferSourcePlanAirportIata(state.rides);
+        const rideDate = cellText(state.rides[0]?.planDate || state.rides[0]?.date || state.planDate);
+        if (rideDate) sourceDates.add(rideDate);
+        const boundRides = state.rides.map((ride, rideIndex) => ({
+          ...ride,
+          id: `multi-${index + 1}-${rideIndex + 1}::${ride.id}`,
+          sourcePlanIndex: index + 1,
+          sourcePlanFile: file.name,
+          sourcePlanAirportIata: airportIata,
+          sourcePlanDate: rideDate || cellText(ride?.date)
+        }));
+        combinedRides.push(...boundRides);
+        combinedCancelled.push(...(state.cancelledRows || []).map(row => ({ ...row, sourcePlanIndex: index + 1, sourcePlanFile: file.name, sourcePlanAirportIata: airportIata })));
+        sources.push({ index: index + 1, fileName: file.name, airportIata, rideCount: boundRides.length, planDate: rideDate });
+      }
+
+      state.file = files[0];
+      state.files = files;
+      state.multiSources = sources;
+      state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(combinedRides) : combinedRides;
+      state.cancelledRows = combinedCancelled;
+      state.matrix = [];
+      state.mapping = null;
+      state.meta = { profile: 'ATMS Multi-Plan', multiSources: sources };
+      state.ocrCellDiagnostics = [];
+      state.ocrDiagnosticSelfCheck = null;
+      state.dateBoundaryDecision = '';
+      state.dateInfo = { counts: state.rides.reduce((acc, ride) => { const d = cellText(ride?.date); if (d) acc[d] = (acc[d] || 0) + 1; return acc; }, {}), candidateCount: 0, requiresConfirmation: false };
+      if (sourceDates.size) {
+        const firstDate = [...sourceDates].sort()[0];
+        state.planDate = firstDate;
+        const input = $('planDateInput');
+        if (input) input.value = firstDate;
+      }
+      state.issues = validate(state.rides);
+      render();
+      renderMultiPlanProfile(sources);
+      const status = $('importStatus');
+      if (status) status.textContent = `${state.rides.length} Fahrten aus ${sources.length} getrennten Planlisten erkannt. ${multiSourceSummaryText(sources)}. Bereit zur gemeinsamen Übernahme.`;
+      publishLiveGuardMeta();
+    } catch (error) {
+      if (error?.name === 'ATMSStaleAnalysisError') return;
+      $('importStatus').textContent = `Fehler: ${error.message}`;
+      $('planAnalysis')?.classList.add('hidden');
+      if ($('importPlanBtn')) $('importPlanBtn').disabled = true;
+    } finally {
+      state.multiAnalysisActive = false;
+      state.file = files[0] || null;
+      if (analyzeButton) {
+        analyzeButton.disabled = files.length === 0;
+        analyzeButton.removeAttribute('aria-busy');
+      }
+    }
+  }
+
+  async function analyze() {
+    if (Array.isArray(state.files) && state.files.length > 1 && !state.multiAnalysisActive) return analyzeMultipleFiles();
+    return analyzeCurrentFile();
+  }
+
+
+  function selectFiles(files) {
+    const selected = Array.from(files || []).filter(Boolean);
     state.fileSelectionRevision += 1;
     state.analysisRevision += 1;
-    state.file = file;
+    state.files = selected;
+    state.file = selected[0] || null;
+    state.multiSources = [];
     resetStagedAnalysisState();
     publishLiveGuardMeta();
-    if (file) {
-      const detectedFileDate = detectPlanDateFromFile(file);
-      if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
-    }
-    $('analyzePlanBtn').disabled = !file;
+    const detectedDates = [...new Set(selected.map(detectPlanDateFromFile).filter(Boolean))];
+    if (detectedDates.length === 1) setDetectedPlanDate(detectedDates[0], 'Dateiname');
+    $('analyzePlanBtn').disabled = selected.length === 0;
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
     const planDate = currentPlanDate();
-    $('importStatus').textContent = file ? `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
+    if (!selected.length) {
+      $('importStatus').textContent = 'Noch keine Planliste ausgewählt.';
+    } else if (selected.length === 1) {
+      $('importStatus').textContent = `Ausgewählt: ${selected[0].name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.`;
+    } else {
+      const names = selected.map(file => file.name).join(' · ');
+      $('importStatus').textContent = `${selected.length} Planlisten ausgewählt: ${names}. Jede Liste wird getrennt analysiert und erst danach zusammengeführt.`;
+    }
+  }
+
+  function selectFile(file) {
+    selectFiles(file ? [file] : []);
   }
 
   window.addEventListener('atms:gemini-flight-result', event => {
@@ -6661,12 +6803,13 @@
     installStagedGeminiPromptSourceGuard();
     installLiveImportStatusClarity();
     publishLiveGuardMeta();
-    // CORE-007D8A1F1D4: Browser/Android duerfen dieselbe Datei erneut waehlen.
-    // Das Leeren VOR dem Picker verhindert, dass ein identischer Pfad das change-Event verschluckt.
+    // CORE-007D8A1F1D8P21: Mehrfachauswahl additiv aktivieren; Einzelupload bleibt identisch.
+    input.multiple = true;
+    // Browser/Android duerfen dieselbe Datei erneut waehlen.
     input.addEventListener('click', () => { input.value = ''; });
     input.addEventListener('change', event => {
-      const file = event.target.files && event.target.files[0];
-      if (file) selectFile(file);
+      const files = event.target.files ? Array.from(event.target.files) : [];
+      if (files.length) selectFiles(files);
     });
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
@@ -6676,8 +6819,8 @@
       ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('over'); }));
       ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
       drop.addEventListener('drop', event => {
-        const file = event.dataTransfer.files && event.dataTransfer.files[0];
-        if (file) selectFile(file);
+        const files = event.dataTransfer.files ? Array.from(event.dataTransfer.files) : [];
+        if (files.length) selectFiles(files);
       });
     }
   }

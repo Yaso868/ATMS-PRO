@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P21 · 15.09.2026: MULTI-PLAN AIRPORT SOURCE LOCK + BADGES. Quell-Airport aus getrennt analysierten Planlisten wird als zusätzlicher Guard für Flugprüfung/Bündelung genutzt; widersprechende Airport-Signale werden nicht automatisch gemischt. DUS/CGN-Badge je Fahrt. Bestehende P19/P20/P20B LIVE-Logik bleibt unverändert.
 // CORE-007D8A1F1D8P20B · 15.09.2026: LIVE UX & SAFETY PACK – verhindert Doppelübernahme leerer LIVE-JSONs, zeigt aktuellen Fahrtenbestand/letzte LIVE-Prüfung, blockiert LIVE-Prüfauftrag bei noch nicht übernommenem neuen Plan, unterscheidet in Live-Dispo bestätigten scheduled-Status ohne operative LIVE-Zeit von echten LIVE-Daten und lässt Diagnoseblöcke im Planimport standardmäßig eingeklappt. Keine Änderung an P19/P20-Flugmatching, FR24-Priorität, PLAN/DISPO/LIVE-Berechnung, OCR, Bündelung, Cache oder Persistenzlogik.
 // CORE-007D8A1F1D8P20 · 15.09.2026: FLIGHTRADAR24 LIVE PRIORITY – Bei widersprüchlichen aktuellen LIVE-Quellen darf ein exakt zum Flug, airportEventDate, Airport und Richtung passender operativer Flightradar24-Datensatz den LIVE-Status/die LIVE-Zeit priorisieren. Erfordert weiterhin mindestens zwei dokumentierte Quellen; allgemeine/historische FR24-Flugplaene reichen nicht. PLAN, DISPO, P19-Ereignistag, OCR, Flugort-Cache und Routing bleiben unveraendert.
 // CORE-007D8A1F1D8P19 · 15.09.2026: MIDNIGHT FLIGHT EVENT DATE CONTEXT. Fahrtdatum bleibt unverändert; wenn Fahrtzeit und Listen-Flugzeit eindeutig über Mitternacht springen, wird separat airportEventDate abgeleitet. Gemini-/LIVE-Prüfung, Ergebnis-Matching und Flug-Cache berücksichtigen diesen Ereignistag. Alte Cache-Einträge ohne airportEventDate bleiben nur für Same-Day-Fälle kompatibel. Keine Änderung an OCR, PLAN/DISPO/LIVE-Zeitberechnung, Route, Fahrer oder Fahrtdatum.
@@ -457,9 +458,9 @@ function openManualFlightEditor(){
   sheet.style.display='flex';
   setTimeout(()=>sheet.querySelector('#atmsFlightEditNo').focus(),0);
 }
-function isAirport(v){const n=normKey(v);return n.includes('dus airport')||n==='dus' || n.includes('flughafen düsseldorf')||n.includes('duesseldorf airport')}
+function isAirport(v){return Boolean(flightAirportIataFromPlace(v))}
 function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return'airport_to_hotels';if(!isAirport(r.pickup)&&isAirport(r.destination))return'hotels_to_airport';return'normal'}
-function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),dir].join('|')}
+function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),String(r?.sourcePlanAirportIata||'').toUpperCase(),dir].join('|')}
 function sameBundleGroup(a,b){const ka=bundleGroupKey(a),kb=bundleGroupKey(b);return Boolean(ka&&ka===kb)}
 function hotelLabel(name){const n=String(name||'').trim();if(/nh\s*nord/i.test(n))return 'NH Nord DUS';if(/holiday\s*inn/i.test(n))return 'Holiday Inn DUS';return n}
 function knownBundleRepair(r){
@@ -576,15 +577,28 @@ function ridePartnerLabel(r){
   if(left&&right&&left.toLowerCase()===right.toLowerCase())return left;
   return [left,right].filter(Boolean).join(' · ');
 }
+function rideAirportBadge(r){
+  const locked=String(r?.sourcePlanAirportIata||'').trim().toUpperCase();
+  const inferred=locked||String(flightAirportForGemini(r)||'').trim().toUpperCase();
+  if(!inferred)return'';
+  return `<span style="font-size:11px;font-weight:900;padding:2px 7px;border-radius:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);letter-spacing:.04em">${esc(inferred)}</span>`;
+}
+function rideAirportStopName(r,routeStops){
+  const airportStop=(Array.isArray(routeStops)?routeStops:[]).find(st=>isAirport(st?.name));
+  if(airportStop?.name)return airportStop.name;
+  const iata=String(r?.sourcePlanAirportIata||flightAirportForGemini(r)||'').trim().toUpperCase();
+  return iata?`${iata} Airport`:'Airport';
+}
 function rideCard(r,i){
   const routeStops=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>a.order-b.order):[];
-  const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`DUS Airport → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → DUS Airport`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
+  const airportStopName=rideAirportStopName(r,routeStops);
+  const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`${airportStopName} → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → ${airportStopName}`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
   const bundleFlightLabel=r.bundleDirection==='airport_to_hotels'?'Herkunft':'Zielort';
   const manualFlightCheck=Boolean(r.flightNeedsManualCheck||r.flightCheckConfidence==='uncertain');
   const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">⚠ manuell prüfen</span>`:'';
   const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${manualFlightBadge}</div>`:'';
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
-  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta">✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${stopRows}</div><div class="chev">›</div></article>`
+  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${stopRows}</div><div class="chev">›</div></article>`
 }
 function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
   // CORE-006I: Fahrtenansicht folgt der Reihenfolge der importierten Planliste.
@@ -917,9 +931,12 @@ function flightAirportIataFromPlace(value){
 function flightAirportContext(r){
   const pickupIata=flightAirportIataFromPlace(r?.pickup||r?.abholort||'');
   const destinationIata=flightAirportIataFromPlace(r?.destination||r?.zielort||r?.ziel||'');
-  if(pickupIata&&!destinationIata)return{airportIata:pickupIata,direction:'arrival'};
-  if(!pickupIata&&destinationIata)return{airportIata:destinationIata,direction:'departure'};
-  return{airportIata:'',direction:'unknown'};
+  const sourceLock=String(r?.sourcePlanAirportIata||'').trim().toUpperCase();
+  // P21: Quell-Airport darf niemals still mit einem widersprechenden Routen-Airport vermischt werden.
+  if(sourceLock&&((pickupIata&&pickupIata!==sourceLock)||(destinationIata&&destinationIata!==sourceLock)))return{airportIata:'',direction:'unknown',sourceConflict:true};
+  if(pickupIata&&!destinationIata)return{airportIata:pickupIata,direction:'arrival',sourcePlanAirportIata:sourceLock};
+  if(!pickupIata&&destinationIata)return{airportIata:destinationIata,direction:'departure',sourcePlanAirportIata:sourceLock};
+  return{airportIata:'',direction:'unknown',sourcePlanAirportIata:sourceLock};
 }
 function flightDirectionForGemini(r){return flightAirportContext(r).direction}
 function flightAirportForGemini(r){return flightAirportContext(r).airportIata}
