@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P24 · 16.09.2026: POST-IMPORT GEMINI STATUS CLARITY – nach erfolgreicher Übernahme einer bereits Gemini-geprüften Planliste wird die alte staged-Meldung „noch nicht in Fahrtenbestand übernommen“ sofort auf den tatsächlichen übernommenen Zustand aktualisiert. P18 darf diese staged-Nicht-übernommen-Meldung nur noch ausgeben, solange die aktuelle Analyse wirklich noch nicht importiert wurde. Reine Status-/UX-Korrektur; OCR, Flugprüfung, Fahrtdaten, Multi-Plan, PLAN/DISPO/LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P23 · 16.09.2026: FLIGHT LOCATION UMLAUT OCR ARTIFACT RECOVERY – erweitert ausschließlich die bereits zweifach bestätigte deutsche Ort-Nachlese um den exakten OCR-Glyphenfall ü→ii (z. B. Primär-OCR Ziirich, Kontroll-OCR Zürich). Kein Orts-/Flug-Hardcode; Von/Nach, Name, Flugprüfung, PLAN/DISPO/LIVE, Multi-Plan und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P20C · 15.09.2026: LIVE FRESHNESS STATUS CLARITY – zeigt aktuelle LIVE-Zeiten getrennt von archivierten/veralteten Werten; Zählung berücksichtigt airportEventDate. Bestehende P21F1 Exact-Flight-Identity-Logik bleibt unverändert.
 // CORE-007D8A1F1D8P21 FINAL · 15.09.2026: ANDROID-SICHERER MULTI-PLAN-IMPORT. Einzelupload bleibt einfach; mehrere Dateien werden nacheinander vorgemerkt, pro Datei separat OCR-/Datums-/Airport-geprüft und erst danach gemeinsam übernommen. Unklare Folgetage werden direkt pro Liste bestätigt, unklarer Quell-Airport wird explizit bestätigt, DUS/CGN/andere Airports bleiben strikt getrennt. Vorschau wird je Ursprungsliste getrennt dargestellt; einzelne vorgemerkte Dateien können entfernt werden. P19/P20/P20B bleiben unverändert.
@@ -5856,6 +5857,18 @@
     return Boolean(state.rides.length && $('planAnalysis') && !$('planAnalysis').classList.contains('hidden'));
   }
 
+  function stagedPlanIsPendingImport() {
+    return Boolean(stagedPlanIsActive() && state.importedAnalysisRevision !== state.analysisRevision);
+  }
+
+  function refreshGeminiStatusAfterSuccessfulImport() {
+    const status = $('geminiFlightStatus');
+    if (!status) return;
+    const text = cellText(status.textContent);
+    if (!/noch nicht in Fahrtenbestand übernommen/i.test(text)) return;
+    status.textContent = text.replace(/noch nicht in Fahrtenbestand übernommen/i, 'in Fahrtenbestand übernommen');
+  }
+
   function publishLiveGuardMeta() {
     const pending = Boolean(state.rides.length && state.importedAnalysisRevision !== state.analysisRevision);
     const flights = new Set(state.rides.map(ride => String(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight || '').trim().toUpperCase()).filter(Boolean));
@@ -6782,9 +6795,9 @@
         const applied = applyGeminiResultsToStagedPlan(checked, new Date().toISOString());
         // app.js setzt seine globale Statusmeldung erst NACH diesem synchronen Event.
         // Deshalb die korrekte staged-Meldung im nächsten Task schreiben.
-        if (stagedPlanIsActive()) {
+        if (stagedPlanIsPendingImport()) {
           setTimeout(() => {
-            if (!stagedPlanIsActive()) return;
+            if (!stagedPlanIsPendingImport()) return;
             const parts = [`${applied.matchedRides} Fahrt(en) in aktuell analysierter Planliste geprüft`];
             if (applied.uncertainRides) {
               parts.push(`${applied.uncertainRides} unsicher → vorhandener Flugort bleibt · manuell prüfen`);
@@ -6816,6 +6829,7 @@
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
       state.importedAnalysisRevision = state.analysisRevision;
       publishLiveGuardMeta();
+      refreshGeminiStatusAfterSuccessfulImport();
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
       $('importStatus').textContent = result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`;
       if (typeof window.showToast === 'function') window.showToast(`${result.count} Fahrten importiert`, 'ok');
