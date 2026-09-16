@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P23 · 16.09.2026: FLIGHT LOCATION UMLAUT OCR ARTIFACT RECOVERY – erweitert ausschließlich die bereits zweifach bestätigte deutsche Ort-Nachlese um den exakten OCR-Glyphenfall ü→ii (z. B. Primär-OCR Ziirich, Kontroll-OCR Zürich). Kein Orts-/Flug-Hardcode; Von/Nach, Name, Flugprüfung, PLAN/DISPO/LIVE, Multi-Plan und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P20C · 15.09.2026: LIVE FRESHNESS STATUS CLARITY – zeigt aktuelle LIVE-Zeiten getrennt von archivierten/veralteten Werten; Zählung berücksichtigt airportEventDate. Bestehende P21F1 Exact-Flight-Identity-Logik bleibt unverändert.
 // CORE-007D8A1F1D8P21 FINAL · 15.09.2026: ANDROID-SICHERER MULTI-PLAN-IMPORT. Einzelupload bleibt einfach; mehrere Dateien werden nacheinander vorgemerkt, pro Datei separat OCR-/Datums-/Airport-geprüft und erst danach gemeinsam übernommen. Unklare Folgetage werden direkt pro Liste bestätigt, unklarer Quell-Airport wird explizit bestätigt, DUS/CGN/andere Airports bleiben strikt getrennt. Vorschau wird je Ursprungsliste getrennt dargestellt; einzelne vorgemerkte Dateien können entfernt werden. P19/P20/P20B bleiben unverändert.
   // CORE-007D8A1F1D8P21 BASIS · 15.09.2026: MULTI-PLAN UPLOAD + AIRPORT SOURCE LOCK. FINAL erweitert diese Basis um Android-Warteschlange, per-Liste Datumsbestätigung, Airport-Bestätigung und getrennte Vorschau.
@@ -4276,6 +4277,34 @@
     return changedTokens === 1;
   }
 
+  // CORE-007D8A1F1D8P23: Der Primär-OCR kann ein gedrucktes „ü“ als „ii“ lesen
+  // (z. B. Ziirich), obwohl zwei gezielte deutsche OCR-Durchläufe übereinstimmend
+  // den Umlaut erkennen. Dieser Guard ist ausschließlich für die Flugort-Spalte
+  // gedacht und akzeptiert nur die exakte Zeichenbeziehung ü <-> ii innerhalb
+  // genau eines Tokens. Ortsnamen werden weiterhin weder hardcodiert noch geraten.
+  function routeFlightLocationUmlautArtifactIsSafe(originalValue, candidateValue) {
+    const original = routeOcrText(originalValue);
+    const candidate = routeOcrText(candidateValue);
+    if (!original || !candidate || original === candidate) return false;
+    if (!/[Üü]/.test(candidate)) return false;
+    if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ0-9 .,'’&()/+\-]+$/.test(candidate)) return false;
+    const originalTokens = original.split(/\s+/);
+    const candidateTokens = candidate.split(/\s+/);
+    if (originalTokens.length !== candidateTokens.length) return false;
+    let changedTokens = 0;
+    for (let index = 0; index < originalTokens.length; index++) {
+      const left = originalTokens[index];
+      const right = candidateTokens[index];
+      if (left === right) continue;
+      changedTokens += 1;
+      if (changedTokens > 1) return false;
+      if (right.length < 4 || !/[Üü]/.test(right)) return false;
+      const artifact = right.replace(/Ü/g, 'II').replace(/ü/g, 'ii');
+      if (routeOcrBase(left) !== routeOcrBase(artifact)) return false;
+    }
+    return changedTokens === 1;
+  }
+
   function routeWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta) {
     const grouped = new Map();
     const words = Array.isArray(result?.data?.words) ? result.data.words : [];
@@ -4498,7 +4527,11 @@
         if (runner && winner[1] === runner[1]) return;
 
         const candidate = routeOcrText(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
-        if (!routeChangedDiacriticTokenIsSafe(original, candidate)) return;
+        const strictDiacriticSafe = routeChangedDiacriticTokenIsSafe(original, candidate);
+        const flightLocationUmlautArtifactSafe =
+          descriptor.field === 'flightLocation' &&
+          routeFlightLocationUmlautArtifactIsSafe(original, candidate);
+        if (!strictDiacriticSafe && !flightLocationUmlautArtifactSafe) return;
 
         ride[`${descriptor.field}RawOcr`] = original;
 
@@ -4517,7 +4550,9 @@
 
         ride[descriptor.field] = candidate;
         ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
-        ride[`${descriptor.field}RecoverySource`] = 'targeted_route_diacritic_consensus';
+        ride[`${descriptor.field}RecoverySource`] = flightLocationUmlautArtifactSafe
+          ? 'targeted_flight_location_umlaut_artifact_consensus'
+          : 'targeted_route_diacritic_consensus';
       });
     }
 
