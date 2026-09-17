@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26I · 17.09.2026: LIVE-DISPO FINAL VISUAL MATCH – Letzter gebündelter Präzisionspass gegen das verbindliche Zielbild auf dem realen Android-Screenshot: kompakte ATMS-PRO-Kopfleiste, einzeiliger Fahrer-Fahrtenkontrolle-Kopf mit Einstellungen rechts, Demo-Steuerung aus dem Layoutfluss, aktiv wirkende Demo-Karten-Schaltfläche, feinere Karten-/Fahrer-Info-Darstellung, weniger Umbruch in Fahrtenzeilen und sicherer Abstand über der festen Navigation. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26H · 17.09.2026: LIVE-DISPO VISUAL PRECISION PASS – Gebündelter optischer Feinschliff gegen das verbindliche Zielbild: Fahrerkarte mit Avatar/ID-Hierarchie, kompakter Trackingstreifen, kartenähnliche Positionsdarstellung, ikonische Fahrer-Info, besser lesbare mobile Fahrtenzeilen und auf der Live-Dispo nur die fünf Zielbild-Navigationseinträge. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26G · 17.09.2026: LIVE-DISPO ZIELBILD-DEMO – Isolierter, rein visueller Demomodus für den Gesamtvergleich mit dem verbindlichen Zielbild. Zeigt klar markierte Beispieldaten für Tracking, Position, Fahrer-Info, vier Fahrten und Warnkarte ausschließlich im DOM; keine Fahrten, DONE, PLAN/DISPO/LIVE-, GPS-, Fahrer-, Nachrichten- oder Persistenzdaten werden geschrieben oder verändert; keine Netzaufrufe.
 // CORE-007D8A1F1D8P26F · 17.09.2026: LIVE-DISPO TARGET UI FINISH PACK – Bündelt das visuelle Finish zum verbindlichen Zielbild: kompakte Zwei-Spalten-Mobile-Ansicht, dreigeteilter Trackingstreifen, tabellarische Fahrtenkontrolle auch auf Smartphones, Warnkarte nur bei bestätigter Überschreitung der persönlichen Warnschwelle und Legacy-/Diagnosebereiche standardmäßig hinter „⚙ Einstellungen“. Bestehende LIVE-/PLAN-/DISPO-, Warn-, Routing-, Nachrichten-, GPS-, Fahrer- und Persistenzlogik bleibt unverändert; keine neuen Netzaufrufe.
@@ -3177,6 +3178,7 @@ function applyLiveDispositionTargetDemo(){
   ].map((r,i)=>`<div class="atms-live-target-ride-row ${r[0]}"><div class="atms-live-target-ride-index">${i+1}</div><div class="atms-live-target-ride-time"><b>${r[1]}</b><span>${r[2]}</span></div><div class="atms-live-target-ride-route"><b>${r[3]}</b><span>${r[4]}</span></div><div class="atms-live-target-ride-metric ${r[0]}"><span>Prognose</span><b>${r[5]}</b></div><div class="atms-live-target-ride-metric ${r[0]}"><span>Verspätung</span><b>${r[6]}</b>${r[8]?`<span class="atms-live-target-demo-warning-sent">${r[8]}</span>`:''}</div><div class="atms-live-target-ride-status ${r[0]}">${r[7]}</div><button type="button" class="atms-live-target-ride-open" disabled>›</button></div>`).join('');
   const warning=$('atmsLiveTargetWarning');if(warning){warning.hidden=false;warning.className='atms-live-target-warning alert'}
   const icon=$('atmsLiveTargetWarningIcon');if(icon)icon.textContent='⚠';const wt=$('atmsLiveTargetWarningTitle');if(wt)wt.textContent='Aktuelle Warnung';const txt=$('atmsLiveTargetWarningText');if(txt)txt.textContent='Die nächste Fahrt kann voraussichtlich nicht pünktlich erreicht werden.';const wr=$('atmsLiveTargetWarningRide');if(wr)wr.textContent='DUS Airport → Köln Messe';const pl=$('atmsLiveTargetWarningPredictionLabel');if(pl)pl.textContent='Prognostizierte Ankunft';const pred=$('atmsLiveTargetWarningPrediction');if(pred)pred.textContent='14:19 Uhr';const del=$('atmsLiveTargetWarningDelay');if(del)del.textContent='+9 Minuten';const th=$('atmsLiveTargetWarningThreshold');if(th)th.textContent='7 Minuten';const details=$('atmsLiveTargetWarningDetails');if(details){details.hidden=false;details.dataset.rideId='';details.textContent='Details anzeigen ›';details.disabled=true}
+  renderLiveDispositionTargetAppBar();
 }
 
 // CORE-007D8A1F1D8P26F – gebündeltes Zielbild-Finish. Legacy-Funktionen bleiben vorhanden und werden nur standardmäßig eingeklappt.
@@ -3209,6 +3211,24 @@ function toggleLiveDispositionTargetAdvanced(){
   if(view.dataset.atmsP26fAdvanced==='1'){
     const first=atmsLiveTargetAdvancedCards()[0];if(first)first.scrollIntoView({behavior:'smooth',block:'start'});
   }else{$('atmsLiveTargetTop')?.scrollIntoView({behavior:'smooth',block:'start'})}
+}
+// CORE-007D8A1F1D8P26I – Zielbild-Kopfleiste + finaler visueller Android-Abgleich. Nur Darstellung.
+function ensureLiveDispositionTargetAppBar(){
+  const view=$('liveDispositionView'),top=$('atmsLiveTargetTop');if(!view||!top)return null;
+  let bar=$('atmsLiveTargetAppBar');
+  if(!bar){
+    bar=document.createElement('div');bar.id='atmsLiveTargetAppBar';bar.className='atms-live-target-appbar';
+    bar.innerHTML=`<div class="atms-live-target-brand"><span class="atms-live-target-menu" aria-hidden="true">☰</span><b>ATMS <em>PRO</em></b></div><div class="atms-live-target-appbar-right"><span id="atmsLiveTargetConnection" class="atms-live-target-connection">● Lokal aktiv</span><button type="button" id="atmsLiveTargetBell" class="atms-live-target-bell" aria-label="Nachrichten öffnen">🔔<span id="atmsLiveTargetBellBadge" hidden>0</span></button></div>`;
+    top.insertAdjacentElement('beforebegin',bar);
+    $('atmsLiveTargetBell')?.addEventListener('click',renderMessagesView);
+  }
+  return bar;
+}
+function renderLiveDispositionTargetAppBar(){
+  const view=$('liveDispositionView'),bar=ensureLiveDispositionTargetAppBar();if(!view||!bar)return;
+  const demo=view.dataset.atmsP26gDemo==='1',session=getDriverSession(),connection=$('atmsLiveTargetConnection');
+  if(connection){connection.textContent=demo?'● Live verbunden':session?.active?'● Tracking aktiv':'● Lokal aktiv';connection.className='atms-live-target-connection '+(demo||session?.active?'is-live':'')}
+  const badge=$('atmsLiveTargetBellBadge');if(badge){const count=demo?3:getPreparedMessages().filter(x=>x&&x.status!=='dismissed').length;badge.textContent=String(count);badge.hidden=count<1}
 }
 function ensureLiveDispositionTargetFinish(){
   const view=$('liveDispositionView'),top=$('atmsLiveTargetTop');if(!view||!top)return;
@@ -3254,6 +3274,21 @@ function ensureLiveDispositionTargetFinish(){
       }
     `;document.head.appendChild(p26h);
   }
+  if(!$('atmsLiveTargetP26IStyle')){
+    const p26i=document.createElement('style');p26i.id='atmsLiveTargetP26IStyle';p26i.textContent=`
+      .atms-live-target-appbar{box-sizing:border-box;width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;margin:0 0 12px;border-bottom:1px solid rgba(46,168,255,.18);background:linear-gradient(180deg,rgba(2,24,36,.92),rgba(2,24,36,.50));border-radius:12px 12px 0 0}.atms-live-target-brand{display:flex;align-items:center;gap:10px;min-width:0}.atms-live-target-menu{font-size:20px;line-height:1;opacity:.96}.atms-live-target-brand b{font-size:21px;white-space:nowrap;letter-spacing:.01em}.atms-live-target-brand em{font-style:normal;color:#ffc928}.atms-live-target-appbar-right{display:flex;align-items:center;gap:8px}.atms-live-target-connection{white-space:nowrap;padding:6px 9px;border:1px solid rgba(91,183,230,.36);border-radius:999px;background:rgba(8,68,96,.25);font-size:10px;font-weight:900;opacity:.84}.atms-live-target-connection.is-live{color:#3fe37d;opacity:1}.atms-live-target-bell{position:relative;border:0;background:transparent;color:inherit;font-size:18px;padding:4px}.atms-live-target-bell span{position:absolute;right:-2px;top:-3px;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:#ef3857;color:#fff;font-size:8px;line-height:15px;font-weight:950;text-align:center}
+      #liveDispositionView{padding-bottom:112px!important}.atms-live-target-head{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:start!important;column-gap:10px!important;row-gap:4px!important;flex-wrap:initial!important}.atms-live-target-head>div:first-child{grid-column:1!important;grid-row:1!important;min-width:0!important}.atms-live-target-settings{grid-column:2!important;grid-row:1!important;align-self:start!important;white-space:nowrap!important}.atms-live-target-title{white-space:nowrap!important}.atms-live-target-sub{max-width:100%!important}.atms-live-target-demo-btn{position:fixed!important;right:10px!important;bottom:82px!important;z-index:12000!important;padding:6px 8px!important;border-radius:9px!important;font-size:8px!important;line-height:1.1!important;box-shadow:0 6px 18px rgba(0,0,0,.28);opacity:.82}.atms-live-target-demo-btn:hover,.atms-live-target-demo-btn:focus{opacity:1}
+      #atmsLiveTargetDemoBanner{margin:0 0 8px!important;padding:5px 8px!important;border-radius:8px!important;font-size:8px!important;line-height:1.25!important}.atms-live-target-position-body.is-live>b{font-size:8px!important;opacity:.56!important;color:#c5d8e2!important}.atms-live-target-driver-rows>div:nth-child(5)::before{content:"▮▮▮"!important;letter-spacing:1px!important;font-size:7px!important}.atms-live-target-demo-warning-sent{font-size:6.4px!important;line-height:1.12!important}.atms-live-target-ride-status{white-space:nowrap}.atms-live-target-warning{margin-bottom:10px!important}
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetOpenPositionBtn{opacity:1!important;color:#21aef3!important;border-color:rgba(33,174,243,.62)!important;background:rgba(8,91,132,.22)!important;filter:none!important}
+      @media(max-width:720px) and (min-width:370px){
+        .atms-live-target-appbar{padding:7px 8px!important;margin-bottom:9px!important}.atms-live-target-menu{font-size:17px!important}.atms-live-target-brand{gap:7px!important}.atms-live-target-brand b{font-size:18px!important}.atms-live-target-connection{font-size:8px!important;padding:5px 7px!important}.atms-live-target-bell{font-size:16px!important}
+        .atms-live-target-title{font-size:20px!important;line-height:1.08!important;letter-spacing:-.025em!important}.atms-live-target-sub{font-size:9.5px!important;line-height:1.25!important;margin-top:3px!important}.atms-live-target-settings{padding:7px 8px!important;font-size:9.5px!important;border-radius:9px!important}
+        .atms-live-target-position-head{min-height:36px!important}.atms-live-target-position-body{min-height:116px!important}.atms-live-target-driver-rows>div{grid-template-columns:17px 50px minmax(0,1fr)!important;gap:4px!important}.atms-live-target-driver-rows>div::before{font-size:12px!important}.atms-live-target-driver-rows>div:nth-child(5)::before{font-size:6px!important}
+        .atms-live-target-ride-row{grid-template-columns:18px 42px minmax(78px,1fr) 37px 56px 59px 12px!important;gap:2px!important;padding:8px 4px!important}.atms-live-target-ride-route b{font-size:8px!important}.atms-live-target-ride-time b{font-size:11px!important}.atms-live-target-ride-time span,.atms-live-target-ride-route span,.atms-live-target-ride-metric span{font-size:6.8px!important}.atms-live-target-ride-metric b{font-size:8px!important}.atms-live-target-ride-status{font-size:6.8px!important;min-height:20px!important;padding:2px 2px!important}.atms-live-target-demo-warning-sent{font-size:5.8px!important}.atms-live-target-rides-head>b{font-size:11.5px!important}.atms-live-target-rides-head button{font-size:8px!important;padding:5px 6px!important}
+      }
+      @media(max-width:430px){.atms-live-target-connection{display:none}.atms-live-target-appbar{gap:6px}.atms-live-target-title{font-size:19px!important}.atms-live-target-settings{font-size:9px!important;padding:7px 7px!important}}
+    `;document.head.appendChild(p26i);
+  }
   const old=$('atmsLiveTargetSettingsBtn');
   if(old&&old.dataset.atmsP26fBound!=='1'){
     const fresh=old.cloneNode(true);fresh.dataset.atmsP26fBound='1';old.replaceWith(fresh);fresh.addEventListener('click',toggleLiveDispositionTargetAdvanced);
@@ -3261,6 +3296,7 @@ function ensureLiveDispositionTargetFinish(){
   applyLiveDispositionTargetFinishCleanup();
   ensureLiveDispositionTargetDemo();
   applyLiveDispositionTargetDemo();
+  renderLiveDispositionTargetAppBar();
 }
 
 function renderLiveDispositionTargetBlock(driver,settings,consent){
