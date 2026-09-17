@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P26S · 17.09.2026: LIVE-DISPO VISUAL BALANCE PACK – Übernimmt den bestätigten Zielbild-Feinschliff konservativ: der obere Button wird eindeutig als Live-Dispo-spezifisch benannt, verbliebene Legacy-Einzelbedienelemente werden im eingeklappten Zielbild sicher ausgeblendet und die mobile Vertikalbalance wird leicht gestrafft. Maximale P26Q-Lesbarkeit, globale Bottom-Navigation sowie LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- und Persistenzlogik bleiben unverändert.
+// CORE-007D8A1F1D8P26R · 17.09.2026: LIVE-DISPO TRAILING SPACE CLEANUP – Entfernt im eingeklappten Live-Dispo-Zustand ausschließlich verbliebene Legacy-Nachlaufbereiche hinter dem Zielbild und hebt eine mögliche Mindesthöhe des Live-Views auf. Dadurch endet die Zielbild-Hauptansicht direkt nach der Warnkarte statt mit unnötigem Leerraum. Beim Öffnen von „⚙ Einstellungen“ werden markierte Legacy-Bereiche wiederhergestellt. Keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Navigation-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26Q · 17.09.2026: LIVE-DISPO MAX SAFE READABILITY – Hebt ausschließlich kleine/sekundäre Texte der mobilen Live-Dispo auf die größtmögliche noch stabile Lesbarkeitsstufe an. Große Überschriften, Hauptzahlen, Navigation sowie LIVE-/PLAN-/DISPO-/GPS-/Nachrichten-/Persistenzlogik bleiben unverändert.
 // CORE-007D8A1F1D8P26P · 17.09.2026: LIVE-DISPO MOBILE COMPACT HEIGHT POLISH – Reduziert ausschließlich vertikale Abstände und Kartenhöhen der mobilen Live-Dispo, ohne die in P26K vergrößerte Schrift zurückzunehmen. Ziel: kompaktere Zielbild-Proportionen bei unveränderter Lesbarkeit. Keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer-, Navigation- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26O · 17.09.2026: LIVE-DISPO BOTTOM-NAV EXACT BASELINE MATCH – Die Live-Dispo übernimmt für die globale untere Navigation exakt die bereits funktionierende Darstellung aus den übrigen Ansichten. Vor dem Wechsel in Live-Dispo werden die berechneten Layoutwerte der Bottom-Navigation gesichert und dort unverändert wiederverwendet; P26M/P26N-Sonderdarstellungen können dadurch Höhe, Position oder Einstellungen-Label nicht mehr sichtbar verändern. Reine UI-Darstellung; keine Änderung an Navigation-Funktion, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
@@ -3236,7 +3238,29 @@ function applyLiveDispositionTargetFinishCleanup(){
   const view=$('liveDispositionView');if(!view)return;
   const open=view.dataset.atmsP26fAdvanced==='1';
   atmsLiveTargetAdvancedCards().forEach(card=>{card.dataset.atmsP26fAdvanced='1';card.style.display=open?'':'none'});
-  const btn=$('atmsLiveTargetSettingsBtn');if(btn)btn.textContent=open?'✕ Einstellungen schließen':'⚙ Einstellungen';
+  // P26R: Wenn die technischen Live-Einstellungen eingeklappt sind, dürfen keine
+  // Legacy-Nachlaufbereiche hinter dem neuen Zielbild weiter Platz belegen. Beim
+  // erneuten Öffnen wird exakt der vorherige Inline-display-Wert wiederhergestellt.
+  const warning=$('atmsLiveTargetWarning');
+  let node=warning?.nextElementSibling||null;
+  while(node){
+    const next=node.nextElementSibling;
+    if(!/^atmsLiveTarget/.test(String(node.id||''))){
+      if(!open){
+        if(node.dataset.atmsP26rTrailing!=='1'){
+          node.dataset.atmsP26rTrailing='1';
+          node.dataset.atmsP26rDisplay=node.style.display||'';
+        }
+        node.style.display='none';
+      }else if(node.dataset.atmsP26rTrailing==='1'){
+        node.style.display=node.dataset.atmsP26rDisplay||'';
+      }
+    }
+    node=next;
+  }
+  const btn=$('atmsLiveTargetSettingsBtn');if(btn)btn.textContent=open?'✕ Live-Dispo schließen':'⚙ Live-Dispo';
+  const orphanIds=['liveMoreRidesBtn','liveOpenMapBtn','liveApplySolutionBtn','liveEtaRefreshBtn','liveRefreshBtn'];
+  orphanIds.forEach(id=>{const el=$(id);if(!el)return;if(!open){if(el.dataset.atmsP26sOrphan!=='1'){el.dataset.atmsP26sOrphan='1';el.dataset.atmsP26sDisplay=el.style.display||''}el.style.display='none'}else if(el.dataset.atmsP26sOrphan==='1'){el.style.display=el.dataset.atmsP26sDisplay||''}});
 }
 function toggleLiveDispositionTargetAdvanced(){
   const view=$('liveDispositionView');if(!view)return;
@@ -3452,6 +3476,26 @@ function ensureLiveDispositionTargetFinish(){
         #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner .atms-live-target-demo-btn{font-size:8.5px!important}
       }
     `;document.head.appendChild(p26q);
+  }
+  if(!$('atmsLiveTargetP26RStyle')){
+    const p26r=document.createElement('style');p26r.id='atmsLiveTargetP26RStyle';p26r.textContent=`
+      /* P26R: Zielbild-Hauptansicht endet nach der Warnkarte; keine künstliche View-Mindesthöhe. */
+      body.atms-live-target-active #liveDispositionView{min-height:0!important;height:auto!important}
+      @media(max-width:430px){body.atms-live-target-active #liveDispositionView{padding-bottom:12px!important}}
+    `;document.head.appendChild(p26r);
+  }
+  if(!$('atmsLiveTargetP26SStyle')){
+    const p26s=document.createElement('style');p26s.id='atmsLiveTargetP26SStyle';p26s.textContent=`
+      /* P26S: bestätigter visueller Balance-Pass; P26Q-Schrift bleibt unverändert. */
+      @media(max-width:430px){
+        body.atms-live-target-active #liveDispositionView{padding-bottom:4px!important}
+        body.atms-live-target-active #atmsLiveTargetTop{margin-bottom:6px!important}
+        body.atms-live-target-active #atmsLiveTargetPositionInfo{margin-bottom:8px!important}
+        body.atms-live-target-active #atmsLiveTargetRideControl{margin-bottom:8px!important}
+        body.atms-live-target-active #atmsLiveTargetWarning{margin-bottom:0!important}
+        body.atms-live-target-active .atms-live-target-settings{min-width:86px!important;text-align:center!important}
+      }
+    `;document.head.appendChild(p26s);
   }
   restoreLiveBottomNavBaseline();
   const settingsNav=document.querySelector('.nav[data-nav="settings"]');
