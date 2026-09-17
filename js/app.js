@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26N · 17.09.2026: LIVE-DISPO BOTTOM-NAV SETTINGS LABEL FIT – Korrigiert ausschließlich die Darstellung des globalen „⚙ Einstellungen“-Ziels in der 6er-Bottom-Navigation der Live-Dispo: Icon und Beschriftung werden auf schmalen Android-Ansichten wieder sauber untereinander und vollständig innerhalb ihrer Spalte dargestellt. Keine Änderung an Navigation, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26M · 17.09.2026: LIVE-DISPO 6ER-BOTTOM-NAV MOBILE FIT – Der in P26L wiederhergestellte globale „⚙ Einstellungen“-Eintrag bleibt in Live-Dispo sichtbar, die untere Navigation wird auf Mobilgeräten aber auf sechs gleich breite Spalten angepasst, damit der Einstellungen-Eintrag nicht rechts abgeschnitten wird. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26L · 17.09.2026: LIVE-DISPO GLOBAL SETTINGS NAV CONSISTENCY – Stellt das globale untere „⚙ Einstellungen“-Navigationsziel auch in der Live-Dispo wieder sichtbar her. Der obere „⚙ Einstellungen“-Button bleibt die Live-Dispo-spezifische Ein-/Ausblendung der technischen Live-Einstellungen; die untere Navigation bleibt damit appweit konsistent. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26K · 17.09.2026: LIVE-DISPO READABILITY + BOTTOM-SPACING POLISH – Vergrößert ausschließlich kleine/sekundäre Texte der Live-Dispo auf Android moderat bis zur sicheren Lesbarkeitsgrenze und reduziert den reservierten unteren Leerraum über der festen Navigation. Große Überschriften, Hauptzeiten und Warnschwellen-Zahl bleiben unverändert. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
@@ -3353,6 +3354,26 @@ function ensureLiveDispositionTargetFinish(){
         body.atms-live-target-active .atms-live-six-nav .nav{padding-left:1px!important;padding-right:1px!important}
       }
     `;document.head.appendChild(p26m);
+  }
+  if(!$('atmsLiveTargetP26NStyle')){
+    const p26n=document.createElement('style');p26n.id='atmsLiveTargetP26NStyle';p26n.textContent=`
+      /* P26N: globales Einstellungen-Ziel in Live-Dispo vollständig und vertikal zentriert darstellen. */
+      body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]{
+        display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;
+        gap:2px!important;overflow:visible!important;white-space:normal!important;text-align:center!important;
+        font-size:0!important;line-height:1!important
+      }
+      body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]>*{display:none!important}
+      body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]::before{
+        content:"⚙";display:block;font-size:23px!important;line-height:1!important;color:inherit
+      }
+      body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]::after{
+        content:"Einstellungen";display:block;font-size:9px!important;line-height:1.05!important;white-space:nowrap!important;color:inherit
+      }
+      @media(min-width:431px){
+        body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]::after{font-size:10px!important}
+      }
+    `;document.head.appendChild(p26n);
   }
   const settingsNav=document.querySelector('.nav[data-nav="settings"]');
   if(settingsNav?.parentElement)settingsNav.parentElement.classList.add('atms-live-six-nav');
