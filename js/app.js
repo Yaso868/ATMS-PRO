@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26J · 17.09.2026: LIVE-DISPO FINAL MOBILE POLISH – Letzte sichtbare Android-Abweichungen gegen das verbindliche Zielbild: Live-Verbindungs-Pill bleibt auch auf schmalen Mobilansichten sichtbar; im aktiven Zielbild-Demo wird „Demo beenden“ in den klar markierten Demo-Hinweis verschoben und überlagert keine Fahrten/Warnkarte mehr. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26I · 17.09.2026: LIVE-DISPO FINAL VISUAL MATCH – Letzter gebündelter Präzisionspass gegen das verbindliche Zielbild auf dem realen Android-Screenshot: kompakte ATMS-PRO-Kopfleiste, einzeiliger Fahrer-Fahrtenkontrolle-Kopf mit Einstellungen rechts, Demo-Steuerung aus dem Layoutfluss, aktiv wirkende Demo-Karten-Schaltfläche, feinere Karten-/Fahrer-Info-Darstellung, weniger Umbruch in Fahrtenzeilen und sicherer Abstand über der festen Navigation. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26H · 17.09.2026: LIVE-DISPO VISUAL PRECISION PASS – Gebündelter optischer Feinschliff gegen das verbindliche Zielbild: Fahrerkarte mit Avatar/ID-Hierarchie, kompakter Trackingstreifen, kartenähnliche Positionsdarstellung, ikonische Fahrer-Info, besser lesbare mobile Fahrtenzeilen und auf der Live-Dispo nur die fünf Zielbild-Navigationseinträge. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26G · 17.09.2026: LIVE-DISPO ZIELBILD-DEMO – Isolierter, rein visueller Demomodus für den Gesamtvergleich mit dem verbindlichen Zielbild. Zeigt klar markierte Beispieldaten für Tracking, Position, Fahrer-Info, vier Fahrten und Warnkarte ausschließlich im DOM; keine Fahrten, DONE, PLAN/DISPO/LIVE-, GPS-, Fahrer-, Nachrichten- oder Persistenzdaten werden geschrieben oder verändert; keine Netzaufrufe.
@@ -3142,7 +3143,14 @@ function ensureLiveDispositionTargetDemo(){
     `;document.head.appendChild(style);
   }
   let banner=$('atmsLiveTargetDemoBanner');if(!banner){banner=document.createElement('div');banner.id='atmsLiveTargetDemoBanner';banner.textContent='🧪 ZIELBILD-DEMO · Nur Darstellung mit Beispieldaten. Echte ATMS-Daten werden nicht verändert.';$('atmsLiveTargetTop')?.insertAdjacentElement('afterend',banner)}
+  positionLiveDispositionTargetDemoButton();
   return btn;
+}
+function positionLiveDispositionTargetDemoButton(){
+  const view=$('liveDispositionView'),btn=$('atmsLiveTargetDemoBtn'),banner=$('atmsLiveTargetDemoBanner'),head=$('atmsLiveTargetTop')?.querySelector('.atms-live-target-head'),settings=$('atmsLiveTargetSettingsBtn');
+  if(!view||!btn||!head)return;
+  if(view.dataset.atmsP26gDemo==='1'&&banner){if(btn.parentElement!==banner)banner.appendChild(btn);return}
+  if(btn.parentElement!==head)head.insertBefore(btn,settings||null);
 }
 function clearLiveDispositionTargetDemoState(){
   const select=$('atmsLiveTargetDriverSelect');if(select)select.disabled=false;
@@ -3152,6 +3160,7 @@ function clearLiveDispositionTargetDemoState(){
 function toggleLiveDispositionTargetDemo(){
   const view=$('liveDispositionView');if(!view)return;
   const turningOn=view.dataset.atmsP26gDemo!=='1';view.dataset.atmsP26gDemo=turningOn?'1':'0';
+  positionLiveDispositionTargetDemoButton();
   const btn=$('atmsLiveTargetDemoBtn');if(btn)btn.textContent=turningOn?'✕ Demo beenden':'🧪 Zielbild-Demo';
   if(turningOn){applyLiveDispositionTargetDemo();showToast('Zielbild-Demo aktiv · echte Daten unverändert','ok');return}
   clearLiveDispositionTargetDemoState();renderLiveDisposition(false);showToast('Zielbild-Demo beendet','ok');
@@ -3159,6 +3168,7 @@ function toggleLiveDispositionTargetDemo(){
 function applyLiveDispositionTargetDemo(){
   const view=$('liveDispositionView');if(!view||view.dataset.atmsP26gDemo!=='1')return;
   ensureLiveDispositionTargetDemo();
+  positionLiveDispositionTargetDemoButton();
   const btn=$('atmsLiveTargetDemoBtn');if(btn)btn.textContent='✕ Demo beenden';
   const select=$('atmsLiveTargetDriverSelect');if(select){select.innerHTML='<option value="__demo__">Ghasem</option>';select.value='__demo__';select.disabled=true}
   const meta=$('atmsLiveTargetDriverMeta');if(meta)meta.textContent='F-105';
@@ -3289,6 +3299,18 @@ function ensureLiveDispositionTargetFinish(){
       @media(max-width:430px){.atms-live-target-connection{display:none}.atms-live-target-appbar{gap:6px}.atms-live-target-title{font-size:19px!important}.atms-live-target-settings{font-size:9px!important;padding:7px 7px!important}}
     `;document.head.appendChild(p26i);
   }
+  if(!$('atmsLiveTargetP26JStyle')){
+    const p26j=document.createElement('style');p26j.id='atmsLiveTargetP26JStyle';p26j.textContent=`
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner{display:flex!important;align-items:center;justify-content:space-between;gap:8px;min-height:30px}
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner .atms-live-target-demo-btn{position:static!important;right:auto!important;bottom:auto!important;z-index:auto!important;flex:0 0 auto!important;margin-left:auto!important;opacity:1!important;padding:5px 7px!important;font-size:7.5px!important;box-shadow:none!important;white-space:nowrap!important}
+      @media(max-width:430px){
+        .atms-live-target-connection{display:inline-flex!important;align-items:center!important;font-size:7px!important;padding:4px 5px!important;line-height:1!important}
+        .atms-live-target-appbar-right{gap:3px!important;min-width:0!important}.atms-live-target-brand{gap:6px!important}.atms-live-target-brand b{font-size:16px!important}.atms-live-target-menu{font-size:15px!important}.atms-live-target-bell{font-size:15px!important;padding:3px!important}
+        #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner{font-size:7.2px!important;line-height:1.2!important;padding:5px 6px!important}
+      }
+    `;document.head.appendChild(p26j);
+  }
+  positionLiveDispositionTargetDemoButton();
   const old=$('atmsLiveTargetSettingsBtn');
   if(old&&old.dataset.atmsP26fBound!=='1'){
     const fresh=old.cloneNode(true);fresh.dataset.atmsP26fBound='1';old.replaceWith(fresh);fresh.addEventListener('click',toggleLiveDispositionTargetAdvanced);
