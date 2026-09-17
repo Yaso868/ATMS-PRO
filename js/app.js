@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26P · 17.09.2026: LIVE-DISPO MOBILE COMPACT HEIGHT POLISH – Reduziert ausschließlich vertikale Abstände und Kartenhöhen der mobilen Live-Dispo, ohne die in P26K vergrößerte Schrift zurückzunehmen. Ziel: kompaktere Zielbild-Proportionen bei unveränderter Lesbarkeit. Keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer-, Navigation- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26O · 17.09.2026: LIVE-DISPO BOTTOM-NAV EXACT BASELINE MATCH – Die Live-Dispo übernimmt für die globale untere Navigation exakt die bereits funktionierende Darstellung aus den übrigen Ansichten. Vor dem Wechsel in Live-Dispo werden die berechneten Layoutwerte der Bottom-Navigation gesichert und dort unverändert wiederverwendet; P26M/P26N-Sonderdarstellungen können dadurch Höhe, Position oder Einstellungen-Label nicht mehr sichtbar verändern. Reine UI-Darstellung; keine Änderung an Navigation-Funktion, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26N · 17.09.2026: LIVE-DISPO BOTTOM-NAV SETTINGS LABEL FIT – Korrigiert ausschließlich die Darstellung des globalen „⚙ Einstellungen“-Ziels in der 6er-Bottom-Navigation der Live-Dispo: Icon und Beschriftung werden auf schmalen Android-Ansichten wieder sauber untereinander und vollständig innerhalb ihrer Spalte dargestellt. Keine Änderung an Navigation, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26M · 17.09.2026: LIVE-DISPO 6ER-BOTTOM-NAV MOBILE FIT – Der in P26L wiederhergestellte globale „⚙ Einstellungen“-Eintrag bleibt in Live-Dispo sichtbar, die untere Navigation wird auf Mobilgeräten aber auf sechs gleich breite Spalten angepasst, damit der Einstellungen-Eintrag nicht rechts abgeschnitten wird. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
@@ -3399,6 +3400,29 @@ function ensureLiveDispositionTargetFinish(){
       html body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]::before,
       html body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]::after{content:none!important;display:none!important}
     `;document.head.appendChild(p26o);
+  }
+  if(!$('atmsLiveTargetP26PStyle')){
+    const p26p=document.createElement('style');p26p.id='atmsLiveTargetP26PStyle';p26p.textContent=`
+      /* P26P: mobile Zielbild-Höhen kompakter; Schriftgrößen aus P26K bleiben unverändert. */
+      @media(max-width:430px){
+        #liveDispositionView{padding-bottom:66px!important}
+        #atmsLiveTargetTop{margin-bottom:8px!important}
+        #atmsLiveTargetPositionInfo,#atmsLiveTargetRideControl{margin-bottom:9px!important}
+        #atmsLiveTargetWarning{margin-bottom:3px!important}
+        #atmsLiveTargetDemoBanner{margin-bottom:6px!important}
+        .atms-live-target-position-head{min-height:32px!important;padding:7px 9px!important}
+        .atms-live-target-position-body{min-height:102px!important;padding:8px!important}
+        .atms-live-target-driver-rows{padding:3px 9px 5px!important}
+        .atms-live-target-driver-rows>div{padding:4px 0!important}
+        .atms-live-target-rides-head{padding:7px 9px!important}
+        .atms-live-target-ride-row{padding:6px 4px!important}
+        .atms-live-target-warning-main{padding:8px 10px!important}
+        .atms-live-target-warning-text{margin:4px 0 6px!important}
+        .atms-live-target-warning-details{padding:5px 8px!important}
+        .atms-live-target-warning-facts{padding:5px 8px!important}
+        .atms-live-target-warning-facts>div{padding:2px 0!important}
+      }
+    `;document.head.appendChild(p26p);
   }
   restoreLiveBottomNavBaseline();
   const settingsNav=document.querySelector('.nav[data-nav="settings"]');
