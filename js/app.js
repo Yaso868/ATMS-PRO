@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26Q · 17.09.2026: LIVE-DISPO MAX SAFE READABILITY – Hebt ausschließlich kleine/sekundäre Texte der mobilen Live-Dispo auf die größtmögliche noch stabile Lesbarkeitsstufe an. Große Überschriften, Hauptzahlen, Navigation sowie LIVE-/PLAN-/DISPO-/GPS-/Nachrichten-/Persistenzlogik bleiben unverändert.
 // CORE-007D8A1F1D8P26P · 17.09.2026: LIVE-DISPO MOBILE COMPACT HEIGHT POLISH – Reduziert ausschließlich vertikale Abstände und Kartenhöhen der mobilen Live-Dispo, ohne die in P26K vergrößerte Schrift zurückzunehmen. Ziel: kompaktere Zielbild-Proportionen bei unveränderter Lesbarkeit. Keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer-, Navigation- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26O · 17.09.2026: LIVE-DISPO BOTTOM-NAV EXACT BASELINE MATCH – Die Live-Dispo übernimmt für die globale untere Navigation exakt die bereits funktionierende Darstellung aus den übrigen Ansichten. Vor dem Wechsel in Live-Dispo werden die berechneten Layoutwerte der Bottom-Navigation gesichert und dort unverändert wiederverwendet; P26M/P26N-Sonderdarstellungen können dadurch Höhe, Position oder Einstellungen-Label nicht mehr sichtbar verändern. Reine UI-Darstellung; keine Änderung an Navigation-Funktion, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26N · 17.09.2026: LIVE-DISPO BOTTOM-NAV SETTINGS LABEL FIT – Korrigiert ausschließlich die Darstellung des globalen „⚙ Einstellungen“-Ziels in der 6er-Bottom-Navigation der Live-Dispo: Icon und Beschriftung werden auf schmalen Android-Ansichten wieder sauber untereinander und vollständig innerhalb ihrer Spalte dargestellt. Keine Änderung an Navigation, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
@@ -3423,6 +3424,34 @@ function ensureLiveDispositionTargetFinish(){
         .atms-live-target-warning-facts>div{padding:2px 0!important}
       }
     `;document.head.appendChild(p26p);
+  }
+
+  if(!$('atmsLiveTargetP26QStyle')){
+    const p26q=document.createElement('style');p26q.id='atmsLiveTargetP26QStyle';p26q.textContent=`
+      /* P26Q: maximale sichere Lesbarkeit nur für kleine/sekundäre Live-Dispo-Texte. */
+      @media(max-width:720px) and (min-width:370px){
+        .atms-live-target-sub{font-size:11px!important}
+        .atms-live-target-settings{font-size:10.2px!important}
+        .atms-live-target-meta{font-size:11.2px!important}
+        .atms-live-target-threshold span{font-size:11.2px!important}
+        .atms-live-target-tracking span{font-size:9.4px!important}.atms-live-target-tracking b{font-size:11.4px!important}
+        .atms-live-target-mini-action{font-size:10.2px!important}
+        .atms-live-target-position-head>b{font-size:13px!important}.atms-live-target-position-head button{font-size:10.2px!important}
+        .atms-live-target-position-body span{font-size:11.2px!important}
+        .atms-live-target-driver-rows span{font-size:9.4px!important}.atms-live-target-driver-rows b{font-size:11px!important}
+        .atms-live-target-rides-head>b{font-size:12.8px!important}.atms-live-target-rides-head button{font-size:9.2px!important}
+        .atms-live-target-ride-time span,.atms-live-target-ride-route span,.atms-live-target-ride-metric span{font-size:8.1px!important}
+        .atms-live-target-ride-route b{font-size:9.2px!important}.atms-live-target-ride-metric b{font-size:9.2px!important}
+        .atms-live-target-ride-status{font-size:7.9px!important}.atms-live-target-demo-warning-sent{font-size:6.9px!important}
+        .atms-live-target-warning-text{font-size:10.4px!important}.atms-live-target-warning-details{font-size:10.2px!important}
+        .atms-live-target-warning-facts span{font-size:8.7px!important}.atms-live-target-warning-facts b{font-size:9.9px!important}
+      }
+      @media(max-width:430px){
+        .atms-live-target-connection{font-size:8px!important}
+        #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner{font-size:8.3px!important}
+        #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner .atms-live-target-demo-btn{font-size:8.5px!important}
+      }
+    `;document.head.appendChild(p26q);
   }
   restoreLiveBottomNavBaseline();
   const settingsNav=document.querySelector('.nav[data-nav="settings"]');
