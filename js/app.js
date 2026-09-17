@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P25T1 · 17.09.2026: NACHRICHTEN-SELBSTTEST – Isolierter Test der P25-Nachrichtenkette mit klar markierter Testfahrt. Der Test schreibt ausschließlich kurzzeitig in atms_messages_v1, prüft dabei, dass Fahrten/DONE/übrige lokale ATMS-Daten unverändert bleiben, und entfernt die Testnachricht nach erfolgreichem Kopieren automatisch. Kein Netzaufruf, kein WhatsApp, keine Änderung an PLAN/DISPO/LIVE/OCR/Flugprüfung.
 // CORE-007D8A1F1D8P25 · 16.09.2026: NACHRICHTEN V1 – Der bisherige Nachrichten-Platzhalter wird durch eine lokale Nachrichtenansicht ersetzt. Wenn Live-Dispo wegen fehlendem sicher verfügbarem Ersatzfahrer „Dispo manuell informieren“ empfiehlt, wird eine passende Dispo-Nachricht mit Fahrt, Fahrer, Flug und Grund vorbereitet. Kopieren erfolgt bewusst manuell; kein automatischer Versand, keine Cloud, keine Änderung an PLAN/DISPO/LIVE-Berechnung, OCR, Flugprüfung oder Persistenz-Sicherheitslogik.
 // CORE-007D8A1F1D8P20C · 15.09.2026: LIVE FRESHNESS & CURRENT SNAPSHOT SAFETY – Jede neue LIVE-Prüfung ist der aktuelle Snapshot. Unbestätigte/neue oder >15 Min. alte Web-LIVE-Daten steuern weder Kartenzeit noch Live-Dispo; frühere bestätigte Werte werden als Historie archiviert. Manuell bestätigte Landungen bleiben separat autoritativ. Abflüge verwenden departed/„Abgeflogen“ statt landed/„Gelandet“. PLAN/DISPO, P19/P20/P21/P21F1, OCR, Flugort-Cache und Bündelung bleiben unverändert.
 // CORE-007D8A1F1D8P21 · 15.09.2026: MULTI-PLAN AIRPORT SOURCE LOCK + BADGES. Quell-Airport aus getrennt analysierten Planlisten wird als zusätzlicher Guard für Flugprüfung/Bündelung genutzt; widersprechende Airport-Signale werden nicht automatisch gemischt. DUS/CGN-Badge je Fahrt. Bestehende P19/P20/P20B LIVE-Logik bleibt unverändert.
@@ -767,27 +768,67 @@ function prepareManualDispoMessage(driver,ride,delay,blockedCount=0){
   savePreparedMessages([draft,...current.filter(x=>String(x?.key||'')!==key)]);
   return draft;
 }
+const ATMS_MESSAGES_SELFTEST_RIDE_ID='__atms_messages_selftest__';
+const ATMS_MESSAGES_SELFTEST_KEY=`manual-dispo:${ATMS_MESSAGES_SELFTEST_RIDE_ID}`;
+function messagesSelfTestProtectedSnapshot(){
+  const data={};
+  try{
+    const keys=[];for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(key&&key!==ATMS_MESSAGES_KEY)keys.push(key)}
+    keys.sort().forEach(key=>{data[key]=localStorage.getItem(key)});
+  }catch(_){ }
+  return JSON.stringify(data);
+}
+function clearMessagesSelfTest(renderAfter=true,toastAfter=false){
+  const before=getPreparedMessages(),after=before.filter(m=>!(m?.selfTest===true||String(m?.key||'')===ATMS_MESSAGES_SELFTEST_KEY));
+  if(after.length!==before.length)savePreparedMessages(after);
+  if(renderAfter)renderMessagesView();
+  if(toastAfter)showToast('Selbsttest-Nachricht entfernt','ok');
+  return before.length-after.length;
+}
+function runMessagesSelfTest(){
+  clearMessagesSelfTest(false,false);
+  const protectedBefore=messagesSelfTestProtectedSnapshot(),ridesBefore=JSON.stringify(rides),doneBefore=JSON.stringify([...done]);
+  const testDriver={id:'atms-selftest-driver',name:'ATMS Selbsttest-Fahrer'};
+  const testRide={id:ATMS_MESSAGES_SELFTEST_RIDE_ID,planTime:'12:34',dispoTime:'12:34',driver:testDriver.name,pickup:'ATMS Selbsttest-Hotel',destination:'DUS Airport',flightNumber:'ATMS-TEST',flightLocation:'Selbsttest',persons:1,vehicle:'Pkw'};
+  const draft=prepareManualDispoMessage(testDriver,testRide,13,1);
+  let messages=getPreparedMessages(),index=messages.findIndex(m=>String(m?.key||'')===ATMS_MESSAGES_SELFTEST_KEY);
+  if(index>=0){messages[index]={...messages[index],selfTest:true,selfTestLabel:'P25 Nachrichten-Selbsttest',status:'prepared'};savePreparedMessages(messages)}
+  const hit=getPreparedMessages().find(m=>String(m?.key||'')===ATMS_MESSAGES_SELFTEST_KEY);
+  const contentOk=Boolean(draft&&hit&&hit.selfTest===true&&hit.driver===testDriver.name&&Number(hit.delayMinutes)===13&&String(hit.text||'').includes('ATMS Selbsttest-Fahrer')&&String(hit.text||'').includes('LIVE-Prognose +13 Min.')&&String(hit.route||'').includes('ATMS Selbsttest-Hotel'));
+  const protectedOk=protectedBefore===messagesSelfTestProtectedSnapshot()&&ridesBefore===JSON.stringify(rides)&&doneBefore===JSON.stringify([...done]);
+  renderMessagesView();
+  const status=$('atmsMessagesSelfTestStatus');
+  if(status)status.textContent=contentOk&&protectedOk?'✓ Selbsttest vorbereitet · echte Fahrten, DONE und übrige ATMS-Daten unverändert. Jetzt „📋 Testnachricht kopieren“ drücken.':'⚠ Selbsttest fehlgeschlagen · Testnachricht entfernen und nicht weiterverwenden.';
+  showToast(contentOk&&protectedOk?'Nachrichten-Selbsttest bereit':'Nachrichten-Selbsttest fehlgeschlagen',contentOk&&protectedOk?'ok':'warn');
+  return{ok:contentOk&&protectedOk,contentOk,protectedOk};
+}
 function ensureMessagesView(){
   let view=$('messagesView');if(view)return view;
   const host=$('listView')?.parentElement||document.body;
   view=document.createElement('section');view.id='messagesView';view.className='hidden';
-  view.innerHTML=`<div id="atmsMessagesShell" style="box-sizing:border-box;width:100%;max-width:920px;margin:0 auto;padding:18px 16px 110px;color:inherit"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:24px;font-weight:900">💬 Nachrichten</div><span id="atmsMessagesCount" style="margin-left:auto;font-size:12px;font-weight:900;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.10)">0</span></div><div style="font-size:13px;opacity:.78;line-height:1.45;margin-bottom:14px">Lokale vorbereitete Dispo-Hinweise. Kein automatischer Versand, keine Cloud.</div><div id="atmsMessagesList"></div></div>`;
-  host.appendChild(view);return view;
+  view.innerHTML=`<div id="atmsMessagesShell" style="box-sizing:border-box;width:100%;max-width:920px;margin:0 auto;padding:18px 16px 110px;color:inherit"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:24px;font-weight:900">💬 Nachrichten</div><span id="atmsMessagesCount" style="margin-left:auto;font-size:12px;font-weight:900;padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.10)">0</span></div><div style="font-size:13px;opacity:.78;line-height:1.45;margin-bottom:10px">Lokale vorbereitete Dispo-Hinweise. Kein automatischer Versand, keine Cloud.</div><button type="button" id="atmsMessagesSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:900;margin-bottom:7px">🧪 Nachrichten-Selbsttest</button><div id="atmsMessagesSelfTestStatus" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:14px">Erzeugt nur eine klar markierte lokale Testnachricht. Fahrten sowie PLAN/DISPO/LIVE werden nicht verändert.</div><div id="atmsMessagesList"></div></div>`;
+  host.appendChild(view);
+  $('atmsMessagesSelfTestBtn')?.addEventListener('click',runMessagesSelfTest);
+  return view;
 }
 function preparedMessageDateLabel(value){const d=new Date(value||'');if(Number.isNaN(d.getTime()))return'';return d.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}
 async function copyPreparedMessage(key,textarea){
   const messages=getPreparedMessages(),hit=messages.find(x=>String(x?.key||'')===String(key||'')),text=String(textarea?.value??hit?.text??'').trim();
   if(!text){showToast('Keine Nachricht zum Kopieren','warn');return false}
-  try{await navigator.clipboard.writeText(text)}catch(_){try{textarea?.focus();textarea?.select();document.execCommand('copy')}catch(__){showToast('Kopieren nicht möglich','warn');return false}}
+  let copied=false;
+  try{await navigator.clipboard.writeText(text);copied=true}catch(_){try{textarea?.focus();textarea?.select();copied=document.execCommand('copy')===true}catch(__){copied=false}}
+  if(!copied){showToast('Kopieren nicht möglich','warn');return false}
   if(hit){hit.text=text;hit.copiedAt=new Date().toISOString();hit.updatedAt=hit.copiedAt;savePreparedMessages(messages)}
+  if(hit?.selfTest===true){clearMessagesSelfTest(false,false);renderMessagesView();const status=$('atmsMessagesSelfTestStatus');if(status)status.textContent='✓ Testnachricht wurde kopiert und automatisch wieder entfernt. Echte Nachrichten bleiben unverändert.';showToast('Testnachricht kopiert und entfernt','ok');return true}
   showToast('Nachricht kopiert','ok');renderMessagesView();return true;
 }
 function renderMessagesView(){
   ensureMessagesView();showView('messages');document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.nav==='messages'));
   const list=$('atmsMessagesList'),count=$('atmsMessagesCount');if(!list)return;const messages=getPreparedMessages().filter(x=>x&&x.status!=='dismissed');if(count)count.textContent=String(messages.length);
   if(!messages.length){list.innerHTML='<div style="padding:18px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:rgba(255,255,255,.04);font-size:14px;opacity:.82">Keine vorbereitete Dispo-Nachricht. Wenn Live-Dispo „Dispo manuell informieren“ empfiehlt, erscheint der Entwurf hier automatisch.</div>';return}
-  list.innerHTML=messages.map(m=>`<article data-message-key="${esc(m.key)}" style="padding:14px;margin-bottom:12px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(255,255,255,.045)"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:16px">Dispo manuell informieren</b><span style="font-size:11px;font-weight:900;padding:3px 7px;border-radius:7px;background:rgba(255,193,77,.14);border:1px solid rgba(255,193,77,.35);color:#ffc14d">VORBEREITET</span></div><div style="font-size:12px;line-height:1.55;opacity:.84;margin-bottom:9px"><b>Fahrt:</b> ${esc(m.rideTime||'–')} · ${esc(m.route||'–')}<br><b>Fahrer:</b> ${esc(m.driver||'Offen')}<br><b>Flug:</b> ${esc(m.flightNumber||'–')}${m.flightLocation?` · ${esc(m.flightLocation)}`:''}<br><b>Grund:</b> ${esc(m.reason||'Manuelle Dispo-Prüfung erforderlich')}${m.createdAt?`<br><b>Erstellt:</b> ${esc(preparedMessageDateLabel(m.createdAt))}`:''}${m.copiedAt?`<br><b>Status:</b> kopiert ${esc(preparedMessageDateLabel(m.copiedAt))}`:''}</div><textarea data-message-text style="width:100%;box-sizing:border-box;min-height:190px;resize:vertical;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.20);color:inherit;font:inherit;line-height:1.45">${esc(m.text||'')}</textarea><button type="button" data-copy-message style="width:100%;margin-top:9px;padding:12px;border-radius:10px;font-weight:900">📋 Nachricht kopieren</button></article>`).join('');
+  list.innerHTML=messages.map(m=>`<article data-message-key="${esc(m.key)}" style="padding:14px;margin-bottom:12px;border:1px solid ${m.selfTest?'rgba(76,201,240,.45)':'rgba(255,255,255,.16)'};border-radius:14px;background:${m.selfTest?'rgba(76,201,240,.07)':'rgba(255,255,255,.045)'}"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:16px">Dispo manuell informieren</b><span style="font-size:11px;font-weight:900;padding:3px 7px;border-radius:7px;background:${m.selfTest?'rgba(76,201,240,.14)':'rgba(255,193,77,.14)'};border:1px solid ${m.selfTest?'rgba(76,201,240,.45)':'rgba(255,193,77,.35)'};color:${m.selfTest?'#7ddfff':'#ffc14d'}">${m.selfTest?'SELBSTTEST':'VORBEREITET'}</span></div>${m.selfTest?'<div style="font-size:12px;font-weight:800;color:#7ddfff;margin-bottom:8px">🧪 Nur Testdaten · keine echte Fahrt und keine echten LIVE-Daten.</div>':''}<div style="font-size:12px;line-height:1.55;opacity:.84;margin-bottom:9px"><b>Fahrt:</b> ${esc(m.rideTime||'–')} · ${esc(m.route||'–')}<br><b>Fahrer:</b> ${esc(m.driver||'Offen')}<br><b>Flug:</b> ${esc(m.flightNumber||'–')}${m.flightLocation?` · ${esc(m.flightLocation)}`:''}<br><b>Grund:</b> ${esc(m.reason||'Manuelle Dispo-Prüfung erforderlich')}${m.createdAt?`<br><b>Erstellt:</b> ${esc(preparedMessageDateLabel(m.createdAt))}`:''}${m.copiedAt?`<br><b>Status:</b> kopiert ${esc(preparedMessageDateLabel(m.copiedAt))}`:''}</div><textarea data-message-text style="width:100%;box-sizing:border-box;min-height:190px;resize:vertical;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.20);color:inherit;font:inherit;line-height:1.45">${esc(m.text||'')}</textarea><button type="button" data-copy-message style="width:100%;margin-top:9px;padding:12px;border-radius:10px;font-weight:900">${m.selfTest?'📋 Testnachricht kopieren':'📋 Nachricht kopieren'}</button>${m.selfTest?'<button type="button" data-clear-selftest style="width:100%;margin-top:7px;padding:11px;border-radius:10px;font-weight:800">🧹 Selbsttest entfernen</button>':''}</article>`).join('');
   list.querySelectorAll('[data-copy-message]').forEach(btn=>btn.addEventListener('click',()=>{const card=btn.closest('[data-message-key]');copyPreparedMessage(card?.dataset.messageKey||'',card?.querySelector('[data-message-text]'))}));
+  list.querySelectorAll('[data-clear-selftest]').forEach(btn=>btn.addEventListener('click',()=>clearMessagesSelfTest(true,true)));
 }
 function showView(v){
   ['listView','cockpitView','importView','settingsView','liveDispositionView','messagesView'].forEach(id=>{const el=$(id);if(el)el.classList.add('hidden')});
