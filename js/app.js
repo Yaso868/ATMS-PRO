@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26G · 17.09.2026: LIVE-DISPO ZIELBILD-DEMO – Isolierter, rein visueller Demomodus für den Gesamtvergleich mit dem verbindlichen Zielbild. Zeigt klar markierte Beispieldaten für Tracking, Position, Fahrer-Info, vier Fahrten und Warnkarte ausschließlich im DOM; keine Fahrten, DONE, PLAN/DISPO/LIVE-, GPS-, Fahrer-, Nachrichten- oder Persistenzdaten werden geschrieben oder verändert; keine Netzaufrufe.
 // CORE-007D8A1F1D8P26F · 17.09.2026: LIVE-DISPO TARGET UI FINISH PACK – Bündelt das visuelle Finish zum verbindlichen Zielbild: kompakte Zwei-Spalten-Mobile-Ansicht, dreigeteilter Trackingstreifen, tabellarische Fahrtenkontrolle auch auf Smartphones, Warnkarte nur bei bestätigter Überschreitung der persönlichen Warnschwelle und Legacy-/Diagnosebereiche standardmäßig hinter „⚙ Einstellungen“. Bestehende LIVE-/PLAN-/DISPO-, Warn-, Routing-, Nachrichten-, GPS-, Fahrer- und Persistenzlogik bleibt unverändert; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26E · 17.09.2026: LIVE-DISPO TARGET UI BLOCK 5 – Ergänzt die Zielbild-Karte „Aktuelle Warnung“. Eine rote Warnung erscheint ausschließlich bei bestätigter LIVE-/ETA-Verspätung ab persönlicher Warnschwelle; unterhalb der Schwelle oder ohne bestätigte LIVE-Bewertung bleibt die Karte neutral. Details öffnen die konkrete Fahrt. Keine Änderung an LIVE-/PLAN-/DISPO-, Warn-, Routing-, Nachrichten-, GPS- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26D · 17.09.2026: LIVE-DISPO TARGET UI BLOCK 4 – Ergänzt die Zielbild-Fahrtenkontrolle „Nur Fahrten von …“ mit sicherer Darstellung von Fahrtzeit, Datum, Route, Flug, bestätigter LIVE-Prognose, Verspätungsbewertung und Status. Fehlt eine bestätigte LIVE-Zeit, bleibt Prognose/Verspätung neutral statt Werte zu erfinden. Die bisherige doppelte Legacy-Fahrtenfolge wird nur visuell ausgeblendet; LIVE-/PLAN-/DISPO-, Warn-, Routing-, Nachrichten-, GPS- und Persistenzlogik bleibt unverändert.
@@ -3108,6 +3109,74 @@ function renderLiveDispositionTargetWarning(driver,drides,threshold){
 }
 
 
+// CORE-007D8A1F1D8P26G – isolierter Zielbild-Demomodus. Nur DOM-Darstellung, keinerlei Datenpersistenz.
+function ensureLiveDispositionTargetDemo(){
+  const view=$('liveDispositionView'),head=$('atmsLiveTargetTop')?.querySelector('.atms-live-target-head');if(!view||!head)return null;
+  let btn=$('atmsLiveTargetDemoBtn');
+  if(!btn){
+    btn=document.createElement('button');btn.type='button';btn.id='atmsLiveTargetDemoBtn';btn.className='atms-live-target-demo-btn';btn.textContent='🧪 Zielbild-Demo';
+    const settings=$('atmsLiveTargetSettingsBtn');head.insertBefore(btn,settings||null);
+    btn.addEventListener('click',toggleLiveDispositionTargetDemo);
+  }
+  if(!$('atmsLiveTargetP26GStyle')){
+    const style=document.createElement('style');style.id='atmsLiveTargetP26GStyle';style.textContent=`
+      .atms-live-target-demo-btn{flex:0 0 auto;padding:10px 12px;border-radius:11px;border:1px solid rgba(255,193,77,.55);background:rgba(90,62,8,.24);color:inherit;font-weight:900}
+      #atmsLiveTargetDemoBanner{display:none;box-sizing:border-box;width:100%;margin:-5px 0 10px;padding:8px 11px;border:1px solid rgba(255,193,77,.46);border-radius:10px;background:rgba(255,193,77,.08);color:#ffd36c;font-size:11px;font-weight:850;line-height:1.35}
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner{display:block}
+      #liveDispositionView[data-atms-p26g-demo="1"] .atms-live-target-tracking-actions{display:none!important}
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetPositionBody{background:
+        radial-gradient(circle at 50% 58%,rgba(46,168,255,.65) 0 7px,rgba(255,255,255,.94) 8px 11px,rgba(46,168,255,.20) 12px 20px,transparent 21px),
+        linear-gradient(28deg,transparent 0 42%,rgba(74,121,148,.24) 43% 46%,transparent 47% 100%),
+        linear-gradient(118deg,transparent 0 36%,rgba(74,121,148,.18) 37% 40%,transparent 41% 100%),
+        repeating-linear-gradient(0deg,rgba(83,179,225,.07) 0 1px,transparent 1px 24px),
+        repeating-linear-gradient(90deg,rgba(83,179,225,.07) 0 1px,transparent 1px 24px),
+        linear-gradient(135deg,rgba(3,31,48,.95),rgba(8,63,80,.72))!important}
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetPositionBody::before{display:none}
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetPositionBody .atms-live-target-demo-map-label{position:absolute;font-size:9px;opacity:.74;font-weight:800}
+      #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetPositionBody .l1{left:8%;top:17%}#liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetPositionBody .l2{right:8%;top:23%}#liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetPositionBody .l3{right:16%;bottom:14%}
+      #liveDispositionView[data-atms-p26g-demo="1"] .atms-live-target-demo-warning-sent{display:block;margin-top:2px;font-size:7px!important;color:#ffc14d;opacity:1!important;font-weight:850}
+      @media(max-width:720px){.atms-live-target-demo-btn{padding:8px 8px;font-size:10px}.atms-live-target-head{flex-wrap:wrap}.atms-live-target-head>div:first-child{flex:1 1 60%}}
+    `;document.head.appendChild(style);
+  }
+  let banner=$('atmsLiveTargetDemoBanner');if(!banner){banner=document.createElement('div');banner.id='atmsLiveTargetDemoBanner';banner.textContent='🧪 ZIELBILD-DEMO · Nur Darstellung mit Beispieldaten. Echte ATMS-Daten werden nicht verändert.';$('atmsLiveTargetTop')?.insertAdjacentElement('afterend',banner)}
+  return btn;
+}
+function clearLiveDispositionTargetDemoState(){
+  const select=$('atmsLiveTargetDriverSelect');if(select)select.disabled=false;
+  ['atmsLiveThresholdMinus','atmsLiveThresholdPlus','atmsLiveTargetRidesRefresh','atmsLiveTargetRidesMore'].forEach(id=>{const el=$(id);if(el)el.disabled=false});
+  const open=$('atmsLiveTargetOpenPositionBtn');if(open)open.disabled=true;
+}
+function toggleLiveDispositionTargetDemo(){
+  const view=$('liveDispositionView');if(!view)return;
+  const turningOn=view.dataset.atmsP26gDemo!=='1';view.dataset.atmsP26gDemo=turningOn?'1':'0';
+  const btn=$('atmsLiveTargetDemoBtn');if(btn)btn.textContent=turningOn?'✕ Demo beenden':'🧪 Zielbild-Demo';
+  if(turningOn){applyLiveDispositionTargetDemo();showToast('Zielbild-Demo aktiv · echte Daten unverändert','ok');return}
+  clearLiveDispositionTargetDemoState();renderLiveDisposition(false);showToast('Zielbild-Demo beendet','ok');
+}
+function applyLiveDispositionTargetDemo(){
+  const view=$('liveDispositionView');if(!view||view.dataset.atmsP26gDemo!=='1')return;
+  ensureLiveDispositionTargetDemo();
+  const btn=$('atmsLiveTargetDemoBtn');if(btn)btn.textContent='✕ Demo beenden';
+  const select=$('atmsLiveTargetDriverSelect');if(select){select.innerHTML='<option value="__demo__">Ghasem</option>';select.value='__demo__';select.disabled=true}
+  const meta=$('atmsLiveTargetDriverMeta');if(meta)meta.textContent='F-105';
+  const threshold=$('atmsLiveTargetThreshold');if(threshold)threshold.textContent='7';const note=$('atmsLiveTargetThresholdNote');if(note)note.textContent='Warnung ab 7 Minuten Verspätung';
+  ['atmsLiveThresholdMinus','atmsLiveThresholdPlus'].forEach(id=>{const el=$(id);if(el)el.disabled=true});
+  const strip=$('atmsLiveTargetTrackingStrip');if(strip)strip.className='atms-live-target-tracking is-active';
+  const state=$('atmsLiveTargetTrackingState');if(state)state.textContent='● Tracking aktiv';const last=$('atmsLiveTargetLastPosition');if(last)last.textContent='vor 18 Sek.';const acc=$('atmsLiveTargetAccuracy');if(acc)acc.textContent='12 m';
+  const body=$('atmsLiveTargetPositionBody');if(body){body.className='atms-live-target-position-body is-live';body.innerHTML='<span class="atms-live-target-demo-map-label l1">Seestern</span><span class="atms-live-target-demo-map-label l2">Niederkasseler Lohweg</span><span class="atms-live-target-demo-map-label l3">Löricker Str.</span><b style="position:absolute;left:10px;bottom:9px;font-size:9px;opacity:.70">Karten-Vorschau · Demo</b>'}
+  const open=$('atmsLiveTargetOpenPositionBtn');if(open){open.disabled=true;open.textContent='🗺 In Maps öffnen'}
+  const driver=$('atmsLiveTargetInfoDriver');if(driver)driver.textContent='Ghasem';const id=$('atmsLiveTargetInfoId');if(id)id.textContent='F-105';const vehicle=$('atmsLiveTargetInfoVehicle');if(vehicle)vehicle.textContent='K-AT 458';const shift=$('atmsLiveTargetInfoShift');if(shift)shift.textContent='13:00 – 22:00 Uhr';const gps=$('atmsLiveTargetInfoConnection');if(gps){gps.textContent='● Sehr gut';gps.className='is-live'}
+  const title=$('atmsLiveTargetRidesTitle');if(title)title.textContent='Fahrtenkontrolle – Nur Fahrten von Ghasem';const refresh=$('atmsLiveTargetRidesRefresh');if(refresh)refresh.disabled=true;const more=$('atmsLiveTargetRidesMore');if(more)more.hidden=true;
+  const list=$('atmsLiveTargetRidesList');if(list)list.innerHTML=[
+    ['good','13:15','05.08.2026','Marriott Seestern DUS → DUS Airport','EW9504','13:15','0 Min.','✓ Pünktlich',''],
+    ['warn','14:10','05.08.2026','DUS Airport → Köln Messe','–','14:19','+9 Min.','⚠ Verspätet','⚠ Warnung gesendet 13:42'],
+    ['bad','15:20','05.08.2026','Köln Messe → Bonn HBF','–','15:31','+11 Min.','⚠ Verspätet','⚠ Warnung gesendet 13:42'],
+    ['good','16:30','05.08.2026','Bonn HBF → Koblenz HBF','–','16:28','-2 Min.','✓ Pünktlich','']
+  ].map((r,i)=>`<div class="atms-live-target-ride-row ${r[0]}"><div class="atms-live-target-ride-index">${i+1}</div><div class="atms-live-target-ride-time"><b>${r[1]}</b><span>${r[2]}</span></div><div class="atms-live-target-ride-route"><b>${r[3]}</b><span>${r[4]}</span></div><div class="atms-live-target-ride-metric ${r[0]}"><span>Prognose</span><b>${r[5]}</b></div><div class="atms-live-target-ride-metric ${r[0]}"><span>Verspätung</span><b>${r[6]}</b>${r[8]?`<span class="atms-live-target-demo-warning-sent">${r[8]}</span>`:''}</div><div class="atms-live-target-ride-status ${r[0]}">${r[7]}</div><button type="button" class="atms-live-target-ride-open" disabled>›</button></div>`).join('');
+  const warning=$('atmsLiveTargetWarning');if(warning){warning.hidden=false;warning.className='atms-live-target-warning alert'}
+  const icon=$('atmsLiveTargetWarningIcon');if(icon)icon.textContent='⚠';const wt=$('atmsLiveTargetWarningTitle');if(wt)wt.textContent='Aktuelle Warnung';const txt=$('atmsLiveTargetWarningText');if(txt)txt.textContent='Die nächste Fahrt kann voraussichtlich nicht pünktlich erreicht werden.';const wr=$('atmsLiveTargetWarningRide');if(wr)wr.textContent='DUS Airport → Köln Messe';const pl=$('atmsLiveTargetWarningPredictionLabel');if(pl)pl.textContent='Prognostizierte Ankunft';const pred=$('atmsLiveTargetWarningPrediction');if(pred)pred.textContent='14:19 Uhr';const del=$('atmsLiveTargetWarningDelay');if(del)del.textContent='+9 Minuten';const th=$('atmsLiveTargetWarningThreshold');if(th)th.textContent='7 Minuten';const details=$('atmsLiveTargetWarningDetails');if(details){details.hidden=false;details.dataset.rideId='';details.textContent='Details anzeigen ›';details.disabled=true}
+}
+
 // CORE-007D8A1F1D8P26F – gebündeltes Zielbild-Finish. Legacy-Funktionen bleiben vorhanden und werden nur standardmäßig eingeklappt.
 function atmsLiveTargetLegacyCard(anchorId){
   const view=$('liveDispositionView'),anchor=$(anchorId);if(!view||!anchor)return null;
@@ -3169,6 +3238,8 @@ function ensureLiveDispositionTargetFinish(){
     const fresh=old.cloneNode(true);fresh.dataset.atmsP26fBound='1';old.replaceWith(fresh);fresh.addEventListener('click',toggleLiveDispositionTargetAdvanced);
   }
   applyLiveDispositionTargetFinishCleanup();
+  ensureLiveDispositionTargetDemo();
+  applyLiveDispositionTargetDemo();
 }
 
 function renderLiveDispositionTargetBlock(driver,settings,consent){
