@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26O · 17.09.2026: LIVE-DISPO BOTTOM-NAV EXACT BASELINE MATCH – Die Live-Dispo übernimmt für die globale untere Navigation exakt die bereits funktionierende Darstellung aus den übrigen Ansichten. Vor dem Wechsel in Live-Dispo werden die berechneten Layoutwerte der Bottom-Navigation gesichert und dort unverändert wiederverwendet; P26M/P26N-Sonderdarstellungen können dadurch Höhe, Position oder Einstellungen-Label nicht mehr sichtbar verändern. Reine UI-Darstellung; keine Änderung an Navigation-Funktion, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26N · 17.09.2026: LIVE-DISPO BOTTOM-NAV SETTINGS LABEL FIT – Korrigiert ausschließlich die Darstellung des globalen „⚙ Einstellungen“-Ziels in der 6er-Bottom-Navigation der Live-Dispo: Icon und Beschriftung werden auf schmalen Android-Ansichten wieder sauber untereinander und vollständig innerhalb ihrer Spalte dargestellt. Keine Änderung an Navigation, LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26M · 17.09.2026: LIVE-DISPO 6ER-BOTTOM-NAV MOBILE FIT – Der in P26L wiederhergestellte globale „⚙ Einstellungen“-Eintrag bleibt in Live-Dispo sichtbar, die untere Navigation wird auf Mobilgeräten aber auf sechs gleich breite Spalten angepasst, damit der Einstellungen-Eintrag nicht rechts abgeschnitten wird. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26L · 17.09.2026: LIVE-DISPO GLOBAL SETTINGS NAV CONSISTENCY – Stellt das globale untere „⚙ Einstellungen“-Navigationsziel auch in der Live-Dispo wieder sichtbar her. Der obere „⚙ Einstellungen“-Button bleibt die Live-Dispo-spezifische Ein-/Ausblendung der technischen Live-Einstellungen; die untere Navigation bleibt damit appweit konsistent. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
@@ -844,8 +845,25 @@ function renderMessagesView(){
   list.querySelectorAll('[data-copy-message]').forEach(btn=>btn.addEventListener('click',()=>{const card=btn.closest('[data-message-key]');copyPreparedMessage(card?.dataset.messageKey||'',card?.querySelector('[data-message-text]'))}));
   list.querySelectorAll('[data-clear-selftest]').forEach(btn=>btn.addEventListener('click',()=>clearMessagesSelfTest(true,true)));
 }
+let atmsLiveBottomNavBaseline=null;
+function captureLiveBottomNavBaseline(){
+  if(atmsLiveBottomNavBaseline)return;
+  const settings=document.querySelector('.nav[data-nav="settings"]'),host=settings?.parentElement;if(!host)return;
+  const hostProps=['display','height','min-height','max-height','padding-top','padding-right','padding-bottom','padding-left','gap','column-gap','row-gap','align-items','justify-content','flex-direction','flex-wrap','grid-template-columns','box-sizing'];
+  const navProps=['display','width','min-width','max-width','height','min-height','max-height','padding-top','padding-right','padding-bottom','padding-left','margin-top','margin-right','margin-bottom','margin-left','gap','align-items','justify-content','flex-direction','flex-basis','flex-grow','flex-shrink','font-size','line-height','white-space','text-align','overflow','box-sizing'];
+  const take=(el,props)=>{const cs=getComputedStyle(el),o={};props.forEach(p=>o[p]=cs.getPropertyValue(p));return o};
+  atmsLiveBottomNavBaseline={host,hostStyle:take(host,hostProps),items:[...host.querySelectorAll('.nav')].map(el=>({el,style:take(el,navProps),children:[...el.children].map(child=>({el:child,display:getComputedStyle(child).display,fontSize:getComputedStyle(child).fontSize,lineHeight:getComputedStyle(child).lineHeight}))}))};
+}
+function restoreLiveBottomNavBaseline(){
+  const b=atmsLiveBottomNavBaseline;if(!b?.host?.isConnected)return;
+  const apply=(el,obj)=>Object.entries(obj).forEach(([p,v])=>{if(v)el.style.setProperty(p,v,'important')});
+  apply(b.host,b.hostStyle);
+  b.items.forEach(item=>{if(!item.el?.isConnected)return;apply(item.el,item.style);item.children.forEach(c=>{if(!c.el?.isConnected)return;c.el.style.setProperty('display',c.display,'important');c.el.style.setProperty('font-size',c.fontSize,'important');c.el.style.setProperty('line-height',c.lineHeight,'important')})});
+}
 function showView(v){
+  if(v==='live')captureLiveBottomNavBaseline();
   try{document.body?.classList.toggle('atms-live-target-active',v==='live')}catch(_){ }
+  if(v==='live')restoreLiveBottomNavBaseline();
   ['listView','cockpitView','importView','settingsView','liveDispositionView','messagesView'].forEach(id=>{const el=$(id);if(el)el.classList.add('hidden')});
   if(v==='list')$('listView')?.classList.remove('hidden');
   if(v==='cockpit')$('cockpitView')?.classList.remove('hidden');
@@ -3375,8 +3393,17 @@ function ensureLiveDispositionTargetFinish(){
       }
     `;document.head.appendChild(p26n);
   }
+  if(!$('atmsLiveTargetP26OStyle')){
+    const p26o=document.createElement('style');p26o.id='atmsLiveTargetP26OStyle';p26o.textContent=`
+      /* P26O: keine künstlichen Pseudo-Inhalte in der globalen Settings-Navigation; echte Baseline-Darstellung bleibt maßgeblich. */
+      html body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]::before,
+      html body.atms-live-target-active .atms-live-six-nav .nav[data-nav="settings"]::after{content:none!important;display:none!important}
+    `;document.head.appendChild(p26o);
+  }
+  restoreLiveBottomNavBaseline();
   const settingsNav=document.querySelector('.nav[data-nav="settings"]');
   if(settingsNav?.parentElement)settingsNav.parentElement.classList.add('atms-live-six-nav');
+  restoreLiveBottomNavBaseline();
   positionLiveDispositionTargetDemoButton();
   const old=$('atmsLiveTargetSettingsBtn');
   if(old&&old.dataset.atmsP26fBound!=='1'){
