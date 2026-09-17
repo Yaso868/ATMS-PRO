@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P26K · 17.09.2026: LIVE-DISPO READABILITY + BOTTOM-SPACING POLISH – Vergrößert ausschließlich kleine/sekundäre Texte der Live-Dispo auf Android moderat bis zur sicheren Lesbarkeitsgrenze und reduziert den reservierten unteren Leerraum über der festen Navigation. Große Überschriften, Hauptzeiten und Warnschwellen-Zahl bleiben unverändert. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26J · 17.09.2026: LIVE-DISPO FINAL MOBILE POLISH – Letzte sichtbare Android-Abweichungen gegen das verbindliche Zielbild: Live-Verbindungs-Pill bleibt auch auf schmalen Mobilansichten sichtbar; im aktiven Zielbild-Demo wird „Demo beenden“ in den klar markierten Demo-Hinweis verschoben und überlagert keine Fahrten/Warnkarte mehr. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26I · 17.09.2026: LIVE-DISPO FINAL VISUAL MATCH – Letzter gebündelter Präzisionspass gegen das verbindliche Zielbild auf dem realen Android-Screenshot: kompakte ATMS-PRO-Kopfleiste, einzeiliger Fahrer-Fahrtenkontrolle-Kopf mit Einstellungen rechts, Demo-Steuerung aus dem Layoutfluss, aktiv wirkende Demo-Karten-Schaltfläche, feinere Karten-/Fahrer-Info-Darstellung, weniger Umbruch in Fahrtenzeilen und sicherer Abstand über der festen Navigation. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
 // CORE-007D8A1F1D8P26H · 17.09.2026: LIVE-DISPO VISUAL PRECISION PASS – Gebündelter optischer Feinschliff gegen das verbindliche Zielbild: Fahrerkarte mit Avatar/ID-Hierarchie, kompakter Trackingstreifen, kartenähnliche Positionsdarstellung, ikonische Fahrer-Info, besser lesbare mobile Fahrtenzeilen und auf der Live-Dispo nur die fünf Zielbild-Navigationseinträge. Reine Darstellung; keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- oder Persistenzlogik; keine neuen Netzaufrufe.
@@ -3309,6 +3310,35 @@ function ensureLiveDispositionTargetFinish(){
         #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner{font-size:7.2px!important;line-height:1.2!important;padding:5px 6px!important}
       }
     `;document.head.appendChild(p26j);
+  }
+  if(!$('atmsLiveTargetP26KStyle')){
+    const p26k=document.createElement('style');p26k.id='atmsLiveTargetP26KStyle';p26k.textContent=`
+      /* P26K: nur Lesbarkeit + kontrollierter Bottom-Abstand; Kernlogik bleibt unberührt. */
+      #liveDispositionView{padding-bottom:78px!important}
+      .atms-live-target-warning{margin-bottom:4px!important}
+      @media(max-width:720px) and (min-width:370px){
+        .atms-live-target-sub{font-size:10.2px!important}
+        .atms-live-target-settings{font-size:10px!important}
+        .atms-live-target-meta{font-size:10.6px!important}
+        .atms-live-target-threshold span{font-size:10.6px!important}
+        .atms-live-target-tracking span{font-size:8.7px!important}.atms-live-target-tracking b{font-size:10.7px!important}
+        .atms-live-target-mini-action{font-size:9.6px!important}
+        .atms-live-target-position-head>b{font-size:12.6px!important}.atms-live-target-position-head button{font-size:9.6px!important}
+        .atms-live-target-position-body span{font-size:10.6px!important}
+        .atms-live-target-driver-rows span{font-size:8.7px!important}.atms-live-target-driver-rows b{font-size:10.2px!important}
+        .atms-live-target-rides-head>b{font-size:12.2px!important}.atms-live-target-rides-head button{font-size:8.6px!important}
+        .atms-live-target-ride-time span,.atms-live-target-ride-route span,.atms-live-target-ride-metric span{font-size:7.4px!important}
+        .atms-live-target-ride-route b{font-size:8.6px!important}.atms-live-target-ride-metric b{font-size:8.6px!important}
+        .atms-live-target-ride-status{font-size:7.3px!important}.atms-live-target-demo-warning-sent{font-size:6.3px!important}
+        .atms-live-target-warning-text{font-size:9.7px!important}.atms-live-target-warning-details{font-size:9.5px!important}
+        .atms-live-target-warning-facts span{font-size:8.1px!important}.atms-live-target-warning-facts b{font-size:9.2px!important}
+      }
+      @media(max-width:430px){
+        .atms-live-target-connection{font-size:7.5px!important}
+        #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner{font-size:7.8px!important}
+        #liveDispositionView[data-atms-p26g-demo="1"] #atmsLiveTargetDemoBanner .atms-live-target-demo-btn{font-size:8px!important}
+      }
+    `;document.head.appendChild(p26k);
   }
   positionLiveDispositionTargetDemoButton();
   const old=$('atmsLiveTargetSettingsBtn');
