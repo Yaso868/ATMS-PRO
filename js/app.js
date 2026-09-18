@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P30 · 18.09.2026: INDEXEDDB DURABLE ROUNDTRIP SELFTEST – Erweitert den bestehenden Persistenz-Selbsttest um einen echten isolierten IndexedDB-Schreib-/Lese-/Lösch-Rundtest im vorhandenen Durable-Store. Verwendet ausschließlich einen separaten temporären Test-Record und verändert den produktiven Durable-Record, echte Fahrten, DONE, Flugcache, Ride-Overrides oder sonstige ATMS-Daten nicht. Der Test-Record wird nach der Prüfung wieder entfernt; Diagnose und Copy-Ausgabe zeigen das Ergebnis separat an. Keine Cloud, keine Änderung an PLAN/DISPO/LIVE-, OCR-, Flug-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P29F1 · 18.09.2026: P28 SELFTEST COMPATIBILITY FIX – Der bestehende Ersatzfahrer-Selbsttest erkennt nach P29 den zentralen executeLiveHandoverForSource-Pfad korrekt als erneute Verfügbarkeitsprüfung. Ausschließlich die Testverdrahtungsprüfung wurde angepasst; produktive Übergabe-, PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- und Persistenzlogik bleiben unverändert.
 // CORE-007D8A1F1D8P29 · 18.09.2026: LIVE-DISPO ERSATZFAHRER-ÜBERGABE-ENDTEST – Ergänzt einen isolierten Endtest für die tatsächliche Übergabe einer Fahrt an einen sicher verfügbaren Ersatzfahrer. Die produktive Übergabe nutzt dafür denselben zentralen Guard-Pfad mit erneuter Verfügbarkeitsprüfung unmittelbar vor der Zuweisung. Der Selbsttest arbeitet ausschließlich mit künstlichen In-Memory-Testdaten und prüft erfolgreiche Einzelzuweisung, unveränderte Nebenfahrten, Blockade bei neu entstandener Ersatzfahrer-Belegung, Blockade bei inzwischen geänderter Ausgangszuordnung sowie Unverändertheit echter Fahrten/DONE/lokaler ATMS-Daten. Keine Änderung an PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- oder Persistenzlogik.
 // CORE-007D8A1F1D8P28 · 18.09.2026: LIVE-DISPO ERSATZFAHRER-SELBSTTEST – Ergänzt einen isolierten Selbsttest für den bestehenden CORE-006Y Driver Availability Guard. Getestet werden aktiv/inaktiv, Trackingfreigabe, eigene offene Fahrt, erledigte Fahrt sowie die erneute Guard-Prüfung vor „Lösung übernehmen“. Der Test arbeitet ausschließlich mit künstlichen In-Memory-Testdaten und prüft zusätzlich, dass echte Fahrten, DONE und lokale ATMS-Daten unverändert bleiben. Keine Änderung an PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- oder Persistenzlogik.
@@ -65,7 +66,7 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='',persistenceDurableSelfTestLast=null;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -336,8 +337,89 @@ function persistenceSelfTest(){
     return {ok,storageWritable:ok,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString()};
   }catch(e){try{localStorage.removeItem(key)}catch(_){ }return {ok:false,storageWritable:false,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString(),error:String(e?.message||e)}}
 }
+// CORE-007D8A1F1D8P30: Echter IndexedDB-Rundtest mit separatem Test-Record.
+// Der produktive Record PERSIST_DURABLE_RECORD ('latest') wird dabei weder gelesen-veraendert
+// noch ueberschrieben. Der temporaere Record wird nach dem Read-Back wieder geloescht.
+async function persistenceDurableRoundTripSelfTest(){
+  const record='__ATMSPRO_P30_SELFTEST__';
+  const token='p30-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+  const checkedAt=new Date().toISOString();
+  let writeOk=false,readBackOk=false,cleanupOk=false,error='';
+  const close=db=>{try{db?.close()}catch(_){ }};
+  const deleteTestRecord=async()=>{
+    let db=null;
+    try{
+      db=await openPersistenceDurableDb();
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction(PERSIST_DURABLE_STORE,'readwrite');
+        tx.oncomplete=()=>resolve();
+        tx.onerror=()=>reject(tx.error||new Error('IndexedDB-Testrecord konnte nicht geloescht werden'));
+        tx.objectStore(PERSIST_DURABLE_STORE).delete(record);
+      });
+      return true;
+    }finally{close(db)}
+  };
+  try{
+    // Eventuell von einem frueher abgebrochenen Test verbliebenen Testrecord bereinigen.
+    try{await deleteTestRecord()}catch(_){ }
+    let db=await openPersistenceDurableDb();
+    try{
+      const payload={token,checkedAt,purpose:'CORE-007D8A1F1D8P30'};
+      await new Promise((resolve,reject)=>{
+        const tx=db.transaction(PERSIST_DURABLE_STORE,'readwrite');
+        tx.oncomplete=()=>resolve();
+        tx.onerror=()=>reject(tx.error||new Error('IndexedDB-Rundtest Schreibfehler'));
+        tx.objectStore(PERSIST_DURABLE_STORE).put(payload,record);
+      });
+      writeOk=true;
+    }finally{close(db)}
+
+    db=await openPersistenceDurableDb();
+    try{
+      const value=await new Promise((resolve,reject)=>{
+        const tx=db.transaction(PERSIST_DURABLE_STORE,'readonly');
+        const req=tx.objectStore(PERSIST_DURABLE_STORE).get(record);
+        req.onsuccess=()=>resolve(req.result||null);
+        req.onerror=()=>reject(req.error||new Error('IndexedDB-Rundtest Lesefehler'));
+      });
+      readBackOk=Boolean(value&&value.token===token&&value.purpose==='CORE-007D8A1F1D8P30');
+    }finally{close(db)}
+
+    await deleteTestRecord();
+    db=await openPersistenceDurableDb();
+    try{
+      const remaining=await new Promise((resolve,reject)=>{
+        const tx=db.transaction(PERSIST_DURABLE_STORE,'readonly');
+        const req=tx.objectStore(PERSIST_DURABLE_STORE).get(record);
+        req.onsuccess=()=>resolve(req.result||null);
+        req.onerror=()=>reject(req.error||new Error('IndexedDB-Rundtest Cleanup-Read fehlgeschlagen'));
+      });
+      cleanupOk=!remaining;
+    }finally{close(db)}
+  }catch(e){
+    error=String(e?.message||e);
+    try{await deleteTestRecord()}catch(_){ }
+  }
+  const result={
+    ok:Boolean(writeOk&&readBackOk&&cleanupOk&&!error),
+    indexedDbAvailable:Boolean('indexedDB' in window),
+    writeOk,readBackOk,cleanupOk,
+    isolatedRecord:true,
+    testRecord:record,
+    productionRecord:PERSIST_DURABLE_RECORD,
+    productionRecordTouched:false,
+    checkedAt,
+    ...(error?{error}:{})
+  };
+  persistenceDurableSelfTestLast=result;
+  return result;
+}
 function persistenceDiagnosis(){
   const snap=readPersistenceSafety();
+  const localSelfTest=persistenceSelfTest();
+  const combinedSelfTest=persistenceDurableSelfTestLast
+    ? {...localSelfTest,indexedDbRoundTrip:persistenceDurableSelfTestLast.ok,ok:Boolean(localSelfTest.ok&&persistenceDurableSelfTestLast.ok)}
+    : localSelfTest;
   let audit=[];try{audit=JSON.parse(localStorage.getItem(PERSIST_AUDIT_KEY)||'[]');if(!Array.isArray(audit))audit=[]}catch(_){audit=[]}
   const inspect=key=>{
     const raw=localStorage.getItem(key),shadow=snap?.storage?.[key],durable=persistenceDurableShadow?.storage?.[key];
@@ -347,7 +429,8 @@ function persistenceDiagnosis(){
   };
   return {
     diagnosis:'CORE-005V5 Durable Persistence Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
-    selfTest:persistenceSelfTest(),
+    selfTest:combinedSelfTest,
+    durableRoundTrip:persistenceDurableSelfTestLast,
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
@@ -380,7 +463,20 @@ function ensurePersistenceSafetyPanel(){
     }
   }
   const paint=obj=>{const out=$('atmsPersistenceOutput');if(out)out.textContent=JSON.stringify(obj,null,2)};
-  $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
+  $('atmsPersistenceSelfTestBtn')?.addEventListener('click',async()=>{
+    const btn=$('atmsPersistenceSelfTestBtn'),label=btn?.textContent||'🧪 Persistenz-Selbsttest';
+    if(btn){btn.disabled=true;btn.textContent='🧪 Persistenz-Selbsttest läuft …'}
+    try{
+      await persistenceDurableRoundTripSelfTest();
+      const result=persistenceDiagnosis();
+      paint(result);
+      showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn');
+    }catch(e){
+      const result=persistenceDiagnosis();
+      result.selfTest={...(result.selfTest||{}),ok:false,error:String(e?.message||e)};
+      paint(result);showToast('Persistenz-Selbsttest fehlgeschlagen','warn');
+    }finally{if(btn){btn.disabled=false;btn.textContent=label}}
+  });
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
   $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
   $('atmsRestorePreviousImportBtn')?.addEventListener('click',restorePreviousPlanImport);
