@@ -1,6 +1,7 @@
-// ATMS PRO · CORE-007D8A1F1D8P31F5F4 · AUTO-FLIGHT RESPONSE NORMALIZATION FIX
-// 05.09.2026 (Europe/Berlin)
-// Firebase AI Logic + App Check + Gemini Developer API + Google Search grounding.
+// ATMS PRO · CORE-007D8A1F1D8P31F5F6 · AUTO-FLIGHT EXPLICIT URL SOURCES
+// 18.09.2026 (Europe/Berlin)
+// Firebase AI Logic + App Check + Gemini Developer API + explicit URL Context sources.
+// FLIGHT-008: deterministic dual-source check via Flightradar24 + FlightStats; Google Search remains supplementary.
 // Datenschutz: niemals vollständige Planliste/Bild; nur Flugnummer, Datum, Richtung,
 // ggf. Flugzeit und vorhandener Flugort als Vergleichswert.
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js';
@@ -14,7 +15,7 @@ import {
   GoogleAIBackend
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js';
 
-const VERSION='CORE-007D8A1F1D8P31F5F4';
+const VERSION='CORE-007D8A1F1D8P31F5F6';
 const PRIMARY_MODEL='gemini-3.8-flash';
 const FALLBACK_MODEL='gemini-3.5-flash';
 
@@ -85,6 +86,12 @@ function isRealFlightNumber(value){
 function safeHost(uri){
   try{return new URL(uri).hostname.replace(/^www\./,'')}catch(_){return''}
 }
+function sourceHostKey(uri){
+  const host=safeHost(uri).toLocaleLowerCase('de-DE');
+  if(host.endsWith('flightradar24.com'))return'flightradar24.com';
+  if(host.endsWith('flightstats.com'))return'flightstats.com';
+  return host;
+}
 function parseJsonObject(raw){
   const source=text(raw);
   if(!source)return{};
@@ -131,21 +138,68 @@ function mergeSources(...groups){
   }
   return out.slice(0,12);
 }
-function extractGrounding(response){
+function flightNumberParts(flightNumber){
+  const match=upper(flightNumber).match(/^([A-Z0-9]{2,3})(\d{1,4})([A-Z]?)$/);
+  if(!match)return null;
+  return{carrier:match[1],number:`${match[2]}${match[3]||''}`};
+}
+function explicitSourceUrls(item){
+  const parts=flightNumberParts(item?.flightNumber);
+  const date=text(item?.airportEventDate||item?.date);
+  const dm=date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!parts||!dm)return[];
+  const [,year,month,day]=dm;
+  const fr24=`https://www.flightradar24.com/data/flights/${upper(item.flightNumber).toLowerCase()}`;
+  const flightStats=`https://www.flightstats.com/v2/flight-tracker/${encodeURIComponent(parts.carrier)}/${encodeURIComponent(parts.number)}?year=${year}&month=${month}&date=${day}`;
+  return[
+    {name:'Flightradar24',url:fr24,kind:'explicit'},
+    {name:'FlightStats',url:flightStats,kind:'explicit'}
+  ];
+}
+function extractUrlContext(response,expectedSources=[]){
+  const metadata=response?.candidates?.[0]?.urlContextMetadata||response?.candidates?.[0]?.url_context_metadata||null;
+  const records=Array.isArray(metadata?.urlMetadata)?metadata.urlMetadata:
+    Array.isArray(metadata?.url_metadata)?metadata.url_metadata:[];
+  const successful=[];
+  for(const record of records){
+    const url=text(record?.retrievedUrl||record?.retrieved_url);
+    const status=upper(record?.urlRetrievalStatus||record?.url_retrieval_status);
+    if(!url||!status.includes('SUCCESS'))continue;
+    const expected=(expectedSources||[]).find(source=>{
+      try{return sourceHostKey(source.url)===sourceHostKey(url)}catch(_){return false}
+    });
+    successful.push({
+      name:expected?.name||safeHost(url)||'URL-Quelle',
+      url,
+      kind:'url_context'
+    });
+  }
+  return{
+    sources:mergeSources(successful),
+    urlMetadata:records.map(record=>({
+      url:text(record?.retrievedUrl||record?.retrieved_url),
+      status:text(record?.urlRetrievalStatus||record?.url_retrieval_status)
+    }))
+  };
+}
+function extractGrounding(response,expectedSources=[]){
   const metadata=response?.candidates?.[0]?.groundingMetadata||null;
   const chunks=Array.isArray(metadata?.groundingChunks)?metadata.groundingChunks:[];
-  const sources=[];
+  const searchSources=[];
   for(const chunk of chunks){
     const web=chunk?.web;
     const uri=text(web?.uri);
     const title=text(web?.title)||safeHost(uri);
     if(!uri||!title)continue;
-    sources.push({name:title,url:uri});
+    searchSources.push({name:title,url:uri,kind:'google_search'});
   }
+  const urlContext=extractUrlContext(response,expectedSources);
   return{
     renderedContent:text(metadata?.searchEntryPoint?.renderedContent),
     renderedContents:text(metadata?.searchEntryPoint?.renderedContent)?[text(metadata.searchEntryPoint.renderedContent)]:[],
-    sources:mergeSources(sources),
+    sources:mergeSources(urlContext.sources,searchSources),
+    explicitSources:urlContext.sources,
+    urlMetadata:urlContext.urlMetadata,
     webSearchQueries:Array.isArray(metadata?.webSearchQueries)?metadata.webSearchQueries.map(text).filter(Boolean):[]
   };
 }
@@ -197,7 +251,7 @@ async function ensureReady(){
       window.__ATMSFirebaseAppCheckInitialized=true;
     }
     const ai=getAI(app,{backend:new GoogleAIBackend()});
-    const options={tools:[{googleSearch:{}}]};
+    const options={tools:[{urlContext:{}},{googleSearch:{}}]};
     primaryModel=getGenerativeModel(ai,{model:PRIMARY_MODEL,...options});
     fallbackModel=getGenerativeModel(ai,{model:FALLBACK_MODEL,...options});
     return true;
@@ -206,6 +260,7 @@ async function ensureReady(){
 }
 
 function buildPrompt(item,options={}){
+  const explicitSources=explicitSourceUrls(item);
   const payload={
     flightNumber:item.flightNumber,
     date:item.date,
@@ -215,42 +270,36 @@ function buildPrompt(item,options={}){
     airportIata:item.airportIata,
     flightTime:item.flightTime||null,
     relevantSide:item.relevantSide,
-    locationFromPlan:item.locationFromPlan||null
+    locationFromPlan:item.locationFromPlan||null,
+    sourceA:explicitSources[0]?.url||null,
+    sourceB:explicitSources[1]?.url||null
   };
-  const phase=text(options?.phase)||'discovery';
-  const priorCandidate=options?.priorCandidate||null;
-  const excludedSources=Array.isArray(options?.excludedSources)?options.excludedSources.map(text).filter(Boolean):[];
-  const secondPass=phase==='confirmation';
   return `ATMS PRO – FLIGHT-008 strikte aktuelle Flugprüfung.\n\n`+
-`Prüfe GENAU EINEN konkreten Flug mit Google Search anhand aktueller, DATUMSSPEZIFISCHER öffentlicher Webdaten. Verwende keine gespeicherte oder typische Flugnummer→Route-Zuordnung.\n\n`+
-(secondPass
-  ? `DIES IST DIE UNABHÄNGIGE ZWEITPRÜFUNG. Suche eine vom ersten Treffer unabhängige Bestätigung. Verwende nach Möglichkeit Airport oder Airline; sonst einen seriösen unabhängigen Flugtracker. Verlasse dich NICHT auf bereits verwendete Quellen/Publisher: ${excludedSources.length?excludedSources.join(' | '):'keine angegeben'}.\nVorläufiger Kandidat aus Prüfung 1 (nur zum Gegenprüfen, nicht als Quelle): ${JSON.stringify(priorCandidate)}\n\n`
-  : `DIES IST PRÜFUNG 1. Ermittle die konkrete Route. Schon EINE datumsspezifische Quelle darf einen Kandidaten liefern; ATMS führt bei weniger als zwei unabhängigen Quellen automatisch eine zweite, unabhängige Prüfung durch.\n\n`)+
+`Prüfe GENAU EINEN konkreten Flug anhand der BEIDEN unten angegebenen öffentlichen URLs mit URL Context. Google Search darf nur ergänzen, ersetzt die beiden expliziten Quellen aber nicht.\n\n`+
 `VERBINDLICHE REGELN:\n`+
-`1. Nutze Google Search. Ohne aktuelle Suchgrundlage darf kein Routenkandidat ausgegeben werden.\n`+
-`2. airportIata ist der für diese Fahrt relevante Flughafen und muss EXAKT verwendet werden.\n`+
-`3. direction=arrival: relevantLocation ist der HERKUNFTSORT des konkreten Fluges NACH airportIata.\n`+
-`4. direction=departure: relevantLocation ist der ZIELORT des konkreten Fluges AB airportIata.\n`+
-`5. Für die Webprüfung ist airportEventDate EXAKT maßgeblich. date bleibt unverändert das ATMS-Fahrtdatum.\n`+
-`6. flightTime ist nur ein Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und keine eindeutige Zuordnung möglich ist: needs_manual_check.\n`+
-`7. locationFromPlan ist ausschließlich Vergleichswert, niemals Quelle. Bei sicherem Widerspruch conflict=true.\n`+
+`1. Rufe sourceA UND sourceB tatsächlich über URL Context ab. Ohne erfolgreich abgerufene Inhalte beider URLs: status="needs_manual_check".\n`+
+`2. Werte sourceA und sourceB GETRENNT aus. Beide müssen die konkrete Flugnummer am airportEventDate und dieselben Origin-/Destination-IATA-Codes bestätigen.\n`+
+`3. airportIata ist der für diese Fahrt relevante Flughafen und muss EXAKT zur Richtung passen.\n`+
+`4. direction=arrival: airportIata muss destinationIata sein; relevantLocation ist der HERKUNFTSORT.\n`+
+`5. direction=departure: airportIata muss originIata sein; relevantLocation ist der ZIELORT.\n`+
+`6. flightTime ist nur ein Unterscheidungsmerkmal. Wenn mehrere Flüge am Datum nicht eindeutig trennbar sind: needs_manual_check.\n`+
+`7. locationFromPlan ist nur Vergleichswert, niemals Quelle. Bei sicherem Widerspruch conflict=true.\n`+
 `8. Erfinde keine Städte, IATA-Codes, Quellen oder Zeiten.\n`+
-`9. Antworte ausschließlich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, sourceNote.\n`+
-`status: candidate|needs_manual_check; confidence: high|medium|low.\n\n`+
+`9. sourceAConfirmed=true nur wenn sourceA die konkrete Route datumsspezifisch bestätigt. sourceBConfirmed entsprechend für sourceB.\n`+
+`10. status="candidate" nur wenn sourceAConfirmed=true UND sourceBConfirmed=true UND beide dieselbe Route bestätigen. Sonst needs_manual_check.\n`+
+`11. Antworte ausschließlich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, sourceAConfirmed, sourceBConfirmed, sourceNote.\n`+
+`confidence: high|medium|low.\n\n`+
 `Prüfdaten:\n${JSON.stringify(payload,null,2)}`;
 }
 function parseRouteCandidate(item,generated){
   const response=generated.result?.response;
-  const grounding=extractGrounding(response);
+  const expectedSources=explicitSourceUrls(item);
+  const grounding=extractGrounding(response,expectedSources);
   const parsed=parseJsonObject(response?.text?.()||'');
   const originCity=text(parsed?.originCity),originIata=upper(parsed?.originIata);
   const destinationCity=text(parsed?.destinationCity),destinationIata=upper(parsed?.destinationIata);
   const relevantIata=item.direction==='arrival'?originIata:destinationIata;
   const modelRelevantLocation=text(parsed?.relevantLocation),modelRelevantIata=upper(parsed?.relevantIata);
-  // F5F4: Gemini/Firebase may legitimately return a route with canonical IATA
-  // endpoints even when one localized city label is omitted. The IATA pair is
-  // the route identity; relevantLocation is presentation text and may fall back
-  // to the explicit relevantLocation field from the grounded response.
   const relevantLocation=(item.direction==='arrival'?originCity:destinationCity)||modelRelevantLocation;
   const semanticMismatch=Boolean(modelRelevantIata&&relevantIata&&modelRelevantIata!==relevantIata);
   const routeComplete=Boolean(/^[A-Z]{3}$/.test(originIata)&&/^[A-Z]{3}$/.test(destinationIata));
@@ -260,10 +309,16 @@ function parseRouteCandidate(item,generated){
       ? originIata===upper(item.airportIata)
       : false);
   const conflict=booleanValue(parsed?.conflict)||semanticMismatch||(routeComplete&&!airportAnchored);
-  const hasGrounding=grounding.sources.length>0||grounding.webSearchQueries.length>0;
-  const candidate=routeComplete&&airportAnchored&&Boolean(relevantLocation)&&Boolean(relevantIata)&&!conflict&&hasGrounding&&text(parsed?.status).toLowerCase()!=='needs_manual_check';
+  const sourceAConfirmed=booleanValue(parsed?.sourceAConfirmed);
+  const sourceBConfirmed=booleanValue(parsed?.sourceBConfirmed);
+  const explicitHosts=new Set((grounding.explicitSources||[]).map(source=>sourceHostKey(source.url)).filter(Boolean));
+  const expectedHosts=expectedSources.map(source=>sourceHostKey(source.url)).filter(Boolean);
+  const bothUrlsRetrieved=expectedHosts.length===2&&expectedHosts.every(host=>explicitHosts.has(host));
+  const explicitConfirmed=bothUrlsRetrieved&&sourceAConfirmed&&sourceBConfirmed;
+  const candidate=routeComplete&&airportAnchored&&Boolean(relevantLocation)&&Boolean(relevantIata)&&!conflict&&explicitConfirmed&&text(parsed?.status).toLowerCase()!=='needs_manual_check';
   return{
     candidate,parsed,grounding,conflict,originCity,originIata,destinationCity,destinationIata,relevantLocation,relevantIata,
+    sourceAConfirmed,sourceBConfirmed,bothUrlsRetrieved,
     modelUsed:generated.modelUsed,fallbackUsed:Boolean(generated.fallbackUsed)
   };
 }
@@ -310,63 +365,48 @@ async function generateWithFallback(prompt){
 
 async function verifyOne(item){
   if(!item.date||!item.airportEventDate||!item.airportIata||!['arrival','departure'].includes(item.direction)){
-    const g={renderedContent:'',renderedContents:[],sources:[],webSearchQueries:[]};
+    const g={renderedContent:'',renderedContents:[],sources:[],explicitSources:[],urlMetadata:[],webSearchQueries:[]};
     return{checked:checkedManual(item,'Datum, Flughafen oder Flugrichtung ist nicht eindeutig – keine automatische Webprüfung.',g),grounding:g};
   }
 
-  const firstGenerated=await generateWithFallback(buildPrompt(item,{phase:'discovery'}));
-  const first=parseRouteCandidate(item,firstGenerated);
-  let second=null;
-  let sources=first.grounding.sources;
-  let renderedContents=[...(first.grounding.renderedContents||[])];
-  let queries=[...(first.grounding.webSearchQueries||[])];
-
-  // FLIGHT-008 bleibt strikt: zwei voneinander unabhängige, datumsspezifische
-  // Webquellen sind Pflicht. Liefert Google Search im ersten Lauf nur eine
-  // Quelle, fordert ATMS automatisch eine zweite, unabhängige Bestätigung an.
-  if(first.candidate&&sources.length<2){
-    const excludedSources=sources.map(source=>text(source.name)||safeHost(source.url)).filter(Boolean);
-    const priorCandidate={originCity:first.originCity,originIata:first.originIata,destinationCity:first.destinationCity,destinationIata:first.destinationIata};
-    const secondGenerated=await generateWithFallback(buildPrompt(item,{phase:'confirmation',priorCandidate,excludedSources}));
-    second=parseRouteCandidate(item,secondGenerated);
-    sources=mergeSources(first.grounding.sources,second.grounding.sources);
-    renderedContents.push(...(second.grounding.renderedContents||[]));
-    queries.push(...(second.grounding.webSearchQueries||[]));
-  }
-
-  const twoSourcesInFirst=first.candidate&&first.grounding.sources.length>=2;
-  const twoPassConfirmed=Boolean(first.candidate&&second&&sameRoute(first,second)&&independentSources(first.grounding.sources,second.grounding.sources));
-  const verified=Boolean(twoSourcesInFirst||twoPassConfirmed);
-  const conflict=Boolean(first.conflict||(second&&second.conflict)||(second&&second.candidate&&!sameRoute(first,second)));
+  const generated=await generateWithFallback(buildPrompt(item));
+  const parsedResult=parseRouteCandidate(item,generated);
+  const verified=Boolean(parsedResult.candidate);
+  const conflict=Boolean(parsedResult.conflict);
   const webCheckedAt=new Date().toISOString();
-  const resultCandidate=verified?first:null;
-  const relevantLocation=resultCandidate?.relevantLocation||'';
-  const relevantIata=resultCandidate?.relevantIata||'';
-  const firstNote=text(first.parsed?.sourceNote);
-  const secondNote=text(second?.parsed?.sourceNote);
-  const modelNames=[first.modelUsed,second?.modelUsed].filter(Boolean).join(' + ');
+  const relevantLocation=verified?parsedResult.relevantLocation:'';
+  const relevantIata=verified?parsedResult.relevantIata:'';
+  const explicitCount=(parsedResult.grounding.explicitSources||[]).length;
   const noteBase=verified
-    ? (twoPassConfirmed?'Zwei unabhängige Webprüfungen bestätigen dieselbe konkrete Route.':'Mindestens zwei unabhängige Webquellen bestätigen dieselbe konkrete Route.')
-    : (conflict?'Unabhängige Webprüfung widerspricht sich – keine automatische Übernahme.':first.candidate?'Nur eine unabhängig bestätigte Webquelle verfügbar – FLIGHT-008 bleibt offen.':'Aktuelle Webprüfung nicht eindeutig genug.');
-  const detail=[firstNote,secondNote].filter(Boolean).join(' | ');
-  const note=`${noteBase}${detail?` · ${detail}`:''} · Unabhängige Quellen: ${sources.length}.${modelNames?` · Modell: ${modelNames}`:''}`;
+    ? 'Flightradar24 und FlightStats bestätigen datumsspezifisch dieselbe konkrete Route.'
+    : conflict
+      ? 'Die beiden expliziten Webquellen widersprechen sich – keine automatische Übernahme.'
+      : explicitCount<2
+        ? `Explizite URL-Prüfung unvollständig (${explicitCount}/2 Quellen erfolgreich abgerufen) – FLIGHT-008 bleibt offen.`
+        : 'Beide URLs wurden abgerufen, aber die Route wurde nicht von beiden datumsspezifisch bestätigt – FLIGHT-008 bleibt offen.';
+  const modelNote=text(parsedResult.parsed?.sourceNote);
+  const modelName=generated.fallbackUsed?`${generated.modelUsed} (Fallback)`:generated.modelUsed;
+  const note=`${noteBase}${modelNote?` · ${modelNote}`:''} · Explizite Quellen: ${explicitCount}/2 · Modell: ${modelName}`;
   const grounding={
-    renderedContent:renderedContents[0]||'',renderedContents,
-    sources,webSearchQueries:[...new Set(queries)],flightNumber:item.flightNumber,date:item.date,
-    airportEventDate:item.airportEventDate,airportIata:item.airportIata,direction:item.direction,
-    verificationPasses:second?2:1
+    ...parsedResult.grounding,
+    flightNumber:item.flightNumber,date:item.date,airportEventDate:item.airportEventDate,
+    airportIata:item.airportIata,direction:item.direction,verificationPasses:1
   };
   return{
     checked:{
       flightNumber:item.flightNumber,date:item.date,airportEventDate:item.airportEventDate,
       airportEventDateDerived:Boolean(item.airportEventDateDerived),dateAssumed:false,flightTime:item.flightTime||'',
       direction:item.direction,airportIata:item.airportIata||null,
-      flightLocation:verified?relevantLocation:(item.locationFromPlan||first.relevantLocation||''),
-      relevantLocation:verified?relevantLocation:(item.locationFromPlan||first.relevantLocation||''),
+      flightLocation:verified?relevantLocation:(item.locationFromPlan||parsedResult.relevantLocation||''),
+      relevantLocation:verified?relevantLocation:(item.locationFromPlan||parsedResult.relevantLocation||''),
       iata:verified&&/^[A-Z]{3}$/.test(relevantIata)?relevantIata:'',
       confidence:verified?'verified':'uncertain',status:verified?'verified':'needs_manual_check',conflict,
-      sources,sourceCount:sources.length,sourceNote:note,geminiReportedCheckedAt:webCheckedAt,
-      verificationDowngraded:Boolean(first.candidate&&!verified),modelUsed:modelNames,verificationPasses:second?2:1
+      sources:parsedResult.grounding.sources,sourceCount:parsedResult.grounding.sources.length,sourceNote:note,
+      geminiReportedCheckedAt:webCheckedAt,verificationDowngraded:Boolean(!verified),
+      modelUsed:modelName,verificationPasses:1,
+      explicitSourceCount:explicitCount,
+      sourceAConfirmed:Boolean(parsedResult.sourceAConfirmed),
+      sourceBConfirmed:Boolean(parsedResult.sourceBConfirmed)
     },
     grounding
   };
@@ -408,11 +448,11 @@ function renderGrounding(records){
   const withData=list.filter(r=>r?.renderedContent||(Array.isArray(r?.sources)&&r.sources.length));
   if(!withData.length){
     panel.style.display='';
-    panel.innerHTML='<div style="font-size:12px;opacity:.8">Keine Google-Search-Quellen erhalten. Deshalb wurde kein solcher Treffer automatisch als sicher übernommen.</div>';
+    panel.innerHTML='<div style="font-size:12px;opacity:.8">Keine erfolgreich abrufbaren Webquellen erhalten. Deshalb wurde kein solcher Treffer automatisch als sicher übernommen.</div>';
     return;
   }
   panel.style.display='';
-  panel.innerHTML='<div style="font-size:12px;font-weight:800;margin-bottom:6px">Google Search · aktuelle Flugquellen</div>'+
+  panel.innerHTML='<div style="font-size:12px;font-weight:800;margin-bottom:6px">Aktuelle Flugquellen · URL Context / Google Search</div>'+
     withData.map(record=>{
       const sources=Array.isArray(record.sources)?record.sources:[];
       const links=sources.map(source=>`<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:3px 7px 3px 0">${escapeHtml(source.name)}</a>`).join('');

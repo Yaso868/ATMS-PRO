@@ -1,4 +1,4 @@
-  // CORE-007D8A1F1D8P31F5F5 · 18.09.2026: AUTO-FLIGHT RESULT DIAGNOSTIC – zeigt im finalen Morgen-Modus-Status die echte Ursache, wenn die Web-Flugprüfung keine Route sicher übernehmen konnte (technischer Fehler, keine Grounding-Quelle, nur eine Quelle oder Quellenkonflikt). Keine Lockerung von FLIGHT-008.
+  // CORE-007D8A1F1D8P31F5F6 · 18.09.2026: AUTO-FLIGHT EXPLICIT URL SOURCES – FLIGHT-008 nutzt für die automatische Routenprüfung zwei explizite, datumsspezifische Webquellen (Flightradar24 + FlightStats) via Gemini URL Context. Google Search bleibt nur ergänzend. Keine Lockerung der Zwei-Quellen-Regel.
   // CORE-007D8A1F1D8P31F5F4 · 18.09.2026: AUTO-FLIGHT RESPONSE NORMALIZATION FIX – Gemini-Antworten werden robust normalisiert: string "false" zählt nicht mehr als Konflikt; für die Route sind die kanonischen IATA-Endpunkte maßgeblich, Stadtnamen sind nur Darstellung.
   // CORE-007D8A1F1D8P31F5F2 · 18.09.2026: AUTO-FLIGHT DUAL-SOURCE VERIFIER – FLIGHT-008 bleibt strikt. Wenn Google Search in der ersten Prüfung weniger als zwei unabhängige Quellen liefert, fordert ATMS automatisch eine zweite unabhängige Bestätigung an und übernimmt nur übereinstimmende Routen.
   // CORE-007D8A1F1D8P31F5F1 · 18.09.2026: AUTO-FLIGHT IMPORT AUTHORIZATION FIX
@@ -4397,6 +4397,8 @@
   }
 
   function checkedSourceCount(item) {
+    const explicitDeclared = Number(item?.explicitSourceCount);
+    if (Number.isFinite(explicitDeclared) && explicitDeclared >= 0) return explicitDeclared;
     const declared = Number(item?.sourceCount);
     if (Number.isFinite(declared) && declared >= 0) return declared;
     const sources = Array.isArray(item?.sources) ? item.sources : [];
@@ -4974,7 +4976,7 @@
         } else if (Number(flightSummary?.conflictFlights || 0) > 0) {
           parts.push(`${flightSummary.conflictFlights} Flug/Flüge mit Quellenkonflikt`);
         } else if (Number(flightSummary?.noGroundingFlights || 0) > 0) {
-          parts.push(`${flightSummary.noGroundingFlights} Flug/Flüge ohne Google-Search-Quelle`);
+          parts.push(`${flightSummary.noGroundingFlights} Flug/Flüge ohne abrufbare Webquelle`);
         } else if (Number(flightSummary?.singleSourceFlights || 0) > 0) {
           parts.push(`${flightSummary.singleSourceFlights} Flug/Flüge nur mit einer unabhängigen Quelle`);
         } else if (flightSummary && flightSummary.ok === false && !flightSummary.verifiedRides) {
@@ -5011,7 +5013,7 @@
       return window.ATMSAutoFlight;
     }
     if (!autoFlightModulePromise) {
-      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5F5', PLAN_IMPORT_SCRIPT_URL).href;
+      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5F6', PLAN_IMPORT_SCRIPT_URL).href;
       autoFlightModulePromise = import(moduleUrl).then(() => {
         const service = window.ATMSAutoFlight;
         if (!service || typeof service.verifyFlights !== 'function') {
