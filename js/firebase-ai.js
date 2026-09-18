@@ -1,4 +1,4 @@
-// ATMS PRO · CORE-007D8A1F1D8P31F5F2 · AUTO-FLIGHT DUAL-SOURCE VERIFIER
+// ATMS PRO · CORE-007D8A1F1D8P31F5F3 · AUTO-FLIGHT IATA CONSENSUS FIX
 // 05.09.2026 (Europe/Berlin)
 // Firebase AI Logic + App Check + Gemini Developer API + Google Search grounding.
 // Datenschutz: niemals vollständige Planliste/Bild; nur Flugnummer, Datum, Richtung,
@@ -14,7 +14,7 @@ import {
   GoogleAIBackend
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js';
 
-const VERSION='CORE-007D8A1F1D8P31F5F2';
+const VERSION='CORE-007D8A1F1D8P31F5F3';
 const PRIMARY_MODEL='gemini-3.8-flash';
 const FALLBACK_MODEL='gemini-3.5-flash';
 
@@ -241,20 +241,29 @@ function parseRouteCandidate(item,generated){
   const relevantLocation=item.direction==='arrival'?originCity:destinationCity;
   const relevantIata=item.direction==='arrival'?originIata:destinationIata;
   const modelRelevantLocation=text(parsed?.relevantLocation),modelRelevantIata=upper(parsed?.relevantIata);
-  const semanticMismatch=Boolean(modelRelevantLocation&&relevantLocation&&!sameText(modelRelevantLocation,relevantLocation))||
-    Boolean(modelRelevantIata&&relevantIata&&modelRelevantIata!==relevantIata);
-  const conflict=Boolean(parsed?.conflict)||semanticMismatch;
+  // F5F3: Route identity is determined by IATA endpoints, not by localized city labels.
+  // The same airport may appear as e.g. Rome/ROM, Wien/Vienna or Praha/Prague.
+  // A label-only difference must never create a false route conflict.
+  const semanticMismatch=Boolean(modelRelevantIata&&relevantIata&&modelRelevantIata!==relevantIata);
   const routeComplete=Boolean(originCity&&destinationCity&&/^[A-Z]{3}$/.test(originIata)&&/^[A-Z]{3}$/.test(destinationIata));
+  const airportAnchored=Boolean(item.direction==='arrival'
+    ? destinationIata===upper(item.airportIata)
+    : item.direction==='departure'
+      ? originIata===upper(item.airportIata)
+      : false);
+  const conflict=Boolean(parsed?.conflict)||semanticMismatch||(routeComplete&&!airportAnchored);
   const hasGrounding=grounding.sources.length>0||grounding.webSearchQueries.length>0;
-  const candidate=routeComplete&&Boolean(relevantLocation)&&Boolean(relevantIata)&&!conflict&&hasGrounding&&text(parsed?.status).toLowerCase()!=='needs_manual_check';
+  const candidate=routeComplete&&airportAnchored&&Boolean(relevantLocation)&&Boolean(relevantIata)&&!conflict&&hasGrounding&&text(parsed?.status).toLowerCase()!=='needs_manual_check';
   return{
     candidate,parsed,grounding,conflict,originCity,originIata,destinationCity,destinationIata,relevantLocation,relevantIata,
     modelUsed:generated.modelUsed,fallbackUsed:Boolean(generated.fallbackUsed)
   };
 }
 function sameRoute(a,b){
-  return Boolean(a?.candidate&&b?.candidate&&a.originIata===b.originIata&&a.destinationIata===b.destinationIata&&
-    sameText(a.originCity,b.originCity)&&sameText(a.destinationCity,b.destinationCity));
+  // F5F3: Two independent checks confirm the same route when the canonical
+  // airport endpoints match. City labels are presentation text and may differ
+  // by language or publisher wording.
+  return Boolean(a?.candidate&&b?.candidate&&a.originIata===b.originIata&&a.destinationIata===b.destinationIata);
 }
 function independentSources(first,second){
   const firstKeys=new Set((first||[]).map(sourceIdentity).filter(Boolean));

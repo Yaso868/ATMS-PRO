@@ -1,6 +1,7 @@
   // CORE-007D8A1F1D8P31F5F2 · 18.09.2026: AUTO-FLIGHT DUAL-SOURCE VERIFIER – FLIGHT-008 bleibt strikt. Wenn Google Search in der ersten Prüfung weniger als zwei unabhängige Quellen liefert, fordert ATMS automatisch eine zweite unabhängige Bestätigung an und übernimmt nur übereinstimmende Routen.
   // CORE-007D8A1F1D8P31F5F1 · 18.09.2026: AUTO-FLIGHT IMPORT AUTHORIZATION FIX
   // P31F5 remains the AUTO-FLIGHT PIPELINE; P31F5F1 preserves its trusted-click security across the asynchronous flight check.
+  // CORE-007D8A1F1D8P31F5F3 · 18.09.2026: AUTO-FLIGHT IATA CONSENSUS FIX – unabhängige Prüfungen werden anhand der kanonischen IATA-Endpunkte verglichen, nicht anhand lokalisierter Stadtnamen. Airport-Anker wird zusätzlich strikt geprüft.
   // CORE-007D8A1F1D8P31F5 · 18.09.2026: AUTO-FLIGHT PIPELINE – Nach einer sauberen, vom Nutzer gestarteten Plananalyse wird die bestehende Firebase-AI/Gemini-Flugortprüfung automatisch im Hintergrund geladen und ausgeführt. Danach wird die Liste einmalig automatisch übernommen. Fehlt der Dienst, ist das Gemini-Kontingent erreicht oder bleibt ein Flug unsicher, wird niemals geraten oder ein vorhandener Flugort verschlechtert; der Plan bleibt trotzdem sofort nutzbar. Der manuelle Prüfauftrag bleibt nur als Fallback erhalten. DUS/CGN-Kontext und airportEventDate werden vom Auto-Flight-Modul berücksichtigt. Keine Änderung an OCR-, Preis-, Fahrer-, PLAN/DISPO/LIVE- oder Persistenzlogik.
   // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS. Nach einem echten Nutzer-Klick auf „Planliste analysieren“ werden vollständig saubere OCR-Planlisten (0 Hinweise, 0 Fehler) automatisch übernommen und die Fahrtenansicht geöffnet. Offene Flugprüfungen blockieren den Plan nicht. Unsichere OCR-/Preis-/Datumsfälle bleiben weiterhin manuell. Diagnoseblöcke sind im normalen Import eingeklappt.
 // CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
@@ -4999,7 +5000,7 @@
       return window.ATMSAutoFlight;
     }
     if (!autoFlightModulePromise) {
-      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5F2', PLAN_IMPORT_SCRIPT_URL).href;
+      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5F3', PLAN_IMPORT_SCRIPT_URL).href;
       autoFlightModulePromise = import(moduleUrl).then(() => {
         const service = window.ATMSAutoFlight;
         if (!service || typeof service.verifyFlights !== 'function') {
