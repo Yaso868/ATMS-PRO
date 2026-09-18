@@ -1,4 +1,4 @@
-// ATMS PRO · CORE-007D8A1F1D8P31F5 · AUTO-FLIGHT MULTI-AIRPORT
+// ATMS PRO · CORE-007D8A1F1D8P31F5F2 · AUTO-FLIGHT DUAL-SOURCE VERIFIER
 // 05.09.2026 (Europe/Berlin)
 // Firebase AI Logic + App Check + Gemini Developer API + Google Search grounding.
 // Datenschutz: niemals vollständige Planliste/Bild; nur Flugnummer, Datum, Richtung,
@@ -14,7 +14,7 @@ import {
   GoogleAIBackend
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js';
 
-const VERSION='CORE-007D8A1F1D8P31F5';
+const VERSION='CORE-007D8A1F1D8P31F5F2';
 const PRIMARY_MODEL='gemini-3.8-flash';
 const FALLBACK_MODEL='gemini-3.5-flash';
 
@@ -103,21 +103,42 @@ function comparable(value){
   return text(value).toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 }
 function sameText(a,b){return comparable(a)===comparable(b)}
+function sourceIdentity(source){
+  const uri=text(source?.url||source?.uri);
+  const title=text(source?.name||source?.title);
+  const host=safeHost(uri).toLocaleLowerCase('de-DE');
+  // Google may return a redirect URI for grounded sources. In that case the
+  // publisher title is the better independence key than the redirect host.
+  if(host&&!/(?:^|\.)(?:google\.com|googleapis\.com|cloud\.google\.com|vertexaisearch\.cloud\.google\.com)$/.test(host))return`host:${host}`;
+  const titleKey=comparable(title);
+  return titleKey?`title:${titleKey}`:(uri?`uri:${uri}`:'');
+}
+function mergeSources(...groups){
+  const out=[],seen=new Set();
+  for(const group of groups){
+    for(const source of Array.isArray(group)?group:[]){
+      const key=sourceIdentity(source);
+      if(!key||seen.has(key))continue;
+      seen.add(key);out.push(source);
+    }
+  }
+  return out.slice(0,12);
+}
 function extractGrounding(response){
   const metadata=response?.candidates?.[0]?.groundingMetadata||null;
   const chunks=Array.isArray(metadata?.groundingChunks)?metadata.groundingChunks:[];
-  const sourceMap=new Map();
+  const sources=[];
   for(const chunk of chunks){
     const web=chunk?.web;
     const uri=text(web?.uri);
     const title=text(web?.title)||safeHost(uri);
     if(!uri||!title)continue;
-    const identity=title.toLocaleLowerCase('de-DE');
-    if(!sourceMap.has(identity))sourceMap.set(identity,{name:title,url:uri});
+    sources.push({name:title,url:uri});
   }
   return{
     renderedContent:text(metadata?.searchEntryPoint?.renderedContent),
-    sources:[...sourceMap.values()].slice(0,8),
+    renderedContents:text(metadata?.searchEntryPoint?.renderedContent)?[text(metadata.searchEntryPoint.renderedContent)]:[],
+    sources:mergeSources(sources),
     webSearchQueries:Array.isArray(metadata?.webSearchQueries)?metadata.webSearchQueries.map(text).filter(Boolean):[]
   };
 }
@@ -177,7 +198,7 @@ async function ensureReady(){
   return initPromise;
 }
 
-function buildPrompt(item){
+function buildPrompt(item,options={}){
   const payload={
     flightNumber:item.flightNumber,
     date:item.date,
@@ -189,25 +210,56 @@ function buildPrompt(item){
     relevantSide:item.relevantSide,
     locationFromPlan:item.locationFromPlan||null
   };
+  const phase=text(options?.phase)||'discovery';
+  const priorCandidate=options?.priorCandidate||null;
+  const excludedSources=Array.isArray(options?.excludedSources)?options.excludedSources.map(text).filter(Boolean):[];
+  const secondPass=phase==='confirmation';
   return `ATMS PRO – FLIGHT-008 strikte aktuelle Flugprüfung.\n\n`+
 `Prüfe GENAU EINEN konkreten Flug mit Google Search anhand aktueller, DATUMSSPEZIFISCHER öffentlicher Webdaten. Verwende keine gespeicherte oder typische Flugnummer→Route-Zuordnung.\n\n`+
+(secondPass
+  ? `DIES IST DIE UNABHÄNGIGE ZWEITPRÜFUNG. Suche eine vom ersten Treffer unabhängige Bestätigung. Verwende nach Möglichkeit Airport oder Airline; sonst einen seriösen unabhängigen Flugtracker. Verlasse dich NICHT auf bereits verwendete Quellen/Publisher: ${excludedSources.length?excludedSources.join(' | '):'keine angegeben'}.\nVorläufiger Kandidat aus Prüfung 1 (nur zum Gegenprüfen, nicht als Quelle): ${JSON.stringify(priorCandidate)}\n\n`
+  : `DIES IST PRÜFUNG 1. Ermittle die konkrete Route. Schon EINE datumsspezifische Quelle darf einen Kandidaten liefern; ATMS führt bei weniger als zwei unabhängigen Quellen automatisch eine zweite, unabhängige Prüfung durch.\n\n`)+
 `VERBINDLICHE REGELN:\n`+
-`1. Nutze Google Search. Ohne aktuelle Suchgrundlage darf status niemals "verified" sein.\n`+
+`1. Nutze Google Search. Ohne aktuelle Suchgrundlage darf kein Routenkandidat ausgegeben werden.\n`+
 `2. airportIata ist der für diese Fahrt relevante Flughafen und muss EXAKT verwendet werden.\n`+
 `3. direction=arrival: relevantLocation ist der HERKUNFTSORT des konkreten Fluges NACH airportIata.\n`+
 `4. direction=departure: relevantLocation ist der ZIELORT des konkreten Fluges AB airportIata.\n`+
 `5. Für die Webprüfung ist airportEventDate EXAKT maßgeblich. date bleibt unverändert das ATMS-Fahrtdatum.\n`+
-`6. flightTime ist nur ein Unterscheidungsmerkmal. Wenn null und mehrere passende Flüge existieren: needs_manual_check.\n`+
-`7. status="verified" und confidence="high" nur, wenn mindestens ZWEI voneinander unabhängige datumsspezifische Webquellen dieselbe konkrete Route bestätigen. Eine einzelne Quelle reicht nie.\n`+
-`8. Mindestens eine Quelle soll nach Möglichkeit der betroffene Airport oder die Airline sein; die zweite muss unabhängig davon sein.\n`+
-`9. Bei widersprüchlichen Quellen, unklarer Verbindung über airportIata oder fehlender Datumsbestätigung: needs_manual_check. Nicht raten.\n`+
-`10. locationFromPlan ist ausschließlich Vergleichswert, niemals Quelle. Bei sicherem Widerspruch conflict=true.\n`+
-`11. Erfinde keine Städte, IATA-Codes, Quellen oder Zeiten.\n`+
-`12. Antworte ausschließlich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, sourceNote.\n`+
-`status: verified|needs_manual_check; confidence: high|medium|low.\n\n`+
+`6. flightTime ist nur ein Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und keine eindeutige Zuordnung möglich ist: needs_manual_check.\n`+
+`7. locationFromPlan ist ausschließlich Vergleichswert, niemals Quelle. Bei sicherem Widerspruch conflict=true.\n`+
+`8. Erfinde keine Städte, IATA-Codes, Quellen oder Zeiten.\n`+
+`9. Antworte ausschließlich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, sourceNote.\n`+
+`status: candidate|needs_manual_check; confidence: high|medium|low.\n\n`+
 `Prüfdaten:\n${JSON.stringify(payload,null,2)}`;
 }
-
+function parseRouteCandidate(item,generated){
+  const response=generated.result?.response;
+  const grounding=extractGrounding(response);
+  const parsed=parseJsonObject(response?.text?.()||'');
+  const originCity=text(parsed?.originCity),originIata=upper(parsed?.originIata);
+  const destinationCity=text(parsed?.destinationCity),destinationIata=upper(parsed?.destinationIata);
+  const relevantLocation=item.direction==='arrival'?originCity:destinationCity;
+  const relevantIata=item.direction==='arrival'?originIata:destinationIata;
+  const modelRelevantLocation=text(parsed?.relevantLocation),modelRelevantIata=upper(parsed?.relevantIata);
+  const semanticMismatch=Boolean(modelRelevantLocation&&relevantLocation&&!sameText(modelRelevantLocation,relevantLocation))||
+    Boolean(modelRelevantIata&&relevantIata&&modelRelevantIata!==relevantIata);
+  const conflict=Boolean(parsed?.conflict)||semanticMismatch;
+  const routeComplete=Boolean(originCity&&destinationCity&&/^[A-Z]{3}$/.test(originIata)&&/^[A-Z]{3}$/.test(destinationIata));
+  const hasGrounding=grounding.sources.length>0||grounding.webSearchQueries.length>0;
+  const candidate=routeComplete&&Boolean(relevantLocation)&&Boolean(relevantIata)&&!conflict&&hasGrounding&&text(parsed?.status).toLowerCase()!=='needs_manual_check';
+  return{
+    candidate,parsed,grounding,conflict,originCity,originIata,destinationCity,destinationIata,relevantLocation,relevantIata,
+    modelUsed:generated.modelUsed,fallbackUsed:Boolean(generated.fallbackUsed)
+  };
+}
+function sameRoute(a,b){
+  return Boolean(a?.candidate&&b?.candidate&&a.originIata===b.originIata&&a.destinationIata===b.destinationIata&&
+    sameText(a.originCity,b.originCity)&&sameText(a.destinationCity,b.destinationCity));
+}
+function independentSources(first,second){
+  const firstKeys=new Set((first||[]).map(sourceIdentity).filter(Boolean));
+  return (second||[]).some(source=>{const key=sourceIdentity(source);return Boolean(key&&!firstKeys.has(key));});
+}
 function checkedManual(item,note,grounding=null){
   return{
     flightNumber:item.flightNumber,date:item.date,airportEventDate:item.airportEventDate||item.date,
@@ -241,46 +293,67 @@ async function generateWithFallback(prompt){
 
 async function verifyOne(item){
   if(!item.date||!item.airportEventDate||!item.airportIata||!['arrival','departure'].includes(item.direction)){
-    const g={renderedContent:'',sources:[],webSearchQueries:[]};
+    const g={renderedContent:'',renderedContents:[],sources:[],webSearchQueries:[]};
     return{checked:checkedManual(item,'Datum, Flughafen oder Flugrichtung ist nicht eindeutig – keine automatische Webprüfung.',g),grounding:g};
   }
-  const generated=await generateWithFallback(buildPrompt(item));
-  const response=generated.result?.response;
-  const grounding=extractGrounding(response);
-  const parsed=parseJsonObject(response?.text?.()||'');
-  const originCity=text(parsed?.originCity),originIata=upper(parsed?.originIata);
-  const destinationCity=text(parsed?.destinationCity),destinationIata=upper(parsed?.destinationIata);
-  const relevantLocation=item.direction==='arrival'?originCity:destinationCity;
-  const relevantIata=item.direction==='arrival'?originIata:destinationIata;
-  const modelRelevantLocation=text(parsed?.relevantLocation),modelRelevantIata=upper(parsed?.relevantIata);
-  const semanticMismatch=Boolean(modelRelevantLocation&&relevantLocation&&!sameText(modelRelevantLocation,relevantLocation))||
-    Boolean(modelRelevantIata&&relevantIata&&modelRelevantIata!==relevantIata);
-  const conflict=Boolean(parsed?.conflict)||semanticMismatch;
-  const sourceCount=grounding.sources.length;
-  const routeComplete=Boolean(originCity&&destinationCity&&/^[A-Z]{3}$/.test(originIata)&&/^[A-Z]{3}$/.test(destinationIata));
-  const claimedVerified=text(parsed?.status).toLowerCase()==='verified'&&text(parsed?.confidence).toLowerCase()==='high'&&routeComplete&&Boolean(relevantLocation)&&!conflict;
-  const verified=claimedVerified&&sourceCount>=2;
+
+  const firstGenerated=await generateWithFallback(buildPrompt(item,{phase:'discovery'}));
+  const first=parseRouteCandidate(item,firstGenerated);
+  let second=null;
+  let sources=first.grounding.sources;
+  let renderedContents=[...(first.grounding.renderedContents||[])];
+  let queries=[...(first.grounding.webSearchQueries||[])];
+
+  // FLIGHT-008 bleibt strikt: zwei voneinander unabhängige, datumsspezifische
+  // Webquellen sind Pflicht. Liefert Google Search im ersten Lauf nur eine
+  // Quelle, fordert ATMS automatisch eine zweite, unabhängige Bestätigung an.
+  if(first.candidate&&sources.length<2){
+    const excludedSources=sources.map(source=>text(source.name)||safeHost(source.url)).filter(Boolean);
+    const priorCandidate={originCity:first.originCity,originIata:first.originIata,destinationCity:first.destinationCity,destinationIata:first.destinationIata};
+    const secondGenerated=await generateWithFallback(buildPrompt(item,{phase:'confirmation',priorCandidate,excludedSources}));
+    second=parseRouteCandidate(item,secondGenerated);
+    sources=mergeSources(first.grounding.sources,second.grounding.sources);
+    renderedContents.push(...(second.grounding.renderedContents||[]));
+    queries.push(...(second.grounding.webSearchQueries||[]));
+  }
+
+  const twoSourcesInFirst=first.candidate&&first.grounding.sources.length>=2;
+  const twoPassConfirmed=Boolean(first.candidate&&second&&sameRoute(first,second)&&independentSources(first.grounding.sources,second.grounding.sources));
+  const verified=Boolean(twoSourcesInFirst||twoPassConfirmed);
+  const conflict=Boolean(first.conflict||(second&&second.conflict)||(second&&second.candidate&&!sameRoute(first,second)));
   const webCheckedAt=new Date().toISOString();
-  const parseOk=Object.keys(parsed).length>0;
-  const noteBase=text(parsed?.sourceNote)||(verified?'Aktuelle Webprüfung bestätigt.':parseOk?'Aktuelle Webprüfung nicht eindeutig genug.':'Google-Suche erfolgreich, Antwortformat konnte lokal nicht sicher ausgewertet werden.');
-  const modelNote=generated.fallbackUsed?` · Modell-Fallback: ${generated.modelUsed}`:` · Modell: ${generated.modelUsed}`;
-  const note=`${noteBase} · Google Search: ${sourceCount} unabhängige Quelle(n).${modelNote}`;
+  const resultCandidate=verified?first:null;
+  const relevantLocation=resultCandidate?.relevantLocation||'';
+  const relevantIata=resultCandidate?.relevantIata||'';
+  const firstNote=text(first.parsed?.sourceNote);
+  const secondNote=text(second?.parsed?.sourceNote);
+  const modelNames=[first.modelUsed,second?.modelUsed].filter(Boolean).join(' + ');
+  const noteBase=verified
+    ? (twoPassConfirmed?'Zwei unabhängige Webprüfungen bestätigen dieselbe konkrete Route.':'Mindestens zwei unabhängige Webquellen bestätigen dieselbe konkrete Route.')
+    : (conflict?'Unabhängige Webprüfung widerspricht sich – keine automatische Übernahme.':first.candidate?'Nur eine unabhängig bestätigte Webquelle verfügbar – FLIGHT-008 bleibt offen.':'Aktuelle Webprüfung nicht eindeutig genug.');
+  const detail=[firstNote,secondNote].filter(Boolean).join(' | ');
+  const note=`${noteBase}${detail?` · ${detail}`:''} · Unabhängige Quellen: ${sources.length}.${modelNames?` · Modell: ${modelNames}`:''}`;
+  const grounding={
+    renderedContent:renderedContents[0]||'',renderedContents,
+    sources,webSearchQueries:[...new Set(queries)],flightNumber:item.flightNumber,date:item.date,
+    airportEventDate:item.airportEventDate,airportIata:item.airportIata,direction:item.direction,
+    verificationPasses:second?2:1
+  };
   return{
     checked:{
       flightNumber:item.flightNumber,date:item.date,airportEventDate:item.airportEventDate,
       airportEventDateDerived:Boolean(item.airportEventDateDerived),dateAssumed:false,flightTime:item.flightTime||'',
       direction:item.direction,airportIata:item.airportIata||null,
-      flightLocation:verified?relevantLocation:(item.locationFromPlan||relevantLocation||''),
-      relevantLocation:verified?relevantLocation:(item.locationFromPlan||relevantLocation||''),
+      flightLocation:verified?relevantLocation:(item.locationFromPlan||first.relevantLocation||''),
+      relevantLocation:verified?relevantLocation:(item.locationFromPlan||first.relevantLocation||''),
       iata:verified&&/^[A-Z]{3}$/.test(relevantIata)?relevantIata:'',
       confidence:verified?'verified':'uncertain',status:verified?'verified':'needs_manual_check',conflict,
-      sources:grounding.sources,sourceCount,sourceNote:note,geminiReportedCheckedAt:webCheckedAt,
-      verificationDowngraded:Boolean(claimedVerified&&sourceCount<2),modelUsed:generated.modelUsed
+      sources,sourceCount:sources.length,sourceNote:note,geminiReportedCheckedAt:webCheckedAt,
+      verificationDowngraded:Boolean(first.candidate&&!verified),modelUsed:modelNames,verificationPasses:second?2:1
     },
-    grounding:{...grounding,flightNumber:item.flightNumber,date:item.date,airportEventDate:item.airportEventDate,airportIata:item.airportIata,direction:item.direction,modelUsed:generated.modelUsed}
+    grounding
   };
 }
-
 async function verifyFlights(rides,options={}){
   await ensureReady();
   const flights=uniqueFlights(rides);
@@ -326,7 +399,8 @@ function renderGrounding(records){
     withData.map(record=>{
       const sources=Array.isArray(record.sources)?record.sources:[];
       const links=sources.map(source=>`<a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin:3px 7px 3px 0">${escapeHtml(source.name)}</a>`).join('');
-      const suggestions=record.renderedContent?`<div class="atms-google-search-suggestions">${record.renderedContent}</div>`:'';
+      const suggestionBlocks=(Array.isArray(record.renderedContents)&&record.renderedContents.length?record.renderedContents:[record.renderedContent]).filter(Boolean);
+      const suggestions=suggestionBlocks.map(content=>`<div class="atms-google-search-suggestions">${content}</div>`).join('');
       return `<div style="padding:8px 0;border-top:1px solid rgba(255,255,255,.10)"><b style="font-size:12px">${escapeHtml(record.flightNumber||'Flug')}</b>${suggestions}<div style="font-size:11px;line-height:1.35">${links||'Keine Quellen'}</div></div>`;
     }).join('');
 }
