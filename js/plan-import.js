@@ -1,7 +1,11 @@
+  // CORE-007D8A1F1D8P31F5 · 18.09.2026: AUTO-FLIGHT PIPELINE – Nach einer sauberen, vom Nutzer gestarteten Plananalyse wird die bestehende Firebase-AI/Gemini-Flugortprüfung automatisch im Hintergrund geladen und ausgeführt. Danach wird die Liste einmalig automatisch übernommen. Fehlt der Dienst, ist das Gemini-Kontingent erreicht oder bleibt ein Flug unsicher, wird niemals geraten oder ein vorhandener Flugort verschlechtert; der Plan bleibt trotzdem sofort nutzbar. Der manuelle Prüfauftrag bleibt nur als Fallback erhalten. DUS/CGN-Kontext und airportEventDate werden vom Auto-Flight-Modul berücksichtigt. Keine Änderung an OCR-, Preis-, Fahrer-, PLAN/DISPO/LIVE- oder Persistenzlogik.
   // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS. Nach einem echten Nutzer-Klick auf „Planliste analysieren“ werden vollständig saubere OCR-Planlisten (0 Hinweise, 0 Fehler) automatisch übernommen und die Fahrtenansicht geöffnet. Offene Flugprüfungen blockieren den Plan nicht. Unsichere OCR-/Preis-/Datumsfälle bleiben weiterhin manuell. Diagnoseblöcke sind im normalen Import eingeklappt.
 // CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
 (() => {
   'use strict';
+
+  const PLAN_IMPORT_SCRIPT_URL = document.currentScript?.src || new URL('./js/plan-import.js', location.href).href;
+  let autoFlightModulePromise = null;
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
@@ -52,7 +56,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, autoImportCompleted: false };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, autoImportCompleted: false, autoPipelineInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -4852,7 +4856,10 @@
     state.ocrDiagnosticSelfCheck = null;
     state.issues = [];
     state.meta = {};
+    state.pipelineGeneration += 1;
+    state.autoPipelineInProgress = false;
     state.autoImportCompleted = false;
+    state.autoFlightSummary = null;
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
@@ -4911,8 +4918,50 @@
     }
   }
 
+  async function runCleanPlanAutoPipeline(generation) {
+    const status = $('importStatus');
+    let flightSummary = null;
+    try {
+      if (generation !== state.pipelineGeneration) return false;
+      if (status) status.textContent = 'Plan sauber · Automatik startet …';
+
+      if (state.rides.some(ride => cellText(ride?.flightNumber))) {
+        flightSummary = await runAutomaticFlightCheck({
+          automaticPipeline: true,
+          expectedGeneration: generation
+        });
+      }
+
+      if (generation !== state.pipelineGeneration) return false;
+      state.autoFlightSummary = flightSummary;
+      const imported = importRides({ auto: true });
+      if (!imported) return false;
+
+      if (status) {
+        const parts = ['Fahrten automatisch übernommen', 'Morgen-Modus aktiv'];
+        if (flightSummary?.verifiedRides > 0) {
+          parts.push(`${flightSummary.verifiedRides} Fahrt(en) mit Flugort automatisch geprüft`);
+        }
+        if (flightSummary?.uncertainRides > 0) {
+          parts.push(`${flightSummary.uncertainRides} Flugzuordnung(en) bleiben sicher offen`);
+        }
+        if (flightSummary?.quotaBlocked) {
+          parts.push('Gemini-Kontingent derzeit erreicht');
+        } else if (flightSummary?.serviceUnavailable) {
+          parts.push('Flugort-Automatik derzeit nicht verfügbar');
+        } else if (flightSummary && flightSummary.ok === false && !flightSummary.verifiedRides) {
+          parts.push('Flugort-Automatik ohne sichere Änderung');
+        }
+        status.textContent = `${parts.join(' · ')}.`;
+      }
+      return true;
+    } finally {
+      if (generation === state.pipelineGeneration) state.autoPipelineInProgress = false;
+    }
+  }
+
   function maybeAutoImportCleanPlan() {
-    if (state.autoImportCompleted || !state.rides.length) return false;
+    if (state.autoImportCompleted || state.autoPipelineInProgress || !state.rides.length) return false;
     const actionable = (Array.isArray(state.issues) ? state.issues : []).filter(issue => issue.kind !== 'flight_check');
     const errors = actionable.filter(issue => issue.level === 'error').length;
     const warnings = actionable.filter(issue => issue.level === 'warning').length;
@@ -4921,30 +4970,63 @@
     if (typeof window.ATMSAuthorizeCleanPlanAutoImport !== 'function') return false;
     const gate = window.ATMSAuthorizeCleanPlanAutoImport();
     if (!gate || gate.ok !== true) return false;
+
     state.autoImportCompleted = true;
-    return importRides({ auto: true });
+    state.autoPipelineInProgress = true;
+    const generation = state.pipelineGeneration;
+    void runCleanPlanAutoPipeline(generation);
+    return true;
   }
 
-  async function runAutomaticFlightCheck() {
+  async function ensureAutoFlightService() {
+    if (window.ATMSAutoFlight && typeof window.ATMSAutoFlight.verifyFlights === 'function') {
+      return window.ATMSAutoFlight;
+    }
+    if (!autoFlightModulePromise) {
+      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5', PLAN_IMPORT_SCRIPT_URL).href;
+      autoFlightModulePromise = import(moduleUrl).then(() => {
+        const service = window.ATMSAutoFlight;
+        if (!service || typeof service.verifyFlights !== 'function') {
+          throw new Error('ATMS Auto-Flight-Modul wurde geladen, stellt aber keine Flugprüfung bereit.');
+        }
+        return service;
+      }).catch(error => {
+        autoFlightModulePromise = null;
+        throw error;
+      });
+    }
+    return autoFlightModulePromise;
+  }
+
+  async function runAutomaticFlightCheck(options = {}) {
     if (!state.rides.length) return;
     const status = $('importStatus');
     const button = $('copyFlightCheckBtn');
     const fallbackButton = $('copyFlightCheckFallbackBtn');
-    const service = window.ATMSAutoFlight;
     const quotaSessionKey = 'atms_auto_flight_quota_blocked_session';
+    const automaticPipeline = Boolean(options?.automaticPipeline);
+    const expectedGeneration = Number.isFinite(Number(options?.expectedGeneration)) ? Number(options.expectedGeneration) : null;
 
     if (sessionStorage.getItem(quotaSessionKey) === '1') {
       if (fallbackButton) fallbackButton.style.display = '';
-      if (status) status.textContent = 'Automatische Flugprüfung ist in dieser Sitzung wegen erreichtem Gemini-Kontingent pausiert. Es werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
-      if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
-      return;
+      if (status) status.textContent = automaticPipeline
+        ? 'Plan ist sauber. Flugort-Automatik pausiert wegen erreichtem Gemini-Kontingent; die Fahrten werden trotzdem automatisch übernommen.'
+        : 'Automatische Flugprüfung ist in dieser Sitzung wegen erreichtem Gemini-Kontingent pausiert. Es werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
+      if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+      return { ok: false, quotaBlocked: true, technicalFailureCount: 0 };
     }
 
-    if (!service || typeof service.verifyFlights !== 'function') {
-      if (status) status.textContent = 'Automatische Flugprüfung ist noch nicht verfügbar. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.';
+    let service = null;
+    try {
+      service = await ensureAutoFlightService();
+    } catch (error) {
       if (fallbackButton) fallbackButton.style.display = '';
-      if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung nicht verfügbar', 'warn');
-      return;
+      const message = cellText(error?.message) || 'Auto-Flight-Modul konnte nicht geladen werden.';
+      if (status) status.textContent = automaticPipeline
+        ? `Plan ist sauber. Flugort-Automatik derzeit nicht verfügbar (${message}); die Fahrten werden trotzdem automatisch übernommen.`
+        : `Automatische Flugprüfung ist noch nicht verfügbar: ${message}. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.`;
+      if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung nicht verfügbar', 'warn');
+      return { ok: false, serviceUnavailable: true, errorMessage: message, technicalFailureCount: 0 };
     }
 
     if (button) {
@@ -4954,7 +5036,7 @@
     if (fallbackButton) fallbackButton.style.display = 'none';
 
     try {
-      if (status) status.textContent = 'Automatische aktuelle Flugprüfung wird gestartet …';
+      if (status) status.textContent = automaticPipeline ? 'Plan sauber · Flugorte werden automatisch mit Gemini + aktuellen Webquellen geprüft …' : 'Automatische aktuelle Flugprüfung wird gestartet …';
       const result = await service.verifyFlights(state.rides, {
         onProgress: progress => {
           if (!status) return;
@@ -4967,6 +5049,9 @@
 
       const checked = Array.isArray(result?.checked) ? result.checked : [];
       if (!checked.length) throw new Error('Die automatische Flugprüfung hat kein auswertbares Ergebnis zurückgegeben.');
+      if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) {
+        return { ok: false, stale: true, technicalFailureCount: 0 };
+      }
 
       const applied = applyGeminiResultsToStagedPlan(checked, cellText(result?.completedAt) || new Date().toISOString());
       if (typeof service.renderGrounding === 'function') service.renderGrounding(result?.grounding || []);
@@ -4992,18 +5077,32 @@
       try {
         window.dispatchEvent(new CustomEvent('atms:gemini-flight-result', { detail: { checked, scope: 'staged-auto' } }));
       } catch (_) {}
+      return {
+        ok: technicalFailures === 0,
+        checkedCount: checked.length,
+        verifiedRides: applied.verifiedRides,
+        uncertainRides: applied.uncertainRides,
+        matchedRides: applied.matchedRides,
+        technicalFailureCount: technicalFailures,
+        quotaBlocked: quotaFailure
+      };
     } catch (error) {
       if (fallbackButton) fallbackButton.style.display = '';
       const message = cellText(error?.message) || 'unbekannter technischer Fehler';
       const quotaFailure = /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(message);
       if (quotaFailure) {
         sessionStorage.setItem(quotaSessionKey, '1');
-        if (status) status.textContent = 'Automatische Flugprüfung derzeit wegen erreichtem Gemini-Kontingent nicht verfügbar. Es wurden keine Fahrtdaten überschrieben und in dieser Sitzung werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
-        if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+        if (status) status.textContent = automaticPipeline
+          ? 'Flugort-Automatik wegen erreichtem Gemini-Kontingent pausiert. Die Fahrten werden trotzdem automatisch übernommen.'
+          : 'Automatische Flugprüfung derzeit wegen erreichtem Gemini-Kontingent nicht verfügbar. Es wurden keine Fahrtdaten überschrieben und in dieser Sitzung werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
+        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
       } else {
-        if (status) status.textContent = `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
-        if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
+        if (status) status.textContent = automaticPipeline
+          ? `Flugort-Automatik technisch nicht verfügbar (${message}). Die Fahrten werden trotzdem automatisch übernommen.`
+          : `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
+        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
       }
+      return { ok: false, quotaBlocked: quotaFailure, errorMessage: message, technicalFailureCount: 1 };
     } finally {
       if (button) {
         button.disabled = !state.rides.some(ride => ride.flightNumber);
