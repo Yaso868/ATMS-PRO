@@ -1,7 +1,4 @@
-// CORE-007D8A1F1D8P31 · 18.09.2026: RIDES + DONE INDEXEDDB DURABLE SHADOW – Erweitert den unabhängigen IndexedDB-Durable-Shadow auf Fahrten (rides) und Erledigt-Status (DONE). Beide Bereiche werden bei verifizierten Writes zusammen mit Flugcache, verifiziertem Flugbackup und Ride-Overrides in den Durable-Record gespiegelt, bei fehlendem localStorage sicher wiederhergestellt und in der Diagnose als Durable-Coverage geprüft. Startup- und manuelle Recovery laden wiederhergestellte Fahrten/DONE sofort in den In-Memory-Zustand, ohne vorhandene aktuelle Werte zu überschreiben. Der P30-Roundtrip-Selbsttest bleibt isoliert; keine Cloud und keine Änderung an PLAN/DISPO/LIVE-, OCR-, Flug-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
-// CORE-007D8A1F1D8P30 · 18.09.2026: INDEXEDDB DURABLE ROUNDTRIP SELFTEST – Erweitert den bestehenden Persistenz-Selbsttest um einen echten isolierten IndexedDB-Schreib-/Lese-/Lösch-Rundtest im vorhandenen Durable-Store. Verwendet ausschließlich einen separaten temporären Test-Record und verändert den produktiven Durable-Record, echte Fahrten, DONE, Flugcache, Ride-Overrides oder sonstige ATMS-Daten nicht. Der Test-Record wird nach der Prüfung wieder entfernt; Diagnose und Copy-Ausgabe zeigen das Ergebnis separat an. Keine Cloud, keine Änderung an PLAN/DISPO/LIVE-, OCR-, Flug-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
-// CORE-007D8A1F1D8P29F1 · 18.09.2026: P28 SELFTEST COMPATIBILITY FIX – Der bestehende Ersatzfahrer-Selbsttest erkennt nach P29 den zentralen executeLiveHandoverForSource-Pfad korrekt als erneute Verfügbarkeitsprüfung. Ausschließlich die Testverdrahtungsprüfung wurde angepasst; produktive Übergabe-, PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- und Persistenzlogik bleiben unverändert.
-// CORE-007D8A1F1D8P29 · 18.09.2026: LIVE-DISPO ERSATZFAHRER-ÜBERGABE-ENDTEST – Ergänzt einen isolierten Endtest für die tatsächliche Übergabe einer Fahrt an einen sicher verfügbaren Ersatzfahrer. Die produktive Übergabe nutzt dafür denselben zentralen Guard-Pfad mit erneuter Verfügbarkeitsprüfung unmittelbar vor der Zuweisung. Der Selbsttest arbeitet ausschließlich mit künstlichen In-Memory-Testdaten und prüft erfolgreiche Einzelzuweisung, unveränderte Nebenfahrten, Blockade bei neu entstandener Ersatzfahrer-Belegung, Blockade bei inzwischen geänderter Ausgangszuordnung sowie Unverändertheit echter Fahrten/DONE/lokaler ATMS-Daten. Keine Änderung an PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- oder Persistenzlogik.
+// CORE-007D8A1F1D8P31F1 · 18.09.2026: LIVE PRIMARY SOURCE ACCEPTANCE – LIVE-FLIGHT akzeptiert im laufenden Betrieb eine einzige aktuelle Primärquelle, wenn sie das konkrete Flughafenereignis eindeutig belegt: offizielle DUS-/CGN-Airportquelle, offizielle Eurowings-Quelle oder exakte Flightradar24-Flugseite. Zwei vorhandene unabhängige Quellen werden weiterhin als Konsens geprüft; bei Quellenwiderspruch erfolgt keine automatische LIVE-Übernahme. FLIGHT-008/Flugortprüfung, OCR, PLAN/DISPO, Persistenz und übrige Logik bleiben unverändert.
 // CORE-007D8A1F1D8P28 · 18.09.2026: LIVE-DISPO ERSATZFAHRER-SELBSTTEST – Ergänzt einen isolierten Selbsttest für den bestehenden CORE-006Y Driver Availability Guard. Getestet werden aktiv/inaktiv, Trackingfreigabe, eigene offene Fahrt, erledigte Fahrt sowie die erneute Guard-Prüfung vor „Lösung übernehmen“. Der Test arbeitet ausschließlich mit künstlichen In-Memory-Testdaten und prüft zusätzlich, dass echte Fahrten, DONE und lokale ATMS-Daten unverändert bleiben. Keine Änderung an PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- oder Persistenzlogik.
 // CORE-007D8A1F1D8P27 · 17.09.2026: LIVE-DISPO PICKUP DELAY BASIS FIX – Fahrerwarnungen und Live-Dispo-Verspätungsbewertung verwenden jetzt ausschließlich die Differenz zwischen bestätigter LIVE-Abholzeit und DISPO-Zeit (Fallback PLAN), nicht mehr die reine Flugverspätung am Airport. Flugstatus, LIVE-Ankunft/Abflug, Arrival-Puffer, PLAN/DISPO/LIVE-Trennung, GPS, Routing, Nachrichten, Fahrer und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P26S · 17.09.2026: LIVE-DISPO VISUAL BALANCE PACK – Übernimmt den bestätigten Zielbild-Feinschliff konservativ: der obere Button wird eindeutig als Live-Dispo-spezifisch benannt, verbliebene Legacy-Einzelbedienelemente werden im eingeklappten Zielbild sicher ausgeblendet und die mobile Vertikalbalance wird leicht gestrafft. Maximale P26Q-Lesbarkeit, globale Bottom-Navigation sowie LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- und Persistenzlogik bleiben unverändert.
@@ -67,7 +64,7 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';const PERSIST_DURABLE_CRITICAL_KEYS=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='',persistenceDurableSelfTestLast=null;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -166,8 +163,8 @@ function updatePersistenceSafetyKey(key,rawValue,reason='write'){
 }
 // CORE-005V5: Zweite, unabhaengige Persistenzschicht in IndexedDB.
 // Sie ist absichtlich getrennt von localStorage, damit ein unerwarteter Verlust
-// des kompletten Safety-/Audit-Containers weder Fahrten/DONE noch die letzte
-// verifizierte Flugpruefung mitreissen kann. Fehlende aktuelle Werte loeschen den Durable-Shadow nie.
+// des kompletten Safety-/Audit-Containers die letzte verifizierte Flugpruefung
+// nicht mehr mitreissen kann. Fehlende aktuelle Werte loeschen den Durable-Shadow nie.
 function openPersistenceDurableDb(){
   return new Promise((resolve,reject)=>{
     try{
@@ -209,7 +206,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of PERSIST_DURABLE_CRITICAL_KEYS){
+  for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY]){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
@@ -234,11 +231,6 @@ async function initPersistenceDurableShadow(){
     persistenceDurableError='';
     const result=restoreMissingCriticalPersistence('startup-durable');
     if(result.restored){
-      // P31: Bei einer Wiederherstellung aus IndexedDB zuerst den gerade wiederhergestellten
-      // localStorage-Zustand neu einlesen. So kann ein frueh aufgeloester Async-Startup niemals
-      // eine restaurierte Fahrtenliste/DONE mit noch leerem In-Memory-Zustand ueberschreiben.
-      try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(_){rides=[]}
-      try{done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'))}catch(_){done=new Set()}
       recoverVerifiedFlightCache();
       const restoredRides=applyFlightCacheToRides(applyRideOverrides(rides).rides);
       rides=restoredRides.rides;
@@ -278,7 +270,7 @@ function capturePersistenceSafety(reason='snapshot'){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=PERSIST_DURABLE_CRITICAL_KEYS;
+    const protectedCritical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -305,7 +297,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
-    if(PERSIST_DURABLE_CRITICAL_KEYS.includes(key)){
+    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY].includes(key)){
       const storage={...(persistenceDurableShadow?.storage||{})};storage[key]=value;persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:'verified-write:'+reason,storage};persistenceDurableReady=true;
       writePersistenceDurableShadow(storage,'verified-write:'+reason).catch(e=>{persistenceDurableError=String(e?.message||e);persistAudit('durable_sync_failed',{reason:'verified-write:'+reason,message:persistenceDurableError})});
     }
@@ -319,7 +311,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  const critical=PERSIST_DURABLE_CRITICAL_KEYS;
+  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
@@ -343,91 +335,8 @@ function persistenceSelfTest(){
     return {ok,storageWritable:ok,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString()};
   }catch(e){try{localStorage.removeItem(key)}catch(_){ }return {ok:false,storageWritable:false,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString(),error:String(e?.message||e)}}
 }
-// CORE-007D8A1F1D8P30: Echter IndexedDB-Rundtest mit separatem Test-Record.
-// Der produktive Record PERSIST_DURABLE_RECORD ('latest') wird dabei weder gelesen-veraendert
-// noch ueberschrieben. Der temporaere Record wird nach dem Read-Back wieder geloescht.
-async function persistenceDurableRoundTripSelfTest(){
-  const record='__ATMSPRO_P30_SELFTEST__';
-  const token='p30-'+Date.now()+'-'+Math.random().toString(36).slice(2);
-  const checkedAt=new Date().toISOString();
-  let writeOk=false,readBackOk=false,cleanupOk=false,error='';
-  const close=db=>{try{db?.close()}catch(_){ }};
-  const deleteTestRecord=async()=>{
-    let db=null;
-    try{
-      db=await openPersistenceDurableDb();
-      await new Promise((resolve,reject)=>{
-        const tx=db.transaction(PERSIST_DURABLE_STORE,'readwrite');
-        tx.oncomplete=()=>resolve();
-        tx.onerror=()=>reject(tx.error||new Error('IndexedDB-Testrecord konnte nicht geloescht werden'));
-        tx.objectStore(PERSIST_DURABLE_STORE).delete(record);
-      });
-      return true;
-    }finally{close(db)}
-  };
-  try{
-    // Eventuell von einem frueher abgebrochenen Test verbliebenen Testrecord bereinigen.
-    try{await deleteTestRecord()}catch(_){ }
-    let db=await openPersistenceDurableDb();
-    try{
-      const payload={token,checkedAt,purpose:'CORE-007D8A1F1D8P30'};
-      await new Promise((resolve,reject)=>{
-        const tx=db.transaction(PERSIST_DURABLE_STORE,'readwrite');
-        tx.oncomplete=()=>resolve();
-        tx.onerror=()=>reject(tx.error||new Error('IndexedDB-Rundtest Schreibfehler'));
-        tx.objectStore(PERSIST_DURABLE_STORE).put(payload,record);
-      });
-      writeOk=true;
-    }finally{close(db)}
-
-    db=await openPersistenceDurableDb();
-    try{
-      const value=await new Promise((resolve,reject)=>{
-        const tx=db.transaction(PERSIST_DURABLE_STORE,'readonly');
-        const req=tx.objectStore(PERSIST_DURABLE_STORE).get(record);
-        req.onsuccess=()=>resolve(req.result||null);
-        req.onerror=()=>reject(req.error||new Error('IndexedDB-Rundtest Lesefehler'));
-      });
-      readBackOk=Boolean(value&&value.token===token&&value.purpose==='CORE-007D8A1F1D8P30');
-    }finally{close(db)}
-
-    await deleteTestRecord();
-    db=await openPersistenceDurableDb();
-    try{
-      const remaining=await new Promise((resolve,reject)=>{
-        const tx=db.transaction(PERSIST_DURABLE_STORE,'readonly');
-        const req=tx.objectStore(PERSIST_DURABLE_STORE).get(record);
-        req.onsuccess=()=>resolve(req.result||null);
-        req.onerror=()=>reject(req.error||new Error('IndexedDB-Rundtest Cleanup-Read fehlgeschlagen'));
-      });
-      cleanupOk=!remaining;
-    }finally{close(db)}
-  }catch(e){
-    error=String(e?.message||e);
-    try{await deleteTestRecord()}catch(_){ }
-  }
-  const result={
-    ok:Boolean(writeOk&&readBackOk&&cleanupOk&&!error),
-    indexedDbAvailable:Boolean('indexedDB' in window),
-    writeOk,readBackOk,cleanupOk,
-    isolatedRecord:true,
-    testRecord:record,
-    productionRecord:PERSIST_DURABLE_RECORD,
-    productionRecordTouched:false,
-    checkedAt,
-    ...(error?{error}:{})
-  };
-  persistenceDurableSelfTestLast=result;
-  return result;
-}
 function persistenceDiagnosis(){
   const snap=readPersistenceSafety();
-  const localSelfTest=persistenceSelfTest();
-  const durableCoverageKeys=PERSIST_DURABLE_CRITICAL_KEYS.map(key=>({key,present:typeof persistenceDurableShadow?.storage?.[key]==='string'}));
-  const durableCoverage={protectedKeys:PERSIST_DURABLE_CRITICAL_KEYS.length,presentKeys:durableCoverageKeys.filter(x=>x.present).length,allProtected:durableCoverageKeys.every(x=>x.present),keys:durableCoverageKeys};
-  const combinedSelfTest=persistenceDurableSelfTestLast
-    ? {...localSelfTest,indexedDbRoundTrip:persistenceDurableSelfTestLast.ok,durableCoverage:durableCoverage.allProtected,ok:Boolean(localSelfTest.ok&&persistenceDurableSelfTestLast.ok&&durableCoverage.allProtected)}
-    : {...localSelfTest,durableCoverage:durableCoverage.allProtected,ok:Boolean(localSelfTest.ok&&durableCoverage.allProtected)};
   let audit=[];try{audit=JSON.parse(localStorage.getItem(PERSIST_AUDIT_KEY)||'[]');if(!Array.isArray(audit))audit=[]}catch(_){audit=[]}
   const inspect=key=>{
     const raw=localStorage.getItem(key),shadow=snap?.storage?.[key],durable=persistenceDurableShadow?.storage?.[key];
@@ -437,9 +346,7 @@ function persistenceDiagnosis(){
   };
   return {
     diagnosis:'CORE-005V5 Durable Persistence Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
-    selfTest:combinedSelfTest,
-    durableRoundTrip:persistenceDurableSelfTestLast,
-    durableCoverage,
+    selfTest:persistenceSelfTest(),
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
@@ -457,7 +364,7 @@ function ensurePersistenceSafetyPanel(){
     return true;
   }
   const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow für Fahrten, DONE und verifizierte Flugdaten, Write-Read-Check, Wiederherstellung und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
   // CORE-005V3: Das Live-Flugdaten-Panel ist auf Mobil bereits nachweislich sichtbar.
   // Deshalb wird die Persistenz-Sicherheit als Kind dieses Panels gemountet.
   // Fallbacks bleiben nur fuer den unwahrscheinlichen Fall, dass Live noch nicht existiert.
@@ -472,24 +379,9 @@ function ensurePersistenceSafetyPanel(){
     }
   }
   const paint=obj=>{const out=$('atmsPersistenceOutput');if(out)out.textContent=JSON.stringify(obj,null,2)};
-  $('atmsPersistenceSelfTestBtn')?.addEventListener('click',async()=>{
-    const btn=$('atmsPersistenceSelfTestBtn'),label=btn?.textContent||'🧪 Persistenz-Selbsttest';
-    if(btn){btn.disabled=true;btn.textContent='🧪 Persistenz-Selbsttest läuft …'}
-    try{
-      // P31: Vor der Diagnose alle fuenf geschuetzten Bereiche explizit in den Durable-Shadow spiegeln.
-      await syncPersistenceDurableShadow('selftest-coverage');
-      await persistenceDurableRoundTripSelfTest();
-      const result=persistenceDiagnosis();
-      paint(result);
-      showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn');
-    }catch(e){
-      const result=persistenceDiagnosis();
-      result.selfTest={...(result.selfTest||{}),ok:false,error:String(e?.message||e)};
-      paint(result);showToast('Persistenz-Selbsttest fehlgeschlagen','warn');
-    }finally{if(btn){btn.disabled=false;btn.textContent=label}}
-  });
+  $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
-  $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot bzw. IndexedDB-Durable-Shadow wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');if(result.restored){try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(_){rides=[]}try{done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'))}catch(_){done=new Set()}recoverVerifiedFlightCache();const restoredRides=applyFlightCacheToRides(applyRideOverrides(rides).rides);rides=restoredRides.rides;save();render()}paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
+  $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
   $('atmsRestorePreviousImportBtn')?.addEventListener('click',restorePreviousPlanImport);
   return true;
 }
@@ -2062,7 +1954,7 @@ function buildLiveFlightPrompt(includeAll=false){
     throw new Error('Keine Flüge in den aktuell gespeicherten Fahrten gefunden.');
   }
   const scopeNote=includeAll?'Prüfumfang: ALLE Flüge des Plantags.':'Prüfumfang: nur aktuell relevante, noch nicht erledigte Fahrten gemäß Live-Dispo-Nachlauf.';
-  return `ATMS PRO – LIVE-FLIGHT-002 MULTI-AIRPORT strikte aktuelle Live-Flugprüfung
+  return `ATMS PRO – LIVE-FLIGHT-003 MULTI-AIRPORT aktuelle Primärquellen-Liveprüfung
 
 ${scopeNote}
 
@@ -2073,16 +1965,16 @@ VERBINDLICHE REGELN:
 2. direction=departure: airportIata ist der Abflugairport. Relevant sind aktueller Status und die aktuelle Abflugzeit an airportIata.
 3. direction=arrival: airportIata ist der Zielairport. Relevant sind aktueller Status und die aktuelle Ankunftszeit an airportIata.
 4. date ist das ATMS-Fahrtdatum und muss unverändert zurückgegeben werden. Für den tatsächlichen Status am relevanten Airport ist airportEventDate EXAKT zu verwenden. Wenn airportEventDate von date abweicht, keine Live-Daten des Fahrtdatums anstelle des Ereignistags übernehmen.
-5. confirmed=true erfordert weiterhin mindestens ZWEI voneinander unabhängige, aktuelle/datumsspezifische Quellen. Mindestens eine Quelle soll nach Möglichkeit der betroffene Airport, die Airline oder ein etablierter Live-Tracker sein.
+5. confirmed=true ist erlaubt, wenn EINE der folgenden Bedingungen erfüllt ist: (a) mindestens ZWEI voneinander unabhängige aktuelle/datumsspezifische Quellen stimmen überein → resolutionMode="consensus"; ODER (b) genau EINE belastbare aktuelle Primärquelle belegt das konkrete Flughafenereignis eindeutig → resolutionMode="single_primary". Als Primärquelle gilt: offizielle Seite des betroffenen Airports, offizielle Airline-Seite oder eine EXAKTE Flightradar24-Flugseite für die konkrete Flugnummer. Allgemeine Aircraft-/Airline-/Historienseiten reichen NICHT.
 6. Wenn airportIata fehlt/null oder direction=unknown ist: confirmed=false, status=unknown. Nicht raten.
 7. Wenn der Flug noch nicht gestartet ist und keine belastbare Schätzung existiert, Status scheduled/on_time ist erlaubt, aber Zeiten nur aus tatsächlich angezeigten aktuellen Daten übernehmen. Ist ein Ankunftsflug tatsächlich angekommen, verwende status=landed. Ist ein Abflug tatsächlich gestartet, verwende status=departed. Ein Abflug darf niemals allein wegen seiner tatsächlichen Abflugzeit status=landed erhalten.
-8. Stimmen die geeigneten aktuellen Quellen überein: sourceConflict=false und resolutionMode="consensus".
-9. Widersprechen sich geeignete aktuelle Quellen bei operativem Status oder aktueller Zeit, darf Flightradar24 PRIORITÄT erhalten, aber nur wenn die verwendete FR24-Seite den EXAKTEN Flug mit airportEventDate, airportIata und Richtung eindeutig identifiziert und einen aktuellen operativen Status bzw. eine aktuelle Estimated-/Actual-Zeit für dieses Flughafenereignis zeigt. Dann: sourceConflict=true, resolutionMode="flightradar24_priority", prioritySourceUrl=exakte verwendete Flightradar24-URL. status und Zeiten müssen in diesem Modus ausschließlich aus dieser FR24-Quelle stammen.
-10. Ein allgemeiner/historischer Flightradar24-Flugplan, eine typische Route oder eine Seite ohne eindeutigen Bezug zu airportEventDate + airportIata reicht NICHT für die Priorität.
-11. Wenn ein Quellenkonflikt nicht nach Regel 9 sicher durch FR24 aufgelöst werden kann oder weniger als 2 geeignete Quellen vorliegen: confirmed=false, status=unknown, resolutionMode="unconfirmed". Nicht raten.
+8. Stimmen mindestens zwei geeignete aktuelle Quellen überein: sourceConflict=false und resolutionMode="consensus".
+9. Liegt nur eine geeignete Primärquelle vor und sie zeigt eindeutig Flugnummer + airportEventDate + airportIata + Richtung sowie aktuellen Status bzw. aktuelle Estimated-/Actual-Zeit: sourceConflict=false, resolutionMode="single_primary", confirmed=true. sources enthält dann exakt die tatsächlich verwendete Primärquelle.
+10. Wenn zwei oder mehr geeignete aktuelle Quellen bei operativem Status oder aktueller Zeit widersprechen: sourceConflict=true, confirmed=false, status=unknown und resolutionMode="unconfirmed". KEINE Quelle darf den Widerspruch automatisch überstimmen.
+11. Liegt nur eine Sekundärquelle vor oder ist eine Primärquelle nicht eindeutig dem konkreten Flughafenereignis zuzuordnen: confirmed=false, status=unknown, resolutionMode="unconfirmed". Nicht raten.
 12. airportScheduledTime, airportEstimatedTime und airportActualTime immer als lokale Zeit des betroffenen Airports HH:MM zurückgeben oder null. Der globale ATMS-Abholpuffer wird erst lokal in der App addiert und darf nicht in diese Zeiten eingerechnet werden.
 13. delayMinutes ist die aktuelle Abweichung am Ereignis des betroffenen Airports in ganzen Minuten; wenn nicht belastbar bestimmbar, null.
-14. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden. Bei flightradar24_priority muss die prioritySourceUrl zusätzlich als identischer sources-Eintrag vorhanden sein.
+14. sources enthält nur tatsächlich verwendete Quellen mit name und url. Keine URLs erfinden. prioritySourceUrl bleibt bei LIVE-FLIGHT-003 null.
 15. checkedAt ist der tatsächliche Web-Prüfzeitpunkt in ISO-8601.
 16. Diese Prüfung muss JETZT neu erfolgen. Frühere Antworten, gespeicherte LIVE-Werte oder ältere Snapshots nicht wiederverwenden. ATMS behandelt Web-LIVE-Prüfungen nach 15 Minuten als veraltet.
 17. airportIata aus dem Prüfeintrag unverändert zurückgeben.
@@ -2105,7 +1997,7 @@ JSON-SCHEMA:
     "delayMinutes":null,
     "confirmed":false,
     "sourceConflict":false,
-    "resolutionMode":"consensus|flightradar24_priority|unconfirmed",
+    "resolutionMode":"consensus|single_primary|unconfirmed",
     "prioritySourceUrl":null,
     "sources":[{"name":"","url":""}],
     "sourceNote":""
@@ -2154,6 +2046,18 @@ function isFlightradar24Url(value){
   const raw=String(value||'').trim();if(!raw)return false;
   try{const host=new URL(raw,window.location.href).hostname.toLowerCase();return host==='flightradar24.com'||host.endsWith('.flightradar24.com');}catch{return false}
 }
+function isTrustedLivePrimarySource(src,flightNumber,airportIata){
+  const raw=String(src?.url||'').trim();if(!raw)return false;
+  let u;try{u=new URL(raw,window.location.href)}catch{return false}
+  const host=u.hostname.toLowerCase().replace(/^www\./,'');
+  const path=(u.pathname||'').toLowerCase();
+  const flight=flightCacheNumber(flightNumber).toLowerCase();
+  if((host==='flightradar24.com'||host.endsWith('.flightradar24.com'))&&flight&&path.includes(`/data/flights/${flight}`))return true;
+  if(host==='dus.com'||host.endsWith('.dus.com'))return String(airportIata||'').toUpperCase()==='DUS';
+  if(host==='koeln-bonn-airport.de'||host.endsWith('.koeln-bonn-airport.de')||host==='cologne-bonn-airport.com'||host.endsWith('.cologne-bonn-airport.com'))return String(airportIata||'').toUpperCase()==='CGN';
+  if(host==='eurowings.com'||host.endsWith('.eurowings.com'))return true;
+  return false;
+}
 function parseLiveFlightResult(text){
   const obj=parseAtmsJsonObject(text,'Live-Flug-JSON');
   if(!obj||Array.isArray(obj)||typeof obj!=='object'||!Array.isArray(obj.flights)||!obj.flights.length)throw new Error('LIVE-FLIGHT-001 erwartet ein JSON-Objekt mit dem Feld "flights".');
@@ -2174,21 +2078,22 @@ function parseLiveFlightResult(text){
     const sources=Array.isArray(x.sources)?x.sources.map(src=>({name:String(src?.name||'').trim(),url:String(src?.url||'').trim()})).filter(src=>src.name&&src.url):[];
     const uniqueSources=new Set(sources.map(src=>src.url.toLowerCase())).size;
     const sourceConflict=Boolean(x.sourceConflict);
-    const allowedResolutionModes=new Set(['consensus','flightradar24_priority','unconfirmed']);
+    const allowedResolutionModes=new Set(['consensus','single_primary','flightradar24_priority','unconfirmed']);
     const requestedResolution=String(x.resolutionMode||'consensus').trim().toLowerCase();
     const resolutionMode=allowedResolutionModes.has(requestedResolution)?requestedResolution:'unconfirmed';
     const prioritySourceUrl=String(x.prioritySourceUrl||'').trim();
-    const priorityMatchesSource=Boolean(prioritySourceUrl)&&sources.some(src=>src.url.toLowerCase()===prioritySourceUrl.toLowerCase());
-    const fr24PriorityValid=sourceConflict&&resolutionMode==='flightradar24_priority'&&priorityMatchesSource&&isFlightradar24Url(prioritySourceUrl);
-    const consensusValid=!sourceConflict&&resolutionMode==='consensus';
-    const confirmed=Boolean(x.confirmed)&&uniqueSources>=2&&status!=='unknown'&&(consensusValid||fr24PriorityValid);
+    const consensusValid=!sourceConflict&&resolutionMode==='consensus'&&uniqueSources>=2;
+    const primarySources=sources.filter(src=>isTrustedLivePrimarySource(src,flightNumber,airportIata));
+    const singlePrimaryValid=!sourceConflict&&resolutionMode==='single_primary'&&primarySources.length>=1;
+    // P31F1: Quellenwiderspruch darf nicht mehr automatisch durch FR24 überstimmt werden.
+    const confirmed=Boolean(x.confirmed)&&status!=='unknown'&&(consensusValid||singlePrimaryValid);
     const scheduled=strictClockOrNull(x.airportScheduledTime??x.dusScheduledTime);
     const estimated=strictClockOrNull(x.airportEstimatedTime??x.dusEstimatedTime);
     const actual=strictClockOrNull(x.airportActualTime??x.dusActualTime);
     let delay=x.delayMinutes===null||x.delayMinutes===undefined||x.delayMinutes===''?null:Number(x.delayMinutes);
     if(!Number.isFinite(delay))delay=null;
     if(delay===null){const current=actual||estimated;if(scheduled&&current)delay=minuteDeltaClock(scheduled,current);}
-    return {flightNumber,date,airportEventDate,airportEventDateDerived,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sourceConflict,resolutionMode,prioritySourceUrl:fr24PriorityValid?prioritySourceUrl:'',sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
+    return {flightNumber,date,airportEventDate,airportEventDateDerived,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sourceConflict,resolutionMode,prioritySourceUrl:'',sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
   });
 }
 function livePickupFromCheck(ride,hit){
@@ -2790,22 +2695,6 @@ function liveHandoverAvailability(target,settings=getLiveSettings()){
   return liveHandoverAvailabilityForSource(target,settings,rides,done,new Date());
 }
 
-// CORE-007D8A1F1D8P29 – zentraler, erneut prüfender Übergabepfad.
-// commit=false prüft ausschließlich; commit=true weist genau die angegebene Fahrt zu,
-// aber erst NACH derselben aktuellen Availability-Prüfung. Dadurch kann der
-// produktive Button und der isolierte Endtest exakt denselben Sicherheitsweg nutzen.
-function executeLiveHandoverForSource(suggestion,target,settings=getLiveSettings(),sourceRides=rides,doneSet=done,now=new Date(),commit=false){
-  const list=Array.isArray(sourceRides)?sourceRides:[];
-  if(!suggestion)return{ok:false,code:'no_suggestion',reason:'Keine Übergabe vorgeschlagen.'};
-  const original=list.find(r=>String(r?.id||'')===String(suggestion.rideId||''));
-  if(!original)return{ok:false,code:'ride_missing',reason:'Fahrt nicht gefunden.'};
-  if(normKey(original.driver)!==normKey(suggestion.fromDriver))return{ok:false,code:'source_changed',reason:'Die betroffene Fahrt wurde inzwischen bereits anders zugeordnet.',original};
-  const availability=liveHandoverAvailabilityForSource(target,settings,list,doneSet,now);
-  if(!availability.available)return{ok:false,code:'target_unavailable',reason:availability.reason,availability,original};
-  if(commit)original.driver=target.name;
-  return{ok:true,code:commit?'assigned':'ready',reason:commit?'Fahrt erfolgreich neu zugeordnet.':'Übergabe sicher möglich.',availability,original,target,committed:Boolean(commit)};
-}
-
 // CORE-007D8A1F1D8P28 – isolierter Ersatzfahrer-Selbsttest.
 // Ausschließlich künstliche In-Memory-Daten; echte Fahrten, DONE und localStorage bleiben unverändert.
 function liveHandoverSelfTestBerlinClock(value=new Date()){
@@ -2842,7 +2731,7 @@ function runLiveHandoverSelfTest(){
   const freeWithOpenResult=liveHandoverAvailabilityForSource(free,settings,source,new Set(),now);
 
   const recommendationGuardWired=String(renderLiveDelayAndSolution).includes('liveHandoverAvailability(');
-  const applyGuardWired=String(applyLiveSolution).includes('executeLiveHandoverForSource(')&&String(executeLiveHandoverForSource).includes('liveHandoverAvailabilityForSource(');
+  const applyGuardWired=String(applyLiveSolution).includes('liveHandoverAvailability(');
   const protectedAfter=liveHandoverSelfTestProtectedSnapshot();
   const checks=[
     {label:'Inaktiver Fahrer wird blockiert',ok:inactiveResult.available===false&&/nicht aktiv/i.test(inactiveResult.reason)},
@@ -2861,67 +2750,15 @@ function runLiveHandoverSelfTest(){
   showToast(ok?'Ersatzfahrer-Selbsttest OK':'Ersatzfahrer-Selbsttest fehlgeschlagen',ok?'ok':'warn');
   return result;
 }
-function runLiveHandoverAssignmentSelfTest(){
-  const protectedBefore=liveHandoverSelfTestProtectedSnapshot();
-  const now=new Date(),date=berlinDate(now),future=clockPlusMinutes(liveHandoverSelfTestBerlinClock(now),35);
-  const from={id:'__atms_p29_from__',name:'ATMS Test Ausgang',active:true};
-  const target={id:'__atms_p29_target__',name:'ATMS Test Ersatz',active:true};
-  const third={id:'__atms_p29_third__',name:'ATMS Test Unbeteiligt',active:true};
-  const settings={pastRideGraceMinutes:120,consentByDriver:{[from.id]:true,[target.id]:true,[third.id]:true}};
-  const makeRide=(id,driver)=>({id,date,planTime:future,dispoTime:future,driver,pickup:'ATMS P29 Start',destination:'ATMS P29 Ziel',flightNumber:'',persons:1,vehicle:'Pkw'});
-
-  // Erfolgsfall: genau die vorgeschlagene Testfahrt darf wechseln.
-  const ride=makeRide('__atms_p29_assignment__',from.name);
-  const untouched=makeRide('__atms_p29_untouched__',third.name);
-  const source=[ride,untouched];
-  const suggestion={rideId:ride.id,fromDriver:from.name,toDriver:target.name,toId:target.id,delay:9};
-  const preflight=executeLiveHandoverForSource(suggestion,target,settings,source,new Set(),now,false);
-  const beforeCommitDriver=ride.driver;
-  const committed=executeLiveHandoverForSource(suggestion,target,settings,source,new Set(),now,true);
-
-  // Race-Condition-Test: nach erfolgreichem Vorcheck entsteht beim Ersatzfahrer eine eigene offene Fahrt.
-  const raceRide=makeRide('__atms_p29_race_assignment__',from.name);
-  const raceSource=[raceRide];
-  const raceSuggestion={rideId:raceRide.id,fromDriver:from.name,toDriver:target.name,toId:target.id,delay:11};
-  const racePreflight=executeLiveHandoverForSource(raceSuggestion,target,settings,raceSource,new Set(),now,false);
-  raceSource.push(makeRide('__atms_p29_target_became_busy__',target.name));
-  const raceCommit=executeLiveHandoverForSource(raceSuggestion,target,settings,raceSource,new Set(),now,true);
-
-  // Zwischenzeitlich anderweitig zugeordnete Ausgangsfahrt muss blockieren.
-  const changedRide=makeRide('__atms_p29_source_changed__',from.name);
-  const changedSource=[changedRide];
-  const changedSuggestion={rideId:changedRide.id,fromDriver:from.name,toDriver:target.name,toId:target.id,delay:8};
-  changedRide.driver=third.name;
-  const changedResult=executeLiveHandoverForSource(changedSuggestion,target,settings,changedSource,new Set(),now,true);
-
-  const productionWired=String(applyLiveSolution).includes('executeLiveHandoverForSource(');
-  const protectedAfter=liveHandoverSelfTestProtectedSnapshot();
-  const checks=[
-    {label:'Vorprüfung erlaubt sichere Ersatzfahrer-Übergabe',ok:preflight.ok===true&&preflight.code==='ready'&&beforeCommitDriver===from.name},
-    {label:'Übergabe weist genau die Testfahrt dem Ersatzfahrer zu',ok:committed.ok===true&&committed.code==='assigned'&&ride.driver===target.name},
-    {label:'Unbeteiligte Testfahrt bleibt unverändert',ok:untouched.driver===third.name},
-    {label:'Neu entstandene eigene Fahrt blockiert beim erneuten Check',ok:racePreflight.ok===true&&raceCommit.ok===false&&raceCommit.code==='target_unavailable'&&raceRide.driver===from.name},
-    {label:'Inzwischen geänderte Ausgangszuordnung blockiert Übergabe',ok:changedResult.ok===false&&changedResult.code==='source_changed'&&changedRide.driver===third.name},
-    {label:'Produktives „Lösung übernehmen“ nutzt denselben Übergabepfad',ok:productionWired},
-    {label:'Echte Fahrten, DONE und lokale ATMS-Daten unverändert',ok:protectedBefore===protectedAfter}
-  ];
-  const ok=checks.every(x=>x.ok);
-  const result={ok,version:'CORE-007D8A1F1D8P29',checkedAt:new Date().toISOString(),checks};
-  const out=$('atmsLiveHandoverAssignmentSelfTestOutput');
-  if(out)out.textContent=`${ok?'✓ ERSATZFAHRER-ÜBERGABE-ENDTEST BESTANDEN':'⚠ ERSATZFAHRER-ÜBERGABE-ENDTEST FEHLGESCHLAGEN'}\n\n${checks.map(x=>`${x.ok?'✓':'✕'} ${x.label}`).join('\n')}`;
-  showToast(ok?'Ersatzfahrer-Übergabe-Endtest OK':'Ersatzfahrer-Übergabe-Endtest fehlgeschlagen',ok?'ok':'warn');
-  return result;
-}
 function ensureLiveHandoverSelfTestPanel(){
   if($('atmsLiveHandoverSelfTestPanel'))return true;
   const host=atmsLiveTargetLegacyCard('liveWarnThreshold')||atmsLiveTargetLegacyCard('liveEventLog')||$('liveDispositionView');
   if(!host)return false;
   const panel=document.createElement('div');panel.id='atmsLiveHandoverSelfTestPanel';
   panel.style.cssText='margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)';
-  panel.innerHTML=`<div style="font-weight:900;margin-bottom:6px">🧪 Ersatzfahrer-Selbsttest</div><div style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:9px">Prüft CORE-006Y ausschließlich mit künstlichen Testfahrern und Testfahrten. Echte Fahrten, DONE, Trackingfreigaben und lokale ATMS-Daten werden nicht verändert.</div><button type="button" id="atmsLiveHandoverSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:900">🧪 Ersatzfahrer-Selbsttest starten</button><pre id="atmsLiveHandoverSelfTestOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:34vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.45">Bereit. Noch nicht ausgeführt.</pre><div style="height:1px;background:rgba(255,255,255,.14);margin:14px 0"></div><div style="font-weight:900;margin-bottom:6px">🧪 Ersatzfahrer-Übergabe-Endtest</div><div style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:9px">Prüft die tatsächliche Zuweisungslogik ausschließlich mit künstlichen In-Memory-Testdaten. Es werden keine echten Fahrten, DONE, Freigaben oder lokalen ATMS-Daten verändert.</div><button type="button" id="atmsLiveHandoverAssignmentSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:900">🧪 Ersatzfahrer-Übergabe-Endtest starten</button><pre id="atmsLiveHandoverAssignmentSelfTestOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:34vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.45">Bereit. Noch nicht ausgeführt.</pre>`;
+  panel.innerHTML=`<div style="font-weight:900;margin-bottom:6px">🧪 Ersatzfahrer-Selbsttest</div><div style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:9px">Prüft CORE-006Y ausschließlich mit künstlichen Testfahrern und Testfahrten. Echte Fahrten, DONE, Trackingfreigaben und lokale ATMS-Daten werden nicht verändert.</div><button type="button" id="atmsLiveHandoverSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:900">🧪 Ersatzfahrer-Selbsttest starten</button><pre id="atmsLiveHandoverSelfTestOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:34vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.45">Bereit. Noch nicht ausgeführt.</pre>`;
   host.appendChild(panel);
   $('atmsLiveHandoverSelfTestBtn')?.addEventListener('click',runLiveHandoverSelfTest);
-  $('atmsLiveHandoverAssignmentSelfTestBtn')?.addEventListener('click',runLiveHandoverAssignmentSelfTest);
   return true;
 }
 // CORE-007D8A1F1D8P27: Die Fahrerwarnung bewertet die tatsächliche Abholverschiebung.
@@ -3795,7 +3632,7 @@ function renderLiveDispositionTargetBlock(driver,settings,consent){
 function renderLiveDisposition(resetEta=true){showView('live');document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.nav==='live'));const s=getLiveSettings(),drivers=liveDriverList(),sel=$('liveDriverSelect');if(!drivers.length){sel.innerHTML='<option value="">Keine Fahrer vorhanden</option>';renderLiveEmpty();return}if(!s.driverId||!drivers.some(d=>d.id===s.driverId))s.driverId=drivers[0].id;sel.innerHTML=drivers.map(d=>`<option value="${esc(d.id)}" ${d.id===s.driverId?'selected':''}>${d.favorite?'⭐ ':''}${esc(d.name)}${d.vehicle?' · '+esc(d.vehicle):''}</option>`).join('');sel.value=s.driverId;saveLiveSettings(s);renderNavigationSettings();const d=drivers.find(x=>x.id===s.driverId),consent=!!s.consentByDriver?.[s.driverId];renderLiveDispositionTargetBlock(d,s,consent);renderLiveDispositionTargetPositionInfo(d,s,consent);$('liveTrackingConsent').checked=consent;$('liveWarnThreshold').value=s.warnThreshold||7;const pastGrace=$('livePastRideGrace');if(pastGrace&&document.activeElement!==pastGrace)pastGrace.value=livePastRideGraceMinutes(s);$('liveTrackingState').textContent=consent?'Tracking freigegeben':'Zustimmung ausstehend';$('liveTrackingState').className='tracking-state '+(consent?'active':'wait');$('liveTrackingMeta').textContent=consent?'Zustimmung gespeichert. Die Position kann auf diesem Handy für die Routenprüfung ermittelt werden.':'Tracking wird erst nach eindeutiger Zustimmung aktiviert.';const tracked=drivers.filter(x=>s.consentByDriver?.[x.id]);$('liveSingleDriverNotice').textContent=tracked.length<=1?`Hinweis: Aktuell ist nur ${d.name} für Live-Disposition mit Freigabestatus erfasst. Ersatzfahrer werden zusätzlich gegen eigene offene Fahrten geprüft.`:`${tracked.length} Fahrer mit Freigabestatus erfasst. Ersatzfahrer werden zusätzlich gegen eigene offene Fahrten geprüft.`;const drides=ridesForLiveDriver(d.name),limit=liveExpanded?drides.length:4,threshold=Number(s.warnThreshold||7);renderLiveDispositionTargetRideControl(d,drides,threshold);$('liveTimeline').innerHTML=drides.length?drides.slice(0,limit).map((r,i)=>{const state=liveDispositionAssessment(r,threshold),cls=state.className||'';return `<div class="timeline-item ${cls}"><div class="timeline-top"><div><div class="timeline-time">${esc(effectiveTime(r)||'–')}</div><div class="timeline-route">${esc(r.pickup||'Start nicht verfügbar')} → ${esc(r.destination||'Ziel nicht verfügbar')}</div></div><span class="timeline-status">${i===0?'AKTUELL':i===1?'NÄCHSTE':i===2?'ÜBERNÄCHSTE':'GEPLANT'}</span></div><div class="timeline-sub">${esc(state.label)} · ${esc(r.flightNumber||r.id)}</div></div>`}).join(''):'<div class="live-empty">Keine offenen Fahrten für diesen Fahrer.</div>';$('liveMoreRidesBtn').style.display=drides.length>4?'block':'none';$('liveMoreRidesBtn').textContent=liveExpanded?'Weniger Fahrten anzeigen':'Weitere Fahrten anzeigen';const assessedRides=drides.map(r=>({ride:r,state:liveDispositionAssessment(r,threshold)})).filter(x=>x.state.hasDelayAssessment);const critical=(assessedRides.find(x=>Number(x.state.delay)>=threshold)||assessedRides.find(x=>Number(x.state.delay)>0))?.ride||null;renderLiveDispositionTargetWarning(d,drides,threshold);renderLiveDelayAndSolution(d,critical,drivers,drides,threshold,consent);renderRouteCheck(d,drides,threshold);renderDriverSessionCard();const routeRide=drides[0]||critical;const routeGeo=s.lastGeo&&s.lastGeo.driverId===d.id?s.lastGeo:null;const routeLabel=routeRide?routeLabelForRide(routeRide):'';$('liveMap').innerHTML=routeRide?`<b>${routeGeo?'Standort dieses Handys':esc(routePointsForRide(routeRide)[0]||routeRide.pickup||'Start')}</b><span>↓ Route mit allen Stopps</span><b>${esc(routeLabel)}</b><small>${routeGeo?'GPS-Standort → Abholort/Stopps → Ziel':'Ohne GPS startet die Route am ersten Abholort'} · Google Maps berechnet Navigation und Verkehr</small>`:'<span>Keine Route verfügbar</span>';$('liveOpenMapBtn').disabled=!routeRide;$('liveOpenMapBtn').dataset.rideId=routeRide?.id||'';$('liveLastUpdate').textContent=new Date().toLocaleTimeString('de-DE');$('liveSystemPill').textContent=consent?'● LIVE-BEREIT':'● ZUSTIMMUNG OFFEN';if(resetEta){const eta=$('liveEtaState');if(eta)eta.innerHTML=s.mapboxToken?(routeGeo?'<b>Live-ETA bereit.</b> Tippe auf „Live-ETA aktualisieren“.':'<b>Live-ETA wartet auf GPS.</b> Standort dieses Handys zuerst ermitteln.'):'<b>Live-ETA nicht eingerichtet.</b> Mapbox-Token unter Einstellungen → Navigation speichern.';}renderLiveLog();ensureLiveDispositionTargetFinish()}
 function renderLiveEmpty(){$('liveTimeline').innerHTML='<div class="live-empty">Bitte zuerst Fahrer oder Fahrten anlegen.</div>';$('liveDelayContent').innerHTML='<div class="live-empty">Keine Prüfung möglich.</div>';$('liveSolutionContent').innerHTML='<div class="live-empty">Keine Lösung verfügbar.</div>';$('liveApplySolutionBtn').disabled=true;renderLiveLog()}
 function renderLiveDelayAndSolution(driver,critical,drivers,drides,threshold,consent){liveSuggested=null;if(!critical){const assessed=(Array.isArray(drides)?drides:[]).map(r=>liveDispositionAssessment(r,threshold)).filter(x=>x.hasDelayAssessment);if(!assessed.length){$('liveDelayContent').innerHTML='<div class="tracking-state wait">Keine bestätigte LIVE-Zeit für Verspätungsprüfung</div><div class="live-meta">DISPO bleibt unverändert. Für die offenen Fahrten liegen keine bestätigten Estimated-/Actual-Zeiten oder belastbaren LIVE-Verzögerungsdaten vor.</div>';$('liveSolutionContent').innerHTML='<div class="live-empty">Keine automatische Umplanung: ohne bestätigte LIVE-Zeit ist keine LIVE-basierte Änderung ableitbar.</div>';$('liveApplySolutionBtn').disabled=true;return}const withoutLive=Math.max(0,(Array.isArray(drides)?drides.length:0)-assessed.length);$('liveDelayContent').innerHTML=`<div class="tracking-state active">Keine Verspätung erkannt</div><div class="live-meta">${assessed.length} Fahrt(en) mit bestätigten Live-Daten liegen unter der Warnschwelle${withoutLive?` · ${withoutLive} ohne bestätigte Verzögerungsbewertung`:''}.</div>`;$('liveSolutionContent').innerHTML='<div class="live-empty">Aktuell ist keine LIVE-basierte Umplanung erforderlich.</div>';$('liveApplySolutionBtn').disabled=true;return}const delay=liveDispositionAssessment(critical,threshold).delay??delayForRide(critical);$('liveDelayContent').innerHTML=`<div class="delay-number">+${delay} Minuten</div><b>${esc(critical.pickup)} → ${esc(critical.destination)}</b><div class="live-meta">Warnschwelle: ${threshold} Min. · Betroffene Fahrt: ${esc(critical.id)}</div>`;const settings=getLiveSettings(),candidateChecks=drivers.filter(x=>x.id!==driver.id).map(x=>({driver:x,availability:liveHandoverAvailability(x,settings)})),alternatives=candidateChecks.filter(x=>x.availability.available);if(!alternatives.length){const blocked=candidateChecks.filter(x=>x.driver?.active!==false&&settings.consentByDriver?.[x.driver.id]&&x.availability.openRides.length).length;prepareManualDispoMessage(driver,critical,delay,blocked);$('liveSolutionContent').innerHTML=`<div class="solution-title">Dispo manuell informieren</div><div class="solution-details">Kein anderer Fahrer ist anhand der aktuellen offenen Fahrten sicher frei.${blocked?` ${blocked} Fahrer mit Freigabe hat/haben bereits eigene offene Fahrt(en).`:''} Es wird kein Ersatzfahrer simuliert.<br><b>Eine Nachricht wurde unter „💬 Nachrichten“ vorbereitet.</b></div><button type="button" id="liveOpenPreparedMessageBtn" class="live-action" style="width:100%;margin-top:10px">💬 Nachricht öffnen</button>`;$('liveOpenPreparedMessageBtn')?.addEventListener('click',renderMessagesView);$('liveApplySolutionBtn').disabled=true;return}const alt=alternatives[0].driver;liveSuggested={rideId:critical.id,fromDriver:driver.name,toDriver:alt.name,toId:alt.id,delay,availabilityCheckedAt:new Date().toISOString()};$('liveSolutionContent').innerHTML=`<span class="solution-badge">BESTE VERFÜGBARE LÖSUNG</span><div class="solution-title">Fahrt an ${esc(alt.name)} anfragen</div><div class="solution-details">${esc(alt.name)} hat aktuell keine eigene offene Fahrt in der Live-Disposition.<br>Vor Ausführung werden Freigabe und Verfügbarkeit erneut geprüft.</div>`;$('liveApplySolutionBtn').disabled=!consent}
-function applyLiveSolution(){if(!liveSuggested)return;const s=getLiveSettings(),drivers=liveDriverList(),target=drivers.find(x=>x.id===liveSuggested.toId);const preflight=executeLiveHandoverForSource(liveSuggested,target,s,rides,done,new Date(),false);if(!preflight.ok){addLiveEvent(`Übergabe abgebrochen: ${preflight.reason}`,'warn');showToast(preflight.code==='ride_missing'?'Fahrt nicht gefunden':preflight.code==='source_changed'?'Fahrt inzwischen geändert':'Ersatzfahrer nicht sicher frei','warn');renderLiveDisposition();return}if(!confirm(`Fahrt ${liveSuggested.rideId} an ${target.name} zur Übernahme zuweisen?`))return;const result=executeLiveHandoverForSource(liveSuggested,target,s,rides,done,new Date(),true);if(!result.ok){addLiveEvent(`Übergabe abgebrochen: ${result.reason}`,'warn');showToast(result.code==='source_changed'?'Fahrt inzwischen geändert':'Ersatzfahrer nicht sicher frei','warn');renderLiveDisposition();return}save();addLiveEvent(`Übergabe erfolgreich: Fahrt ${liveSuggested.rideId} von ${liveSuggested.fromDriver} an ${target.name}. Prognostizierte Verspätung: +${liveSuggested.delay} Min.`,'ok');showToast('Fahrt neu zugeordnet','ok');renderLiveDisposition()}
+function applyLiveSolution(){if(!liveSuggested)return;const s=getLiveSettings(),drivers=liveDriverList(),target=drivers.find(x=>x.id===liveSuggested.toId),original=rides.find(r=>String(r.id)===String(liveSuggested.rideId));if(!original){showToast('Fahrt nicht gefunden','error');renderLiveDisposition();return}if(normKey(original.driver)!==normKey(liveSuggested.fromDriver)){addLiveEvent('Übergabe abgebrochen: Die betroffene Fahrt wurde inzwischen bereits anders zugeordnet.','warn');showToast('Fahrt inzwischen geändert','warn');renderLiveDisposition();return}const availability=liveHandoverAvailability(target,s);if(!availability.available){addLiveEvent(`Übergabe abgebrochen: ${target?.name||'Ersatzfahrer'} ist nicht sicher verfügbar. ${availability.reason}`,'warn');showToast('Ersatzfahrer nicht sicher frei','warn');renderLiveDisposition();return}if(!confirm(`Fahrt ${liveSuggested.rideId} an ${target.name} zur Übernahme zuweisen?`))return;original.driver=target.name;save();addLiveEvent(`Übergabe erfolgreich: Fahrt ${liveSuggested.rideId} von ${liveSuggested.fromDriver} an ${target.name}. Prognostizierte Verspätung: +${liveSuggested.delay} Min.`,'ok');showToast('Fahrt neu zugeordnet','ok');renderLiveDisposition()}
 function initLiveDisposition(){bindClick('liveEtaRefreshBtn',refreshLiveEta);bindClick('liveShiftToggleBtn',toggleDriverShift);bindClick('liveModeStandard',()=>setLiveMode('standard'));bindClick('liveModeRoute',()=>setLiveMode('route'));bindClick('liveGetPositionBtn',requestLivePosition);const sel=$('liveDriverSelect');if(sel)sel.addEventListener('change',e=>{const activeSession=getDriverSession();if(activeSession.active&&e.target.value!==activeSession.driverId){showToast(`Schicht von ${activeSession.driverName} zuerst beenden`,'warn');e.target.value=activeSession.driverId;return}const s=getLiveSettings();s.driverId=e.target.value;saveLiveSettings(s);const d=liveDriverList().find(x=>x.id===s.driverId);addLiveEvent(`Fahrer für die Routenprüfung ausgewählt: ${d?.name||'unbekannt'}. Standort dieses Handys muss für diesen Fahrer bestätigt werden.`);const btn=$('liveGetPositionBtn');if(btn)btn.textContent='📍 Standort dieses Handys verwenden';renderLiveDisposition()});const consent=$('liveTrackingConsent');if(consent)consent.addEventListener('change',e=>{const s=getLiveSettings();if(!s.consentByDriver)s.consentByDriver={};s.consentByDriver[s.driverId]=e.target.checked;saveLiveSettings(s);addLiveEvent(`${e.target.checked?'Trackingfreigabe erteilt':'Trackingfreigabe beendet'} für ${liveDriverList().find(x=>x.id===s.driverId)?.name||'Fahrer'}.`);renderLiveDisposition()});bindClick('liveRefreshBtn',renderLiveDisposition);bindClick('liveMoreRidesBtn',()=>{liveExpanded=!liveExpanded;renderLiveDisposition()});bindClick('liveApplySolutionBtn',applyLiveSolution);const th=$('liveWarnThreshold');if(th)th.addEventListener('change',e=>{const s=getLiveSettings();s.warnThreshold=Math.max(1,Math.min(60,Number(e.target.value)||7));saveLiveSettings(s);renderLiveDisposition()});const pastGrace=$('livePastRideGrace');if(pastGrace)pastGrace.addEventListener('change',e=>{const s=getLiveSettings();s.pastRideGraceMinutes=Math.max(0,Math.min(1440,Math.round(Number(e.target.value)||0)));saveLiveSettings(s);showToast(`Vergangene Fahrten: ${s.pastRideGraceMinutes} Min. Nachlauf gespeichert`,'ok');renderLiveDisposition()});bindClick('liveOpenMapBtn',()=>{const id=$('liveOpenMapBtn').dataset.rideId,r=visualRides(rides).find(x=>String(x.id)===String(id));if(!r)return;const settings=getLiveSettings(),driver=liveDriverList().find(x=>x.id===settings.driverId),geo=settings.lastGeo&&driver&&settings.lastGeo.driverId===driver.id?settings.lastGeo:null,result=googleMapsRouteUrl(r,geo);if(result.missing?.length){showMissingRouteAddresses(result.missing);return}if(!result.url){showToast('Keine vollständige Route verfügbar','warn');return}window.open(result.url,'_blank')})}
 
 function safeEl(id){return document.getElementById(id)}
