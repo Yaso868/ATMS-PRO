@@ -1,3 +1,4 @@
+  // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS. Nach einem echten Nutzer-Klick auf „Planliste analysieren“ werden vollständig saubere OCR-Planlisten (0 Hinweise, 0 Fehler) automatisch übernommen und die Fahrtenansicht geöffnet. Offene Flugprüfungen blockieren den Plan nicht. Unsichere OCR-/Preis-/Datumsfälle bleiben weiterhin manuell. Diagnoseblöcke sind im normalen Import eingeklappt.
 // CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
 (() => {
   'use strict';
@@ -51,7 +52,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, autoImportCompleted: false };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -4599,7 +4600,8 @@
           }).join('<br>') : escapeHtml('Keine Rohdiagnose-Einträge erzeugt – technischen Grund im Diagnose-Selbstcheck oben prüfen.')}</div>
         </div>`;
 
-    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + selfCheckHtml + rawDiagnosticHtml;
+    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}</details>`;
+    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
@@ -4677,6 +4679,7 @@
         state.issues = validate(state.rides.map((ride, index) => ({ ...ride, sourceRow: index + 1 })));
         if ($('planProfileInfo')) $('planProfileInfo').innerHTML = '<b>ATMS JSON</b><span>100 % Erkennung</span><small>Bestehende ATMS-Datenstruktur erkannt.</small>';
         render();
+        maybeAutoImportCleanPlan();
         return;
       }
 
@@ -4832,6 +4835,7 @@
       localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);
       render();
+      maybeAutoImportCleanPlan();
     } catch (error) {
       $('importStatus').textContent = `Fehler: ${error.message}`;
       $('planAnalysis').classList.add('hidden');
@@ -4848,6 +4852,8 @@
     state.ocrDiagnosticSelfCheck = null;
     state.issues = [];
     state.meta = {};
+    state.autoImportCompleted = false;
+    if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
     state.dateInfo = {};
@@ -4876,8 +4882,9 @@
     } catch (_) {}
   });
 
-  function importRides() {
-    if (!state.rides.length) return;
+  function importRides(options = {}) {
+    if (!state.rides.length) return false;
+    const auto = Boolean(options && options.auto);
     try {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
       if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
@@ -4887,12 +4894,35 @@
        const result = window.applyImportedRides(normalized);
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
-      $('importStatus').textContent = result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`;
-      if (typeof window.showToast === 'function') window.showToast(`${result.count} Fahrten importiert`, 'ok');
+      $('importStatus').textContent = auto
+        ? `${result.count} Fahrten automatisch übernommen · Morgen-Modus aktiv.`
+        : (result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`);
+      if (auto && $('importPlanBtn')) {
+        $('importPlanBtn').disabled = true;
+        $('importPlanBtn').textContent = '✓ Fahrten automatisch übernommen';
+      }
+      if (typeof window.showToast === 'function') window.showToast(auto ? `${result.count} Fahrten automatisch übernommen` : `${result.count} Fahrten importiert`, 'ok');
       if (typeof window.render === 'function') window.render();
+      return true;
     } catch (error) {
+      if (auto) state.autoImportCompleted = false;
       $('importStatus').textContent = `Importfehler: ${error.message}`;
+      return false;
     }
+  }
+
+  function maybeAutoImportCleanPlan() {
+    if (state.autoImportCompleted || !state.rides.length) return false;
+    const actionable = (Array.isArray(state.issues) ? state.issues : []).filter(issue => issue.kind !== 'flight_check');
+    const errors = actionable.filter(issue => issue.level === 'error').length;
+    const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const priceIssues = actionable.filter(issue => issue.kind === 'price').length;
+    if (errors || warnings || priceIssues) return false;
+    if (typeof window.ATMSAuthorizeCleanPlanAutoImport !== 'function') return false;
+    const gate = window.ATMSAuthorizeCleanPlanAutoImport();
+    if (!gate || gate.ok !== true) return false;
+    state.autoImportCompleted = true;
+    return importRides({ auto: true });
   }
 
   async function runAutomaticFlightCheck() {

@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS – Ein echter Nutzer-Klick auf „Planliste analysieren“ darf eine anschließend vollständig saubere OCR-Planliste (0 Hinweise, 0 Fehler; offene Flugprüfungen blockieren nicht) einmalig automatisch übernehmen. Der bestehende Trusted-Click-Importguard bleibt erhalten: nur die konkrete, zuvor vertrauenswürdig gestartete Analyse erhält ein zeitlich begrenztes Auto-Import-Ticket; programmgesteuerte Analyse-/Import-Klicks bleiben blockiert. Keine Änderung an OCR-, Flugort-, LIVE-, PLAN/DISPO-, Fahrer-, Preis- oder Persistenzlogik.
 // CORE-007D8A1F1D8P31F3 · 18.09.2026: DISPO NOTE DISPLAY – Dispo-Freitext, der beim Import mangels eigener Bemerkungsspalte aus der Ort-Spalte als Notiz gesichert wurde (z. B. „Kommt nicht“), bleibt sichtbar und wird in Fahrtenkarte sowie Cockpit als „📝 Dispo“ angezeigt. Bündelfahrten sammeln die Notizen ihrer Mitgliedsfahrten ohne Duplikate. Keine Änderung an OCR-, Flugort-, PLAN/DISPO/LIVE-, Fahrer-, Preis- oder Persistenzlogik.
 // CORE-007D8A1F1D8P31F1 · 18.09.2026: LIVE PRIMARY SOURCE ACCEPTANCE – LIVE-FLIGHT akzeptiert im laufenden Betrieb eine einzige aktuelle Primärquelle, wenn sie das konkrete Flughafenereignis eindeutig belegt: offizielle DUS-/CGN-Airportquelle, offizielle Eurowings-Quelle oder exakte Flightradar24-Flugseite. Zwei vorhandene unabhängige Quellen werden weiterhin als Konsens geprüft; bei Quellenwiderspruch erfolgt keine automatische LIVE-Übernahme. FLIGHT-008/Flugortprüfung, OCR, PLAN/DISPO, Persistenz und übrige Logik bleiben unverändert.
 // CORE-007D8A1F1D8P28 · 18.09.2026: LIVE-DISPO ERSATZFAHRER-SELBSTTEST – Ergänzt einen isolierten Selbsttest für den bestehenden CORE-006Y Driver Availability Guard. Getestet werden aktiv/inaktiv, Trackingfreigabe, eigene offene Fahrt, erledigte Fahrt sowie die erneute Guard-Prüfung vor „Lösung übernehmen“. Der Test arbeitet ausschließlich mit künstlichen In-Memory-Testdaten und prüft zusätzlich, dass echte Fahrten, DONE und lokale ATMS-Daten unverändert bleiben. Keine Änderung an PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- oder Persistenzlogik.
@@ -2437,8 +2438,11 @@ function ensureLiveFlightPanel(){
   renderArrivalBufferSetting();
 }
 
-/* CORE-006A – Planimport nur nach explizitem, echtem Nutzer-Klick */
+/* CORE-006A / P31F4 – Planimport nur nach explizitem, echtem Nutzer-Klick.
+   P31F4 erlaubt zusaetzlich genau EINEN automatischen Import nach einer zuvor
+   vertrauenswuerdig gestarteten Analyse. */
 let atmsPlanImportAuthorization={armed:false,source:'',at:0};
+let atmsPlanAnalyzeAuthorization={armed:false,at:0};
 
 function armPlanImportAuthorization(source){
   atmsPlanImportAuthorization={
@@ -2448,6 +2452,24 @@ function armPlanImportAuthorization(source){
   };
   persistAudit('plan_import_authorized',{source:String(source||'')});
 }
+function armPlanAnalyzeAuthorization(){
+  atmsPlanAnalyzeAuthorization={armed:true,at:Date.now()};
+  persistAudit('plan_analysis_authorized',{source:'analyzePlanBtn'});
+}
+function authorizeCleanPlanAutoImportFromTrustedAnalyze(){
+  const auth=atmsPlanAnalyzeAuthorization;
+  atmsPlanAnalyzeAuthorization={armed:false,at:0};
+  const age=Date.now()-Number(auth?.at||0);
+  const ok=Boolean(auth?.armed)&&age>=0&&age<=120000;
+  if(!ok){
+    persistAudit('plan_auto_import_not_authorized',{ageMs:Number.isFinite(age)?age:null});
+    return {ok:false,ageMs:Number.isFinite(age)?age:null};
+  }
+  armPlanImportAuthorization('analyzePlanBtn:auto-clean');
+  persistAudit('plan_auto_import_authorized',{ageMs:age});
+  return {ok:true,ageMs:age};
+}
+window.ATMSAuthorizeCleanPlanAutoImport=authorizeCleanPlanAutoImportFromTrustedAnalyze;
 function consumePlanImportAuthorization(){
   const auth=atmsPlanImportAuthorization;
   atmsPlanImportAuthorization={armed:false,source:'',at:0};
@@ -2462,16 +2484,20 @@ function installPlanImportTrustedClickGuard(){
   if(window.__atmsPlanImportTrustedClickGuard)return;
   document.addEventListener('click',event=>{
     const target=event.target instanceof Element?event.target:event.target?.parentElement;
-    const button=target?.closest?.('#importPlanBtn,#loadBtn');
+    const button=target?.closest?.('#importPlanBtn,#loadBtn,#analyzePlanBtn');
     if(!button)return;
 
     // Programmgesteuerte .click()-Aufrufe sind nicht vertrauenswürdig und dürfen
-    // weder plan-import.js noch den Legacy-JSON-Import erreichen.
+    // weder Analyse noch Planimport/Legacy-JSON-Import autorisieren.
     if(event.isTrusted!==true){
       event.preventDefault();
       event.stopImmediatePropagation();
       persistAudit('plan_import_untrusted_click_blocked',{source:button.id||''});
       try{showToast('Automatischer Planimport aus Sicherheitsgründen blockiert','warn')}catch(_){}
+      return;
+    }
+    if(button.id==='analyzePlanBtn'){
+      armPlanAnalyzeAuthorization();
       return;
     }
     armPlanImportAuthorization(button.id||'');
