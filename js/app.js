@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P27 · 17.09.2026: LIVE-DISPO PICKUP DELAY BASIS FIX – Fahrerwarnungen und Live-Dispo-Verspätungsbewertung verwenden jetzt ausschließlich die Differenz zwischen bestätigter LIVE-Abholzeit und DISPO-Zeit (Fallback PLAN), nicht mehr die reine Flugverspätung am Airport. Flugstatus, LIVE-Ankunft/Abflug, Arrival-Puffer, PLAN/DISPO/LIVE-Trennung, GPS, Routing, Nachrichten, Fahrer und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P26S · 17.09.2026: LIVE-DISPO VISUAL BALANCE PACK – Übernimmt den bestätigten Zielbild-Feinschliff konservativ: der obere Button wird eindeutig als Live-Dispo-spezifisch benannt, verbliebene Legacy-Einzelbedienelemente werden im eingeklappten Zielbild sicher ausgeblendet und die mobile Vertikalbalance wird leicht gestrafft. Maximale P26Q-Lesbarkeit, globale Bottom-Navigation sowie LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- und Persistenzlogik bleiben unverändert.
 // CORE-007D8A1F1D8P26R · 17.09.2026: LIVE-DISPO TRAILING SPACE CLEANUP – Entfernt im eingeklappten Live-Dispo-Zustand ausschließlich verbliebene Legacy-Nachlaufbereiche hinter dem Zielbild und hebt eine mögliche Mindesthöhe des Live-Views auf. Dadurch endet die Zielbild-Hauptansicht direkt nach der Warnkarte statt mit unnötigem Leerraum. Beim Öffnen von „⚙ Einstellungen“ werden markierte Legacy-Bereiche wiederhergestellt. Keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Navigation-, Nachrichten-, Fahrer- oder Persistenzlogik.
 // CORE-007D8A1F1D8P26Q · 17.09.2026: LIVE-DISPO MAX SAFE READABILITY – Hebt ausschließlich kleine/sekundäre Texte der mobilen Live-Dispo auf die größtmögliche noch stabile Lesbarkeitsstufe an. Große Überschriften, Hauptzahlen, Navigation sowie LIVE-/PLAN-/DISPO-/GPS-/Nachrichten-/Persistenzlogik bleiben unverändert.
@@ -2669,10 +2670,21 @@ function liveHandoverAvailability(target,settings=getLiveSettings()){
   }
   return{available:true,reason:'Keine eigene offene Fahrt in der aktuellen Live-Disposition.',openRides:[]};
 }
-function delayForRide(r){return liveSnapshotFreshness(r).usable?Math.max(0,Number(r.delayMinutes||0)):0}
-// CORE-006U2: Für die Live-Disposition ist 0 Minuten nur dann „pünktlich“, wenn
-// ein bestätigter Live-Status das tatsächlich aussagt. scheduled/unknown ohne
-// Estimated-/Actual-Zeit bleiben neutral und dürfen nicht als On-Time erscheinen.
+// CORE-007D8A1F1D8P27: Die Fahrerwarnung bewertet die tatsächliche Abholverschiebung.
+// Airport-delayMinutes bleibt reine Flugereignis-Information und darf die Fahrt nicht direkt als verspätet markieren.
+function livePickupDelayDeltaForRide(r){
+  if(!liveSnapshotFreshness(r).usable)return null;
+  const baseline=strictClockOrNull(first(dispoTimeOf(r),planTimeOf(r)));
+  const livePickup=strictClockOrNull(liveTimeOf(r));
+  return baseline&&livePickup?minuteDeltaClock(baseline,livePickup):null;
+}
+function delayForRide(r){
+  const delta=livePickupDelayDeltaForRide(r);
+  return delta===null?0:Math.max(0,Number(delta)||0);
+}
+// CORE-006U2 + P27: Für die Live-Disposition ist ausschließlich die bestätigte
+// LIVE-Abholzeit gegen DISPO (Fallback PLAN) die Verspätungsbasis. scheduled/unknown
+// ohne nutzbare LIVE-Abholzeit bleiben neutral und dürfen keine Fahrerwarnung erzeugen.
 function liveDispositionAssessment(r,threshold=7){
   const freshness=liveSnapshotFreshness(r);
   if(!freshness.usable){
@@ -2680,23 +2692,22 @@ function liveDispositionAssessment(r,threshold=7){
     return{hasLive:false,hasDelayAssessment:false,delay:null,label:'Keine aktuell bestätigte LIVE-Zeit',className:''};
   }
   const status=String(r?.liveFlightStatus||'').trim().toLowerCase();
-  const scheduled=strictClockOrNull(r?.liveFlightScheduledTime);
-  const current=strictClockOrNull(first(r?.liveFlightActualTime,r?.liveFlightEstimatedTime));
-  let measuredDelay=scheduled&&current?minuteDeltaClock(scheduled,current):null;
-  const storedDelay=Number(r?.delayMinutes);
-  if(measuredDelay===null&&status==='delayed'&&Number.isFinite(storedDelay)&&storedDelay>0)measuredDelay=storedDelay;
-  if(status==='on_time')return{hasLive:true,hasDelayAssessment:true,delay:0,label:'Pünktlich / keine Verspätung gemeldet',className:'good'};
-  if(status==='scheduled'&&measuredDelay!==null){const delay=Math.max(0,Number(measuredDelay)||0);return{hasLive:true,hasDelayAssessment:true,delay,label:delay>0?`Prognose: +${delay} Min.`:'Pünktlich / Live-Zeit bestätigt',className:delay>=threshold?'bad':delay>0?'warn':'good'}}
-  if(status==='delayed'){const delay=Math.max(0,Number(measuredDelay)||0);return{hasLive:true,hasDelayAssessment:true,delay,label:delay>0?`Prognose: +${delay} Min.`:'Verspätung gemeldet',className:delay>=threshold?'bad':'warn'}}
-  if(status==='departed'){
-    if(measuredDelay!==null){const delay=Math.max(0,Number(measuredDelay)||0);return{hasLive:true,hasDelayAssessment:true,delay,label:delay>0?`Abgeflogen · +${delay} Min.`:'Abgeflogen · pünktlich',className:delay>=threshold?'bad':delay>0?'warn':'good'}}
-    return{hasLive:true,hasDelayAssessment:false,delay:null,label:'Abgeflogen',className:''};
-  }
-  if(status==='landed'){
-    if(measuredDelay!==null){const delay=Math.max(0,Number(measuredDelay)||0);return{hasLive:true,hasDelayAssessment:true,delay,label:delay>0?`Gelandet · +${delay} Min.`:'Gelandet · pünktlich',className:delay>=threshold?'bad':delay>0?'warn':'good'}}
-    return{hasLive:true,hasDelayAssessment:false,delay:null,label:'Gelandet',className:''};
-  }
   if(status==='cancelled')return{hasLive:true,hasDelayAssessment:false,delay:null,label:'Storniert',className:'bad'};
+  const pickupDelta=livePickupDelayDeltaForRide(r);
+  if(pickupDelta!==null){
+    const delay=Math.max(0,Number(pickupDelta)||0);
+    const prefix=status==='landed'?'Gelandet · ':status==='departed'?'Abgeflogen · ':'';
+    const label=pickupDelta>0
+      ? `${prefix}LIVE-Abholzeit +${delay} Min.`
+      : pickupDelta<0
+        ? `${prefix}LIVE-Abholzeit ${Math.abs(pickupDelta)} Min. früher`
+        : `${prefix}LIVE-Abholzeit pünktlich`;
+    return{hasLive:true,hasDelayAssessment:true,delay,pickupDelta,label,className:delay>=threshold?'bad':delay>0?'warn':'good'};
+  }
+  if(status==='departed')return{hasLive:true,hasDelayAssessment:false,delay:null,label:'Abgeflogen · keine bestätigte LIVE-Abholzeit',className:''};
+  if(status==='landed')return{hasLive:true,hasDelayAssessment:false,delay:null,label:'Gelandet · keine bestätigte LIVE-Abholzeit',className:''};
+  if(status==='delayed')return{hasLive:true,hasDelayAssessment:false,delay:null,label:'Flug verspätet · keine bestätigte LIVE-Abholzeit',className:''};
+  if(status==='on_time')return{hasLive:true,hasDelayAssessment:false,delay:null,label:'Flug pünktlich · keine bestätigte LIVE-Abholzeit',className:''};
   if(status==='scheduled')return{hasLive:false,hasDelayAssessment:false,delay:null,label:'Flug bestätigt · noch keine operative LIVE-Zeit',className:''};
   return{hasLive:false,hasDelayAssessment:false,delay:null,label:'Keine aktuell bestätigte LIVE-Zeit',className:''};
 }
