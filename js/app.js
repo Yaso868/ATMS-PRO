@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P28 · 18.09.2026: LIVE-DISPO ERSATZFAHRER-SELBSTTEST – Ergänzt einen isolierten Selbsttest für den bestehenden CORE-006Y Driver Availability Guard. Getestet werden aktiv/inaktiv, Trackingfreigabe, eigene offene Fahrt, erledigte Fahrt sowie die erneute Guard-Prüfung vor „Lösung übernehmen“. Der Test arbeitet ausschließlich mit künstlichen In-Memory-Testdaten und prüft zusätzlich, dass echte Fahrten, DONE und lokale ATMS-Daten unverändert bleiben. Keine Änderung an PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- oder Persistenzlogik.
 // CORE-007D8A1F1D8P27 · 17.09.2026: LIVE-DISPO PICKUP DELAY BASIS FIX – Fahrerwarnungen und Live-Dispo-Verspätungsbewertung verwenden jetzt ausschließlich die Differenz zwischen bestätigter LIVE-Abholzeit und DISPO-Zeit (Fallback PLAN), nicht mehr die reine Flugverspätung am Airport. Flugstatus, LIVE-Ankunft/Abflug, Arrival-Puffer, PLAN/DISPO/LIVE-Trennung, GPS, Routing, Nachrichten, Fahrer und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P26S · 17.09.2026: LIVE-DISPO VISUAL BALANCE PACK – Übernimmt den bestätigten Zielbild-Feinschliff konservativ: der obere Button wird eindeutig als Live-Dispo-spezifisch benannt, verbliebene Legacy-Einzelbedienelemente werden im eingeklappten Zielbild sicher ausgeblendet und die mobile Vertikalbalance wird leicht gestrafft. Maximale P26Q-Lesbarkeit, globale Bottom-Navigation sowie LIVE-/PLAN-/DISPO-, GPS-, Routing-, Nachrichten-, Fahrer- und Persistenzlogik bleiben unverändert.
 // CORE-007D8A1F1D8P26R · 17.09.2026: LIVE-DISPO TRAILING SPACE CLEANUP – Entfernt im eingeklappten Live-Dispo-Zustand ausschließlich verbliebene Legacy-Nachlaufbereiche hinter dem Zielbild und hebt eine mögliche Mindesthöhe des Live-Views auf. Dadurch endet die Zielbild-Hauptansicht direkt nach der Warnkarte statt mit unnötigem Leerraum. Beim Öffnen von „⚙ Einstellungen“ werden markierte Legacy-Bereiche wiederhergestellt. Keine Änderung an LIVE-/PLAN-/DISPO-, GPS-, Routing-, Navigation-, Nachrichten-, Fahrer- oder Persistenzlogik.
@@ -2655,20 +2656,96 @@ function isPastLiveDispositionRide(r,settings=getLiveSettings(),now=new Date()){
   const rideStamp=rideDateTimeMinuteStamp(r);if(rideStamp===null)return false;
   return berlinDateTimeMinuteStamp(now)>(rideStamp+livePastRideGraceMinutes(settings));
 }
-function ridesForLiveDriver(name){const settings=getLiveSettings();return visualRides(rides).filter(r=>normKey(r.driver)===normKey(name)&&!(r._bundleMemberIds||[r.id]).every(id=>done.has(id))&&!isPastLiveDispositionRide(r,settings)).sort((a,b)=>minutesOf(effectiveTime(a))-minutesOf(effectiveTime(b)))}
+function ridesForLiveDriverFromSource(name,sourceRides=rides,doneSet=done,settings=getLiveSettings(),now=new Date()){
+  const completed=doneSet instanceof Set?doneSet:new Set(Array.isArray(doneSet)?doneSet:[]);
+  return visualRides(Array.isArray(sourceRides)?sourceRides:[])
+    .filter(r=>normKey(r.driver)===normKey(name)&&!(r._bundleMemberIds||[r.id]).every(id=>completed.has(id))&&!isPastLiveDispositionRide(r,settings,now))
+    .sort((a,b)=>minutesOf(effectiveTime(a))-minutesOf(effectiveTime(b)));
+}
+function ridesForLiveDriver(name){return ridesForLiveDriverFromSource(name,rides,done,getLiveSettings(),new Date())}
 // CORE-006Y: Konservativer Verfügbarkeits-Guard. Ein Ersatzfahrer gilt nur dann als
 // sicher verfügbar, wenn er aktiv + freigegeben ist und nach derselben Live-Dispo-
 // Zeitlogik keine eigene offene Fahrt mehr hat. Wir erfinden bewusst keine
 // Fahrtdauern/Transferzeiten; existiert eine offene Fahrt, bleibt die Dispo manuell.
-function liveHandoverAvailability(target,settings=getLiveSettings()){
+function liveHandoverAvailabilityForSource(target,settings=getLiveSettings(),sourceRides=rides,doneSet=done,now=new Date()){
   if(!target||target.active===false)return{available:false,reason:'Ersatzfahrer ist nicht aktiv.',openRides:[]};
   if(!settings.consentByDriver?.[target.id])return{available:false,reason:'Trackingfreigabe fehlt.',openRides:[]};
-  const openRides=ridesForLiveDriver(target.name);
+  const openRides=ridesForLiveDriverFromSource(target.name,sourceRides,doneSet,settings,now);
   if(openRides.length){
     const firstRide=openRides[0],time=effectiveTime(firstRide)||'–',label=firstRide.flightNumber||firstRide.id||'Fahrt';
     return{available:false,reason:`Eigene offene Fahrt vorhanden: ${label} um ${time}.`,openRides};
   }
   return{available:true,reason:'Keine eigene offene Fahrt in der aktuellen Live-Disposition.',openRides:[]};
+}
+function liveHandoverAvailability(target,settings=getLiveSettings()){
+  return liveHandoverAvailabilityForSource(target,settings,rides,done,new Date());
+}
+
+// CORE-007D8A1F1D8P28 – isolierter Ersatzfahrer-Selbsttest.
+// Ausschließlich künstliche In-Memory-Daten; echte Fahrten, DONE und localStorage bleiben unverändert.
+function liveHandoverSelfTestBerlinClock(value=new Date()){
+  try{
+    const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Berlin',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date(value));
+    const h=parts.find(p=>p.type==='hour')?.value||'00',m=parts.find(p=>p.type==='minute')?.value||'00';
+    return `${h}:${m}`;
+  }catch(_){
+    const d=new Date(value);return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
+}
+function liveHandoverSelfTestProtectedSnapshot(){
+  let storage={};try{storage=atmsStorageSnapshot()}catch(_){storage={}}
+  return JSON.stringify({rides,done:[...done],storage});
+}
+function runLiveHandoverSelfTest(){
+  const protectedBefore=liveHandoverSelfTestProtectedSnapshot();
+  const now=new Date(),date=berlinDate(now),future=clockPlusMinutes(liveHandoverSelfTestBerlinClock(now),30);
+  const inactive={id:'__atms_p28_inactive__',name:'ATMS Test Inaktiv',active:false};
+  const noConsent={id:'__atms_p28_no_consent__',name:'ATMS Test Ohne Freigabe',active:true};
+  const busy={id:'__atms_p28_busy__',name:'ATMS Test Belegt',active:true};
+  const free={id:'__atms_p28_free__',name:'ATMS Test Frei',active:true};
+  const settings={pastRideGraceMinutes:120,consentByDriver:{
+    [busy.id]:true,[free.id]:true,[inactive.id]:true
+  }};
+  const busyRide={id:'__atms_p28_busy_ride__',date,planTime:future,dispoTime:future,driver:busy.name,pickup:'ATMS Test Start',destination:'ATMS Test Ziel',flightNumber:'',persons:1,vehicle:'Pkw'};
+  const freeRide={id:'__atms_p28_done_ride__',date,planTime:future,dispoTime:future,driver:free.name,pickup:'ATMS Test Start',destination:'ATMS Test Ziel',flightNumber:'',persons:1,vehicle:'Pkw'};
+  const source=[busyRide,freeRide];
+
+  const inactiveResult=liveHandoverAvailabilityForSource(inactive,settings,source,new Set(),now);
+  const noConsentResult=liveHandoverAvailabilityForSource(noConsent,settings,source,new Set(),now);
+  const busyResult=liveHandoverAvailabilityForSource(busy,settings,source,new Set(),now);
+  const freeWithDoneResult=liveHandoverAvailabilityForSource(free,settings,source,new Set([freeRide.id]),now);
+  const freeWithOpenResult=liveHandoverAvailabilityForSource(free,settings,source,new Set(),now);
+
+  const recommendationGuardWired=String(renderLiveDelayAndSolution).includes('liveHandoverAvailability(');
+  const applyGuardWired=String(applyLiveSolution).includes('liveHandoverAvailability(');
+  const protectedAfter=liveHandoverSelfTestProtectedSnapshot();
+  const checks=[
+    {label:'Inaktiver Fahrer wird blockiert',ok:inactiveResult.available===false&&/nicht aktiv/i.test(inactiveResult.reason)},
+    {label:'Fehlende Trackingfreigabe wird blockiert',ok:noConsentResult.available===false&&/Trackingfreigabe fehlt/i.test(noConsentResult.reason)},
+    {label:'Eigene offene Fahrt blockiert Ersatzfahrer',ok:busyResult.available===false&&busyResult.openRides.length===1},
+    {label:'Erledigte eigene Fahrt blockiert nicht',ok:freeWithDoneResult.available===true&&freeWithDoneResult.openRides.length===0},
+    {label:'Offene Fahrt wird bei erneutem Check wieder blockiert',ok:freeWithOpenResult.available===false&&freeWithOpenResult.openRides.length===1},
+    {label:'Empfehlung nutzt Driver Availability Guard',ok:recommendationGuardWired},
+    {label:'„Lösung übernehmen“ prüft Verfügbarkeit erneut',ok:applyGuardWired},
+    {label:'Echte Fahrten, DONE und lokale ATMS-Daten unverändert',ok:protectedBefore===protectedAfter}
+  ];
+  const ok=checks.every(x=>x.ok);
+  const result={ok,version:'CORE-007D8A1F1D8P28',checkedAt:new Date().toISOString(),checks};
+  const out=$('atmsLiveHandoverSelfTestOutput');
+  if(out)out.textContent=`${ok?'✓ ERSATZFAHRER-SELBSTTEST BESTANDEN':'⚠ ERSATZFAHRER-SELBSTTEST FEHLGESCHLAGEN'}\n\n${checks.map(x=>`${x.ok?'✓':'✕'} ${x.label}`).join('\n')}`;
+  showToast(ok?'Ersatzfahrer-Selbsttest OK':'Ersatzfahrer-Selbsttest fehlgeschlagen',ok?'ok':'warn');
+  return result;
+}
+function ensureLiveHandoverSelfTestPanel(){
+  if($('atmsLiveHandoverSelfTestPanel'))return true;
+  const host=atmsLiveTargetLegacyCard('liveWarnThreshold')||atmsLiveTargetLegacyCard('liveEventLog')||$('liveDispositionView');
+  if(!host)return false;
+  const panel=document.createElement('div');panel.id='atmsLiveHandoverSelfTestPanel';
+  panel.style.cssText='margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)';
+  panel.innerHTML=`<div style="font-weight:900;margin-bottom:6px">🧪 Ersatzfahrer-Selbsttest</div><div style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:9px">Prüft CORE-006Y ausschließlich mit künstlichen Testfahrern und Testfahrten. Echte Fahrten, DONE, Trackingfreigaben und lokale ATMS-Daten werden nicht verändert.</div><button type="button" id="atmsLiveHandoverSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:900">🧪 Ersatzfahrer-Selbsttest starten</button><pre id="atmsLiveHandoverSelfTestOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:34vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.45">Bereit. Noch nicht ausgeführt.</pre>`;
+  host.appendChild(panel);
+  $('atmsLiveHandoverSelfTestBtn')?.addEventListener('click',runLiveHandoverSelfTest);
+  return true;
 }
 // CORE-007D8A1F1D8P27: Die Fahrerwarnung bewertet die tatsächliche Abholverschiebung.
 // Airport-delayMinutes bleibt reine Flugereignis-Information und darf die Fahrt nicht direkt als verspätet markieren.
@@ -3517,6 +3594,7 @@ function ensureLiveDispositionTargetFinish(){
   if(old&&old.dataset.atmsP26fBound!=='1'){
     const fresh=old.cloneNode(true);fresh.dataset.atmsP26fBound='1';old.replaceWith(fresh);fresh.addEventListener('click',toggleLiveDispositionTargetAdvanced);
   }
+  ensureLiveHandoverSelfTestPanel();
   applyLiveDispositionTargetFinishCleanup();
   ensureLiveDispositionTargetDemo();
   applyLiveDispositionTargetDemo();
