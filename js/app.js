@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P31F7 · 18.09.2026: OFFICIAL AIRPORT AUTO-REFRESH – Unterstützte offizielle Airport-LIVE-Quellen werden nach App-Start, bei Rückkehr in den Vordergrund, nach Wiederherstellung der Netzverbindung und anschließend alle 5 Minuten automatisch aktualisiert. Es werden nur aktuell relevante, offene Fahrten geprüft; parallele/zu häufige Abfragen werden gebremst. In der PWA ist aktuell CGN direkt unterstützt. DUS bleibt wegen Airport-CORS für die spätere native App vorbereitet. PLAN/DISPO, FLIGHT-008, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F6 · 18.09.2026: OFFICIAL AIRPORT PROVIDER – Ergänzt einen austauschbaren offiziellen Airport-Datenprovider. CGN kann in der PWA direkt per CORS als starke Primärquelle für LIVE verwendet werden; DUS bleibt in der Browser-PWA wegen der vom Airport gesetzten CORS-Beschränkung deaktiviert und ist für die spätere native App vorbereitet. Nach einem Planimport startet für unterstützte Airport-Fahrten automatisch eine stille LIVE-Aktualisierung. PLAN/DISPO, FLIGHT-008-Zweiquellenregel für Flugorte, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS – Ein echter Nutzer-Klick auf „Planliste analysieren“ darf eine anschließend vollständig saubere OCR-Planliste (0 Hinweise, 0 Fehler; offene Flugprüfungen blockieren nicht) einmalig automatisch übernehmen. Der bestehende Trusted-Click-Importguard bleibt erhalten: nur die konkrete, zuvor vertrauenswürdig gestartete Analyse erhält ein zeitlich begrenztes Auto-Import-Ticket; programmgesteuerte Analyse-/Import-Klicks bleiben blockiert. Keine Änderung an OCR-, Flugort-, LIVE-, PLAN/DISPO-, Fahrer-, Preis- oder Persistenzlogik.
 // CORE-007D8A1F1D8P31F3 · 18.09.2026: DISPO NOTE DISPLAY – Dispo-Freitext, der beim Import mangels eigener Bemerkungsspalte aus der Ort-Spalte als Notiz gesichert wurde (z. B. „Kommt nicht“), bleibt sichtbar und wird in Fahrtenkarte sowie Cockpit als „📝 Dispo“ angezeigt. Bündelfahrten sammeln die Notizen ihrer Mitgliedsfahrten ohne Duplikate. Keine Änderung an OCR-, Flugort-, PLAN/DISPO/LIVE-, Fahrer-, Preis- oder Persistenzlogik.
@@ -65,9 +66,14 @@
 // CORE-005V3 08.09.2026: Persistenz-Panel wird direkt IN das sichtbare Live-Flugdaten-Panel gemountet; vorhandene Fehlplatzierung wird automatisch verschoben.
 // CORE-005V4 08.09.2026: Kritische Safety-Schattenwerte werden bei normalen Snapshots niemals durch bloß fehlende localStorage-Keys verworfen; Startup/Import kann dadurch verlorene Flugdaten wiederherstellen.
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
+const ATMS_OFFICIAL_LIVE_AUTO_REFRESH_MS=5*60*1000;
+const ATMS_OFFICIAL_LIVE_AUTO_MIN_GAP_MS=45*1000;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 let atmsOfficialFlightProviderPromise=null;
+let atmsOfficialLiveAutoTimer=null;
+let atmsOfficialLiveAutoInFlight=false;
+let atmsOfficialLiveAutoLastAttemptAt=0;
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -1994,17 +2000,65 @@ async function ensureOfficialFlightProvider(){
   }
   return atmsOfficialFlightProviderPromise;
 }
-async function runOfficialAirportLiveAutoRefresh(reason='automatic'){
+function officialAirportLiveAutoItems(){
+  return liveFlightCheckItems(liveFlightRelevantRides()).filter(item=>String(item?.airportIata||'').trim().toUpperCase()==='CGN');
+}
+function clearOfficialAirportLiveAutoTimer(){
+  if(atmsOfficialLiveAutoTimer){clearTimeout(atmsOfficialLiveAutoTimer);atmsOfficialLiveAutoTimer=null}
+}
+function scheduleOfficialAirportLiveAutoRefresh(){
+  clearOfficialAirportLiveAutoTimer();
+  if(!Array.isArray(rides)||!rides.length||!officialAirportLiveAutoItems().length)return;
+  atmsOfficialLiveAutoTimer=setTimeout(async()=>{
+    atmsOfficialLiveAutoTimer=null;
+    try{
+      if(!document.hidden&&navigator.onLine)await runOfficialAirportLiveAutoRefresh('interval',{silent:true});
+    }finally{
+      scheduleOfficialAirportLiveAutoRefresh();
+    }
+  },ATMS_OFFICIAL_LIVE_AUTO_REFRESH_MS);
+}
+async function runOfficialAirportLiveAutoRefresh(reason='automatic',options={}){
+  const force=Boolean(options?.force===true||reason==='plan-import');
+  const silent=Boolean(options?.silent===true);
   if(!Array.isArray(rides)||!rides.length||!navigator.onLine)return{ok:false,reason:'offline_or_empty'};
-  const items=liveFlightCheckItems(liveFlightRelevantRides()).filter(item=>String(item?.airportIata||'').trim().toUpperCase()==='CGN');
+  if(!force&&document.hidden)return{ok:false,reason:'background_suspended'};
+  const items=officialAirportLiveAutoItems();
   if(!items.length)return{ok:true,checked:0,reason:'no_supported_airport'};
-  let provider;
-  try{provider=await ensureOfficialFlightProvider()}catch(error){
-    return{ok:false,checked:0,reason:'provider_unavailable',message:String(error?.message||error||'')};
+  if(atmsOfficialLiveAutoInFlight)return{ok:false,checked:0,reason:'already_running'};
+  const now=Date.now();
+  if(!force&&atmsOfficialLiveAutoLastAttemptAt&&now-atmsOfficialLiveAutoLastAttemptAt<ATMS_OFFICIAL_LIVE_AUTO_MIN_GAP_MS){
+    return{ok:false,checked:0,reason:'throttled'};
   }
-  const result=await provider.fetchLive(items);
-  if(!Array.isArray(result?.flights)||!result.flights.length)return{ok:false,checked:0,reason:'no_confirmed_result',failures:result?.failures||[]};
-  return applyLiveFlightResult({automatic:true,payload:{checkedAt:result.checkedAt||new Date().toISOString(),flights:result.flights},reason});
+  let provider;
+  atmsOfficialLiveAutoInFlight=true;
+  atmsOfficialLiveAutoLastAttemptAt=now;
+  try{
+    try{provider=await ensureOfficialFlightProvider()}catch(error){
+      return{ok:false,checked:0,reason:'provider_unavailable',message:String(error?.message||error||'')};
+    }
+    const result=await provider.fetchLive(items);
+    if(!Array.isArray(result?.flights)||!result.flights.length)return{ok:false,checked:0,reason:'no_confirmed_result',failures:result?.failures||[]};
+    return applyLiveFlightResult({automatic:true,silent,payload:{checkedAt:result.checkedAt||new Date().toISOString(),flights:result.flights},reason});
+  }finally{
+    atmsOfficialLiveAutoInFlight=false;
+  }
+}
+function initOfficialAirportLiveAutoRefresh(){
+  scheduleOfficialAirportLiveAutoRefresh();
+  setTimeout(async()=>{
+    if(!document.hidden&&navigator.onLine){
+      await runOfficialAirportLiveAutoRefresh('startup',{silent:true});
+      scheduleOfficialAirportLiveAutoRefresh();
+    }
+  },900);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden)return;
+    void runOfficialAirportLiveAutoRefresh('foreground',{silent:true}).finally(scheduleOfficialAirportLiveAutoRefresh);
+  });
+  window.addEventListener('online',()=>{
+    void runOfficialAirportLiveAutoRefresh('online',{silent:true}).finally(scheduleOfficialAirportLiveAutoRefresh);
+  });
 }
 function buildLiveFlightPrompt(includeAll=false){
   const source=includeAll?rides:liveFlightRelevantRides();
@@ -2209,6 +2263,7 @@ function liveHistoryPatchFromRide(r,archivedAt,reason){
 function applyLiveFlightResult(options={}){
   try{
     const automatic=Boolean(options&&options.automatic===true);
+    const silent=Boolean(options&&options.silent===true);
     const box=$('liveFlightResult');
     const payload=automatic&&options?.payload?JSON.stringify(options.payload):(box?.value||'');
     const checked=parseLiveFlightResult(payload);
@@ -2329,7 +2384,7 @@ function applyLiveFlightResult(options={}){
       ? `${parts.join(' · ')}. Automatisch über offizielle Airport-Quelle.`
       : `${parts.join(' · ')}. Neue Prüfung: zuerst „📡 Live-Prüfauftrag kopieren“.`;
     if(automatic){
-      if(updated||currentLiveTimes)showToast(`Airport-LIVE automatisch: ${updated} Fahrt(en) aktualisiert`,'ok');
+      if(!silent&&(updated||currentLiveTimes))showToast(`Airport-LIVE automatisch: ${updated} Fahrt(en) aktualisiert`,'ok');
     }else{
       showToast(`${updated} aktuelle Live-Flugstatus übernommen · ${currentLiveTimes} mit LIVE-Zeit`,'ok');
     }
@@ -2715,7 +2770,8 @@ function applyImportedRides(newRides){
   // P31F6: Nach dem sicheren Planimport CGN-LIVE automatisch aus der offiziellen
   // Airport-Quelle aktualisieren. DUS wird in der PWA wegen Airport-CORS bewusst
   // nicht über einen Proxy umgangen; die native App kann denselben Provider später erweitern.
-  setTimeout(()=>{void runOfficialAirportLiveAutoRefresh('plan-import')},0);
+  scheduleOfficialAirportLiveAutoRefresh();
+  setTimeout(()=>{void runOfficialAirportLiveAutoRefresh('plan-import').finally(scheduleOfficialAirportLiveAutoRefresh)},0);
 
   return {
     cancelled:false,
@@ -3909,6 +3965,7 @@ function initApp(){
     if(getDriverSession().active)startLiveGeoWatch();
     try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){console.warn('Einstellungen konnten nicht geladen werden',e)}
     updateLiveFlightPanelContext();
+    initOfficialAirportLiveAutoRefresh();
     if(rides.length){const ji=safeEl('jsonInput');if(ji)ji.value=JSON.stringify({rides},null,2);render()}else{showView('import')}
   }catch(error){showAppError(error);try{showView('import')}catch(_){} }
 }
@@ -3920,4 +3977,4 @@ window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAdd
 window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
-window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;window.runOfficialAirportLiveAutoRefresh=runOfficialAirportLiveAutoRefresh;
+window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;window.runOfficialAirportLiveAutoRefresh=runOfficialAirportLiveAutoRefresh;window.scheduleOfficialAirportLiveAutoRefresh=scheduleOfficialAirportLiveAutoRefresh;
