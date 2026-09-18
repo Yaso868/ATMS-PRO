@@ -2438,11 +2438,14 @@ function ensureLiveFlightPanel(){
   renderArrivalBufferSetting();
 }
 
-/* CORE-006A / P31F4 – Planimport nur nach explizitem, echtem Nutzer-Klick.
+/* CORE-006A / P31F4 / P31F5F1 – Planimport nur nach explizitem, echtem Nutzer-Klick.
    P31F4 erlaubt zusaetzlich genau EINEN automatischen Import nach einer zuvor
-   vertrauenswuerdig gestarteten Analyse. */
+   vertrauenswuerdig gestarteten Analyse. P31F5F1 trennt dafuer die Analyse-
+   Freigabe von der finalen Import-Freigabe, damit eine legitime asynchrone
+   Flugpruefung die 5-Sekunden-Importfreigabe nicht ablaufen laesst. */
 let atmsPlanImportAuthorization={armed:false,source:'',at:0};
 let atmsPlanAnalyzeAuthorization={armed:false,at:0};
+let atmsCleanPlanPipelineAuthorization={armed:false,at:0};
 
 function armPlanImportAuthorization(source){
   atmsPlanImportAuthorization={
@@ -2454,6 +2457,7 @@ function armPlanImportAuthorization(source){
 }
 function armPlanAnalyzeAuthorization(){
   atmsPlanAnalyzeAuthorization={armed:true,at:Date.now()};
+  atmsCleanPlanPipelineAuthorization={armed:false,at:0};
   persistAudit('plan_analysis_authorized',{source:'analyzePlanBtn'});
 }
 function authorizeCleanPlanAutoImportFromTrustedAnalyze(){
@@ -2465,11 +2469,25 @@ function authorizeCleanPlanAutoImportFromTrustedAnalyze(){
     persistAudit('plan_auto_import_not_authorized',{ageMs:Number.isFinite(age)?age:null});
     return {ok:false,ageMs:Number.isFinite(age)?age:null};
   }
-  armPlanImportAuthorization('analyzePlanBtn:auto-clean');
-  persistAudit('plan_auto_import_authorized',{ageMs:age});
+  atmsCleanPlanPipelineAuthorization={armed:true,at:Date.now()};
+  persistAudit('plan_auto_pipeline_authorized',{ageMs:age});
+  return {ok:true,ageMs:age};
+}
+function authorizeFinalCleanPlanAutoImport(){
+  const auth=atmsCleanPlanPipelineAuthorization;
+  atmsCleanPlanPipelineAuthorization={armed:false,at:0};
+  const age=Date.now()-Number(auth?.at||0);
+  const ok=Boolean(auth?.armed)&&age>=0&&age<=120000;
+  if(!ok){
+    persistAudit('plan_auto_import_final_not_authorized',{ageMs:Number.isFinite(age)?age:null});
+    return {ok:false,ageMs:Number.isFinite(age)?age:null};
+  }
+  armPlanImportAuthorization('analyzePlanBtn:auto-clean-final');
+  persistAudit('plan_auto_import_final_authorized',{ageMs:age});
   return {ok:true,ageMs:age};
 }
 window.ATMSAuthorizeCleanPlanAutoImport=authorizeCleanPlanAutoImportFromTrustedAnalyze;
+window.ATMSAuthorizeFinalCleanPlanAutoImport=authorizeFinalCleanPlanAutoImport;
 function consumePlanImportAuthorization(){
   const auth=atmsPlanImportAuthorization;
   atmsPlanImportAuthorization={armed:false,source:'',at:0};
