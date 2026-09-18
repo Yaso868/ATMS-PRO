@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P31 · 18.09.2026: RIDES + DONE INDEXEDDB DURABLE SHADOW – Erweitert den unabhängigen IndexedDB-Durable-Shadow auf Fahrten (rides) und Erledigt-Status (DONE). Beide Bereiche werden bei verifizierten Writes zusammen mit Flugcache, verifiziertem Flugbackup und Ride-Overrides in den Durable-Record gespiegelt, bei fehlendem localStorage sicher wiederhergestellt und in der Diagnose als Durable-Coverage geprüft. Startup- und manuelle Recovery laden wiederhergestellte Fahrten/DONE sofort in den In-Memory-Zustand, ohne vorhandene aktuelle Werte zu überschreiben. Der P30-Roundtrip-Selbsttest bleibt isoliert; keine Cloud und keine Änderung an PLAN/DISPO/LIVE-, OCR-, Flug-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P30 · 18.09.2026: INDEXEDDB DURABLE ROUNDTRIP SELFTEST – Erweitert den bestehenden Persistenz-Selbsttest um einen echten isolierten IndexedDB-Schreib-/Lese-/Lösch-Rundtest im vorhandenen Durable-Store. Verwendet ausschließlich einen separaten temporären Test-Record und verändert den produktiven Durable-Record, echte Fahrten, DONE, Flugcache, Ride-Overrides oder sonstige ATMS-Daten nicht. Der Test-Record wird nach der Prüfung wieder entfernt; Diagnose und Copy-Ausgabe zeigen das Ergebnis separat an. Keine Cloud, keine Änderung an PLAN/DISPO/LIVE-, OCR-, Flug-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P29F1 · 18.09.2026: P28 SELFTEST COMPATIBILITY FIX – Der bestehende Ersatzfahrer-Selbsttest erkennt nach P29 den zentralen executeLiveHandoverForSource-Pfad korrekt als erneute Verfügbarkeitsprüfung. Ausschließlich die Testverdrahtungsprüfung wurde angepasst; produktive Übergabe-, PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- und Persistenzlogik bleiben unverändert.
 // CORE-007D8A1F1D8P29 · 18.09.2026: LIVE-DISPO ERSATZFAHRER-ÜBERGABE-ENDTEST – Ergänzt einen isolierten Endtest für die tatsächliche Übergabe einer Fahrt an einen sicher verfügbaren Ersatzfahrer. Die produktive Übergabe nutzt dafür denselben zentralen Guard-Pfad mit erneuter Verfügbarkeitsprüfung unmittelbar vor der Zuweisung. Der Selbsttest arbeitet ausschließlich mit künstlichen In-Memory-Testdaten und prüft erfolgreiche Einzelzuweisung, unveränderte Nebenfahrten, Blockade bei neu entstandener Ersatzfahrer-Belegung, Blockade bei inzwischen geänderter Ausgangszuordnung sowie Unverändertheit echter Fahrten/DONE/lokaler ATMS-Daten. Keine Änderung an PLAN/DISPO/LIVE-, Flug-, GPS-, Routing-, Nachrichten- oder Persistenzlogik.
@@ -66,7 +67,7 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='',persistenceDurableSelfTestLast=null;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';const PERSIST_DURABLE_CRITICAL_KEYS=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='',persistenceDurableSelfTestLast=null;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -165,8 +166,8 @@ function updatePersistenceSafetyKey(key,rawValue,reason='write'){
 }
 // CORE-005V5: Zweite, unabhaengige Persistenzschicht in IndexedDB.
 // Sie ist absichtlich getrennt von localStorage, damit ein unerwarteter Verlust
-// des kompletten Safety-/Audit-Containers die letzte verifizierte Flugpruefung
-// nicht mehr mitreissen kann. Fehlende aktuelle Werte loeschen den Durable-Shadow nie.
+// des kompletten Safety-/Audit-Containers weder Fahrten/DONE noch die letzte
+// verifizierte Flugpruefung mitreissen kann. Fehlende aktuelle Werte loeschen den Durable-Shadow nie.
 function openPersistenceDurableDb(){
   return new Promise((resolve,reject)=>{
     try{
@@ -208,7 +209,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY]){
+  for(const key of PERSIST_DURABLE_CRITICAL_KEYS){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
@@ -233,6 +234,11 @@ async function initPersistenceDurableShadow(){
     persistenceDurableError='';
     const result=restoreMissingCriticalPersistence('startup-durable');
     if(result.restored){
+      // P31: Bei einer Wiederherstellung aus IndexedDB zuerst den gerade wiederhergestellten
+      // localStorage-Zustand neu einlesen. So kann ein frueh aufgeloester Async-Startup niemals
+      // eine restaurierte Fahrtenliste/DONE mit noch leerem In-Memory-Zustand ueberschreiben.
+      try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(_){rides=[]}
+      try{done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'))}catch(_){done=new Set()}
       recoverVerifiedFlightCache();
       const restoredRides=applyFlightCacheToRides(applyRideOverrides(rides).rides);
       rides=restoredRides.rides;
@@ -272,7 +278,7 @@ function capturePersistenceSafety(reason='snapshot'){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+    const protectedCritical=PERSIST_DURABLE_CRITICAL_KEYS;
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -299,7 +305,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
-    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY].includes(key)){
+    if(PERSIST_DURABLE_CRITICAL_KEYS.includes(key)){
       const storage={...(persistenceDurableShadow?.storage||{})};storage[key]=value;persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:'verified-write:'+reason,storage};persistenceDurableReady=true;
       writePersistenceDurableShadow(storage,'verified-write:'+reason).catch(e=>{persistenceDurableError=String(e?.message||e);persistAudit('durable_sync_failed',{reason:'verified-write:'+reason,message:persistenceDurableError})});
     }
@@ -313,7 +319,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+  const critical=PERSIST_DURABLE_CRITICAL_KEYS;
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
@@ -417,9 +423,11 @@ async function persistenceDurableRoundTripSelfTest(){
 function persistenceDiagnosis(){
   const snap=readPersistenceSafety();
   const localSelfTest=persistenceSelfTest();
+  const durableCoverageKeys=PERSIST_DURABLE_CRITICAL_KEYS.map(key=>({key,present:typeof persistenceDurableShadow?.storage?.[key]==='string'}));
+  const durableCoverage={protectedKeys:PERSIST_DURABLE_CRITICAL_KEYS.length,presentKeys:durableCoverageKeys.filter(x=>x.present).length,allProtected:durableCoverageKeys.every(x=>x.present),keys:durableCoverageKeys};
   const combinedSelfTest=persistenceDurableSelfTestLast
-    ? {...localSelfTest,indexedDbRoundTrip:persistenceDurableSelfTestLast.ok,ok:Boolean(localSelfTest.ok&&persistenceDurableSelfTestLast.ok)}
-    : localSelfTest;
+    ? {...localSelfTest,indexedDbRoundTrip:persistenceDurableSelfTestLast.ok,durableCoverage:durableCoverage.allProtected,ok:Boolean(localSelfTest.ok&&persistenceDurableSelfTestLast.ok&&durableCoverage.allProtected)}
+    : {...localSelfTest,durableCoverage:durableCoverage.allProtected,ok:Boolean(localSelfTest.ok&&durableCoverage.allProtected)};
   let audit=[];try{audit=JSON.parse(localStorage.getItem(PERSIST_AUDIT_KEY)||'[]');if(!Array.isArray(audit))audit=[]}catch(_){audit=[]}
   const inspect=key=>{
     const raw=localStorage.getItem(key),shadow=snap?.storage?.[key],durable=persistenceDurableShadow?.storage?.[key];
@@ -431,6 +439,7 @@ function persistenceDiagnosis(){
     diagnosis:'CORE-005V5 Durable Persistence Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
     selfTest:combinedSelfTest,
     durableRoundTrip:persistenceDurableSelfTestLast,
+    durableCoverage,
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
@@ -448,7 +457,7 @@ function ensurePersistenceSafetyPanel(){
     return true;
   }
   const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow für Fahrten, DONE und verifizierte Flugdaten, Write-Read-Check, Wiederherstellung und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
   // CORE-005V3: Das Live-Flugdaten-Panel ist auf Mobil bereits nachweislich sichtbar.
   // Deshalb wird die Persistenz-Sicherheit als Kind dieses Panels gemountet.
   // Fallbacks bleiben nur fuer den unwahrscheinlichen Fall, dass Live noch nicht existiert.
@@ -467,6 +476,8 @@ function ensurePersistenceSafetyPanel(){
     const btn=$('atmsPersistenceSelfTestBtn'),label=btn?.textContent||'🧪 Persistenz-Selbsttest';
     if(btn){btn.disabled=true;btn.textContent='🧪 Persistenz-Selbsttest läuft …'}
     try{
+      // P31: Vor der Diagnose alle fuenf geschuetzten Bereiche explizit in den Durable-Shadow spiegeln.
+      await syncPersistenceDurableShadow('selftest-coverage');
       await persistenceDurableRoundTripSelfTest();
       const result=persistenceDiagnosis();
       paint(result);
@@ -478,7 +489,7 @@ function ensurePersistenceSafetyPanel(){
     }finally{if(btn){btn.disabled=false;btn.textContent=label}}
   });
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
-  $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
+  $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot bzw. IndexedDB-Durable-Shadow wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');if(result.restored){try{rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm)}catch(_){rides=[]}try{done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'))}catch(_){done=new Set()}recoverVerifiedFlightCache();const restoredRides=applyFlightCacheToRides(applyRideOverrides(rides).rides);rides=restoredRides.rides;save();render()}paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
   $('atmsRestorePreviousImportBtn')?.addEventListener('click',restorePreviousPlanImport);
   return true;
 }
