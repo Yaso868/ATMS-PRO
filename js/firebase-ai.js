@@ -1,4 +1,4 @@
-// ATMS PRO · CORE-007D8A1F1D8P31F5F3 · AUTO-FLIGHT IATA CONSENSUS FIX
+// ATMS PRO · CORE-007D8A1F1D8P31F5F4 · AUTO-FLIGHT RESPONSE NORMALIZATION FIX
 // 05.09.2026 (Europe/Berlin)
 // Firebase AI Logic + App Check + Gemini Developer API + Google Search grounding.
 // Datenschutz: niemals vollständige Planliste/Bild; nur Flugnummer, Datum, Richtung,
@@ -14,7 +14,7 @@ import {
   GoogleAIBackend
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js';
 
-const VERSION='CORE-007D8A1F1D8P31F5F3';
+const VERSION='CORE-007D8A1F1D8P31F5F4';
 const PRIMARY_MODEL='gemini-3.8-flash';
 const FALLBACK_MODEL='gemini-3.5-flash';
 
@@ -103,6 +103,13 @@ function comparable(value){
   return text(value).toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
 }
 function sameText(a,b){return comparable(a)===comparable(b)}
+function booleanValue(value){
+  if(value===true||value===false)return value;
+  const v=text(value).toLowerCase();
+  if(['true','1','yes','ja','y'].includes(v))return true;
+  if(['false','0','no','nein','n',''].includes(v))return false;
+  return false;
+}
 function sourceIdentity(source){
   const uri=text(source?.url||source?.uri);
   const title=text(source?.name||source?.title);
@@ -238,20 +245,21 @@ function parseRouteCandidate(item,generated){
   const parsed=parseJsonObject(response?.text?.()||'');
   const originCity=text(parsed?.originCity),originIata=upper(parsed?.originIata);
   const destinationCity=text(parsed?.destinationCity),destinationIata=upper(parsed?.destinationIata);
-  const relevantLocation=item.direction==='arrival'?originCity:destinationCity;
   const relevantIata=item.direction==='arrival'?originIata:destinationIata;
   const modelRelevantLocation=text(parsed?.relevantLocation),modelRelevantIata=upper(parsed?.relevantIata);
-  // F5F3: Route identity is determined by IATA endpoints, not by localized city labels.
-  // The same airport may appear as e.g. Rome/ROM, Wien/Vienna or Praha/Prague.
-  // A label-only difference must never create a false route conflict.
+  // F5F4: Gemini/Firebase may legitimately return a route with canonical IATA
+  // endpoints even when one localized city label is omitted. The IATA pair is
+  // the route identity; relevantLocation is presentation text and may fall back
+  // to the explicit relevantLocation field from the grounded response.
+  const relevantLocation=(item.direction==='arrival'?originCity:destinationCity)||modelRelevantLocation;
   const semanticMismatch=Boolean(modelRelevantIata&&relevantIata&&modelRelevantIata!==relevantIata);
-  const routeComplete=Boolean(originCity&&destinationCity&&/^[A-Z]{3}$/.test(originIata)&&/^[A-Z]{3}$/.test(destinationIata));
+  const routeComplete=Boolean(/^[A-Z]{3}$/.test(originIata)&&/^[A-Z]{3}$/.test(destinationIata));
   const airportAnchored=Boolean(item.direction==='arrival'
     ? destinationIata===upper(item.airportIata)
     : item.direction==='departure'
       ? originIata===upper(item.airportIata)
       : false);
-  const conflict=Boolean(parsed?.conflict)||semanticMismatch||(routeComplete&&!airportAnchored);
+  const conflict=booleanValue(parsed?.conflict)||semanticMismatch||(routeComplete&&!airportAnchored);
   const hasGrounding=grounding.sources.length>0||grounding.webSearchQueries.length>0;
   const candidate=routeComplete&&airportAnchored&&Boolean(relevantLocation)&&Boolean(relevantIata)&&!conflict&&hasGrounding&&text(parsed?.status).toLowerCase()!=='needs_manual_check';
   return{

@@ -1,3 +1,4 @@
+  // CORE-007D8A1F1D8P31F5F4 · 18.09.2026: AUTO-FLIGHT RESPONSE NORMALIZATION FIX – Gemini-Antworten werden robust normalisiert: string "false" zählt nicht mehr als Konflikt; für die Route sind die kanonischen IATA-Endpunkte maßgeblich, Stadtnamen sind nur Darstellung.
   // CORE-007D8A1F1D8P31F5F2 · 18.09.2026: AUTO-FLIGHT DUAL-SOURCE VERIFIER – FLIGHT-008 bleibt strikt. Wenn Google Search in der ersten Prüfung weniger als zwei unabhängige Quellen liefert, fordert ATMS automatisch eine zweite unabhängige Bestätigung an und übernimmt nur übereinstimmende Routen.
   // CORE-007D8A1F1D8P31F5F1 · 18.09.2026: AUTO-FLIGHT IMPORT AUTHORIZATION FIX
   // P31F5 remains the AUTO-FLIGHT PIPELINE; P31F5F1 preserves its trusted-click security across the asynchronous flight check.
@@ -5000,7 +5001,7 @@
       return window.ATMSAutoFlight;
     }
     if (!autoFlightModulePromise) {
-      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5F3', PLAN_IMPORT_SCRIPT_URL).href;
+      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5F4', PLAN_IMPORT_SCRIPT_URL).href;
       autoFlightModulePromise = import(moduleUrl).then(() => {
         const service = window.ATMSAutoFlight;
         if (!service || typeof service.verifyFlights !== 'function') {
