@@ -746,8 +746,9 @@ function rideCard(r,i){
   const bundleFlightLabel=r.bundleDirection==='airport_to_hotels'?'Herkunft':'Zielort';
   const manualFlightCheck=Boolean(r.flightNeedsManualCheck||r.flightCheckConfidence==='uncertain');
   const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">⚠ manuell prüfen</span>`:'';
-  const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${manualFlightBadge}</div>`:'';
-  const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
+  const officialRouteBadge=r.flightOfficialPrimaryRoute?`<span title="Flugort aus offizieller Airport-Quelle; FLIGHT-008-Zweitprüfung bleibt offen" style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(76,201,240,.12);border:1px solid rgba(76,201,240,.35);color:#7ddfff">Airport-Quelle</span>`:'';
+  const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${officialRouteBadge}${manualFlightBadge}</div>`:'';
+  const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${officialRouteBadge}${manualFlightBadge}</div>`;
   return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${liveFreshnessMarkup(r)}${rideNoteMarkup(r)}${stopRows}</div><div class="chev">›</div></article>`
 }
 function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
@@ -1984,7 +1985,7 @@ function atmsAppScriptUrl(){
 async function ensureOfficialFlightProvider(){
   if(window.ATMSOfficialFlightProvider&&typeof window.ATMSOfficialFlightProvider.fetchLive==='function')return window.ATMSOfficialFlightProvider;
   if(!atmsOfficialFlightProviderPromise){
-    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F6',atmsAppScriptUrl()).href;
+    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F6F1',atmsAppScriptUrl()).href;
     atmsOfficialFlightProviderPromise=import(moduleUrl).then(()=>{
       const provider=window.ATMSOfficialFlightProvider;
       if(!provider||typeof provider.fetchLive!=='function')throw new Error('Official-Airport-Provider wurde geladen, stellt aber keine LIVE-Abfrage bereit.');
@@ -2152,7 +2153,10 @@ function parseLiveFlightResult(text){
     let delay=x.delayMinutes===null||x.delayMinutes===undefined||x.delayMinutes===''?null:Number(x.delayMinutes);
     if(!Number.isFinite(delay))delay=null;
     if(delay===null){const current=actual||estimated;if(scheduled&&current)delay=minuteDeltaClock(scheduled,current);}
-    return {flightNumber,date,airportEventDate,airportEventDateDerived,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sourceConflict,resolutionMode,prioritySourceUrl:'',sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim()};
+    const route=x.route&&typeof x.route==='object'&&!Array.isArray(x.route)?x.route:{};
+    const routeLocation=String(route.location||'').trim();
+    const routeIata=String(route.iata||'').trim().toUpperCase();
+    return {flightNumber,date,airportEventDate,airportEventDateDerived,direction,airportIata,status,airportScheduledTime:scheduled,airportEstimatedTime:estimated,airportActualTime:actual,delayMinutes:delay,confirmed,sourceConflict,resolutionMode,prioritySourceUrl:'',sources,sourceNote:String(x.sourceNote||'').trim(),reportedCheckedAt:String(obj.checkedAt||'').trim(),routeLocation,routeIata:/^[A-Z]{3}$/.test(routeIata)?routeIata:''};
   });
 }
 function livePickupFromCheck(ride,hit){
@@ -2271,8 +2275,22 @@ function applyLiveFlightResult(options={}){
       const nextLive=livePickupFromCheck(r,hit);
       if(nextLive)currentLiveTimes++;
       const rawStatus=hit.status==='departed'?'departed':hit.status==='landed'?'landed':hit.status==='delayed'?'delayed':hit.status==='cancelled'?'cancelled':hit.status==='on_time'?'on-time':hit.status==='scheduled'?'scheduled':'unknown';
+      // P31F6F1: Eine bestätigte offizielle Airport-LIVE-Antwort darf bei leerem Flugort
+      // den dort gelieferten Gegenflughafen sichtbar machen. Das ist bewusst KEINE
+      // FLIGHT-008-Zweitquellen-Verifizierung: vorhandene manuelle/prüfpflichtige
+      // Kennzeichnungen bleiben bestehen und werden hier nicht aufgehoben.
+      const existingLocation=String(r.flightLocation||'').trim();
+      const existingIata=String(r.iata||'').trim().toUpperCase();
+      const canShowOfficialRoute=!existingLocation&&!r.manualFlightEdit&&!r.manualFlightEditAt&&Boolean(hit.routeLocation&&hit.routeIata);
+      const shownLocation=canShowOfficialRoute?hit.routeLocation:existingLocation;
+      const shownIata=canShowOfficialRoute?hit.routeIata:existingIata;
       updated++;
       return norm({...r,...history,
+        flightLocation:shownLocation,
+        iata:shownIata,
+        flightOfficialPrimaryRoute:canShowOfficialRoute||Boolean(r.flightOfficialPrimaryRoute),
+        flightOfficialPrimaryRouteAt:canShowOfficialRoute?importedAt:(r.flightOfficialPrimaryRouteAt||''),
+        flightOfficialPrimaryRouteSource:canShowOfficialRoute?'official_airport':(r.flightOfficialPrimaryRouteSource||''),
         liveTime:nextLive,
         live_time:nextLive,
         flightStatus:rawStatus,

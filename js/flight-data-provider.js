@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P31F6 · 18.09.2026
+// CORE-007D8A1F1D8P31F6F1 · 18.09.2026
 // Offizielle Airport-Datenquelle mit austauschbarem Provider-Interface.
 // CGN kann in der PWA direkt per CORS gelesen werden. DUS bleibt in der PWA
 // bewusst deaktiviert, weil die offizielle DUS-API Access-Control-Allow-Origin
@@ -178,7 +178,7 @@ async function fetchLive(items,{onProgress}={}){
 }
 
 window.ATMSOfficialFlightProvider={
-  version:'CORE-007D8A1F1D8P31F6',
+  version:'CORE-007D8A1F1D8P31F6F1',
   endpoints:{CGN:CGN_ENDPOINT,DUS:DUS_ENDPOINT},
   fetchLive
 };
