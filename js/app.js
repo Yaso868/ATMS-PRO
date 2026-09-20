@@ -1994,7 +1994,7 @@ function atmsAppScriptUrl(){
 async function ensureOfficialFlightProvider(){
   if(window.ATMSOfficialFlightProvider&&typeof window.ATMSOfficialFlightProvider.fetchLive==='function')return window.ATMSOfficialFlightProvider;
   if(!atmsOfficialFlightProviderPromise){
-    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F10',atmsAppScriptUrl()).href;
+    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F11',atmsAppScriptUrl()).href;
     atmsOfficialFlightProviderPromise=import(moduleUrl).then(()=>{
       const provider=window.ATMSOfficialFlightProvider;
       if(!provider||typeof provider.fetchLive!=='function')throw new Error('Official-Airport-Provider wurde geladen, stellt aber keine LIVE-Abfrage bereit.');
@@ -2053,6 +2053,42 @@ async function runOfficialAirportLiveAutoRefresh(reason='automatic',options={}){
     return applyLiveFlightResult({automatic:true,silent,payload:{checkedAt:result.checkedAt||new Date().toISOString(),flights:result.flights},reason});
   }finally{
     atmsOfficialLiveAutoInFlight=false;
+  }
+}
+
+async function atmsHandleNativeFlightBridgeReady(reason='native-bridge-ready'){
+  let provider;
+  try{provider=await ensureOfficialFlightProvider()}catch(error){return{ok:false,reason:'provider_unavailable',message:String(error?.message||error||'')}}
+  const state=typeof provider.getNativeRuntimeState==='function'?provider.getNativeRuntimeState():{available:false};
+  if(!state?.available)return{ok:false,reason:'native_bridge_unavailable',state};
+  const refresh=await runOfficialAirportLiveAutoRefresh(reason,{silent:true,force:true});
+  scheduleOfficialAirportLiveAutoRefresh();
+  return{ok:true,state,refresh};
+}
+async function atmsRegisterNativeFlightBridge(bridge){
+  const provider=await ensureOfficialFlightProvider();
+  if(typeof provider.registerNativeBridge!=='function')throw new Error('Native-App-Bridge wird von diesem FlightDataProvider nicht unterstützt.');
+  const state=provider.registerNativeBridge(bridge);
+  // registerNativeBridge dispatcht zusätzlich das Ready-Event; der explizite Aufruf hier
+  // macht die API auch in Hüllen robust, die CustomEvents nicht weiterreichen.
+  void atmsHandleNativeFlightBridgeReady('native-bridge-register');
+  return state;
+}
+async function atmsNotifyNativeFlightBridgeReady(){
+  const provider=await ensureOfficialFlightProvider();
+  if(typeof provider.notifyNativeBridgeReady==='function')provider.notifyNativeBridgeReady();
+  return atmsHandleNativeFlightBridgeReady('native-bridge-notify');
+}
+function initNativeFlightBridgeListener(){
+  if(window.__atmsNativeFlightBridgeListener)return;
+  window.__atmsNativeFlightBridgeListener=true;
+  window.addEventListener('atms-native-flight-bridge-ready',()=>{
+    void atmsHandleNativeFlightBridgeReady('native-bridge-event');
+  });
+  // Falls die native Hülle die Bridge bereits vor ATMS injiziert hat, reicht der normale
+  // Startup-Refresh. Dieser kleine Check sorgt zusätzlich dafür, dass DUS sofort aktiviert wird.
+  if(window.ATMSNativeFlightBridge){
+    setTimeout(()=>{void atmsHandleNativeFlightBridgeReady('native-bridge-preloaded')},250);
   }
 }
 
@@ -4011,6 +4047,7 @@ function initApp(){
     if(getDriverSession().active)startLiveGeoWatch();
     try{loadWhatsappSettings();renderNavigationSettings();updateBackupUI()}catch(e){console.warn('Einstellungen konnten nicht geladen werden',e)}
     updateLiveFlightPanelContext();
+    initNativeFlightBridgeListener();
     initOfficialAirportLiveAutoRefresh();
     if(rides.length){const ji=safeEl('jsonInput');if(ji)ji.value=JSON.stringify({rides},null,2);render()}else{showView('import')}
   }catch(error){showAppError(error);try{showView('import')}catch(_){} }
@@ -4023,4 +4060,4 @@ window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAdd
 window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
-window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;window.runOfficialAirportLiveAutoRefresh=runOfficialAirportLiveAutoRefresh;window.scheduleOfficialAirportLiveAutoRefresh=scheduleOfficialAirportLiveAutoRefresh;window.runDusNativeTransportSelfTest=runDusNativeTransportSelfTestFromUi;
+window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;window.runOfficialAirportLiveAutoRefresh=runOfficialAirportLiveAutoRefresh;window.scheduleOfficialAirportLiveAutoRefresh=scheduleOfficialAirportLiveAutoRefresh;window.runDusNativeTransportSelfTest=runDusNativeTransportSelfTestFromUi;window.ATMSRegisterNativeFlightBridge=atmsRegisterNativeFlightBridge;window.ATMSNotifyNativeFlightBridgeReady=atmsNotifyNativeFlightBridgeReady;

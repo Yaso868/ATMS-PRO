@@ -1,8 +1,9 @@
-// CORE-007D8A1F1D8P31F10 · 20.09.2026
-// DUS NATIVE TRANSPORT TEST-HOOK – kontrollierter, rein lokaler Testtransport für den bereits
-// vorbereiteten DUS-Native-Vertrag. Der Test verändert keine Fahrten und aktiviert DUS in
-// der Browser-PWA nicht dauerhaft. Nach jedem Lauf wird der vorherige Transport exakt
-// wiederhergestellt.
+// CORE-007D8A1F1D8P31F11 · 20.09.2026
+// NATIVE-APP-BRIDGE – die spätere native Hülle kann ihren freigegebenen Netzwerktransport
+// zur Laufzeit registrieren oder als window.ATMSNativeFlightBridge bereitstellen. ATMS erkennt
+// die Bridge automatisch, prüft die Contract-Version und kann danach DUS ohne GitHub/Proxy
+// über denselben Parser + dieselbe LIVE-Logik wie im Test-Hook verwenden.
+// P31F10-Test-Hook bleibt als isolierter Techniktest erhalten.
 // Native-ready offizielle Airport-Datenschicht.
 // - CGN: direkte PWA-Abfrage per CORS.
 // - DUS: offizieller Endpoint + Parser + versionierter Native-Transport-Vertrag.
@@ -18,6 +19,7 @@ const NATIVE_ALLOWED_ENDPOINTS={DUS:{host:'www.dus.com',path:'/api/sitecore/flig
 
 const adapters=new Map();
 const transports=new Map();
+let explicitNativeBridge=null;
 
 function text(value){return String(value??'').trim()}
 function upper(value){return text(value).toUpperCase()}
@@ -110,14 +112,56 @@ function validateNativeRequest(airportIata,request){
     cache:'no-store'
   };
 }
-function getNativeBridge(){
-  const bridge=typeof window!=='undefined'?window.ATMSNativeFlightBridge:null;
-  if(!bridge)return null;
+function nativeBridgeObject(){
+  if(explicitNativeBridge)return explicitNativeBridge;
+  return typeof window!=='undefined'?window.ATMSNativeFlightBridge:null;
+}
+function nativeBridgeDeclaredContract(bridge){return text(bridge?.contractVersion||bridge?.atmsFlightContractVersion)}
+function nativeBridgeCompatible(bridge){
+  if(!bridge)return false;
+  const declared=nativeBridgeDeclaredContract(bridge);
+  return !declared||declared===NATIVE_TRANSPORT_CONTRACT_VERSION;
+}
+function nativeBridgeRequestFunction(bridge){
+  if(!nativeBridgeCompatible(bridge))return null;
   if(typeof bridge.requestJson==='function')return request=>bridge.requestJson(request);
+  // Raw Android WebView bridges usually accept strings more reliably than JS objects.
+  if(typeof bridge.requestJsonString==='function')return request=>bridge.requestJsonString(JSON.stringify(request));
   if(typeof bridge.fetchJson==='function')return request=>bridge.fetchJson(request);
   if(typeof bridge.request==='function')return request=>bridge.request(request);
   return null;
 }
+function getNativeBridge(){return nativeBridgeRequestFunction(nativeBridgeObject())}
+function getNativeRuntimeState(){
+  const bridge=nativeBridgeObject(),declared=nativeBridgeDeclaredContract(bridge),request=getNativeBridge();
+  return{
+    available:Boolean(request),
+    source:explicitNativeBridge?'registered':bridge?'window':null,
+    compatible:bridge?nativeBridgeCompatible(bridge):false,
+    declaredContractVersion:declared||null,
+    requiredContractVersion:NATIVE_TRANSPORT_CONTRACT_VERSION,
+    methods:bridge?['requestJson','requestJsonString','fetchJson','request'].filter(name=>typeof bridge[name]==='function'):[]
+  };
+}
+function announceNativeBridgeReady(){
+  if(typeof window==='undefined'||typeof window.dispatchEvent!=='function')return;
+  try{
+    const detail=getNativeRuntimeState();
+    if(typeof CustomEvent==='function')window.dispatchEvent(new CustomEvent('atms-native-flight-bridge-ready',{detail}));
+    else window.dispatchEvent({type:'atms-native-flight-bridge-ready',detail});
+  }catch(_){ }
+}
+function registerNativeBridge(bridge){
+  if(!bridge||typeof bridge!=='object')throw new Error('Native Bridge fehlt oder ist ungültig');
+  const declared=nativeBridgeDeclaredContract(bridge);
+  if(declared&&declared!==NATIVE_TRANSPORT_CONTRACT_VERSION)throw new Error(`Native Bridge Contract ${declared} ist nicht kompatibel mit ${NATIVE_TRANSPORT_CONTRACT_VERSION}`);
+  if(!nativeBridgeRequestFunction(bridge))throw new Error('Native Bridge stellt keine unterstützte Request-Methode bereit');
+  explicitNativeBridge=bridge;
+  announceNativeBridgeReady();
+  return getNativeRuntimeState();
+}
+function unregisterNativeBridge(){explicitNativeBridge=null;return getNativeRuntimeState()}
+function notifyNativeBridgeReady(){announceNativeBridgeReady();return getNativeRuntimeState()}
 function hasTransport(airportIata){
   const airport=upper(airportIata);
   return transports.has(airport)||Boolean(getNativeBridge());
@@ -157,6 +201,8 @@ function getNativeTransportContract(){
     allowedEndpoints:Object.fromEntries(Object.entries(NATIVE_ALLOWED_ENDPOINTS).map(([airport,rule])=>[airport,{...rule,methods:[...rule.methods]}])),
     requestFields:['contractVersion','requestId','airportIata','method','url','headers','responseType','timeoutMs','cache'],
     responseAccepted:['plain JSON object','JSON string','{ body: JSON-string }','{ data: JSON-object|string }'],
+    bridgeMethodsAccepted:['requestJson(requestObject)','requestJsonString(JSON-string)','fetchJson(requestObject)','request(requestObject)'],
+    bridgeReadyEvent:'atms-native-flight-bridge-ready',
     note:'Die native App führt ausschließlich den freigegebenen HTTPS-Request aus und gibt JSON an ATMS zurück. Keine GitHub-Bridge/kein Proxy erforderlich.'
   };
 }
@@ -369,10 +415,14 @@ async function fetchLive(items,{onProgress}={}){
 }
 
 window.ATMSOfficialFlightProvider={
-  version:'CORE-007D8A1F1D8P31F10',
+  version:'CORE-007D8A1F1D8P31F11',
   endpoints:{CGN:CGN_ENDPOINT,DUS:DUS_ENDPOINT},
   nativeTransportContract:getNativeTransportContract(),
   getNativeTransportContract,
+  getNativeRuntimeState,
+  registerNativeBridge,
+  unregisterNativeBridge,
+  notifyNativeBridgeReady,
   canHandle,
   getCapabilities,
   registerAdapter,
