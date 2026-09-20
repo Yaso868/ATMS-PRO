@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ATMS PRO Native Bridge Check</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#0f1720;color:#f5f7fa;padding:24px;line-height:1.45}
+.card{max-width:760px;margin:auto;background:#17212b;border:1px solid #334155;border-radius:16px;padding:20px}
+button{width:100%;padding:14px;border:0;border-radius:12px;font-weight:800;font-size:16px}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1118;padding:12px;border-radius:10px;max-height:45vh;overflow:auto}
+.ok{color:#66e39a}.bad{color:#ff8b8b}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>ATMS PRO · P31F12</h1>
+  <p>Native Android Bridge – DUS Transport-Grundtest.</p>
+  <p id="state">Bridge wird geprüft …</p>
+  <button id="testBtn" type="button">DUS Native Bridge prüfen</button>
+  <pre id="out">Bereit.</pre>
+</div>
+<script>
+function pad(n){return String(n).padStart(2,'0')}
+function isoDateLocal(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
+function offset(d){const m=-d.getTimezoneOffset(),s=m>=0?'+':'-',a=Math.abs(m);return `${s}${pad(Math.floor(a/60))}:${pad(a%60)}`}
+function requestForToday(){
+  const now=new Date(),tomorrow=new Date(now.getTime()+86400000);
+  const day=isoDateLocal(now),next=isoDateLocal(tomorrow),base='https://www.dus.com/api/sitecore/flightapi/SearchFlightsWithOutParams';
+  const q=new URLSearchParams({lang:'de',arrival:'false',offset:'0',codeshare:'true',count:'20',flightStartTime:`${day}T00:00:00${offset(now)}`,flightEndTime:`${next}T05:59:59${offset(tomorrow)}`,showDetails:'false'});
+  return {contractVersion:'ATMS-FLIGHT-NATIVE-1',requestId:`p31f12-${Date.now()}`,airportIata:'DUS',method:'GET',url:`${base}?${q}`,headers:{Accept:'application/json'},responseType:'json',timeoutMs:15000,cache:'no-store'};
+}
+function refreshState(){
+  const ok=!!window.ATMSNativeFlightBridge&&typeof window.ATMSNativeFlightBridge.requestJsonString==='function';
+  const el=document.getElementById('state');el.className=ok?'ok':'bad';el.textContent=ok?'✓ Native Bridge bereit':'✗ Native Bridge noch nicht bereit';return ok;
+}
+window.addEventListener('atms-native-flight-bridge-ready',refreshState);
+setTimeout(refreshState,250);
+document.getElementById('testBtn').addEventListener('click',function(){
+  const out=document.getElementById('out');
+  try{
+    if(!refreshState())throw new Error('Bridge nicht verfügbar');
+    const raw=window.ATMSNativeFlightBridge.requestJsonString(JSON.stringify(requestForToday()));
+    if(!raw){throw new Error(window.ATMSNativeFlightBridge.lastError?.()||'Leere Native-Antwort')}
+    const json=JSON.parse(raw),flights=Array.isArray(json?.data?.flights)?json.data.flights:[];
+    out.textContent=`✓ DUS JSON empfangen\nserviceType: ${json?.serviceType||'–'}\nflights: ${flights.length}\nfirstFlight: ${flights[0]?.flightNumber||'–'}\nfirstDestination: ${flights[0]?.destination?.name||'–'} (${flights[0]?.destination?.iataCode||'–'})`;
+  }catch(e){out.textContent='✗ '+String(e?.message||e)}
+});
+</script>
+</body>
+</html>
