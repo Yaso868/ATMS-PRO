@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P31F10 · 20.09.2026: DUS NATIVE TRANSPORT TEST-HOOK – kontrollierter DUS-Vertrags-/Parser-Test innerhalb von ATMS. Keine Fahrtenänderung, keine dauerhafte Aktivierung des DUS-PWA-Zugriffs.
 // CORE-007D8A1F1D8P31F9 · 20.09.2026: DUS NATIVE-READY TRANSPORT – versionierter, strikt allowlist-basierter HTTPS/JSON-Transportvertrag für die spätere native App. CGN-PWA, LIVE-Refresh, FLIGHT-008, PLAN/DISPO und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F8 · 19.09.2026: MODULAR FLIGHT DATA PROVIDER – Die offizielle Airport-Datenschicht ist jetzt provider-/adapterbasiert statt auf CGN im App-Code fest verdrahtet. CGN bleibt in der PWA direkt aktiv; DUS ist als nativer Adapter vorbereitet und wird automatisch aktiv, sobald die spätere App einen zulässigen nativen Transport registriert. Auto-Refresh, LIVE-/PLAN-/DISPO-Trennung, FLIGHT-008, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F7 · 18.09.2026: OFFICIAL AIRPORT AUTO-REFRESH – Unterstützte offizielle Airport-LIVE-Quellen werden nach App-Start, bei Rückkehr in den Vordergrund, nach Wiederherstellung der Netzverbindung und anschließend alle 5 Minuten automatisch aktualisiert. Es werden nur aktuell relevante, offene Fahrten geprüft; parallele/zu häufige Abfragen werden gebremst. In der PWA ist aktuell CGN direkt unterstützt. DUS bleibt wegen Airport-CORS für die spätere native App vorbereitet. PLAN/DISPO, FLIGHT-008, OCR und Persistenz bleiben unverändert.
@@ -1993,7 +1994,7 @@ function atmsAppScriptUrl(){
 async function ensureOfficialFlightProvider(){
   if(window.ATMSOfficialFlightProvider&&typeof window.ATMSOfficialFlightProvider.fetchLive==='function')return window.ATMSOfficialFlightProvider;
   if(!atmsOfficialFlightProviderPromise){
-    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F9',atmsAppScriptUrl()).href;
+    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F10',atmsAppScriptUrl()).href;
     atmsOfficialFlightProviderPromise=import(moduleUrl).then(()=>{
       const provider=window.ATMSOfficialFlightProvider;
       if(!provider||typeof provider.fetchLive!=='function')throw new Error('Official-Airport-Provider wurde geladen, stellt aber keine LIVE-Abfrage bereit.');
@@ -2054,6 +2055,40 @@ async function runOfficialAirportLiveAutoRefresh(reason='automatic',options={}){
     atmsOfficialLiveAutoInFlight=false;
   }
 }
+
+async function runDusNativeTransportSelfTestFromUi(){
+  const status=$('atmsDusNativeTransportTestStatus');
+  const button=$('atmsDusNativeTransportTestBtn');
+  if(button)button.disabled=true;
+  if(status)status.textContent='DUS Native-Transport wird kontrolliert getestet …';
+  try{
+    const provider=await ensureOfficialFlightProvider();
+    if(typeof provider?.runDusNativeTransportSelfTest!=='function')throw new Error('DUS-Test-Hook ist im FlightDataProvider nicht verfügbar.');
+    const result=await provider.runDusNativeTransportSelfTest();
+    if(status){
+      status.textContent=result?.ok
+        ? `✓ Test OK · ${result.received?.flightNumber||'OS168'} → ${result.received?.route?.location||'Wien'} (${result.received?.route?.iata||'VIE'}) · Ist ${result.received?.actual||'20:08'} · Status ${result.received?.status||'departed'}`
+        : `⚠ Test fehlgeschlagen · ${result?.error||'Vertrag oder Parser nicht vollständig bestätigt.'}`;
+    }
+    showToast(result?.ok?'DUS Native-Transport-Test OK':'DUS Native-Transport-Test fehlgeschlagen',result?.ok?'ok':'warn');
+    return result;
+  }catch(error){
+    const message=String(error?.message||error||'Unbekannter Fehler');
+    if(status)status.textContent='⚠ Test fehlgeschlagen · '+message;
+    showToast('DUS Native-Transport-Test fehlgeschlagen','warn');
+    return{ok:false,error:message};
+  }finally{if(button)button.disabled=false}
+}
+function ensureDusNativeTransportTestPanel(){
+  const liveHost=$('liveFlightPanel');if(!liveHost)return false;
+  if($('atmsDusNativeTransportTestPanel'))return true;
+  const details=document.createElement('details');details.id='atmsDusNativeTransportTestPanel';details.style.cssText='margin:14px 0 0;padding:10px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.025)';
+  details.innerHTML=`<summary style="cursor:pointer;font-weight:800">🧪 Technik · DUS Native-Transport-Test</summary><div style="font-size:12px;opacity:.78;line-height:1.45;margin:8px 0">Kontrollierter Test des späteren nativen DUS-Transportvertrags mit einer lokalen DUS-Testantwort. Verändert keine Fahrten und aktiviert DUS in der PWA nicht dauerhaft.</div><button type="button" id="atmsDusNativeTransportTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">DUS Transport + Parser testen</button><div id="atmsDusNativeTransportTestStatus" style="font-size:12px;opacity:.82;line-height:1.45;margin-top:8px">Bereit.</div>`;
+  liveHost.appendChild(details);
+  $('atmsDusNativeTransportTestBtn')?.addEventListener('click',runDusNativeTransportSelfTestFromUi);
+  return true;
+}
+
 function initOfficialAirportLiveAutoRefresh(){
   scheduleOfficialAirportLiveAutoRefresh();
   setTimeout(async()=>{
@@ -3960,6 +3995,7 @@ function initApp(){
     ensureGeminiFlightPanel();
     ensureAddressBookPanel();
     ensureLiveFlightPanel();
+    ensureDusNativeTransportTestPanel();
     ensurePersistenceSafetyPanel();
     initPersistenceSafetyPanelObserver();
     try{
@@ -3987,4 +4023,4 @@ window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAdd
 window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
-window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;window.runOfficialAirportLiveAutoRefresh=runOfficialAirportLiveAutoRefresh;window.scheduleOfficialAirportLiveAutoRefresh=scheduleOfficialAirportLiveAutoRefresh;
+window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;window.runOfficialAirportLiveAutoRefresh=runOfficialAirportLiveAutoRefresh;window.scheduleOfficialAirportLiveAutoRefresh=scheduleOfficialAirportLiveAutoRefresh;window.runDusNativeTransportSelfTest=runDusNativeTransportSelfTestFromUi;

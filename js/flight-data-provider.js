@@ -1,4 +1,8 @@
-// CORE-007D8A1F1D8P31F9 · 20.09.2026
+// CORE-007D8A1F1D8P31F10 · 20.09.2026
+// DUS NATIVE TRANSPORT TEST-HOOK – kontrollierter, rein lokaler Testtransport für den bereits
+// vorbereiteten DUS-Native-Vertrag. Der Test verändert keine Fahrten und aktiviert DUS in
+// der Browser-PWA nicht dauerhaft. Nach jedem Lauf wird der vorherige Transport exakt
+// wiederhergestellt.
 // Native-ready offizielle Airport-Datenschicht.
 // - CGN: direkte PWA-Abfrage per CORS.
 // - DUS: offizieller Endpoint + Parser + versionierter Native-Transport-Vertrag.
@@ -156,6 +160,76 @@ function getNativeTransportContract(){
     note:'Die native App führt ausschließlich den freigegebenen HTTPS-Request aus und gibt JSON an ATMS zurück. Keine GitHub-Bridge/kein Proxy erforderlich.'
   };
 }
+
+
+// P31F10: Kontrollierte DUS-Testantwort aus dem zuvor am offiziellen DUS-Endpunkt
+// beobachteten Schema. Sie dient ausschließlich dazu, Transportvertrag + Parser innerhalb
+// von ATMS zu testen, solange die native Android-Hülle noch nicht existiert.
+const DUS_NATIVE_TEST_ITEM=Object.freeze({
+  flightNumber:'OS168',date:'2026-09-18',airportEventDate:'2026-09-18',airportEventDateDerived:false,
+  direction:'departure',airportIata:'DUS',flightTime:'20:00'
+});
+const DUS_NATIVE_TEST_PAYLOAD=Object.freeze({
+  data:{
+    totalCount:1,count:1,offset:0,start:'2026-09-18T20:00:00+02:00',stop:'2026-09-18T21:05:00+02:00',more:false,
+    flights:[{
+      id:3622405,flightNumber:'OS 168',adFlag:'D',flightDate:'2026-09-18',
+      destination:{iataCode:'VIE',icaoCode:'LOWW',name:'Wien',city:{name:'Wien'}},
+      airline:{iataCode:'OS',icaoCode:'AUA',name:'Austrian Airlines'},
+      scheduledTime:'2026-09-18T20:00:00+02:00',estimatedTime:null,actualTime:'2026-09-18T20:08:21+02:00',
+      status:{code:'S',description:'Gestartet',publicStatus:{name:'gestartet'}}
+    }]
+  },
+  serviceType:'live',hasError:false,internalErrorMessage:'',errorCode:''
+});
+
+function cloneJson(value){return JSON.parse(JSON.stringify(value))}
+async function runDusNativeTransportSelfTest(){
+  const previous=transports.has('DUS')?transports.get('DUS'):null;
+  let capturedRequest=null;
+  const testTransport=async request=>{
+    capturedRequest=cloneJson(request);
+    // Der Testtransport akzeptiert ausschließlich den bereits validierten DUS-Vertrag.
+    if(request?.contractVersion!==NATIVE_TRANSPORT_CONTRACT_VERSION)throw new Error('Testtransport: falsche Contract-Version');
+    if(request?.airportIata!=='DUS'||request?.method!=='GET')throw new Error('Testtransport: unerwarteter Request');
+    return cloneJson(DUS_NATIVE_TEST_PAYLOAD);
+  };
+  transports.set('DUS',testTransport);
+  try{
+    const result=await fetchLive([DUS_NATIVE_TEST_ITEM]);
+    const hit=Array.isArray(result?.flights)?result.flights[0]:null;
+    const checks={
+      oneResult:Boolean(hit&&result.flights.length===1),
+      flightNumber:hit?.flightNumber==='OS168',
+      route:hit?.route?.iata==='VIE'&&hit?.route?.location==='Wien',
+      scheduled:hit?.airportScheduledTime==='20:00',
+      actual:hit?.airportActualTime==='20:08',
+      status:hit?.status==='departed',
+      delay:hit?.delayMinutes===8,
+      contract:capturedRequest?.contractVersion===NATIVE_TRANSPORT_CONTRACT_VERSION,
+      allowlistedUrl:Boolean(capturedRequest?.url&&capturedRequest.url.startsWith(DUS_ENDPOINT+'?'))
+    };
+    const ok=Object.values(checks).every(Boolean);
+    return{
+      ok,
+      test:'DUS Native Transport Contract + Parser',
+      checkedAt:new Date().toISOString(),
+      contractVersion:NATIVE_TRANSPORT_CONTRACT_VERSION,
+      checks,
+      request:capturedRequest,
+      received:hit?{
+        flightNumber:hit.flightNumber,route:hit.route,scheduled:hit.airportScheduledTime,
+        estimated:hit.airportEstimatedTime,actual:hit.airportActualTime,status:hit.status,delayMinutes:hit.delayMinutes
+      }:null,
+      expected:{flightNumber:'OS168',route:{location:'Wien',iata:'VIE'},scheduled:'20:00',actual:'20:08',status:'departed',delayMinutes:8},
+      failures:result?.failures||[],unsupported:result?.unsupported||[]
+    };
+  }catch(error){
+    return{ok:false,test:'DUS Native Transport Contract + Parser',checkedAt:new Date().toISOString(),contractVersion:NATIVE_TRANSPORT_CONTRACT_VERSION,error:text(error?.message)||String(error||'Unbekannter Fehler'),request:capturedRequest};
+  }finally{
+    if(previous)transports.set('DUS',previous);else transports.delete('DUS');
+  }
+}
 function registerAdapter(adapter){
   const airport=upper(adapter?.airportIata);
   if(!airport||typeof adapter?.fetchItem!=='function')throw new Error('Ungültiger Airport-Adapter');
@@ -295,7 +369,7 @@ async function fetchLive(items,{onProgress}={}){
 }
 
 window.ATMSOfficialFlightProvider={
-  version:'CORE-007D8A1F1D8P31F9',
+  version:'CORE-007D8A1F1D8P31F10',
   endpoints:{CGN:CGN_ENDPOINT,DUS:DUS_ENDPOINT},
   nativeTransportContract:getNativeTransportContract(),
   getNativeTransportContract,
@@ -304,5 +378,6 @@ window.ATMSOfficialFlightProvider={
   registerAdapter,
   registerTransport,
   unregisterTransport,
+  runDusNativeTransportSelfTest,
   fetchLive
 };
