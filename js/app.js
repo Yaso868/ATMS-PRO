@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P31F8 · 19.09.2026: MODULAR FLIGHT DATA PROVIDER – Die offizielle Airport-Datenschicht ist jetzt provider-/adapterbasiert statt auf CGN im App-Code fest verdrahtet. CGN bleibt in der PWA direkt aktiv; DUS ist als nativer Adapter vorbereitet und wird automatisch aktiv, sobald die spätere App einen zulässigen nativen Transport registriert. Auto-Refresh, LIVE-/PLAN-/DISPO-Trennung, FLIGHT-008, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F7 · 18.09.2026: OFFICIAL AIRPORT AUTO-REFRESH – Unterstützte offizielle Airport-LIVE-Quellen werden nach App-Start, bei Rückkehr in den Vordergrund, nach Wiederherstellung der Netzverbindung und anschließend alle 5 Minuten automatisch aktualisiert. Es werden nur aktuell relevante, offene Fahrten geprüft; parallele/zu häufige Abfragen werden gebremst. In der PWA ist aktuell CGN direkt unterstützt. DUS bleibt wegen Airport-CORS für die spätere native App vorbereitet. PLAN/DISPO, FLIGHT-008, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F6 · 18.09.2026: OFFICIAL AIRPORT PROVIDER – Ergänzt einen austauschbaren offiziellen Airport-Datenprovider. CGN kann in der PWA direkt per CORS als starke Primärquelle für LIVE verwendet werden; DUS bleibt in der Browser-PWA wegen der vom Airport gesetzten CORS-Beschränkung deaktiviert und ist für die spätere native App vorbereitet. Nach einem Planimport startet für unterstützte Airport-Fahrten automatisch eine stille LIVE-Aktualisierung. PLAN/DISPO, FLIGHT-008-Zweiquellenregel für Flugorte, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS – Ein echter Nutzer-Klick auf „Planliste analysieren“ darf eine anschließend vollständig saubere OCR-Planliste (0 Hinweise, 0 Fehler; offene Flugprüfungen blockieren nicht) einmalig automatisch übernehmen. Der bestehende Trusted-Click-Importguard bleibt erhalten: nur die konkrete, zuvor vertrauenswürdig gestartete Analyse erhält ein zeitlich begrenztes Auto-Import-Ticket; programmgesteuerte Analyse-/Import-Klicks bleiben blockiert. Keine Änderung an OCR-, Flugort-, LIVE-, PLAN/DISPO-, Fahrer-, Preis- oder Persistenzlogik.
@@ -1991,7 +1992,7 @@ function atmsAppScriptUrl(){
 async function ensureOfficialFlightProvider(){
   if(window.ATMSOfficialFlightProvider&&typeof window.ATMSOfficialFlightProvider.fetchLive==='function')return window.ATMSOfficialFlightProvider;
   if(!atmsOfficialFlightProviderPromise){
-    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F6F1',atmsAppScriptUrl()).href;
+    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F8',atmsAppScriptUrl()).href;
     atmsOfficialFlightProviderPromise=import(moduleUrl).then(()=>{
       const provider=window.ATMSOfficialFlightProvider;
       if(!provider||typeof provider.fetchLive!=='function')throw new Error('Official-Airport-Provider wurde geladen, stellt aber keine LIVE-Abfrage bereit.');
@@ -2000,15 +2001,19 @@ async function ensureOfficialFlightProvider(){
   }
   return atmsOfficialFlightProviderPromise;
 }
-function officialAirportLiveAutoItems(){
-  return liveFlightCheckItems(liveFlightRelevantRides()).filter(item=>String(item?.airportIata||'').trim().toUpperCase()==='CGN');
+function officialAirportLiveAutoItems(provider=null){
+  const items=liveFlightCheckItems(liveFlightRelevantRides()).filter(item=>String(item?.airportIata||'').trim());
+  if(!provider||typeof provider.canHandle!=='function')return items;
+  return items.filter(item=>provider.canHandle(item));
 }
 function clearOfficialAirportLiveAutoTimer(){
   if(atmsOfficialLiveAutoTimer){clearTimeout(atmsOfficialLiveAutoTimer);atmsOfficialLiveAutoTimer=null}
 }
 function scheduleOfficialAirportLiveAutoRefresh(){
   clearOfficialAirportLiveAutoTimer();
-  if(!Array.isArray(rides)||!rides.length||!officialAirportLiveAutoItems().length)return;
+  if(!Array.isArray(rides)||!rides.length)return;
+  const loadedProvider=window.ATMSOfficialFlightProvider&&typeof window.ATMSOfficialFlightProvider.canHandle==='function'?window.ATMSOfficialFlightProvider:null;
+  if(!officialAirportLiveAutoItems(loadedProvider).length)return;
   atmsOfficialLiveAutoTimer=setTimeout(async()=>{
     atmsOfficialLiveAutoTimer=null;
     try{
@@ -2023,8 +2028,8 @@ async function runOfficialAirportLiveAutoRefresh(reason='automatic',options={}){
   const silent=Boolean(options?.silent===true);
   if(!Array.isArray(rides)||!rides.length||!navigator.onLine)return{ok:false,reason:'offline_or_empty'};
   if(!force&&document.hidden)return{ok:false,reason:'background_suspended'};
-  const items=officialAirportLiveAutoItems();
-  if(!items.length)return{ok:true,checked:0,reason:'no_supported_airport'};
+  const candidates=officialAirportLiveAutoItems();
+  if(!candidates.length)return{ok:true,checked:0,reason:'no_airport_candidates'};
   if(atmsOfficialLiveAutoInFlight)return{ok:false,checked:0,reason:'already_running'};
   const now=Date.now();
   if(!force&&atmsOfficialLiveAutoLastAttemptAt&&now-atmsOfficialLiveAutoLastAttemptAt<ATMS_OFFICIAL_LIVE_AUTO_MIN_GAP_MS){
@@ -2037,8 +2042,12 @@ async function runOfficialAirportLiveAutoRefresh(reason='automatic',options={}){
     try{provider=await ensureOfficialFlightProvider()}catch(error){
       return{ok:false,checked:0,reason:'provider_unavailable',message:String(error?.message||error||'')};
     }
+    const items=officialAirportLiveAutoItems(provider);
+    if(!items.length){
+      return{ok:true,checked:0,reason:'no_supported_airport',capabilities:typeof provider.getCapabilities==='function'?provider.getCapabilities():null};
+    }
     const result=await provider.fetchLive(items);
-    if(!Array.isArray(result?.flights)||!result.flights.length)return{ok:false,checked:0,reason:'no_confirmed_result',failures:result?.failures||[]};
+    if(!Array.isArray(result?.flights)||!result.flights.length)return{ok:false,checked:0,reason:'no_confirmed_result',failures:result?.failures||[],unsupported:result?.unsupported||[]};
     return applyLiveFlightResult({automatic:true,silent,payload:{checkedAt:result.checkedAt||new Date().toISOString(),flights:result.flights},reason});
   }finally{
     atmsOfficialLiveAutoInFlight=false;
@@ -2767,9 +2776,9 @@ function applyImportedRides(newRides){
   capturePersistenceSafety('after-plan-import');
   syncPersistenceDurableShadow('after-plan-import');
   updateLiveFlightPanelContext();
-  // P31F6: Nach dem sicheren Planimport CGN-LIVE automatisch aus der offiziellen
-  // Airport-Quelle aktualisieren. DUS wird in der PWA wegen Airport-CORS bewusst
-  // nicht über einen Proxy umgangen; die native App kann denselben Provider später erweitern.
+  // P31F8: Nach dem sicheren Planimport LIVE automatisch über alle im aktuellen
+  // Laufzeitkontext verfügbaren offiziellen Airport-Adapter aktualisieren. CGN läuft
+  // direkt in der PWA; DUS wird in der späteren nativen App über denselben Provider aktiv.
   scheduleOfficialAirportLiveAutoRefresh();
   setTimeout(()=>{void runOfficialAirportLiveAutoRefresh('plan-import').finally(scheduleOfficialAirportLiveAutoRefresh)},0);
 
