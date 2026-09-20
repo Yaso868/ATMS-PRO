@@ -1,13 +1,16 @@
-// CORE-007D8A1F1D8P31F8 · 19.09.2026
-// Modulare offizielle Airport-Datenschicht.
+// CORE-007D8A1F1D8P31F9 · 20.09.2026
+// Native-ready offizielle Airport-Datenschicht.
 // - CGN: direkte PWA-Abfrage per CORS.
-// - DUS: offizieller Endpoint + Parser sind vorbereitet; in der Browser-PWA bleibt
-//   der Adapter wegen Airport-CORS inaktiv. Eine spätere native App aktiviert DUS,
-//   indem sie einen zulässigen nativen JSON-Transport registriert.
+// - DUS: offizieller Endpoint + Parser + versionierter Native-Transport-Vertrag.
+//   In der Browser-PWA bleibt der Adapter wegen Airport-CORS inaktiv. Eine spätere
+//   native App registriert nur den Transport; Parser/LIVE-Logik bleiben identisch.
 // Keine GitHub-Datenbrücke und kein Proxy sind Bestandteil dieser Schicht.
 
 const CGN_ENDPOINT='https://www.koeln-bonn-airport.de/fluggaeste/fluege/abflug-ankunft/fsjson';
 const DUS_ENDPOINT='https://www.dus.com/api/sitecore/flightapi/SearchFlightsWithOutParams';
+const NATIVE_TRANSPORT_CONTRACT_VERSION='ATMS-FLIGHT-NATIVE-1';
+const NATIVE_TRANSPORT_TIMEOUT_MS=15000;
+const NATIVE_ALLOWED_ENDPOINTS={DUS:{host:'www.dus.com',path:'/api/sitecore/flightapi/SearchFlightsWithOutParams',methods:['GET']}};
 
 const adapters=new Map();
 const transports=new Map();
@@ -68,24 +71,67 @@ function normalizeTransportPayload(value){
   if(typeof value==='object'&&'body' in value&&typeof value.body==='string'){
     try{return JSON.parse(value.body)}catch{return null}
   }
+  if(typeof value==='object'&&'data' in value&&value.data!=null&&Object.keys(value).length<=4){
+    const nested=value.data;
+    if(typeof nested==='string'){
+      try{return JSON.parse(nested)}catch{return nested}
+    }
+    if(typeof nested==='object')return nested;
+  }
   return value;
+}
+function nativeRequestId(airport){
+  const rnd=Math.random().toString(36).slice(2,10);
+  return`atms-${String(airport||'flight').toLowerCase()}-${Date.now()}-${rnd}`;
+}
+function validateNativeRequest(airportIata,request){
+  const airport=upper(airportIata),rule=NATIVE_ALLOWED_ENDPOINTS[airport];
+  if(!rule)throw new Error(`${airport||'Airport'} native endpoint not allowed`);
+  const method=upper(request?.method||'GET');
+  if(!rule.methods.includes(method))throw new Error(`${airport} native method not allowed: ${method}`);
+  let url;
+  try{url=new URL(String(request?.url||''))}catch{throw new Error(`${airport} native URL invalid`)}
+  if(url.protocol!=='https:'||url.hostname.toLowerCase()!==rule.host||url.pathname!==rule.path){
+    throw new Error(`${airport} native URL not allowlisted`);
+  }
+  return{
+    contractVersion:NATIVE_TRANSPORT_CONTRACT_VERSION,
+    requestId:text(request?.requestId)||nativeRequestId(airport),
+    airportIata:airport,
+    method,
+    url:url.toString(),
+    headers:{Accept:'application/json'},
+    responseType:'json',
+    timeoutMs:Number.isFinite(Number(request?.timeoutMs))?Math.max(1000,Math.min(30000,Number(request.timeoutMs))):NATIVE_TRANSPORT_TIMEOUT_MS,
+    cache:'no-store'
+  };
 }
 function getNativeBridge(){
   const bridge=typeof window!=='undefined'?window.ATMSNativeFlightBridge:null;
   if(!bridge)return null;
   if(typeof bridge.requestJson==='function')return request=>bridge.requestJson(request);
   if(typeof bridge.fetchJson==='function')return request=>bridge.fetchJson(request);
+  if(typeof bridge.request==='function')return request=>bridge.request(request);
   return null;
 }
 function hasTransport(airportIata){
   const airport=upper(airportIata);
   return transports.has(airport)||Boolean(getNativeBridge());
 }
+async function withTimeout(promise,timeoutMs,label){
+  let timer;
+  try{
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(`${label||'Native transport'} timeout`)),timeoutMs)})
+    ]);
+  }finally{if(timer)clearTimeout(timer)}
+}
 async function requestViaTransport(airportIata,request){
-  const airport=upper(airportIata);
+  const airport=upper(airportIata),normalized=validateNativeRequest(airport,request);
   const transport=transports.get(airport)||getNativeBridge();
   if(typeof transport!=='function')throw new Error(`${airport||'Airport'} native transport unavailable`);
-  const raw=await transport({...request,airportIata:airport});
+  const raw=await withTimeout(transport(normalized),normalized.timeoutMs,`${airport} native transport`);
   const payload=await normalizeTransportPayload(raw);
   if(payload==null)throw new Error(`${airport||'Airport'} transport returned no JSON`);
   return payload;
@@ -93,11 +139,23 @@ async function requestViaTransport(airportIata,request){
 function registerTransport(airportIata,transportFn){
   const airport=upper(airportIata);
   if(!airport)throw new Error('airportIata fehlt');
+  if(!NATIVE_ALLOWED_ENDPOINTS[airport])throw new Error(`${airport} besitzt keinen freigegebenen Native-Endpunkt`);
   if(typeof transportFn!=='function')throw new Error('transportFn muss eine Funktion sein');
   transports.set(airport,transportFn);
   return true;
 }
 function unregisterTransport(airportIata){return transports.delete(upper(airportIata))}
+function getNativeTransportContract(){
+  return{
+    version:NATIVE_TRANSPORT_CONTRACT_VERSION,
+    responseType:'json',
+    timeoutMs:NATIVE_TRANSPORT_TIMEOUT_MS,
+    allowedEndpoints:Object.fromEntries(Object.entries(NATIVE_ALLOWED_ENDPOINTS).map(([airport,rule])=>[airport,{...rule,methods:[...rule.methods]}])),
+    requestFields:['contractVersion','requestId','airportIata','method','url','headers','responseType','timeoutMs','cache'],
+    responseAccepted:['plain JSON object','JSON string','{ body: JSON-string }','{ data: JSON-object|string }'],
+    note:'Die native App führt ausschließlich den freigegebenen HTTPS-Request aus und gibt JSON an ATMS zurück. Keine GitHub-Bridge/kein Proxy erforderlich.'
+  };
+}
 function registerAdapter(adapter){
   const airport=upper(adapter?.airportIata);
   if(!airport||typeof adapter?.fetchItem!=='function')throw new Error('Ungültiger Airport-Adapter');
@@ -115,7 +173,9 @@ function getCapabilities(){
     available:typeof adapter.isAvailable==='function'?Boolean(adapter.isAvailable()):true,
     runtime:adapter.runtime||'web',
     sourceName:adapter.sourceName||adapter.airportIata,
-    endpoint:adapter.endpoint||null
+    endpoint:adapter.endpoint||null,
+    nativeTransportRequired:adapter.runtime==='native'&&!hasTransport(adapter.airportIata),
+    nativeContractVersion:adapter.runtime==='native'?NATIVE_TRANSPORT_CONTRACT_VERSION:null
   }));
 }
 
@@ -193,7 +253,7 @@ function statusFromDus(row,direction,scheduled,estimated,actual){
   return'scheduled';
 }
 async function fetchDusItem(item){
-  const payload=await requestViaTransport('DUS',{method:'GET',url:dusUrl(item),headers:{Accept:'application/json'},cache:'no-store'});
+  const payload=await requestViaTransport('DUS',{method:'GET',url:dusUrl(item),headers:{Accept:'application/json'},cache:'no-store',timeoutMs:NATIVE_TRANSPORT_TIMEOUT_MS});
   const rows=Array.isArray(payload?.data?.flights)?payload.data.flights:Array.isArray(payload?.flights)?payload.flights:[];
   const expectedFlight=normalizeFlightNumber(item.flightNumber),eventDate=text(item.airportEventDate||item.date),expectedFlag=item.direction==='arrival'?'A':'D';
   const matches=rows.filter(row=>normalizeFlightNumber(row?.flightNumber)===expectedFlight&&(!row?.adFlag||upper(row.adFlag)===expectedFlag)&&(!eventDate||text(row?.flightDate)===eventDate));
@@ -231,12 +291,14 @@ async function fetchLive(items,{onProgress}={}){
       failures.push({ok:false,reason:'technical',flightNumber,airportIata:airport||null,message:text(error?.message)||`${airport||'Airport'}-Abruf fehlgeschlagen`});
     }
   }
-  return{checkedAt:new Date().toISOString(),flights:checked,unsupported,failures,capabilities:getCapabilities(),source:'official-airport-provider-v2'};
+  return{checkedAt:new Date().toISOString(),flights:checked,unsupported,failures,capabilities:getCapabilities(),source:'official-airport-provider-v3'};
 }
 
 window.ATMSOfficialFlightProvider={
-  version:'CORE-007D8A1F1D8P31F8',
+  version:'CORE-007D8A1F1D8P31F9',
   endpoints:{CGN:CGN_ENDPOINT,DUS:DUS_ENDPOINT},
+  nativeTransportContract:getNativeTransportContract(),
+  getNativeTransportContract,
   canHandle,
   getCapabilities,
   registerAdapter,

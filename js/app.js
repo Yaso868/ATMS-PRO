@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P31F9 · 20.09.2026: DUS NATIVE-READY TRANSPORT – versionierter, strikt allowlist-basierter HTTPS/JSON-Transportvertrag für die spätere native App. CGN-PWA, LIVE-Refresh, FLIGHT-008, PLAN/DISPO und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F8 · 19.09.2026: MODULAR FLIGHT DATA PROVIDER – Die offizielle Airport-Datenschicht ist jetzt provider-/adapterbasiert statt auf CGN im App-Code fest verdrahtet. CGN bleibt in der PWA direkt aktiv; DUS ist als nativer Adapter vorbereitet und wird automatisch aktiv, sobald die spätere App einen zulässigen nativen Transport registriert. Auto-Refresh, LIVE-/PLAN-/DISPO-Trennung, FLIGHT-008, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F7 · 18.09.2026: OFFICIAL AIRPORT AUTO-REFRESH – Unterstützte offizielle Airport-LIVE-Quellen werden nach App-Start, bei Rückkehr in den Vordergrund, nach Wiederherstellung der Netzverbindung und anschließend alle 5 Minuten automatisch aktualisiert. Es werden nur aktuell relevante, offene Fahrten geprüft; parallele/zu häufige Abfragen werden gebremst. In der PWA ist aktuell CGN direkt unterstützt. DUS bleibt wegen Airport-CORS für die spätere native App vorbereitet. PLAN/DISPO, FLIGHT-008, OCR und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P31F6 · 18.09.2026: OFFICIAL AIRPORT PROVIDER – Ergänzt einen austauschbaren offiziellen Airport-Datenprovider. CGN kann in der PWA direkt per CORS als starke Primärquelle für LIVE verwendet werden; DUS bleibt in der Browser-PWA wegen der vom Airport gesetzten CORS-Beschränkung deaktiviert und ist für die spätere native App vorbereitet. Nach einem Planimport startet für unterstützte Airport-Fahrten automatisch eine stille LIVE-Aktualisierung. PLAN/DISPO, FLIGHT-008-Zweiquellenregel für Flugorte, OCR und Persistenz bleiben unverändert.
@@ -1992,7 +1993,7 @@ function atmsAppScriptUrl(){
 async function ensureOfficialFlightProvider(){
   if(window.ATMSOfficialFlightProvider&&typeof window.ATMSOfficialFlightProvider.fetchLive==='function')return window.ATMSOfficialFlightProvider;
   if(!atmsOfficialFlightProviderPromise){
-    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F8',atmsAppScriptUrl()).href;
+    const moduleUrl=new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P31F9',atmsAppScriptUrl()).href;
     atmsOfficialFlightProviderPromise=import(moduleUrl).then(()=>{
       const provider=window.ATMSOfficialFlightProvider;
       if(!provider||typeof provider.fetchLive!=='function')throw new Error('Official-Airport-Provider wurde geladen, stellt aber keine LIVE-Abfrage bereit.');
@@ -2776,7 +2777,7 @@ function applyImportedRides(newRides){
   capturePersistenceSafety('after-plan-import');
   syncPersistenceDurableShadow('after-plan-import');
   updateLiveFlightPanelContext();
-  // P31F8: Nach dem sicheren Planimport LIVE automatisch über alle im aktuellen
+  // P31F9: Nach dem sicheren Planimport LIVE automatisch über alle im aktuellen
   // Laufzeitkontext verfügbaren offiziellen Airport-Adapter aktualisieren. CGN läuft
   // direkt in der PWA; DUS wird in der späteren nativen App über denselben Provider aktiv.
   scheduleOfficialAirportLiveAutoRefresh();
