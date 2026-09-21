@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P31 · 21.09.2026: SOURCE-CONFIRMED FLIGHT LOCATION
+// Eine eindeutige datumsspezifische Einzelquelle darf bei leerem/konfliktfreiem Planort den Flugort als source_confirmed übernehmen; verified/high bleibt strikt Zwei-Quellen-pflichtig. PLAN/DISPO/LIVE/GPS/Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P30 · 21.09.2026: SINGLE PREPARED MESSAGE DELETE
 // Einzelne echte vorbereitete Nachricht kann lokal sicher ausgeblendet werden; PLAN/DISPO/LIVE/GPS bleiben unverändert.
 // CORE-007D8A1F1D8P29 · 21.09.2026: COCKPIT STALE LIVE PICKUP DISPLAY FIX
@@ -1377,15 +1379,18 @@ function applyFlightCacheToRides(source){
     const hit=findFlightCacheForRide(r);
     if(!hit)return r;
     const verified=hit.verified===true && Boolean(String(hit.flightLocation||'').trim());
+    const sourceConfirmed=hit.sourceConfirmed===true && !verified && Boolean(String(hit.flightLocation||'').trim());
+    const accepted=verified||sourceConfirmed;
     const nextLocation=String(hit.flightLocation||'').trim();
     const nextIata=String(hit.iata||'').trim().toUpperCase();
     const next={...r};
     let rowChanged=false;
 
-    if(verified){
+    if(accepted){
       if(String(next.flightLocation||'').trim()!==nextLocation){next.flightLocation=nextLocation;rowChanged=true;}
       if(String(next.iata||'').trim().toUpperCase()!==nextIata){next.iata=nextIata;rowChanged=true;}
-      if(next.flightCheckConfidence!=='verified'){next.flightCheckConfidence='verified';rowChanged=true;}
+      const restoredConfidence=verified?'verified':'source_confirmed';
+      if(next.flightCheckConfidence!==restoredConfidence){next.flightCheckConfidence=restoredConfidence;rowChanged=true;}
       if(next.flightNeedsManualCheck!==false){next.flightNeedsManualCheck=false;rowChanged=true;}
       if(Boolean(next.flightConflict)!==Boolean(hit.conflict)){next.flightConflict=Boolean(hit.conflict);rowChanged=true;}
       verifiedRestored++;
@@ -1452,8 +1457,8 @@ VERBINDLICHE VERIFIKATIONSREGELN:
 6. Allgemeine Flugpläne, typische Routen, historische Routenzuordnungen oder gespeicherte Flugnummer→Ort-Zuordnungen reichen NICHT.
 7. status="verified" UND confidence="high" sind NUR erlaubt, wenn mindestens ZWEI voneinander unabhängige, datumsspezifische Quellen dieselbe konkrete Route bestätigen.
 8. Mindestens eine der zwei Quellen soll nach Möglichkeit die offizielle Quelle des betroffenen Flughafens oder der Airline sein. Die zweite Quelle soll unabhängig davon sein.
-9. Wenn nur EINE geeignete Quelle gefunden wird: status="needs_manual_check" und confidence="medium" oder "low". NIEMALS verified/high.
-10. Wenn keine geeignete datumsspezifische Quelle gefunden wird, Quellen widersprechen oder die konkrete Verbindung über airportIata nicht sicher bestätigt werden kann: status="needs_manual_check". NICHT raten.
+9. Wenn genau EINE geeignete datumsspezifische Quelle die konkrete Route eindeutig bestätigt, gib status="needs_manual_check" und confidence="medium" zurück. relevantLocation und der relevante IATA-Code müssen trotzdem vollständig gesetzt werden. NIEMALS verified/high. ATMS kann diesen Sonderfall intern als quellenbestätigt behandeln, sofern kein Konflikt mit einem vorhandenen Planort besteht.
+10. Wenn die Einzelquelle die konkrete Route NICHT eindeutig bestätigt, keine geeignete datumsspezifische Quelle gefunden wird, Quellen widersprechen oder die Verbindung über airportIata nicht sicher bestätigt werden kann: status="needs_manual_check" und confidence="low". NICHT raten.
 11. flightTime ist ein zusätzliches Unterscheidungsmerkmal. Wenn mehrere passende Flüge existieren und die Zuordnung ohne flightTime nicht eindeutig ist: status="needs_manual_check".
 12. locationFromPlan ist ausschließlich ein Vergleichswert und KEINE Quelle. Prüfe auch vorhandene Planorte vollständig neu.
 13. Weicht ein sicher verifiziertes Ergebnis von locationFromPlan ab, setze conflict=true.
@@ -1505,7 +1510,8 @@ WICHTIG:
 - date, airportEventDate und airportEventDateDerived aus dem Prüfeintrag unverändert zurückgeben.
 - airportIata aus dem Prüfeintrag unverändert zurückgeben.
 - Bei status="verified" + confidence="high": sources.length MUSS mindestens 2 sein.
-- Bei weniger als 2 unabhängigen Quellen: status="needs_manual_check".
+- Bei genau 1 eindeutigen datumsspezifischen Quelle: status="needs_manual_check" + confidence="medium" und Route/IATA vollständig zurückgeben.
+- Bei keiner eindeutigen Quelle oder Widerspruch: status="needs_manual_check" + confidence="low".
 - Gib alle Prüfeinträge in derselben Reihenfolge zurück.
 
 Zu prüfen:
@@ -1662,6 +1668,18 @@ function parseGeminiFlightResult(text){
 
     const claimedVerified=status==='verified' && confidence==='high' && Boolean(location);
     const verified=claimedVerified && sourceCount>=2;
+    // P31: Genau eine eindeutige datumsspezifische Quelle darf einen zuvor leeren/
+    // konfliktfreien Flugort liefern, ohne die strikte verified/high-Stufe vorzutäuschen.
+    // Ein Plan-Konflikt, low confidence, fehlende Route/IATA oder unklare Richtung bleibt manuell.
+    const sourceConfirmed=!verified
+      && status==='needs_manual_check'
+      && confidence==='medium'
+      && sourceCount===1
+      && Boolean(location)
+      && /^[A-Z]{3}$/.test(iata)
+      && (direction==='arrival'||direction==='departure')
+      && /^[A-Z]{3}$/.test(airportIata)
+      && !Boolean(x.conflict);
 
     return {
       flightNumber,
@@ -1674,8 +1692,9 @@ function parseGeminiFlightResult(text){
       airportIata,
       flightLocation:location,
       iata,
-      confidence:verified?'verified':'uncertain',
+      confidence:verified?'verified':(sourceConfirmed?'source_confirmed':'uncertain'),
       status:verified?'verified':'needs_manual_check',
+      sourceConfirmed:Boolean(sourceConfirmed),
       conflict:Boolean(x.conflict),
       sources:normalizedSources,
       sourceCount,
@@ -1759,8 +1778,10 @@ function applyGeminiFlightResult(){
       if(!hit)return r;
 
       const verified=hit.confidence==='verified'&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
+      const sourceConfirmed=hit.confidence==='source_confirmed'&&hit.sourceConfirmed===true&&hit.flightLocation&&hit.flightLocation!=='Flugort prüfen';
+      const accepted=Boolean(verified||sourceConfirmed);
       const checkedAt=atmsCheckedAt;
-      updated++;if(!verified)uncertain++;if(hit.verificationDowngraded)downgraded++;
+      updated++;if(!accepted)uncertain++;if(hit.verificationDowngraded)downgraded++;
 
       cacheEntries.push({
         rideId:String(r.id||''),
@@ -1772,9 +1793,10 @@ function applyGeminiFlightResult(){
         airportEventDate:airportEventDate||String(hit.airportEventDate||hit.date||'').trim(),
         airportEventDateDerived:Boolean(eventContext.derived),
         flightTime:flightTime||String(hit.flightTime||'').trim(),
-        flightLocation:verified?hit.flightLocation:'',
-        iata:verified?hit.iata:'',
+        flightLocation:accepted?hit.flightLocation:'',
+        iata:accepted?hit.iata:'',
         verified:Boolean(verified),
+        sourceConfirmed:Boolean(sourceConfirmed),
         conflict:Boolean(hit.conflict),
         sourceNote:String(hit.sourceNote||'').trim(),
         sourceCount:Number(hit.sourceCount||0)||0,
@@ -1798,10 +1820,10 @@ function applyGeminiFlightResult(){
         date:date || String(hit.date||'').trim(),
         // FLIGHT-007B: Ein unsicheres Ergebnis darf vorhandene Daten niemals verschlechtern.
         // Bestehenden Plan-/Prüfort und IATA bei needs_manual_check unverändert behalten.
-        flightLocation:verified?hit.flightLocation:r.flightLocation,
-        iata:verified?hit.iata:(r.iata||''),
-        flightCheckConfidence:verified?'verified':'uncertain',
-        flightNeedsManualCheck:!verified,
+        flightLocation:accepted?hit.flightLocation:r.flightLocation,
+        iata:accepted?hit.iata:(r.iata||''),
+        flightCheckConfidence:verified?'verified':(sourceConfirmed?'source_confirmed':'uncertain'),
+        flightNeedsManualCheck:!accepted,
         flightCheckSourceNote:String(hit.sourceNote||'').trim(),
         flightCheckedAt:checkedAt
       };
