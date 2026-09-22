@@ -11,6 +11,9 @@
 // CORE-007D8A1F1D8P34 · 22.09.2026: INVALID DISPO TIME OCR GUARD – Nicht-leere OCR-Artefakte wie 'BE' gelten nie als gültige DISPO-Zeit. Die gezielte lokale Uhrzeit-Nachlese behandelt fehlende UND ungültige Primärzeiten; nur eindeutiger Mehrfach-Konsens darf korrigieren. Bleibt die Zeit ungültig, blockiert die Validierung den Import statt fälschlich 'OCR sauber' zu melden. Keine Änderung an P33F1 Clean-Start, P33 Planhistorie, P32 Merge, Flugprüfung oder PLAN/DISPO/LIVE.
   'use strict';
 
+  // CORE-007D8A1F1D8P34F1 · 22.09.2026: INVALID DISPO TIME DIGIT-ONLY OCR RECOVERY
+
+
   const PLAN_IMPORT_SCRIPT_URL = document.currentScript?.src || new URL('./js/plan-import.js', location.href).href;
   let autoFlightModulePromise = null;
 
@@ -3480,19 +3483,35 @@
 
       if (status) status.textContent = `Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
       const votes = new Map();
+      const attempts = [];
+      // P34F1: Bei einer bereits ungueltigen Primaer-OCR reicht die normale
+      // Tesseract-Lesung oft nicht aus (z. B. Ziffern werden als "BE" gelesen).
+      // Deshalb dieselbe eng begrenzte Uhrzeitzelle zusaetzlich mit rein
+      // numerischer Zeichenliste als Einzelzeile/Einzelwort lesen. Es bleibt bei
+      // der Sicherheitsregel: nur ein Mehrfach-Konsens darf automatisch ersetzen.
+      const ocrModes = [
+        { name: 'default', options: {} },
+        { name: 'single-line-digits', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789:.' } },
+        { name: 'single-word-digits', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: '0123456789:.' } }
+      ];
       try {
         for (const [x0, cy0, x1, cy1, scale] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          const second = await Tesseract.recognize(crop, 'eng');
-          const candidates = rideTimeCandidatesFromOcrResult(second);
-          if (candidates.length === 1) {
-            const candidate = candidates[0];
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = rideTimeCandidatesFromOcrResult(second);
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = normalizeTime(candidates[0]);
+            if (timeToMinutes(candidate) === null) continue;
             votes.set(candidate, (votes.get(candidate) || 0) + 1);
           }
         }
       } catch (_) {
+        ride.timeTargetedOcrAttempts = attempts;
         continue;
       }
+      ride.timeTargetedOcrAttempts = attempts;
 
       const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       if (!ranked.length) continue;
