@@ -52,6 +52,7 @@ public final class AtmsNativeFlightBridge {
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("X-Requested-With", "XMLHttpRequest");
             connection.setRequestProperty("Cache-Control", "no-store");
             connection.setUseCaches(false);
             connection.setConnectTimeout(timeoutMs);
@@ -60,7 +61,13 @@ public final class AtmsNativeFlightBridge {
 
             int status = connection.getResponseCode();
             if (status < 200 || status >= 300) {
-                throw new IllegalStateException("DUS HTTP " + status);
+                InputStream errorStream = connection.getErrorStream();
+                String errorBody = errorStream == null ? "" : readUtf8(errorStream);
+                if (errorBody == null) errorBody = "";
+                errorBody = errorBody.trim();
+                if (errorBody.length() > 1200) errorBody = errorBody.substring(0, 1200) + "…";
+                throw new IllegalStateException("DUS HTTP " + status
+                        + (errorBody.isEmpty() ? "" : " | " + errorBody));
             }
 
             String body = readUtf8(connection.getInputStream());
