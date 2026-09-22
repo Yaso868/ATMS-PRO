@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P33 · 22.09.2026: VISIBLE PLAN HISTORY & CLEAN START – sichtbare Planlisten-Historie, gezieltes Historien-Löschen und sicherer Neustart des Planbereichs; P32-Merge, P31-Flugsemantik, PLAN/DISPO/LIVE-Trennung und Grund-Einstellungen bleiben geschützt.
 // CORE-007D8A1F1D8P32 · 22.09.2026: IMPORT SESSION HISTORY & CONSERVATIVE RIDE MERGE – Neue Planimporte erhalten eigene Sitzungen/Phasen; alte Gemini-/LIVE-Anzeige wird bei neuer Plananalyse getrennt; identische offene Fahrten behalten ihre stabile ID und bestätigte Metadaten; nicht sicher gematchte alte offene Fahrten werden nicht blind gelöscht, sondern als Carryover markiert. P31-Flugsemantik, PLAN/DISPO/LIVE-Trennung und Persistenz-Schutz bleiben erhalten.
 // CORE-007D8A1F1D8P31 · 21.09.2026: SOURCE-CONFIRMED FLIGHT LOCATION
 // Eine eindeutige datumsspezifische Einzelquelle darf bei leerem/konfliktfreiem Planort den Flugort als source_confirmed übernehmen; verified/high bleibt strikt Zwei-Quellen-pflichtig. PLAN/DISPO/LIVE/GPS/Nachrichten bleiben unverändert.
@@ -2533,6 +2534,95 @@ window.ATMSPlanImportHistory=()=>readPlanImportHistory();
 window.ATMSCurrentPlanImportSession=()=>currentPlanImportSession();
 window.addEventListener('atms:plan-import-live-guard',resetCurrentImportCheckDisplay);
 
+
+// CORE-007D8A1F1D8P33 · 22.09.2026: VISIBLE PLAN HISTORY & CLEAN START
+const PLAN_RESET_BACKUP='atms_plan_reset_backup_v1';
+function planHistoryPhaseText(session){
+  const p=session?.phases||{};
+  const phases=[];
+  if(p.plan)phases.push('Planliste');
+  if(p.ocr)phases.push('OCR');
+  if(p.imported)phases.push('übernommen');
+  if(p.flightChecked)phases.push('Flugorte geprüft');
+  if(p.liveChecked)phases.push('LIVE geprüft');
+  return phases.length?phases.join(' → '):'Import gespeichert';
+}
+function planHistoryDateText(value){
+  const d=new Date(value||'');
+  return Number.isNaN(d.getTime())?'–':d.toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'});
+}
+function deletePlanHistorySession(sessionId){
+  const id=String(sessionId||'');
+  const history=readPlanImportHistory();
+  const target=history.find(x=>String(x?.id||'')===id);
+  if(!target)return false;
+  const when=planHistoryDateText(target.createdAt);
+  if(!confirm(`Diese frühere Planliste aus der Historie löschen?\n\nImport: ${when}\nFahrten im Import: ${Number(target.incomingCount||0)}\n\nDer aktuelle Fahrtenbestand wird dadurch NICHT verändert.`))return false;
+  savePlanImportHistory(history.filter(x=>String(x?.id||'')!==id),'plan-history-delete-one');
+  const current=currentPlanImportSession();
+  if(String(current?.id||'')===id)localStorage.removeItem(PLAN_IMPORT_CURRENT);
+  renderPlanImportHistoryPanel();
+  capturePersistenceSafety('plan-history-delete-one');
+  showToast('Planliste aus Historie gelöscht','ok');
+  return true;
+}
+function deleteEarlierPlanHistory(){
+  const current=currentPlanImportSession();
+  const history=readPlanImportHistory();
+  const keep=current?history.filter(x=>String(x?.id||'')===String(current.id||'')):[];
+  const removeCount=history.length-keep.length;
+  if(removeCount<=0){showToast('Keine früheren Planlisten vorhanden','warn');return false}
+  if(!confirm(`${removeCount} frühere Planliste(n) aus der Historie löschen?\n\nDie aktuelle Planliste und der aktuelle Fahrtenbestand bleiben erhalten.`))return false;
+  savePlanImportHistory(keep,'plan-history-delete-earlier');
+  renderPlanImportHistoryPanel();
+  capturePersistenceSafety('plan-history-delete-earlier');
+  showToast(`${removeCount} frühere Planliste(n) gelöscht`,'ok');
+  return true;
+}
+function startPlanDataFreshFromNow(){
+  const history=readPlanImportHistory();
+  const backup={savedAt:new Date().toISOString(),rides:Array.isArray(rides)?rides:[],done:[...done],history,current:currentPlanImportSession(),rideOverrides:getRideOverrides(),flightCache:readFlightCache?.()||{}};
+  const count=Array.isArray(rides)?rides.length:0;
+  if(!confirm(`ATMS-Planbereich ab jetzt neu beginnen?\n\nGelöscht werden:\n• ${count} aktuelle/alte Fahrten\n• frühere Planlisten-Historie\n• planbezogene Flug-/LIVE-Prüfdaten und Fahrtenkorrekturen\n\nERHALTEN bleiben Fahrer, Disponenten, Einstellungen, Adressbuch und Standard-Abholpuffer.\n\nVorher wird lokal ein Sicherheits-Snapshot angelegt.`))return false;
+  safePersistentSetItem(PLAN_RESET_BACKUP,JSON.stringify(backup),'plan-clean-start-backup');
+  rides=[];done.clear();
+  [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
+  save();
+  resetCurrentImportCheckDisplay();
+  capturePersistenceSafety('plan-clean-start');
+  syncPersistenceDurableShadow('plan-clean-start');
+  renderPlanImportHistoryPanel();
+  updateLiveFlightPanelContext?.();
+  showToast('Planbereich neu gestartet – bereit für neue Listen','ok');
+  return true;
+}
+function renderPlanImportHistoryPanel(){
+  const host=$('planImportHistoryList');if(!host)return;
+  const history=readPlanImportHistory().slice().reverse();
+  const current=currentPlanImportSession();
+  if(!history.length){host.innerHTML='<div style="font-size:12px;opacity:.76">Noch keine gespeicherten Planlisten.</div>';return}
+  host.innerHTML=history.map(s=>{
+    const isCurrent=String(s?.id||'')===String(current?.id||'');
+    const plantag=esc(String(s?.plantag||'–'));
+    const when=esc(planHistoryDateText(s?.createdAt));
+    const phases=esc(planHistoryPhaseText(s));
+    const incoming=Number(s?.incomingCount||0),matched=Number(s?.matchedCount||0),carry=Number(s?.carryoverCount||0);
+    return `<div style="padding:10px;border:1px solid rgba(255,255,255,.13);border-radius:10px;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><div style="font-weight:800">${isCurrent?'● Aktuelle Planliste':'Frühere Planliste'} · ${plantag}</div><div style="font-size:11px;opacity:.72;margin-top:2px">Import ${when} · ${incoming} Fahrt(en)</div></div>${isCurrent?'':`<button type="button" data-plan-history-delete="${esc(String(s.id||''))}" style="padding:7px 9px;border-radius:8px">🗑 Löschen</button>`}</div><div style="font-size:11px;opacity:.8;margin-top:7px">${phases}</div><div style="font-size:11px;opacity:.65;margin-top:3px">Wiedererkannt: ${matched} · übernommen/weitergeführt: ${carry}</div></div>`;
+  }).join('');
+  host.querySelectorAll('[data-plan-history-delete]').forEach(btn=>btn.addEventListener('click',()=>deletePlanHistorySession(btn.dataset.planHistoryDelete)));
+}
+function ensurePlanImportHistoryPanel(){
+  if($('planImportHistoryPanel')){renderPlanImportHistoryPanel();return}
+  const view=$('importView'),live=$('liveFlightPanel'),gemini=$('geminiFlightPanel');if(!view)return;
+  const panel=document.createElement('section');panel.id='planImportHistoryPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(255,255,255,.035)';
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:4px">📚 Frühere Planlisten</div><div style="font-size:12px;opacity:.78;line-height:1.45">Jeder bestätigte Import wird als eigene Planversion gespeichert. Einzelnes Löschen entfernt nur den Historieneintrag – nicht den aktuellen Fahrtenbestand.</div><div id="planImportHistoryList" style="margin-top:8px"></div><div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px"><button type="button" id="deleteEarlierPlanHistoryBtn" style="padding:11px;border-radius:9px;font-weight:800">🗑 Alle früheren Planlisten löschen</button><button type="button" id="startPlanFreshBtn" style="padding:11px;border-radius:9px;font-weight:800">🧹 Ab jetzt mit neuen Planlisten starten</button></div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-top:7px">„Ab jetzt …“ leert nur den Plan-/Fahrtenbereich. Fahrer, Disponenten, Einstellungen, Adressbuch und Standard-Abholpuffer bleiben erhalten.</div>`;
+  if(live)live.insertAdjacentElement('afterend',panel);else if(gemini)gemini.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
+  $('deleteEarlierPlanHistoryBtn')?.addEventListener('click',deleteEarlierPlanHistory);
+  $('startPlanFreshBtn')?.addEventListener('click',startPlanDataFreshFromNow);
+  renderPlanImportHistoryPanel();
+}
+window.ATMSRenderPlanImportHistory=renderPlanImportHistoryPanel;
+
 function readPreviousPlanImportSnapshot(){
   try{
     const raw=JSON.parse(localStorage.getItem('atms_import_previous_v1')||'null');
@@ -2660,6 +2750,7 @@ function applyImportedRides(newRides){
   capturePersistenceSafety('after-plan-import');
   syncPersistenceDurableShadow('after-plan-import');
   const importSession=beginPlanImportSession(normalizedIncoming,planMerge);
+  renderPlanImportHistoryPanel();
   resetCurrentImportCheckDisplay();
   updateLiveFlightPanelContext();
 
@@ -3783,6 +3874,7 @@ function initApp(){
     ensureGeminiFlightPanel();
     ensureAddressBookPanel();
     ensureLiveFlightPanel();
+    ensurePlanImportHistoryPanel();
     ensurePersistenceSafetyPanel();
     initPersistenceSafetyPanelObserver();
     try{
