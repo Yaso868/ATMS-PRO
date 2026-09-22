@@ -8,6 +8,7 @@
   // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS. Nach einem echten Nutzer-Klick auf „Planliste analysieren“ werden vollständig saubere OCR-Planlisten (0 Hinweise, 0 Fehler) automatisch übernommen und die Fahrtenansicht geöffnet. Offene Flugprüfungen blockieren den Plan nicht. Unsichere OCR-/Preis-/Datumsfälle bleiben weiterhin manuell. Diagnoseblöcke sind im normalen Import eingeklappt.
 // CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
 (() => {
+// CORE-007D8A1F1D8P34F2 · 22.09.2026: MIRRORED DISPO TIME OCR RECOVERY – Bei ungültiger primärer DISPO-Zeit wird zusätzlich die zweite, in ATMS-Planlisten redundant vorhandene DISPO-Uhrzeitspalte gezielt lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; P34-Guard bleibt aktiv.
 // CORE-007D8A1F1D8P34 · 22.09.2026: INVALID DISPO TIME OCR GUARD – Nicht-leere OCR-Artefakte wie 'BE' gelten nie als gültige DISPO-Zeit. Die gezielte lokale Uhrzeit-Nachlese behandelt fehlende UND ungültige Primärzeiten; nur eindeutiger Mehrfach-Konsens darf korrigieren. Bleibt die Zeit ungültig, blockiert die Validierung den Import statt fälschlich 'OCR sauber' zu melden. Keine Änderung an P33F1 Clean-Start, P33 Planhistorie, P32 Merge, Flugprüfung oder PLAN/DISPO/LIVE.
   'use strict';
 
@@ -3453,9 +3454,17 @@
     const timeCol = mapping?.time;
     if (timeCol === undefined) return rides;
     const boundaries = imageMeta.boundaries || [];
-    const left = Number(boundaries[timeCol]);
-    const right = Number(boundaries[timeCol + 1]);
-    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+    const timeColumns = [
+      { key: 'primary', index: timeCol },
+      ...(mapping?.timeMirror !== undefined && mapping.timeMirror !== timeCol
+        ? [{ key: 'mirror', index: mapping.timeMirror }]
+        : [])
+    ].map(col => ({
+      ...col,
+      left: Number(boundaries[col.index]),
+      right: Number(boundaries[col.index + 1])
+    })).filter(col => Number.isFinite(col.left) && Number.isFinite(col.right) && col.right > col.left);
+    if (!timeColumns.length) return rides;
 
     const status = $('importStatus');
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
@@ -3474,15 +3483,17 @@
       const y1 = Number(rowMeta.y1 || 0);
       const rowHeight = Math.max(18, y1 - y0);
       const padY = Math.max(2, rowHeight * 0.18);
-      const cellWidth = Math.max(8, right - left);
-      const padX = Math.max(1, cellWidth * 0.04);
-      const regions = [
-        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
-        [left, y0 - padY, right, y1 + padY, 3]
-      ];
+      const regions = [];
+      timeColumns.forEach(col => {
+        const cellWidth = Math.max(8, col.right - col.left);
+        const padX = Math.max(1, cellWidth * 0.04);
+        regions.push([col.left + padX, y0 - padY, col.right - padX, y1 + padY, 2, col.key]);
+        regions.push([col.left, y0 - padY, col.right, y1 + padY, 3, col.key]);
+      });
 
-      if (status) status.textContent = `Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      if (status) status.textContent = `Uhrzeitzellen Zeile ${ride.sourceRow} werden lokal nachgelesen …`;
       const votes = new Map();
+      const voteColumns = new Map();
       const attempts = [];
       // P34F1: Bei einer bereits ungueltigen Primaer-OCR reicht die normale
       // Tesseract-Lesung oft nicht aus (z. B. Ziffern werden als "BE" gelesen).
@@ -3495,16 +3506,18 @@
         { name: 'single-word-digits', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: '0123456789:.' } }
       ];
       try {
-        for (const [x0, cy0, x1, cy1, scale] of regions) {
+        for (const [x0, cy0, x1, cy1, scale, columnKey] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           for (const mode of ocrModes) {
             const second = await Tesseract.recognize(crop, 'eng', mode.options);
             const candidates = rideTimeCandidatesFromOcrResult(second);
-            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            attempts.push({ column: columnKey, mode: mode.name, scale, candidates: candidates.slice() });
             if (candidates.length !== 1) continue;
             const candidate = normalizeTime(candidates[0]);
             if (timeToMinutes(candidate) === null) continue;
             votes.set(candidate, (votes.get(candidate) || 0) + 1);
+            if (!voteColumns.has(candidate)) voteColumns.set(candidate, new Set());
+            voteColumns.get(candidate).add(columnKey);
           }
         }
       } catch (_) {
@@ -3527,7 +3540,9 @@
       ride.dispoTime = recovered;
       ride.dispo_time = recovered;
       ride.timeRecoveredFromTargetedOcr = true;
-      ride.timeRecoverySource = 'targeted_missing_or_invalid_time_cell_consensus';
+      ride.timeRecoverySource = voteColumns.get(recovered)?.size >= 2
+        ? 'targeted_primary_and_mirror_time_consensus'
+        : 'targeted_missing_or_invalid_time_cell_consensus';
     }
     return out;
   }
