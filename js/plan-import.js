@@ -1,4 +1,3 @@
-  // CORE-007D8A1F1D8P32F1 · 21.09.2026: HEADERLESS 14-COLUMN MIRROR OCR – kopfzeilenlose Preislisten mit zusätzlicher gespiegelter DISPO-Uhrzeit vor den Flugspalten werden nur bei wiederholter Zeit-Geometrie als bestehendes 14-Spalten-ATMS-Layout erkannt. 13-Spalten-Fallback, OCR-Sicherheitsguards, Flugprüfung, PLAN/DISPO/LIVE und Persistenz bleiben unverändert.
   // CORE-007D8A1F1D8P31F5F6 · 18.09.2026: AUTO-FLIGHT EXPLICIT URL SOURCES – FLIGHT-008 nutzt für die automatische Routenprüfung zwei explizite, datumsspezifische Webquellen (Flightradar24 + FlightStats) via Gemini URL Context. Google Search bleibt nur ergänzend. Keine Lockerung der Zwei-Quellen-Regel.
   // CORE-007D8A1F1D8P31F5F4 · 18.09.2026: AUTO-FLIGHT RESPONSE NORMALIZATION FIX – Gemini-Antworten werden robust normalisiert: string "false" zählt nicht mehr als Konflikt; für die Route sind die kanonischen IATA-Endpunkte maßgeblich, Stadtnamen sind nur Darstellung.
   // CORE-007D8A1F1D8P31F5F2 · 18.09.2026: AUTO-FLIGHT DUAL-SOURCE VERIFIER – FLIGHT-008 bleibt strikt. Wenn Google Search in der ersten Prüfung weniger als zwei unabhängige Quellen liefert, fordert ATMS automatisch eine zweite unabhängige Bestätigung an und übernimmt nur übereinstimmende Routen.
@@ -9,6 +8,7 @@
   // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS. Nach einem echten Nutzer-Klick auf „Planliste analysieren“ werden vollständig saubere OCR-Planlisten (0 Hinweise, 0 Fehler) automatisch übernommen und die Fahrtenansicht geöffnet. Offene Flugprüfungen blockieren den Plan nicht. Unsichere OCR-/Preis-/Datumsfälle bleiben weiterhin manuell. Diagnoseblöcke sind im normalen Import eingeklappt.
 // CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
 (() => {
+// CORE-007D8A1F1D8P34 · 22.09.2026: INVALID DISPO TIME OCR GUARD – Nicht-leere OCR-Artefakte wie 'BE' gelten nie als gültige DISPO-Zeit. Die gezielte lokale Uhrzeit-Nachlese behandelt fehlende UND ungültige Primärzeiten; nur eindeutiger Mehrfach-Konsens darf korrigieren. Bleibt die Zeit ungültig, blockiert die Validierung den Import statt fälschlich 'OCR sauber' zu melden. Keine Änderung an P33F1 Clean-Start, P33 Planhistorie, P32 Merge, Flugprüfung oder PLAN/DISPO/LIVE.
   'use strict';
 
   const PLAN_IMPORT_SCRIPT_URL = document.currentScript?.src || new URL('./js/plan-import.js', location.href).href;
@@ -920,7 +920,12 @@
 
     rides.forEach(ride => {
       const row = ride.sourceRow;
-      if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
+      const normalizedRideTime = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
+      if (!normalizedRideTime) {
+        issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
+      } else if (timeToMinutes(normalizedRideTime) === null) {
+        issues.push({ level: 'error', row, text: `DISPO-Zeit „${normalizedRideTime}“ ist keine gültige Uhrzeit – Original-Planliste prüfen` });
+      }
       // CORE-007A: Eine per eindeutigem Mehrfach-Konsens korrigierte Zeit ist bereits
       // gelöst. timeOcrInitial/timeRecoveredFromTargetedOcr bleiben als interne Diagnose
       // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
@@ -1553,18 +1558,6 @@
     0.9296875, 0.9954427083
   ];
 
-
-  // P32F1: Dasselbe bekannte ATMS-Preislayout existiert auch mit einer zusätzlichen
-  // gespiegelten DISPO-Uhrzeit direkt vor "Flug ang./Flug ausg.". Die Vorlage wird
-  // weiterhin ausschließlich über echte Preis-/DISPO-Zeitanker skaliert und nur nach
-  // wiederholter Mehrzeilen-Evidenz freigegeben. Keine Fahrtwerte werden hart codiert.
-  const ATMS_HEADERLESS_14_PRICE_MIRROR_BOUNDARY_RATIOS = [
-    0.0052083333, 0.06640625, 0.1106770833, 0.263671875,
-    0.3984375, 0.48828125, 0.5294, 0.58066,
-    0.63674, 0.69217, 0.73870, 0.78448,
-    0.85370, 0.93651, 0.9954427083
-  ];
-
   function medianNumber(values) {
     const list = (values || []).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
     if (!list.length) return null;
@@ -1627,36 +1620,22 @@
     return letters >= minLetters;
   }
 
-  function headerlessSemanticForRow(row, semantic = null) {
-    if (semantic && typeof semantic === 'object') return semantic;
-    const schema = Array.isArray(row) && row.length >= ATMS_IMAGE_SCHEMA_14_PRICE.length
-      ? ATMS_IMAGE_SCHEMA_14_PRICE
-      : ATMS_IMAGE_SCHEMA_13_PRICE;
-    return imageSemanticColumns(schema);
-  }
-
-  function headerlessCoreRowCheck(row, semantic = null) {
+  function headerlessCoreRowCheck(row) {
     if (!Array.isArray(row) || row.length < ATMS_IMAGE_SCHEMA_13_PRICE.length) {
       return { ok: false, flight: false, fields: {} };
     }
 
-    const columns = headerlessSemanticForRow(row, semantic);
-    const at = field => {
-      const index = columns?.[field];
-      return index === undefined ? '' : row[index];
-    };
-
-    const priceRaw = cellText(at('price'));
-    const timeRaw = cellText(at('rideTime')).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
-    const pickup = cellText(at('pickup'));
-    const destination = cellText(at('destination'));
-    const customer = cellText(at('customer'));
-    const company = cellText(at('company'));
-    const arrival = normalizeFlightNumber(at('arrivalFlight'));
-    const departure = normalizeFlightNumber(at('departureFlight'));
-    const vehicle = cellText(at('vehicle'));
-    const persons = parseNumber(at('persons'));
-    const driver = cellText(at('driver'));
+    const priceRaw = cellText(row[0]);
+    const timeRaw = cellText(row[1]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const pickup = cellText(row[2]);
+    const destination = cellText(row[3]);
+    const customer = cellText(row[4]);
+    const company = cellText(row[5]);
+    const arrival = normalizeFlightNumber(row[6]);
+    const departure = normalizeFlightNumber(row[7]);
+    const vehicle = cellText(row[8]);
+    const persons = parseNumber(row[9]);
+    const driver = cellText(row[12]);
 
     const fields = {
       price: headerlessPriceLike(priceRaw) && parseNumber(priceRaw) > 0,
@@ -1685,17 +1664,12 @@
     };
   }
 
-
-  function headerlessRecurringColumnEvidence(lines, boundaries, semantic = null) {
+  function headerlessRecurringColumnEvidence(lines, boundaries) {
     const columnCount = Math.max(0, (boundaries || []).length - 1);
-    if (!Array.isArray(lines) || lines.length < 2 || ![ATMS_IMAGE_SCHEMA_13_PRICE.length, ATMS_IMAGE_SCHEMA_14_PRICE.length].includes(columnCount)) {
+    if (!Array.isArray(lines) || lines.length < 2 || columnCount !== ATMS_IMAGE_SCHEMA_13_PRICE.length) {
       return { safe: false, rowCount: 0, counts: [], stableColumns: 0 };
     }
 
-    const columns = semantic || imageSemanticColumns(
-      columnCount === ATMS_IMAGE_SCHEMA_14_PRICE.length ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_PRICE
-    );
-    const occupiedAt = (occupied, index) => index !== undefined && Boolean(occupied[index]);
     const counts = Array(columnCount).fill(0);
     let usableRows = 0;
     let leftAnchoredRows = 0;
@@ -1721,10 +1695,10 @@
       usableRows++;
       occupied.forEach((value, index) => { if (value) counts[index]++; });
 
-      if (occupiedAt(occupied, columns.price) && occupiedAt(occupied, columns.rideTime)) leftAnchoredRows++;
-      if (occupiedAt(occupied, columns.pickup) && occupiedAt(occupied, columns.destination)) routeRows++;
-      if (occupiedAt(occupied, columns.driver)) rightRows++;
-      if (occupiedAt(occupied, columns.arrivalFlight) || occupiedAt(occupied, columns.departureFlight)) flightRows++;
+      if (occupied[0] && occupied[1]) leftAnchoredRows++;
+      if (occupied[2] && occupied[3]) routeRows++;
+      if (occupied[12]) rightRows++;
+      if (occupied[6] || occupied[7]) flightRows++;
     });
 
     if (usableRows < 2) return { safe: false, rowCount: usableRows, counts, stableColumns: 0 };
@@ -1732,7 +1706,6 @@
     const majority = Math.max(2, Math.ceil(usableRows * 0.60));
     const half = Math.max(2, Math.ceil(usableRows * 0.50));
     const stableColumns = counts.filter(count => count >= half).length;
-    const requiredStable = columnCount === ATMS_IMAGE_SCHEMA_14_PRICE.length ? 9 : 8;
 
     // Sicherheitsprinzip: Nicht ein einzelner Wert beweist das Layout, sondern
     // mehrere Zeilen muessen dieselben X-Korridore wiederholen. Preis+Zeit links,
@@ -1744,10 +1717,10 @@
       routeRows >= majority &&
       rightRows >= half &&
       flightRows >= Math.min(2, usableRows) &&
-      counts[columns.customer] >= half &&
-      counts[columns.company] >= half &&
-      counts[columns.vehicle] >= half &&
-      stableColumns >= requiredStable;
+      counts[4] >= half &&
+      counts[5] >= half &&
+      counts[8] >= half &&
+      stableColumns >= 8;
 
     return {
       safe,
@@ -1761,33 +1734,6 @@
       flightRows
     };
   }
-
-  function headerlessMirrorTimeEvidence(lines, width) {
-    const usable = (lines || []).filter(line => (line?.words || []).length >= 4);
-    let primaryRows = 0;
-    let mirrorRows = 0;
-    const mirrorCenters = [];
-
-    usable.forEach(line => {
-      const primaryX = headerlessLineAnchor(line, headerlessTimeLike, 0, width * 0.24);
-      if (!Number.isFinite(primaryX)) return;
-      primaryRows++;
-      const mirrorX = headerlessLineAnchor(line, headerlessTimeLike, width * 0.47, width * 0.61);
-      if (!Number.isFinite(mirrorX)) return;
-      mirrorRows++;
-      mirrorCenters.push(mirrorX);
-    });
-
-    const required = Math.max(2, Math.ceil(primaryRows * 0.60));
-    return {
-      safe: primaryRows >= 2 && mirrorRows >= required,
-      primaryRows,
-      mirrorRows,
-      required,
-      mirrorCenter: medianNumber(mirrorCenters)
-    };
-  }
-
 
   function inferHeaderlessAtmsPriceLayout(lines, width, diagnostics = null) {
     // CORE-007D3: Reine Diagnoseinstrumentierung. Jede bisherige Ja/Nein-
@@ -1808,19 +1754,6 @@
     if (usableLines.length < 2 || !Number.isFinite(Number(width)) || Number(width) < 500) {
       return reject('insufficient_usable_lines_or_width');
     }
-
-    const mirrorEvidence = headerlessMirrorTimeEvidence(usableLines, Number(width));
-    const headerlessSchema = mirrorEvidence.safe ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_PRICE;
-    const boundaryRatios = mirrorEvidence.safe
-      ? ATMS_HEADERLESS_14_PRICE_MIRROR_BOUNDARY_RATIOS
-      : ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS;
-    const headerlessSemantic = imageSemanticColumns(headerlessSchema);
-    Object.assign(diag, {
-      headerlessSchemaColumns: headerlessSchema.length,
-      mirrorTimeRows: Number(mirrorEvidence.mirrorRows || 0),
-      mirrorTimeRequired: Number(mirrorEvidence.required || 0),
-      mirrorTimeEvidence: Boolean(mirrorEvidence.safe)
-    });
 
     const priceCenters = [];
     const timeCenters = [];
@@ -1857,8 +1790,8 @@
       return reject('invalid_anchor_medians');
     }
 
-    const templatePriceCenter = (boundaryRatios[0] + boundaryRatios[1]) / 2;
-    const templateTimeCenter = (boundaryRatios[1] + boundaryRatios[2]) / 2;
+    const templatePriceCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1]) / 2;
+    const templateTimeCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[2]) / 2;
 
     const scalePx = width;
     const offsetPx = observedTime - scalePx * templateTimeCenter;
@@ -1871,7 +1804,7 @@
       return reject('price_anchor_not_matching_template');
     }
 
-    const boundaries = boundaryRatios.map(ratio => offsetPx + scalePx * ratio);
+    const boundaries = ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS.map(ratio => offsetPx + scalePx * ratio);
     if (boundaries.some((value,index) => !Number.isFinite(value) || (index && value <= boundaries[index - 1]))) {
       return reject('invalid_column_boundaries');
     }
@@ -1899,8 +1832,8 @@
 
     const semanticRows = [];
     candidateLines.forEach(line => {
-      const row = headerlessCellsFromLine(line, boundaries, headerlessSchema.length);
-      const check = headerlessCoreRowCheck(row, headerlessSemantic);
+      const row = headerlessCellsFromLine(line, boundaries, ATMS_IMAGE_SCHEMA_13_PRICE.length);
+      const check = headerlessCoreRowCheck(row);
       semanticRows.push({ line, row, check });
     });
 
@@ -1908,7 +1841,7 @@
     const verifiedRows = semanticRows.filter(item => item.check.ok);
     const semanticValidated = verifiedRows.length >= required && verifiedRows.some(item => item.check.flight);
 
-    const recurring = headerlessRecurringColumnEvidence(candidateLines, boundaries, headerlessSemantic);
+    const recurring = headerlessRecurringColumnEvidence(candidateLines, boundaries);
     Object.assign(diag, {
       verifiedRows: verifiedRows.length,
       requiredRows: required,
@@ -1925,7 +1858,7 @@
       return reject('semantic_and_recurring_validation_failed');
     }
 
-    const anchors = headerlessSchema.map((slot,index) => ({
+    const anchors = ATMS_IMAGE_SCHEMA_13_PRICE.map((slot,index) => ({
       label: slot.label,
       key: slot.key,
       x: (boundaries[index] + boundaries[index + 1]) / 2,
@@ -1937,7 +1870,7 @@
     return {
       anchors,
       boundaries,
-      semantic: headerlessSemantic,
+      semantic: imageSemanticColumns(anchors),
       lines: candidateLines,
       standard: true,
       syntheticCount: anchors.length,
@@ -2525,26 +2458,17 @@
     return { value: displayByKey.get(winner[0]) || '', attempts };
   }
 
-  function headerlessInvalidCoreColumns(row, imageMeta = null) {
-    const semantic = imageMeta?.semantic || headerlessSemanticForRow(row);
-    const check = headerlessCoreRowCheck(row, semantic);
+  function headerlessInvalidCoreColumns(row) {
+    const check = headerlessCoreRowCheck(row);
     const fieldToColumn = {
-      price: semantic.price,
-      time: semantic.rideTime,
-      pickup: semantic.pickup,
-      destination: semantic.destination,
-      customer: semantic.customer,
-      company: semantic.company,
-      vehicle: semantic.vehicle,
-      persons: semantic.persons,
-      driver: semantic.driver
+      price: 0, time: 1, pickup: 2, destination: 3,
+      customer: 4, company: 5, vehicle: 8, persons: 9, driver: 12
     };
     return Object.entries(check.fields || {})
       .filter(([, ok]) => !ok)
       .map(([field]) => ({ field, column: fieldToColumn[field] }))
       .filter(item => item.column !== undefined);
   }
-
 
   async function recoverHeaderlessCellsTargeted(matrix, imageCanvas, imageMeta) {
     if (!Array.isArray(matrix) || !imageCanvas || !imageMeta?.headerlessAtms || !window.Tesseract) return matrix;
@@ -2558,7 +2482,7 @@
     // einen ganzen Tabelleninhalt aus Einzel-Crops zusammenzuraten.
     let totalInvalid = 0;
     for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
-      const invalid = headerlessInvalidCoreColumns(out[matrixIndex], imageMeta);
+      const invalid = headerlessInvalidCoreColumns(out[matrixIndex]);
       if (invalid.length > 4) {
         imageMeta.headerlessCellRecovery = { accepted: false, reason: 'too_many_invalid_cells_in_row', totalInvalid };
         return out;
@@ -2575,7 +2499,7 @@
       const rowMeta = metaByIndex[matrixIndex];
       if (!rowMeta) continue;
 
-      const invalid = headerlessInvalidCoreColumns(row, imageMeta);
+      const invalid = headerlessInvalidCoreColumns(row);
       for (const item of invalid) {
         if (status) status.textContent = `Kopfzeilenloser Ausschnitt: ${item.field}-Zelle in Zeile ${matrixIndex + 1} wird sicher nachgelesen …`;
         const recovered = await recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, item.column, item.field);
@@ -2589,19 +2513,14 @@
     // kopfzeilenlosen Ausschnitt noch KEIN Flug erkannt wurde, werden die beiden
     // Flugspalten eng nachgelesen. So bleibt der Fallback schnell und rät keine
     // Flugnummern in legitime Leerzellen hinein.
-    const semantic = imageMeta.semantic || headerlessSemanticForRow(out[1]);
-    const flightColumns = [
-      [semantic.arrivalFlight, 'arrivalFlight'],
-      [semantic.departureFlight, 'departureFlight']
-    ].filter(([column]) => column !== undefined);
     let hasAnyFlightBeforeRecovery = out.slice(1).some(row =>
-      flightColumns.some(([column]) => Boolean(normalizeFlightNumber(row?.[column])))
+      Boolean(normalizeFlightNumber(row?.[6]) || normalizeFlightNumber(row?.[7]))
     );
     if (!hasAnyFlightBeforeRecovery) {
       for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
         const rowMeta = metaByIndex[matrixIndex];
         if (!rowMeta) continue;
-        for (const [column, field] of flightColumns) {
+        for (const [column, field] of [[6, 'arrivalFlight'], [7, 'departureFlight']]) {
           const recovered = await recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, column, field);
           recoveryLog.push({ matrixIndex, field, column, attempts: recovered.attempts, recovered: recovered.value });
           if (recovered.value) out[matrixIndex][column] = recovered.value;
@@ -2613,7 +2532,7 @@
     let hasFlight = false;
     let accepted = out.length > 1;
     for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
-      const check = headerlessCoreRowCheck(out[matrixIndex], semantic);
+      const check = headerlessCoreRowCheck(out[matrixIndex]);
       rowChecks.push({ matrixIndex, ok: check.ok, flight: check.flight, fields: check.fields });
       if (!check.ok) accepted = false;
       if (check.flight) hasFlight = true;
@@ -3540,7 +3459,10 @@
 
     for (let i = 0; i < out.length; i++) {
       const ride = out[i];
-      if (ride.time) continue;
+      const initialRawTime = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
+      // P34: Nicht-leere OCR-Artefakte (z. B. "BE") sind genauso unsicher wie
+      // eine fehlende Zeit. Nur eine bereits echte HH:MM-Zeit darf übersprungen werden.
+      if (initialRawTime && timeToMinutes(initialRawTime) !== null) continue;
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
       if (!rowMeta) continue;
@@ -3575,10 +3497,18 @@
       const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       if (!ranked.length) continue;
       if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
-      const recovered = ranked[0][0];
+      // P34: Auch bei ungültiger Primär-OCR gilt die bestehende Sicherheitsregel:
+      // mindestens zwei gezielte Nachlese-Crops müssen denselben gültigen Wert liefern.
+      if (ranked[0][1] < 2) continue;
+      const recovered = normalizeTime(ranked[0][0]);
+      if (timeToMinutes(recovered) === null) continue;
+      ride.timeOcrInitial = initialRawTime;
       ride.time = recovered;
       ride.planTime = recovered;
+      ride.dispoTime = recovered;
+      ride.dispo_time = recovered;
       ride.timeRecoveredFromTargetedOcr = true;
+      ride.timeRecoverySource = 'targeted_missing_or_invalid_time_cell_consensus';
     }
     return out;
   }
