@@ -14,7 +14,29 @@ android {
         versionName '1.4.0-p31f13'
     }
 
+    def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
+    def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
+    def stableKeyAlias = System.getenv('ATMS_SIGNING_KEY_ALIAS')
+    def stableKeyPassword = System.getenv('ATMS_SIGNING_KEY_PASSWORD')
+    def stableSigningAvailable = stableKeystore && stableStorePassword && stableKeyAlias && stableKeyPassword
+
+    if (stableSigningAvailable) {
+        signingConfigs {
+            atmsStable {
+                storeFile file(stableKeystore)
+                storePassword stableStorePassword
+                keyAlias stableKeyAlias
+                keyPassword stableKeyPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (stableSigningAvailable) {
+                signingConfig signingConfigs.atmsStable
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
