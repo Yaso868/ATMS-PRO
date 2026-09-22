@@ -11,6 +11,7 @@
 // CORE-007D8A1F1D8P34F2 · 22.09.2026: MIRRORED DISPO TIME OCR RECOVERY – Bei ungültiger primärer DISPO-Zeit wird zusätzlich die zweite, in ATMS-Planlisten redundant vorhandene DISPO-Uhrzeitspalte gezielt lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; P34-Guard bleibt aktiv.
 // CORE-007D8A1F1D8P34F3 · 22.09.2026: VALID MIRROR DISPO FALLBACK – Eine nicht-leere, aber ungültige Primär-OCR-Zeit (z. B. „BE“) darf eine bereits gültig erkannte redundante DISPO-Zeit nicht mehr überstimmen. Primär bleibt maßgeblich, wenn gültig; sonst wird ausschließlich eine gültige timeMirror-Zeit verwendet. Bei zwei gültigen abweichenden Zeiten bleibt die bestehende Warnung aktiv; P34-Guard bleibt Fallback.
 // CORE-007D8A1F1D8P34F4 · 22.09.2026: INNER-CELL TIME OCR – Bei fehlender/ungültiger DISPO-Zeit werden Primär- und Mirror-Zeit zusätzlich innerhalb der Tabellenlinien ausgeschnitten. Dadurch stören vertikale/horizontale Zellrahmen die lokale Ziffern-OCR nicht. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Ableitung aus Flugzeit oder Nachbarzeilen.
+// CORE-007D8A1F1D8P34F5 · 22.09.2026: VALID TIME MISMATCH GUARD – Eine Abweichungswarnung zwischen DISPO-Zeit und timeMirror wird nur noch erzeugt, wenn BEIDE Werte echte gültige Uhrzeiten sind. OCR-Artefakte wie „BE“ bleiben Diagnose, dürfen nach erfolgreicher Zeitrettung aber keinen falschen Hinweis erzeugen.
 // CORE-007D8A1F1D8P34 · 22.09.2026: INVALID DISPO TIME OCR GUARD – Nicht-leere OCR-Artefakte wie 'BE' gelten nie als gültige DISPO-Zeit. Die gezielte lokale Uhrzeit-Nachlese behandelt fehlende UND ungültige Primärzeiten; nur eindeutiger Mehrfach-Konsens darf korrigieren. Bleibt die Zeit ungültig, blockiert die Validierung den Import statt fälschlich 'OCR sauber' zu melden. Keine Änderung an P33F1 Clean-Start, P33 Planhistorie, P32 Merge, Flugprüfung oder PLAN/DISPO/LIVE.
   'use strict';
 
@@ -947,7 +948,15 @@
       // CORE-007A: Eine per eindeutigem Mehrfach-Konsens korrigierte Zeit ist bereits
       // gelöst. timeOcrInitial/timeRecoveredFromTargetedOcr bleiben als interne Diagnose
       // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
-      if (ride.dispoTime && ride.timeMirror && normalizeTime(ride.dispoTime) !== normalizeTime(ride.timeMirror)) {
+      const normalizedDispoForMirrorCheck = normalizeTime(ride.dispoTime);
+      const normalizedMirrorForCheck = normalizeTime(ride.timeMirror);
+      const dispoForMirrorCheckValid = timeToMinutes(normalizedDispoForMirrorCheck) !== null;
+      const mirrorForCheckValid = timeToMinutes(normalizedMirrorForCheck) !== null;
+      // P34F5: Nur zwei tatsächlich gültige Uhrzeiten dürfen eine
+      // DISPO-vs.-Mirror-Abweichungswarnung erzeugen. Ein OCR-Artefakt wie "BE"
+      // bleibt intern erhalten, ist aber keine zweite Zeitangabe.
+      if (dispoForMirrorCheckValid && mirrorForCheckValid &&
+          normalizedDispoForMirrorCheck !== normalizedMirrorForCheck) {
         issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.dispoTime} und gespiegelte DISPO-Zeit ${ride.timeMirror} weichen ab – Original-Planliste prüfen` });
       }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
