@@ -1,5 +1,4 @@
-// CORE-007D8A1F1D8P32 · 21.09.2026: IMPORT SESSION HISTORY + CONSERVATIVE RIDE MERGE
-// Neue Plananalysen erhalten eine eigene Import-Sitzung; alte Gemini-/LIVE-Statusmeldungen werden nicht mehr als Status der neuen Liste gezeigt. Erfolgreiche Importe werden als lesbare Planversionen archiviert. Offene Fahrten werden nur bei eindeutigem konservativem Match verknüpft; bestätigte Flug-/LIVE-Daten bleiben nur ohne Widerspruch erhalten. Fehlende alte offene Fahrten werden nicht blind gelöscht, sondern als Carry-over markiert. P31-FLIGHT-008/PLAN-DISPO-LIVE-Semantik bleibt unverändert.
+// CORE-007D8A1F1D8P32 · 22.09.2026: IMPORT SESSION HISTORY & CONSERVATIVE RIDE MERGE – Neue Planimporte erhalten eigene Sitzungen/Phasen; alte Gemini-/LIVE-Anzeige wird bei neuer Plananalyse getrennt; identische offene Fahrten behalten ihre stabile ID und bestätigte Metadaten; nicht sicher gematchte alte offene Fahrten werden nicht blind gelöscht, sondern als Carryover markiert. P31-Flugsemantik, PLAN/DISPO/LIVE-Trennung und Persistenz-Schutz bleiben erhalten.
 // CORE-007D8A1F1D8P31 · 21.09.2026: SOURCE-CONFIRMED FLIGHT LOCATION
 // Eine eindeutige datumsspezifische Einzelquelle darf bei leerem/konfliktfreiem Planort den Flugort als source_confirmed übernehmen; verified/high bleibt strikt Zwei-Quellen-pflichtig. PLAN/DISPO/LIVE/GPS/Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P30 · 21.09.2026: SINGLE PREPARED MESSAGE DELETE
@@ -71,7 +70,7 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1';const ADDRESS_BOOK='atms_address_book_v1';const PLAN_HISTORY_KEY='atms_plan_versions_v1',PLAN_SESSION_KEY='atms_plan_import_session_v1',PLAN_HISTORY_LIMIT=12;const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -1837,7 +1836,6 @@ function applyGeminiFlightResult(){
     try{window.dispatchEvent(new CustomEvent('atms:gemini-flight-result',{detail:{checked}}));}catch(_){}
     if(box)box.value='';
     const status=$('geminiFlightStatus');if(status)status.textContent=`${updated} Fahrt(en) geprüft${uncertain?` · ${uncertain} unsicher → vorhandener Flugort bleibt · manuell prüfen`:''}${downgraded?` · ${downgraded} wegen <2 Quellen heruntergestuft`:''}.`;
-    updateStoredPlanVersionPhase('flight',{checkedRides:updated,uncertainRides:uncertain,downgradedRides:downgraded});
     showToast(`${updated} Flugdaten übernommen`,'ok');
     render();
   }catch(e){const status=$('geminiFlightStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Gemini-Ergebnis ungültig','warn');}
@@ -1950,10 +1948,6 @@ function updateLiveFlightPanelContext(){
   if(label)label.textContent=`Alle Flüge des Plantags einbeziehen (${meta.flightCount})`;
   const last=$('liveFlightLastCheck');
   if(last){
-    const currentSession=readPlanImportSession();
-    if(currentSession&&!currentSession.versionId&&currentSession.state!=='imported'){last.textContent='Letzte LIVE-Prüfung dieser neuen Planliste: – · noch nicht übernommen';return;}
-    const currentVersion=currentSession?.versionId?readPlanVersions().find(v=>String(v?.versionId||'')===String(currentSession.versionId)):null;
-    if(currentVersion&&!currentVersion?.phases?.liveCheckedAt){last.textContent='Letzte LIVE-Prüfung dieser Planliste: –';return;}
     const check=liveFlightLastCheckMeta();
     if(!check.importedAt){last.textContent='Letzte LIVE-Prüfung: –';}
     else{
@@ -2275,8 +2269,6 @@ function applyLiveFlightResult(){
     if(stalePayload)parts.push(`${stalePayload} veraltete Prüfergebnisse nicht als aktuell übernommen`);
     if(manualPreserved)parts.push(`${manualPreserved} manuell bestätigt beibehalten`);
     const status=$('liveFlightImportStatus');if(status)status.textContent=`${parts.join(' · ')}. Neue Prüfung: zuerst „📡 Live-Prüfauftrag kopieren“.`;
-    updateStoredPlanVersionPhase('live',{confirmedRides:updated,currentLiveTimes,uncertainRides:uncertain,archivedRides:archived,stalePayloadRides:stalePayload,manualPreserved});
-    const currentSession=readPlanImportSession();if(currentSession?.versionId)writePlanImportSession({...currentSession,liveCheckedAt:importedAt,liveSummary:{confirmedRides:updated,currentLiveTimes,uncertainRides:uncertain},state:'imported'});
     showToast(`${updated} aktuelle Live-Flugstatus übernommen · ${currentLiveTimes} mit LIVE-Zeit`,'ok');
   }catch(e){const status=$('liveFlightImportStatus');if(status)status.textContent='Fehler: '+e.message;showToast('Live-Flugergebnis ungültig','warn');}
 }
@@ -2440,203 +2432,6 @@ function ensureLiveFlightPanel(){
   renderArrivalBufferSetting();
 }
 
-
-/* CORE-007D8A1F1D8P32 – Import-Sitzung, Planlisten-Historie und konservativer Fahrt-Merge */
-function p32JsonClone(value){try{return JSON.parse(JSON.stringify(value))}catch(_){return value}}
-function p32IsoNow(){return new Date().toISOString()}
-function p32Hash(value){let h=2166136261>>>0;for(const ch of String(value||'')){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)>>>0}return h.toString(36)}
-function readPlanImportSession(){try{const x=JSON.parse(localStorage.getItem(PLAN_SESSION_KEY)||'null');return x&&typeof x==='object'?x:null}catch(_){return null}}
-function writePlanImportSession(session){try{localStorage.setItem(PLAN_SESSION_KEY,JSON.stringify(session||{}))}catch(_){}return session}
-function readPlanVersions(){try{const x=JSON.parse(localStorage.getItem(PLAN_HISTORY_KEY)||'[]');return Array.isArray(x)?x:[]}catch(_){return[]}}
-function writePlanVersions(list){
-  const safe=(Array.isArray(list)?list:[]).slice(0,PLAN_HISTORY_LIMIT);
-  try{localStorage.setItem(PLAN_HISTORY_KEY,JSON.stringify(safe));return true}catch(_){
-    try{localStorage.setItem(PLAN_HISTORY_KEY,JSON.stringify(safe.slice(0,6)));return true}catch(__){return false}
-  }
-}
-function planSessionSourceFilesFromRides(source){return [...new Set((Array.isArray(source)?source:[]).map(r=>String(r?.sourceFile||'').trim()).filter(Boolean))]}
-function planSessionDatesFromRides(source){return [...new Set((Array.isArray(source)?source:[]).map(r=>String(r?.date||r?.planDate||'').trim()).filter(Boolean))].sort()}
-function p32SessionLabel(session){const files=Array.isArray(session?.sourceFiles)?session.sourceFiles:[];return files.length?files.join(' · '):'Planliste'}
-function resetImportScopedStatusForNewSession(){
-  const gemini=$('geminiFlightStatus');if(gemini)gemini.textContent='Noch keine Flugprüfung für diese Planliste durchgeführt.';
-  const live=$('liveFlightImportStatus');if(live)live.textContent='Noch keine Live-Flugprüfung für diese Planliste durchgeführt.';
-  const persistent=$('atmsPersistentFlightCheckStatus');if(persistent)persistent.style.display='none';
-}
-function beginPlanImportSession(meta={}){
-  const now=p32IsoNow();
-  const sourceFiles=(Array.isArray(meta.sourceFiles)?meta.sourceFiles:[meta.sourceFile]).map(x=>String(x||'').trim()).filter(Boolean);
-  const session={
-    sessionId:`pis-${Date.now().toString(36)}-${p32Hash(sourceFiles.join('|')||now)}`,
-    sourceFiles,
-    plantag:String(meta.plantag||'').trim(),
-    selectedAt:now,analysisStartedAt:'',analyzedAt:'',flightCheckedAt:'',liveCheckedAt:'',importedAt:'',versionId:'',
-    flightSummary:null,liveSummary:null,state:'selected'
-  };
-  writePlanImportSession(session);resetImportScopedStatusForNewSession();renderPlanHistoryPanel();return session;
-}
-function ensurePlanImportSessionForRides(source){
-  const files=planSessionSourceFilesFromRides(source),dates=planSessionDatesFromRides(source);let session=readPlanImportSession();
-  const sameFiles=session&&files.length&&Array.isArray(session.sourceFiles)&&files.every(f=>session.sourceFiles.includes(f));
-  if(!session||session.state==='imported'||(files.length&&!sameFiles))session=beginPlanImportSession({sourceFiles:files,plantag:dates[0]||''});
-  if(!session.sourceFiles?.length&&files.length)session.sourceFiles=files;
-  if(!session.plantag&&dates.length===1)session.plantag=dates[0];
-  return writePlanImportSession(session);
-}
-function markPlanImportSession(patch={}){let session=readPlanImportSession()||beginPlanImportSession({});session={...session,...patch};writePlanImportSession(session);return session}
-function markPlanFlightPhase(checked,scope=''){
-  const list=Array.isArray(checked)?checked:[];if(!list.length)return;
-  let session=readPlanImportSession();if(!session||session.state==='imported')return;
-  const accepted=list.filter(x=>x?.confidence==='verified'||x?.confidence==='source_confirmed'||x?.sourceConfirmed===true).length;
-  const uncertain=Math.max(0,list.length-accepted);
-  session={...session,flightCheckedAt:p32IsoNow(),flightSummary:{checked:list.length,accepted,uncertain,scope:String(scope||'')},state:'flight_checked'};
-  writePlanImportSession(session);
-}
-function updateStoredPlanVersionPhase(kind,summary={}){
-  const session=readPlanImportSession();if(!session?.versionId)return;
-  const versions=readPlanVersions();const idx=versions.findIndex(v=>String(v?.versionId||'')===String(session.versionId));if(idx<0)return;
-  const now=p32IsoNow(),version={...versions[idx],phases:{...(versions[idx].phases||{})}};
-  if(kind==='flight'){version.phases.flightCheckedAt=now;version.flightSummary={...(summary||{})};}
-  if(kind==='live'){version.phases.liveCheckedAt=now;version.liveSummary={...(summary||{})};}
-  versions[idx]=version;writePlanVersions(versions);renderPlanHistoryPanel();
-}
-function p32Same(a,b){return normKey(a)===normKey(b)}
-function p32RideDate(r){return String(r?.date||r?.planDate||'').trim()}
-function p32RideFlight(r){return flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight)}
-function p32AcceptedFlight(r){return Boolean(String(r?.flightLocation||'').trim()&&!r?.flightNeedsManualCheck&&(['verified','source_confirmed'].includes(String(r?.flightCheckConfidence||'').trim())||r?.flightVerified===true||r?.flightSourceConfirmed===true))}
-function p32RideMatchScore(oldRide,newRide){
-  if(!oldRide||!newRide)return{score:-1,eligible:false,reason:'missing'};
-  const od=p32RideDate(oldRide),nd=p32RideDate(newRide);if(od&&nd&&od!==nd)return{score:-1,eligible:false,reason:'date'};
-  const op=normKey(oldRide.pickup),np=normKey(newRide.pickup),ot=normKey(oldRide.destination),nt=normKey(newRide.destination);
-  if(!op||!np||!ot||!nt||op!==np||ot!==nt)return{score:-1,eligible:false,reason:'route'};
-  const of=p32RideFlight(oldRide),nf=p32RideFlight(newRide);if(Boolean(of)!==Boolean(nf))return{score:-1,eligible:false,reason:'flight-presence'};
-  if(of&&nf&&of!==nf)return{score:-1,eligible:false,reason:'flight'};
-  const oc=flightAirportContext(oldRide),nc=flightAirportContext(newRide);
-  if(oc.airportIata&&nc.airportIata&&oc.airportIata!==nc.airportIata)return{score:-1,eligible:false,reason:'airport'};
-  if(oc.direction!=='unknown'&&nc.direction!=='unknown'&&oc.direction!==nc.direction)return{score:-1,eligible:false,reason:'direction'};
-  let score=40;if(od&&nd&&od===nd)score+=10;if(of&&nf&&of===nf)score+=50;
-  const oldCustomer=first(oldRide.customer,oldRide.partner),newCustomer=first(newRide.customer,newRide.partner);if(oldCustomer&&newCustomer&&p32Same(oldCustomer,newCustomer))score+=15;
-  if(oldRide.company&&newRide.company&&p32Same(oldRide.company,newRide.company))score+=8;
-  if(oldRide.flightTime&&newRide.flightTime&&String(oldRide.flightTime)===String(newRide.flightTime))score+=10;
-  if(planTimeOf(oldRide)&&planTimeOf(newRide)&&planTimeOf(oldRide)===planTimeOf(newRide))score+=8;
-  if(Number(oldRide.persons||0)>0&&Number(oldRide.persons||0)===Number(newRide.persons||0))score+=4;
-  if(oldRide.driver&&newRide.driver&&p32Same(oldRide.driver,newRide.driver))score+=3;
-  if(oldRide.vehicle&&newRide.vehicle&&p32Same(oldRide.vehicle,newRide.vehicle))score+=2;
-  if(Number(oldRide.price||0)>0&&Math.abs(Number(oldRide.price||0)-Number(newRide.price||0))<0.01)score+=4;
-  return{score,eligible:true,reason:'ok',flight:Boolean(of)};
-}
-function p32PlanChanges(oldRide,newRide){
-  const fields=[['planTime',planTimeOf(oldRide),planTimeOf(newRide)],['driver',oldRide?.driver,newRide?.driver],['persons',Number(oldRide?.persons||0),Number(newRide?.persons||0)],['vehicle',oldRide?.vehicle,newRide?.vehicle],['pickup',oldRide?.pickup,newRide?.pickup],['destination',oldRide?.destination,newRide?.destination],['flightNumber',p32RideFlight(oldRide),p32RideFlight(newRide)],['flightTime',oldRide?.flightTime,newRide?.flightTime],['flightLocation',oldRide?.flightLocation,newRide?.flightLocation],['company',oldRide?.company,newRide?.company],['partner',oldRide?.partner,newRide?.partner],['price',Number(oldRide?.price||0),Number(newRide?.price||0)]];
-  return fields.filter(([,a,b])=>String(a??'')!==String(b??'')).map(([field,from,to])=>({field,from,to}));
-}
-function p32FlightLocationContradiction(oldRide,newRide){
-  const a=String(oldRide?.flightLocation||'').trim(),b=String(newRide?.flightLocation||'').trim();return Boolean(a&&b&&!p32Same(a,b));
-}
-function p32SameFlightIdentity(oldRide,newRide){
-  if(!p32RideFlight(oldRide)||p32RideFlight(oldRide)!==p32RideFlight(newRide))return false;
-  const od=p32RideDate(oldRide),nd=p32RideDate(newRide);if(od&&nd&&od!==nd)return false;
-  const oc=flightAirportContext(oldRide),nc=flightAirportContext(newRide);if(oc.airportIata&&nc.airportIata&&oc.airportIata!==nc.airportIata)return false;
-  if(oc.direction!=='unknown'&&nc.direction!=='unknown'&&oc.direction!==nc.direction)return false;
-  return true;
-}
-function p32MergeMatchedRide(oldRide,newRide,versionId){
-  const changes=p32PlanChanges(oldRide,newRide),flightContradiction=p32FlightLocationContradiction(oldRide,newRide),sameFlight=p32SameFlightIdentity(oldRide,newRide);
-  let merged={...oldRide,...newRide,id:String(oldRide.id),planVersionId:versionId,planPresence:'current',planLastSeenAt:p32IsoNow()};
-  const oldPlan=planTimeOf(oldRide),oldDispo=dispoTimeOf(oldRide),manualDispo=Boolean(oldDispo&&oldPlan&&oldDispo!==oldPlan);
-  if(manualDispo)merged.dispoTime=oldDispo;
-  if(sameFlight&&!flightContradiction){
-    const preserveKeys=Object.keys(oldRide).filter(k=>/^live/i.test(k)||['actualLandingTime','actualDepartureTime','landed','flightStatus','delayMinutes'].includes(k));
-    const incomingHasLive=Boolean(newRide?.liveCurrentConfirmed||newRide?.liveManualConfirmed||newRide?.liveCheckedAt||rawExplicitLiveTimeOf(newRide)||first(newRide?.liveFlightActualTime,newRide?.liveFlightEstimatedTime,newRide?.actualLandingTime,newRide?.actualDepartureTime));
-    if(!incomingHasLive){for(const key of preserveKeys)if(oldRide[key]!==undefined)merged[key]=p32JsonClone(oldRide[key]);}
-    else{for(const key of preserveKeys){if((merged[key]===undefined||merged[key]===null||merged[key]==='')&&oldRide[key]!==undefined)merged[key]=p32JsonClone(oldRide[key]);}}
-    if(p32AcceptedFlight(oldRide)&&!p32AcceptedFlight(newRide)){
-      for(const key of ['flightLocation','iata','flightCheckConfidence','flightNeedsManualCheck','flightCheckSourceNote','flightCheckedAt','flightVerified','flightSourceConfirmed'])if(oldRide[key]!==undefined)merged[key]=p32JsonClone(oldRide[key]);
-    }
-  }else if(flightContradiction){
-    merged.flightNeedsManualCheck=true;merged.flightCheckConfidence='uncertain';
-    for(const key of Object.keys(merged).filter(k=>/^live/i.test(k)))delete merged[key];
-    merged.actualLandingTime='';merged.actualDepartureTime='';merged.landed=false;merged.flightStatus='unknown';merged.delayMinutes=null;
-  }
-  const log=Array.isArray(oldRide?.planChangeLog)?oldRide.planChangeLog.slice(-19):[];
-  if(changes.length)log.push({versionId,at:p32IsoNow(),changes});
-  merged.planChangeLog=log;
-  merged.planVersionLinks=[...new Set([...(Array.isArray(oldRide?.planVersionLinks)?oldRide.planVersionLinks:[]),versionId])].slice(-20);
-  return{ride:norm(merged,0),changes,flightContradiction};
-}
-function p32AssignNewRideId(ride,versionId,index,usedIds){
-  let id=String(ride?.id||'').trim();
-  if(!id||usedIds.has(id))id=`p32-${p32Hash([versionId,index,p32RideDate(ride),planTimeOf(ride),ride.pickup,ride.destination,p32RideFlight(ride),ride.customer,ride.partner].join('|'))}`;
-  let unique=id,n=2;while(usedIds.has(unique)){unique=`${id}-${n++}`};usedIds.add(unique);return unique;
-}
-function p32MergePlanRides(current,incoming,versionId){
-  const old=Array.isArray(current)?current:[],fresh=Array.isArray(incoming)?incoming:[],openOld=old.filter(r=>!done.has(String(r?.id||'')));
-  const usedOld=new Set(),usedIds=new Set(old.map(r=>String(r?.id||'')).filter(Boolean));let matched=0,created=0,uncertain=0,contradictions=0;const changeRecords=[],membership=[],mergedIncoming=[];
-  fresh.forEach((newRide,index)=>{
-    const scored=openOld.filter(r=>!usedOld.has(String(r.id))).map(r=>({ride:r,...p32RideMatchScore(r,newRide)})).filter(x=>x.eligible&&x.score>=0).sort((a,b)=>b.score-a.score);
-    const best=scored[0]||null,second=scored[1]||null;const threshold=best?.flight?90:70;const margin=best&&second?best.score-second.score:999;const secure=Boolean(best&&best.score>=threshold&&margin>=12);
-    if(secure){
-      const oldId=String(best.ride.id);usedOld.add(oldId);const merged=p32MergeMatchedRide(best.ride,newRide,versionId);usedIds.add(oldId);matched++;if(merged.flightContradiction)contradictions++;
-      if(merged.changes.length)changeRecords.push({rideId:oldId,changes:merged.changes});
-      mergedIncoming.push(merged.ride);membership.push({rideId:oldId,state:'matched',score:best.score,changes:merged.changes});
-    }else{
-      if(best&&best.score>=50)uncertain++;
-      const id=p32AssignNewRideId(newRide,versionId,index,usedIds);const added=norm({...newRide,id,planVersionId:versionId,planPresence:'current',planLastSeenAt:p32IsoNow(),planVersionLinks:[versionId]},index);created++;mergedIncoming.push(added);membership.push({rideId:id,state:best&&best.score>=50?'new_uncertain_match':'new',score:best?.score||0,changes:[]});
-    }
-  });
-  const carried=openOld.filter(r=>!usedOld.has(String(r.id))).map(r=>norm({...r,planPresence:'carried_missing_from_latest',missingSincePlanVersion:r.missingSincePlanVersion||versionId,lastComparedPlanVersion:versionId},0));
-  const currentIds=new Set(mergedIncoming.map(r=>String(r.id)));for(const r of carried)if(!currentIds.has(String(r.id)))mergedIncoming.push(r);
-  return{rides:mergedIncoming,membership,matched,created,carried:carried.length,uncertain,contradictions,changeRecords};
-}
-function p32HistoryRideSnapshot(ride,isDone=false){
-  const keys=['id','date','planDate','time','planTime','dispoTime','timeMirror','flightTime','driver','pickup','destination','flightNumber','flightLocationRaw','flightLocation','iata','airline','partner','customer','company','vehicle','persons','price','currency','notes','sourceFile','sourceRow','sourcePlanAirportIata','flightCheckConfidence','flightNeedsManualCheck','flightCheckedAt','flightCheckSourceNote','liveTime','actualLandingTime','actualDepartureTime','flightStatus','delayMinutes','landed','liveFlightStatus','liveFlightScheduledTime','liveFlightEstimatedTime','liveFlightActualTime','liveCheckedAt','liveReportedCheckedAt','liveCurrentConfirmed','liveSourceNote','liveSources','liveResolutionMode','livePrioritySourceUrl','planPresence','planChangeLog','planVersionLinks'];
-  const out={};for(const key of keys)if(ride?.[key]!==undefined)out[key]=p32JsonClone(ride[key]);out.done=Boolean(isDone);return out;
-}
-function bootstrapLegacyPlanVersion(previousRides,at){
-  const source=Array.isArray(previousRides)?previousRides:[];if(!source.length||readPlanVersions().length)return null;
-  const createdAt=String(at||p32IsoNow()),versionId=`legacy-p31-${p32Hash(createdAt+'|'+source.length)}`;
-  const dates=planSessionDatesFromRides(source),files=planSessionSourceFilesFromRides(source);
-  const members=source.map(r=>({rideId:String(r.id||''),state:done.has(String(r.id||''))?'legacy_done':'legacy_open',score:0,changes:[],original:p32HistoryRideSnapshot(r,done.has(String(r.id||''))),effective:p32HistoryRideSnapshot(r,done.has(String(r.id||'')))}));
-  const version={versionId,sessionId:versionId,createdAt,legacy:true,plantags:dates,sourceFiles:files.length?files:['P31-Bestand vor P32'],rideCount:source.length,phases:{selectedAt:'',analyzedAt:'',importedAt:createdAt,flightCheckedAt:'',liveCheckedAt:''},flightSummary:null,liveSummary:null,merge:{matched:0,newRides:0,carriedOpen:source.filter(r=>!done.has(String(r.id||''))).length,uncertainMatches:0,contradictions:0},members};
-  writePlanVersions([version]);return version;
-}
-function saveImportedPlanVersion({session,sourceRides,effectiveRides,mergeResult,importedAt}){
-  const currentSession=session||ensurePlanImportSessionForRides(sourceRides);const versionId=String(currentSession.sessionId||`pv-${Date.now().toString(36)}`);const byId=new Map((Array.isArray(effectiveRides)?effectiveRides:[]).map(r=>[String(r.id),r]));
-  const memberSnapshots=(mergeResult?.membership||[]).map((m,index)=>({
-    ...m,
-    original:p32HistoryRideSnapshot(sourceRides[index]||{},false),
-    effective:p32HistoryRideSnapshot(byId.get(String(m.rideId))||{},done.has(String(m.rideId)))
-  }));
-  const dates=planSessionDatesFromRides(sourceRides),files=planSessionSourceFilesFromRides(sourceRides);const phases={selectedAt:currentSession.selectedAt||'',analyzedAt:currentSession.analyzedAt||currentSession.analysisStartedAt||importedAt,importedAt,flightCheckedAt:currentSession.flightCheckedAt||'',liveCheckedAt:''};
-  const version={versionId,sessionId:currentSession.sessionId||versionId,createdAt:importedAt,plantags:dates,sourceFiles:files.length?files:(currentSession.sourceFiles||[]),rideCount:sourceRides.length,phases,flightSummary:currentSession.flightSummary||null,liveSummary:null,merge:{matched:mergeResult?.matched||0,newRides:mergeResult?.created||0,carriedOpen:mergeResult?.carried||0,uncertainMatches:mergeResult?.uncertain||0,contradictions:mergeResult?.contradictions||0},members:memberSnapshots};
-  const versions=readPlanVersions().filter(v=>String(v?.versionId||'')!==versionId);versions.unshift(version);writePlanVersions(versions);
-  const nextSession={...currentSession,versionId,importedAt,state:'imported',analyzedAt:currentSession.analyzedAt||currentSession.analysisStartedAt||importedAt,sourceFiles:version.sourceFiles,plantag:dates.length===1?dates[0]:(currentSession.plantag||'')};writePlanImportSession(nextSession);renderPlanHistoryPanel();return version;
-}
-function p32PhaseLabel(version){const p=version?.phases||{};return['Planliste','OCR',p.importedAt?'übernommen':'offen',p.flightCheckedAt?'Flugorte geprüft':'Flugprüfung offen',p.liveCheckedAt?'LIVE geprüft':'LIVE offen'].join(' → ')}
-function renderPlanVersionReadOnly(versionId){
-  const version=readPlanVersions().find(v=>String(v?.versionId||'')===String(versionId||''));const host=$('atmsPlanHistoryReadOnly');if(!host||!version)return;
-  const rows=(Array.isArray(version.members)?version.members:[]).map(m=>{const r=m.effective||m.original||{};return `<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.10)"><b>${esc(first(r.planTime,r.dispoTime,r.time,'--:--'))} · ${esc(r.driver||'Offen')}</b><div style="font-size:12px;opacity:.86">${esc(r.pickup||'–')} → ${esc(r.destination||'–')}</div><div style="font-size:11px;opacity:.72">${esc(r.flightNumber||'ohne Flug')} · ${esc(r.flightLocation||'Flugort –')} · ${Number(r.persons||0)||'–'} Pers. · ${esc(r.vehicle||'–')} · ${m.state==='matched'?'verknüpft':m.state==='new_uncertain_match'?'neue Fahrt · Match unsicher':'neue Fahrt'}</div></div>`}).join('');
-  host.innerHTML=`<div style="font-weight:800;margin-bottom:5px">Lesemodus · ${esc((version.sourceFiles||[]).join(' · ')||'Planliste')}</div><div style="font-size:11px;opacity:.74;margin-bottom:7px">${esc((version.plantags||[]).map(atmsFormatIsoDateDe).join(' · ')||'Plantag –')} · ${esc(p32PhaseLabel(version))}</div>${rows||'<div style="font-size:12px;opacity:.75">Keine Fahrten gespeichert.</div>'}<div style="font-size:11px;opacity:.68;margin-top:8px">Lesemodus: Der aktuelle Fahrtenbestand, DISPO und LIVE werden nicht verändert.</div>`;
-}
-function renderPlanHistoryPanel(){
-  const panel=$('atmsPlanHistoryPanel');if(!panel)return;const versions=readPlanVersions();const session=readPlanImportSession();const current=$('atmsPlanHistoryCurrent');
-  if(current){if(session&&session.state!=='imported')current.textContent=`Aktuelle Import-Sitzung: ${p32SessionLabel(session)} · ${session.state==='flight_checked'?'Flugprüfung abgeschlossen':'in Bearbeitung'}`;else if(session?.versionId)current.textContent=`Aktuelle Planversion: ${p32SessionLabel(session)} · übernommen ${session.importedAt?atmsFormatDateTimeDe(session.importedAt):'–'}`;else current.textContent='Noch keine P32-Planversion gespeichert.'}
-  const list=$('atmsPlanHistoryList');if(!list)return;if(!versions.length){list.innerHTML='<div style="font-size:12px;opacity:.74">Noch keine früheren Planlisten gespeichert.</div>';return}
-  list.innerHTML=versions.map(v=>`<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.10)"><div style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between"><div><b style="font-size:12px">${esc((v.sourceFiles||[]).join(' · ')||'Planliste')}</b><div style="font-size:11px;opacity:.72">${esc((v.plantags||[]).map(atmsFormatIsoDateDe).join(' · ')||'–')} · ${Number(v.rideCount||0)} Fahrten</div><div style="font-size:11px;opacity:.72">${esc(p32PhaseLabel(v))}</div><div style="font-size:11px;opacity:.68">Merge: ${Number(v.merge?.matched||0)} verknüpft · ${Number(v.merge?.newRides||0)} neu · ${Number(v.merge?.carriedOpen||0)} offen übernommen${Number(v.merge?.uncertainMatches||0)?` · ${Number(v.merge.uncertainMatches)} Match unsicher`:''}</div></div><button type="button" data-atms-plan-version="${esc(v.versionId)}" style="padding:7px 9px;border-radius:8px;font-size:11px;font-weight:800;white-space:nowrap">Lesemodus</button></div></div>`).join('');
-  list.querySelectorAll('[data-atms-plan-version]').forEach(btn=>btn.addEventListener('click',()=>renderPlanVersionReadOnly(btn.dataset.atmsPlanVersion)));
-}
-function ensurePlanHistoryPanel(){
-  if($('atmsPlanHistoryPanel')){renderPlanHistoryPanel();return}
-  const anchor=$('geminiFlightPanel')||$('loadBtn');const view=$('importView');if(!anchor||!view)return;const panel=document.createElement('section');panel.id='atmsPlanHistoryPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML='<details><summary style="font-weight:800;cursor:pointer">📚 Frühere Planlisten</summary><div id="atmsPlanHistoryCurrent" style="font-size:12px;font-weight:800;margin:10px 0 8px">Planversion wird ermittelt …</div><div id="atmsPlanHistoryList"></div><div id="atmsPlanHistoryReadOnly" style="margin-top:10px;padding:10px;border-radius:10px;background:rgba(0,0,0,.16)"><div style="font-size:12px;opacity:.74">Eine Planversion auswählen, um sie schreibgeschützt anzusehen.</div></div></details>';
-  anchor.insertAdjacentElement('afterend',panel);renderPlanHistoryPanel();
-}
-function installPlanImportSessionLifecycle(){
-  if(window.__atmsP32PlanSessionLifecycle)return;window.__atmsP32PlanSessionLifecycle=true;
-  const fileInput=$('fileInput');if(fileInput)fileInput.addEventListener('change',event=>{const f=event.target?.files?.[0];if(f)beginPlanImportSession({sourceFile:f.name,plantag:String($('planDateInput')?.value||'').trim()});},true);
-  const analyze=$('analyzePlanBtn');if(analyze)analyze.addEventListener('click',event=>{if(event.isTrusted!==true)return;let session=readPlanImportSession();if(!session||session.state==='imported')session=beginPlanImportSession({sourceFile:$('fileInput')?.files?.[0]?.name||'',plantag:String($('planDateInput')?.value||'').trim()});markPlanImportSession({analysisStartedAt:p32IsoNow(),state:'analyzing'});resetImportScopedStatusForNewSession();},true);
-  const load=$('loadBtn');if(load)load.addEventListener('click',event=>{if(event.isTrusted!==true)return;const session=readPlanImportSession();if(!session||session.state==='imported')beginPlanImportSession({sourceFile:'ATMS-JSON',plantag:''});markPlanImportSession({analysisStartedAt:p32IsoNow(),analyzedAt:p32IsoNow(),state:'analyzed'});},true);
-  window.addEventListener('atms:gemini-flight-result',event=>{try{markPlanFlightPhase(event?.detail?.checked,event?.detail?.scope||'')}catch(_){}},true);
-}
-
 /* CORE-006A – Planimport nur nach explizitem, echtem Nutzer-Klick */
 let atmsPlanImportAuthorization={armed:false,source:'',at:0};
 
@@ -2688,6 +2483,56 @@ function restoreCurrentRidesAfterBlockedImport(){
     syncPersistenceDurableShadow('blocked-plan-import');
   }catch(_){}
 }
+function readPlanImportHistory(){try{const x=JSON.parse(localStorage.getItem(PLAN_IMPORT_HISTORY)||'[]');return Array.isArray(x)?x:[]}catch(_){return[]}}
+function savePlanImportHistory(list,reason='plan-import-history'){const next=Array.isArray(list)?list.slice(-40):[];safePersistentSetItem(PLAN_IMPORT_HISTORY,JSON.stringify(next),reason);return next}
+function currentPlanImportSession(){try{return JSON.parse(localStorage.getItem(PLAN_IMPORT_CURRENT)||'null')}catch(_){return null}}
+function planImportSessionId(){return `plan-${Date.now()}-${Math.random().toString(36).slice(2,8)}`}
+function planImportNorm(v){return String(v??'').trim().toLowerCase().replace(/\s+/g,' ')}
+function planImportRideIdentity(r){
+  const date=String(first(r?.date,r?.datum)||'').trim()||berlinDate();
+  const flight=flightCacheNumber(r?.flightNumber||'');
+  const dir=flight?String(flightDirectionForGemini(r)||'unknown'):'';
+  const airport=flight?String(flightAirportForGemini(r)||'').toUpperCase():'';
+  const pickup=planImportNorm(r?.pickup),destination=planImportNorm(r?.destination);
+  const flightTime=flight?String(listedFlightTimeOf(r)||'').trim():'';
+  const rideTime=String(planTimeOf(r)||'').trim();
+  return flight
+    ? ['flight',date,flight,dir,airport,pickup,destination,flightTime||rideTime].join('|')
+    : ['ride',date,rideTime,pickup,destination].join('|');
+}
+function planImportPreserveMetadata(oldRide,newRide){
+  const preserve=['id','flightLocation','iata','flightVerified','flightVerificationStatus','flightConfidence','flightSources','flightSourceNote','flightSourceConflict','flightResolutionMode','flightPrioritySourceUrl','flightCheckedAt','liveTime','actualLandingTime','actualDepartureTime','flightStatus','liveCheckedAt','liveSources','liveSourceNote','liveSourceConflict','liveResolutionMode','livePrioritySourceUrl','liveManualConfirmed','liveBufferOverrideMinutes'];
+  const out={...newRide};
+  preserve.forEach(k=>{if((out[k]===undefined||out[k]===null||out[k]==='')&&oldRide?.[k]!==undefined)out[k]=oldRide[k]});
+  out.id=oldRide?.id??newRide?.id;
+  out._planCarryover=false;out._planMissingFromLatest=false;
+  return out;
+}
+function mergePlanImportByIdentity(current,incoming){
+  const buckets=new Map();
+  (current||[]).forEach(r=>{const k=planImportRideIdentity(r);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(r)});
+  const used=new Set(),merged=[];let matched=0;
+  (incoming||[]).forEach(r=>{const k=planImportRideIdentity(r),c=(buckets.get(k)||[]).filter(x=>!used.has(String(x.id)));if(c.length===1){used.add(String(c[0].id));merged.push(planImportPreserveMetadata(c[0],r));matched++}else merged.push(r)});
+  const carry=(current||[]).filter(r=>!used.has(String(r.id))&&!done.has(r.id)).map(r=>({...r,_planCarryover:true,_planMissingFromLatest:true}));
+  return{rides:[...merged,...carry],matched,carryover:carry.length,incomingCount:(incoming||[]).length};
+}
+function beginPlanImportSession(incoming,mergeInfo){
+  const now=new Date().toISOString(),id=planImportSessionId();
+  const session={id,createdAt:now,plantag:String((incoming||[]).map(r=>String(r?.date||'').trim()).find(Boolean)||berlinDate()),incomingCount:Number(mergeInfo?.incomingCount||incoming?.length||0),activeRideCount:rides.length,matchedCount:Number(mergeInfo?.matched||0),carryoverCount:Number(mergeInfo?.carryover||0),phases:{plan:true,ocr:true,imported:true,flightChecked:false,liveChecked:false}};
+  const history=readPlanImportHistory();history.push({...session,rides:rides.map(r=>({...r}))});savePlanImportHistory(history);safePersistentSetItem(PLAN_IMPORT_CURRENT,JSON.stringify(session),'plan-import-current');return session;
+}
+function resetCurrentImportCheckDisplay(){
+  try{localStorage.removeItem('atms_flight_check_last_status_v1')}catch(_){ }
+  const flight=$('flightCheckStatus');if(flight)flight.textContent='Flugprüfung für diese Planliste noch nicht durchgeführt.';const geminiStatus=$('geminiFlightStatus');if(geminiStatus)geminiStatus.textContent='Flugprüfung für diese Planliste noch nicht durchgeführt.';
+  const persistent=$('atmsPersistentFlightCheckStatus');if(persistent){persistent.textContent='';persistent.style.display='none'}
+  const live=$('liveFlightImportStatus');if(live)live.textContent='Noch keine Live-Flugprüfung für diese Planliste durchgeführt.';
+  const liveBox=$('liveFlightResult');if(liveBox)liveBox.value='';
+  const geminiBox=$('geminiFlightResult');if(geminiBox)geminiBox.value='';
+}
+window.ATMSPlanImportHistory=()=>readPlanImportHistory();
+window.ATMSCurrentPlanImportSession=()=>currentPlanImportSession();
+window.addEventListener('atms:plan-import-live-guard',resetCurrentImportCheckDisplay);
+
 function readPreviousPlanImportSnapshot(){
   try{
     const raw=JSON.parse(localStorage.getItem('atms_import_previous_v1')||'null');
@@ -2718,8 +2563,7 @@ Der aktuelle Zustand wird vorher zusätzlich lokal gesichert.`))return false;
   }catch(_){}
 
   rides=previous.rides.map((r,i)=>norm(r,i));
-  const previousDone=Array.isArray(previous.done)?previous.done:[...done];
-  done=new Set(previousDone.filter(id=>rides.some(r=>String(r.id)===String(id))));
+  done=new Set([...done].filter(id=>rides.some(r=>String(r.id)===String(id))));
   save();
   capturePersistenceSafety('manual-restore-previous-plan-import');
   syncPersistenceDurableShadow('manual-restore-previous-plan-import');
@@ -2759,45 +2603,79 @@ function applyImportedRides(newRides){
   const importAuthorization=consumePlanImportAuthorization();
   if(!importAuthorization.ok){
     const stack=String(new Error('blocked-plan-import').stack||'').split('\n').slice(1,6).join(' | ');
-    persistAudit('plan_import_blocked',{reason:'missing-trusted-user-click',incomingCount:newRides.length,source:importAuthorization.source,ageMs:importAuthorization.ageMs,stack});
+    persistAudit('plan_import_blocked',{
+      reason:'missing-trusted-user-click',
+      incomingCount:newRides.length,
+      source:importAuthorization.source,
+      ageMs:importAuthorization.ageMs,
+      stack
+    });
     restoreCurrentRidesAfterBlockedImport();
     throw Error('Sicherheitsblock: Planimport wurde nicht durch „Geprüfte Fahrten übernehmen“ oder „JSON laden“ gestartet.');
   }
-  persistAudit('plan_import_started',{source:importAuthorization.source,incomingCount:newRides.length});
-  restoreMissingCriticalPersistence('before-plan-import');syncPersistenceDurableShadow('before-plan-import');capturePersistenceSafety('before-plan-import');
-
-  const previousRides=Array.isArray(rides)?rides.map((r,i)=>norm({...r},i)):[];
-  try{localStorage.setItem('atms_import_previous_v1',JSON.stringify({savedAt:new Date().toISOString(),rides:previousRides,done:[...done]}))}catch(_){}
-
-  const importedAt=p32IsoNow(),assumedPlantDay=berlinDate();
-  bootstrapLegacyPlanVersion(previousRides,importedAt);
-  const sourceRides=newRides.map((r,i)=>{
-    const explicitDate=String(first(r?.date,r?.datum)||'').trim();
-    const dated=explicitDate?r:{...r,date:assumedPlantDay,dateAssumed:true,planDateAssumed:true,planImportedAt:importedAt};
-    return norm(dated,i);
+  persistAudit('plan_import_started',{
+    source:importAuthorization.source,
+    incomingCount:newRides.length
   });
-  let session=ensurePlanImportSessionForRides(sourceRides);
-  session=markPlanImportSession({analyzedAt:session.analyzedAt||importedAt,state:session.flightCheckedAt?'flight_checked':'analyzed'});
-  const versionId=String(session.sessionId||`pis-${Date.now().toString(36)}`);
-  const mergeResult=p32MergePlanRides(previousRides,sourceRides,versionId);
-  rides=mergeResult.rides;
 
-  const corrected=applyRideOverrides(rides);rides=corrected.rides;
-  const restored=applyFlightCacheToRides(rides);rides=restored.rides;
-  done=new Set([...done].filter(id=>rides.some(r=>String(r.id)===String(id))));
-  save();capturePersistenceSafety('after-plan-import');syncPersistenceDurableShadow('after-plan-import');
+  // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
+  // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
+  restoreMissingCriticalPersistence('before-plan-import');
+  syncPersistenceDurableShadow('before-plan-import');
+  capturePersistenceSafety('before-plan-import');
 
-  const version=saveImportedPlanVersion({session,sourceRides,effectiveRides:rides,mergeResult,importedAt});
-  const geminiStatus=$('geminiFlightStatus');if(geminiStatus){
-    const f=version.flightSummary;
-    geminiStatus.textContent=f?`${Number(f.checked||0)} Flugprüfung(en) dieser Planliste abgeschlossen${Number(f.uncertain||0)?` · ${Number(f.uncertain)} unsicher`:''}.`:'Noch keine Flugprüfung für diese Planliste durchgeführt.';
-  }
-  const liveStatus=$('liveFlightImportStatus');if(liveStatus)liveStatus.textContent='Noch keine Live-Flugprüfung für diese Planliste durchgeführt.';
+  try{
+    localStorage.setItem('atms_import_previous_v1',JSON.stringify({
+      savedAt:new Date().toISOString(),
+      rides
+    }));
+  }catch(_){}
+
+  // CORE-005Q1: Ein Plan ohne eigenes Datum bekommt beim Import einmalig den
+  // konkreten Plantag (Europe/Berlin). Dadurch kann der Flug-Cache sicher mit
+  // Flugnummer + Plantag + Richtung + Flugzeit matchen, ohne morgen versehentlich
+  // die heutige Pruefung auf einen neuen Plan anzuwenden. Ein im Plan vorhandenes
+  // Datum bleibt unveraendert.
+  const importedAt=new Date().toISOString();
+  const assumedPlantDay=berlinDate();
+  const normalizedIncoming=newRides.map(r=>{
+    const explicitDate=String(first(r?.date,r?.datum)||'').trim();
+    if(explicitDate)return r;
+    return {...r,date:assumedPlantDay,dateAssumed:true,planDateAssumed:true,planImportedAt:importedAt};
+  });
+  // P32: gleiche reale, noch offene Fahrt aus einer neuen Planversion behält ihre stabile ID
+  // und bereits bestätigte Flug-/LIVE-Metadaten. Nicht sicher gematchte offene Alt-Fahrten
+  // werden nicht blind gelöscht, sondern als Carryover markiert.
+  const planMerge=mergePlanImportByIdentity(rides,normalizedIncoming);
+  rides=planMerge.rides;
+  const corrected=applyRideOverrides(rides);
+  rides=corrected.rides;
+  // CORE-005Q: Flugpruefungen des EXAKT gleichen konkreten Fluges werden direkt
+  // beim Neuimport wieder angewendet. Match: Flugnummer + Datum + Richtung + Flugzeit.
+  // Andere Plantage oder nur aehnliche Flugnummern werden niemals uebernommen.
+  const restored=applyFlightCacheToRides(rides);
+  rides=restored.rides;
+  done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
+  save();
+  capturePersistenceSafety('after-plan-import');
+  syncPersistenceDurableShadow('after-plan-import');
+  const importSession=beginPlanImportSession(normalizedIncoming,planMerge);
+  resetCurrentImportCheckDisplay();
   updateLiveFlightPanelContext();
-  persistAudit('plan_import_p32_merged',{versionId,sourceCount:sourceRides.length,activeCount:rides.length,matched:mergeResult.matched,newRides:mergeResult.created,carriedOpen:mergeResult.carried,uncertainMatches:mergeResult.uncertain,contradictions:mergeResult.contradictions});
 
-  return {cancelled:false,mode:'smart-merge',count:sourceRides.length,activeCount:rides.length,matchedRides:mergeResult.matched,newRides:mergeResult.created,carriedOpenRides:mergeResult.carried,uncertainMatches:mergeResult.uncertain,flightContradictions:mergeResult.contradictions,planVersionId:version.versionId,restoredFlightChecks:restored.changed,restoredVerifiedFlights:restored.verifiedRestored,restoredManualChecks:restored.manualRestored};
+  return {
+    cancelled:false,
+    mode:'merge',
+    count:rides.length,
+    importSessionId:importSession.id,
+    matchedRides:planMerge.matched,
+    carryoverRides:planMerge.carryover,
+    restoredFlightChecks:restored.changed,
+    restoredVerifiedFlights:restored.verifiedRestored,
+    restoredManualChecks:restored.manualRestored
+  };
 }
+
 
 
 /* DEV 14.5.2 – Live-Disposition Logik */
@@ -3903,8 +3781,6 @@ function initApp(){
 
     ensureMobileImportLayoutFix();
     ensureGeminiFlightPanel();
-    ensurePlanHistoryPanel();
-    installPlanImportSessionLifecycle();
     ensureAddressBookPanel();
     ensureLiveFlightPanel();
     ensurePersistenceSafetyPanel();
@@ -3931,7 +3807,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
 window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAddressBookEntry};
 window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
-window.ATMSPlanVersions={list:readPlanVersions,current:readPlanImportSession,render:renderPlanHistoryPanel,open:renderPlanVersionReadOnly};
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;
