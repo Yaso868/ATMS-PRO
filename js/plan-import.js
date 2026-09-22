@@ -9,6 +9,7 @@
 // CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
 (() => {
 // CORE-007D8A1F1D8P34F2 · 22.09.2026: MIRRORED DISPO TIME OCR RECOVERY – Bei ungültiger primärer DISPO-Zeit wird zusätzlich die zweite, in ATMS-Planlisten redundant vorhandene DISPO-Uhrzeitspalte gezielt lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; P34-Guard bleibt aktiv.
+// CORE-007D8A1F1D8P34F3 · 22.09.2026: VALID MIRROR DISPO FALLBACK – Eine nicht-leere, aber ungültige Primär-OCR-Zeit (z. B. „BE“) darf eine bereits gültig erkannte redundante DISPO-Zeit nicht mehr überstimmen. Primär bleibt maßgeblich, wenn gültig; sonst wird ausschließlich eine gültige timeMirror-Zeit verwendet. Bei zwei gültigen abweichenden Zeiten bleibt die bestehende Warnung aktiv; P34-Guard bleibt Fallback.
 // CORE-007D8A1F1D8P34 · 22.09.2026: INVALID DISPO TIME OCR GUARD – Nicht-leere OCR-Artefakte wie 'BE' gelten nie als gültige DISPO-Zeit. Die gezielte lokale Uhrzeit-Nachlese behandelt fehlende UND ungültige Primärzeiten; nur eindeutiger Mehrfach-Konsens darf korrigieren. Bleibt die Zeit ungültig, blockiert die Validierung den Import statt fälschlich 'OCR sauber' zu melden. Keine Änderung an P33F1 Clean-Start, P33 Planhistorie, P32 Merge, Flugprüfung oder PLAN/DISPO/LIVE.
   'use strict';
 
@@ -827,7 +828,14 @@
     // CORE-006J: Verbindliche Zeitsemantik der aktuellen ATMS-Bildlisten.
     const primaryDispoTime = normalizeTime(valueAt(row, mapping, 'time'));
     const mirroredDispoTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
-    const dispoTime = primaryDispoTime || mirroredDispoTime;
+    // P34F3: normalizeTime() gibt unbekannten OCR-Text absichtlich unverändert
+    // zurück. Deshalb darf ein nicht-leeres Artefakt wie „BE“ nicht per || eine
+    // bereits gültige redundante DISPO-Zeit verdrängen.
+    const primaryDispoTimeValid = timeToMinutes(primaryDispoTime) !== null;
+    const mirroredDispoTimeValid = timeToMinutes(mirroredDispoTime) !== null;
+    const dispoTime = primaryDispoTimeValid
+      ? primaryDispoTime
+      : (mirroredDispoTimeValid ? mirroredDispoTime : primaryDispoTime);
     const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
 
     return {
@@ -843,8 +851,13 @@
       dispoTime,
       dispo_time: dispoTime,
       timeMirror: mirroredDispoTime,
+      primaryDispoTimeOcr: primaryDispoTime,
+      primaryDispoTimeValid,
+      mirroredDispoTimeValid,
       flightTime: listedFlightTime,
-      timeSemanticSource: 'dispo+mirror+listed-flight-time',
+      timeSemanticSource: primaryDispoTimeValid
+        ? 'primary-dispo-time'
+        : (mirroredDispoTimeValid ? 'valid-mirror-dispo-fallback' : 'invalid-dispo-time'),
       pickup,
       destination,
       customer,
@@ -4160,7 +4173,7 @@
     const sourceRows = rideList.map(ride => Number(ride?.sourceRow || 0)).filter(Number.isFinite);
     const matrixIndexes = sourceRows.map(row => row - 1);
     const matchedMatrixIndexes = matrixIndexes.filter(index => Boolean(rowMeta[index]));
-    const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','flightTime','driver']
+    const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','timeMirror','flightTime','driver']
       .map(field => `${field}=${mapping?.[field] ?? '–'}`).join(', ');
     const diagList = Array.isArray(diagnostics) ? diagnostics : [];
     const routeDiagnostics = diagList.filter(item => item?.kind === 'route').length;
