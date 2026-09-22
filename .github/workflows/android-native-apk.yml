@@ -11,6 +11,9 @@ on:
 permissions:
   contents: write
 
+env:
+  ATMS_SIGNING_KEY_ALIAS: atmspro
+
 jobs:
   validate-install-build:
     runs-on: ubuntu-latest
@@ -45,8 +48,6 @@ jobs:
           set -euo pipefail
           PATCH="${{ steps.patch.outputs.file }}"
           TMP="$(mktemp -d)"
-
-          # Reject absolute paths, traversal, and anything outside the approved package layout.
           unzip -Z1 "$PATCH" > "$TMP/list.txt"
           if grep -Eq '(^/|(^|/)\.\.(/|$)|\\)' "$TMP/list.txt"; then
             echo "ERROR: Unsafe path in patch ZIP." >&2
@@ -54,17 +55,12 @@ jobs:
           fi
           if grep -Ev '^(android-native/|README_[^/]+\.txt$|SHA256\.txt$|[^/]+/$)' "$TMP/list.txt" | grep -q .; then
             echo "ERROR: Patch contains files outside android-native/, README_*.txt, or SHA256.txt." >&2
-            grep -Ev '^(android-native/|README_[^/]+\.txt$|SHA256\.txt$|[^/]+/$)' "$TMP/list.txt" >&2 || true
             exit 1
           fi
-
           unzip -q "$PATCH" -d "$TMP/payload"
           test -f "$TMP/payload/SHA256.txt" || { echo 'ERROR: SHA256.txt missing.' >&2; exit 1; }
           test -d "$TMP/payload/android-native" || { echo 'ERROR: android-native/ missing.' >&2; exit 1; }
-
           (cd "$TMP/payload" && sha256sum -c SHA256.txt)
-
-          # Overlay only after every validation above has passed.
           cp -a "$TMP/payload/android-native/." android-native/
 
       - name: Set up JDK 17
@@ -78,9 +74,43 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Require persistent signing secrets
+        shell: bash
+        env:
+          ATMS_SIGNING_KEYSTORE_B64: ${{ secrets.ATMS_SIGNING_KEYSTORE_B64 }}
+          ATMS_SIGNING_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ATMS_SIGNING_KEYSTORE_B64" || { echo 'ERROR: ATMS_SIGNING_KEYSTORE_B64 missing.' >&2; exit 1; }
+          test -n "$ATMS_SIGNING_PASSWORD" || { echo 'ERROR: ATMS_SIGNING_PASSWORD missing.' >&2; exit 1; }
+
+      - name: Restore persistent ATMS signing key
+        shell: bash
+        env:
+          ATMS_SIGNING_KEYSTORE_B64: ${{ secrets.ATMS_SIGNING_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ATMS_SIGNING_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/atmspro-signing.p12"
+          chmod 600 "$RUNNER_TEMP/atmspro-signing.p12"
+
       - name: Build debug APK before accepting patch
         working-directory: android-native
+        env:
+          ATMS_SIGNING_STORE_FILE: ${{ format('{0}/atmspro-signing.p12', runner.temp) }}
+          ATMS_SIGNING_STORE_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_ALIAS: atmspro
         run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify persistent signing is configured
+        shell: bash
+        env:
+          ATMS_SIGNING_STORE_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_ALIAS: atmspro
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/atmspro-signing.p12"
+          keytool -list -keystore "$RUNNER_TEMP/atmspro-signing.p12" -storepass "$ATMS_SIGNING_STORE_PASSWORD" -alias "$ATMS_SIGNING_KEY_ALIAS" >/dev/null
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
@@ -104,6 +134,6 @@ jobs:
             echo 'ERROR: Valid patch produced no repository change.' >&2
             exit 1
           fi
-          git commit -m 'CORE-007D8A1F1D8P31F13 Native Stable Web UI Integration' \
-            -m 'Validated and installed automatically by the ATMS PRO one-upload patch workflow after SHA256 verification and a successful Native APK build.'
+          git commit -m 'CORE-007D8A1F1D8P31F13S1 Persistent APK Signing Preparation' \
+            -m 'Adds conditional persistent signing support while preserving the existing one-upload installer and confirmed P31F13 application behavior.'
           git push
