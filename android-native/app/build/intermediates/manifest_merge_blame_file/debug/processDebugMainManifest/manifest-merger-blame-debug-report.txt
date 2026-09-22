@@ -1,0 +1,48 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="de.atmspro.app"
+4    android:versionCode="2"
+5    android:versionName="1.4.0-p31f13" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="35" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:3:5-67
+11-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:3:22-64
+12
+13    <application
+13-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:5:5-19:19
+14        android:allowBackup="true"
+14-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:6:9-35
+15        android:debuggable="true"
+16        android:extractNativeLibs="false"
+17        android:label="ATMS PRO"
+17-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:7:9-33
+18        android:networkSecurityConfig="@xml/network_security_config"
+18-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:8:9-69
+19        android:theme="@style/Theme.ATMSPRO"
+19-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:10:9-45
+20        android:usesCleartextTraffic="false" >
+20-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:9:9-45
+21        <activity
+21-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:11:9-18:20
+22            android:name="de.atmspro.app.MainActivity"
+22-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:12:13-41
+23            android:exported="true" >
+23-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:13:13-36
+24            <intent-filter>
+24-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:14:13-17:29
+25                <action android:name="android.intent.action.MAIN" />
+25-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:15:17-69
+25-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:15:25-66
+26
+27                <category android:name="android.intent.category.LAUNCHER" />
+27-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:16:17-77
+27-->/home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:16:27-74
+28            </intent-filter>
+29        </activity>
+30    </application>
+31
+32</manifest>

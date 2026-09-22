@@ -8,9 +8,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 /**
- * P31F12: minimaler nativer Android-Rahmen.
- * Noch NICHT die endgültige ATMS-App. Er beweist und kapselt nur die native DUS-Bridge.
- * P31F13 wird die aktuelle ATMS-Weboberfläche als lokale Assets in diesen Rahmen übernehmen.
+ * P31F13: aktuelle bestätigte ATMS-Weboberfläche als lokale Android-Assets.
+ * Die DUS-Abfrage läuft weiterhin ausschließlich über die bestätigte Native Flight Bridge.
  */
 public final class MainActivity extends Activity {
     private WebView webView;
@@ -40,7 +39,7 @@ public final class MainActivity extends Activity {
             }
         });
 
-        webView.loadUrl("file:///android_asset/bridge-check.html");
+        webView.loadUrl("file:///android_asset/index.html");
     }
 
     private static void installAtmsBridge(WebView view) {

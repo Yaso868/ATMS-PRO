@@ -1,0 +1,4 @@
+de.atmspro.app:xml/network_security_config = 0x7f040000
+de.atmspro.app:style/Theme.ATMSPRO = 0x7f030000
+de.atmspro.app:layout/activity_main = 0x7f020000
+de.atmspro.app:id/atmsWebView = 0x7f010000

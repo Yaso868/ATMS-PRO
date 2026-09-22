@@ -1,0 +1,4 @@
+int id atmsWebView 0x7f010000
+int layout activity_main 0x7f020000
+int style Theme_ATMSPRO 0x7f030000
+int xml network_security_config 0x7f040000
