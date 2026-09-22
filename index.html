@@ -35,7 +35,7 @@
       <div id="liveDelayCard" class="live-card delay-alert"><h2>⚠ Verspätungsprüfung</h2><div id="liveDelayContent"></div></div>
       <div id="liveSolutionCard" class="live-card solution-card" style="margin-top:10px"><h2>Empfohlene Lösung</h2><div id="liveSolutionContent"></div><button id="liveApplySolutionBtn" class="live-action" type="button" disabled>Lösung übernehmen</button></div>
       <div class="live-card" style="margin-top:10px"><h2>🗺 Route</h2><div id="liveMap" class="map-placeholder"></div><button id="liveOpenMapBtn" class="live-action secondary" type="button">Route in Google Maps öffnen</button></div>
-      <div class="live-card" style="margin-top:10px"><h2>Status & Einstellungen</h2><div class="live-stats"><div class="live-stat"><small>WARNSCHWELLE</small><b><input id="liveWarnThreshold" class="live-input" type="number" min="1" max="60" value="5"> Min.</b></div><div class="live-stat"><small>TRACKINGINTERVALL</small><b>30 Sekunden</b></div><div class="live-stat live-stat-wide"><small>VERGANGENE FAHRTEN AUSBLENDEN NACH</small><b><input id="livePastRideGrace" class="live-input" type="number" min="0" max="1440" value="120"> Min.</b></div><div class="live-stat"><small>LETZTE AKTUALISIERUNG</small><b id="liveLastUpdate">–</b></div><div class="live-stat"><small>API-STATUS</small><b>Lokal / keine API</b></div></div></div>
+      <div class="live-card" style="margin-top:10px"><h2>Status & Einstellungen</h2><div class="live-stats"><div class="live-stat"><small>WARNSCHWELLE</small><b><input id="liveWarnThreshold" class="live-input" type="number" min="1" max="60" value="5"> Min.</b></div><div class="live-stat"><small>TRACKINGINTERVALL</small><b>30 Sekunden</b></div><div class="live-stat"><small>LETZTE AKTUALISIERUNG</small><b id="liveLastUpdate">–</b></div><div class="live-stat"><small>API-STATUS</small><b>Lokal / keine API</b></div></div></div>
       <div class="live-card" style="margin-top:10px"><h2>💬 Info-Chat / Dispo-Protokoll</h2><div id="liveEventLog" class="live-log"></div></div>
     </div>
   </div>
@@ -55,8 +55,6 @@
   <p id="importStatus" class="sub">Noch keine Planliste ausgewählt.</p>
 </div>
 <div class="card legacy-json"><details><summary>Erweiterter JSON-Import</summary><textarea id="jsonInput" placeholder="ATMS-JSON hier einfügen …"></textarea><div class="actions2"><button id="loadBtn" class="act green">JSON laden</button><button id="clearBtn" class="act dark">Leeren</button></div></details></div>
-<div id="importToolsHost" class="import-tools-host"></div></main></section>
-<section id="settingsView" class="hidden"><main class="import settings-page"><div class="cockHead"><button id="settingsBack" class="icon">←</button><h1>Einstellungen</h1></div><div id="settingsToolsHost" class="settings-tools-host"></div>
 <div class="card"><h2>👤 Disponenten</h2><p class="setting-note">Name und Telefonnummer werden lokal gespeichert. Im Cockpit wählst du den aktuellen Disponenten. WhatsApp-Texte werden automatisch aus der Fahrt erzeugt.</p><div class="settings-grid">
 <div><label class="setting-label" for="dispatcherName">Disponent anlegen (max. 20)</label><input id="dispatcherName" class="setting-input" placeholder="z. B. Ewa"></div>
 <div><label class="setting-label" for="dispatcherPhone">Telefon-/WhatsApp-Nummer</label><input id="dispatcherPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"></div>
@@ -99,11 +97,11 @@
   <div class="info-slogan">Smart Dispatch. Simple Workflow.</div>
 </div>
 <div class="info-details">
-  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">Stable 14.4.9</div></div></div>
-  <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Plus unten · kompakte Navigation</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P35</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Stable Web-App · P34F5 Basis</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">♙</div><div><div class="info-detail-label">Entwickelt von</div><div class="info-detail-value">Yaser Tatli</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">✓</div><div><div class="info-detail-label">Status</div><div class="info-detail-value status">● Produktiv</div></div></div>
-  <div class="info-detail"><div class="info-detail-icon">▣</div><div><div class="info-detail-label">Letzte Aktualisierung</div><div class="info-detail-value">05.08.2026</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">▣</div><div><div class="info-detail-label">Letzte Aktualisierung</div><div class="info-detail-value">22.09.2026</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">☁</div><div><div class="info-detail-label">Datensicherung</div><div id="infoBackupStatus" class="info-detail-value warn">Noch keine Sicherung</div></div></div>
 </div>
 <div class="info-footer"><b>© 2026 ATMS PRO</b>Alle Rechte vorbehalten.</div>
