@@ -10,6 +10,7 @@
 (() => {
 // CORE-007D8A1F1D8P34F2 · 22.09.2026: MIRRORED DISPO TIME OCR RECOVERY – Bei ungültiger primärer DISPO-Zeit wird zusätzlich die zweite, in ATMS-Planlisten redundant vorhandene DISPO-Uhrzeitspalte gezielt lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; P34-Guard bleibt aktiv.
 // CORE-007D8A1F1D8P34F3 · 22.09.2026: VALID MIRROR DISPO FALLBACK – Eine nicht-leere, aber ungültige Primär-OCR-Zeit (z. B. „BE“) darf eine bereits gültig erkannte redundante DISPO-Zeit nicht mehr überstimmen. Primär bleibt maßgeblich, wenn gültig; sonst wird ausschließlich eine gültige timeMirror-Zeit verwendet. Bei zwei gültigen abweichenden Zeiten bleibt die bestehende Warnung aktiv; P34-Guard bleibt Fallback.
+// CORE-007D8A1F1D8P34F4 · 22.09.2026: INNER-CELL TIME OCR – Bei fehlender/ungültiger DISPO-Zeit werden Primär- und Mirror-Zeit zusätzlich innerhalb der Tabellenlinien ausgeschnitten. Dadurch stören vertikale/horizontale Zellrahmen die lokale Ziffern-OCR nicht. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Ableitung aus Flugzeit oder Nachbarzeilen.
 // CORE-007D8A1F1D8P34 · 22.09.2026: INVALID DISPO TIME OCR GUARD – Nicht-leere OCR-Artefakte wie 'BE' gelten nie als gültige DISPO-Zeit. Die gezielte lokale Uhrzeit-Nachlese behandelt fehlende UND ungültige Primärzeiten; nur eindeutiger Mehrfach-Konsens darf korrigieren. Bleibt die Zeit ungültig, blockiert die Validierung den Import statt fälschlich 'OCR sauber' zu melden. Keine Änderung an P33F1 Clean-Start, P33 Planhistorie, P32 Merge, Flugprüfung oder PLAN/DISPO/LIVE.
   'use strict';
 
@@ -3500,6 +3501,25 @@
       timeColumns.forEach(col => {
         const cellWidth = Math.max(8, col.right - col.left);
         const padX = Math.max(1, cellWidth * 0.04);
+
+        // P34F4: Die bisherigen Crops enthielten absichtlich etwas Rand, damit
+        // abgeschnittene Zeichen nicht verloren gehen. Bei schmalen Uhrzeitzellen
+        // geraten dadurch jedoch die Tabellenlinien in den Crop. Im reproduzierten
+        // EW9765-Fall ist die zweite "21:30" visuell vollständig vorhanden, während
+        // die lokale OCR mit den Zellrahmen keinen gültigen Kandidaten liefert.
+        // Deshalb zuerst zwei zusätzliche, strikt innerhalb der Zelllinien liegende
+        // Crops. Die alten Crops bleiben als Fallback erhalten.
+        const innerPadX = Math.max(3, cellWidth * 0.10);
+        const innerPadY = Math.max(2, rowHeight * 0.14);
+        const innerX0 = col.left + innerPadX;
+        const innerX1 = col.right - innerPadX;
+        const innerY0 = y0 + innerPadY;
+        const innerY1 = y1 - innerPadY;
+        if (innerX1 > innerX0 && innerY1 > innerY0) {
+          regions.push([innerX0, innerY0, innerX1, innerY1, 3, `${col.key}-inner`]);
+          regions.push([innerX0, innerY0, innerX1, innerY1, 4, `${col.key}-inner`]);
+        }
+
         regions.push([col.left + padX, y0 - padY, col.right - padX, y1 + padY, 2, col.key]);
         regions.push([col.left, y0 - padY, col.right, y1 + padY, 3, col.key]);
       });
@@ -3530,7 +3550,7 @@
             if (timeToMinutes(candidate) === null) continue;
             votes.set(candidate, (votes.get(candidate) || 0) + 1);
             if (!voteColumns.has(candidate)) voteColumns.set(candidate, new Set());
-            voteColumns.get(candidate).add(columnKey);
+            voteColumns.get(candidate).add(String(columnKey).replace(/-inner$/, ''));
           }
         }
       } catch (_) {
