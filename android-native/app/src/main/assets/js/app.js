@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F1 · 23.09.2026: NATIVE CLEAN-PLAN AUTO-IMPORT AUTH BRIDGE – Der echte Nutzer-Klick auf „Planliste analysieren“ autorisiert die bestehende asynchrone Morgen-Modus-/Auto-Flight-Pipeline sicher bis zur finalen Übernahme. Programmgesteuerte Klicks bleiben blockiert; die finale Freigabe erzeugt unmittelbar vor applyImportedRides() die bestehende kurzlebige CORE-006A-Importfreigabe. Keine Änderung an OCR, Flugmatching, PLAN/DISPO/LIVE, Persistenz oder Signing.
 // CORE-007D8A1F1D8P33F1 · 22.09.2026: CLEAN START FLIGHT CACHE FIX – Clean-Start-Sicherheits-Snapshot verwendet die vorhandene getFlightCache()-API statt der nicht definierten readFlightCache-Referenz. P33-Historie, P32-Merge, P31-Flugsemantik sowie PLAN/DISPO/LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P33 · 22.09.2026: VISIBLE PLAN HISTORY & CLEAN START – sichtbare Planlisten-Historie, gezieltes Historien-Löschen und sicherer Neustart des Planbereichs; P32-Merge, P31-Flugsemantik, PLAN/DISPO/LIVE-Trennung und Grund-Einstellungen bleiben geschützt.
 // CORE-007D8A1F1D8P32 · 22.09.2026: IMPORT SESSION HISTORY & CONSERVATIVE RIDE MERGE – Neue Planimporte erhalten eigene Sitzungen/Phasen; alte Gemini-/LIVE-Anzeige wird bei neuer Plananalyse getrennt; identische offene Fahrten behalten ihre stabile ID und bestätigte Metadaten; nicht sicher gematchte alte offene Fahrten werden nicht blind gelöscht, sondern als Carryover markiert. P31-Flugsemantik, PLAN/DISPO/LIVE-Trennung und Persistenz-Schutz bleiben erhalten.
@@ -2436,6 +2437,11 @@ function ensureLiveFlightPanel(){
 
 /* CORE-006A – Planimport nur nach explizitem, echtem Nutzer-Klick */
 let atmsPlanImportAuthorization={armed:false,source:'',at:0};
+// P36F1: separate langlebigere Freigabe ausschließlich für die vom echten Analyse-Klick
+// gestartete asynchrone Clean-Plan-/Auto-Flight-Pipeline. Die eigentliche Schreibfreigabe
+// bleibt weiterhin CORE-006A-kurzlebig (5 s) und wird erst direkt vor applyImportedRides() erzeugt.
+let atmsCleanPlanAutoImportAuthorization={armed:false,source:'',at:0,phase:''};
+const ATMS_CLEAN_PLAN_AUTO_IMPORT_MAX_AGE_MS=15*60*1000;
 
 function armPlanImportAuthorization(source){
   atmsPlanImportAuthorization={
@@ -2455,20 +2461,76 @@ function consumePlanImportAuthorization(){
     ageMs:Number.isFinite(age)?age:null
   };
 }
+function armCleanPlanAutoImportAuthorization(source){
+  atmsCleanPlanAutoImportAuthorization={
+    armed:true,
+    source:String(source||''),
+    at:Date.now(),
+    phase:'analysis'
+  };
+  persistAudit('clean_plan_auto_import_authorized',{source:String(source||'')});
+}
+function clearCleanPlanAutoImportAuthorization(){
+  atmsCleanPlanAutoImportAuthorization={armed:false,source:'',at:0,phase:''};
+}
+function authorizeCleanPlanAutoImport(){
+  const auth=atmsCleanPlanAutoImportAuthorization;
+  const age=Date.now()-Number(auth?.at||0);
+  const ok=Boolean(auth?.armed)
+    && auth?.source==='analyzePlanBtn'
+    && auth?.phase==='analysis'
+    && age>=0
+    && age<=ATMS_CLEAN_PLAN_AUTO_IMPORT_MAX_AGE_MS;
+  if(!ok){
+    if(age<0||age>ATMS_CLEAN_PLAN_AUTO_IMPORT_MAX_AGE_MS)clearCleanPlanAutoImportAuthorization();
+    persistAudit('clean_plan_auto_import_gate_blocked',{source:String(auth?.source||''),phase:String(auth?.phase||''),ageMs:Number.isFinite(age)?age:null});
+    return{ok:false,source:String(auth?.source||''),ageMs:Number.isFinite(age)?age:null};
+  }
+  atmsCleanPlanAutoImportAuthorization={...auth,phase:'pipeline'};
+  persistAudit('clean_plan_auto_import_pipeline_started',{source:auth.source,ageMs:age});
+  return{ok:true,source:auth.source,ageMs:age};
+}
+function authorizeFinalCleanPlanAutoImport(){
+  const auth=atmsCleanPlanAutoImportAuthorization;
+  const age=Date.now()-Number(auth?.at||0);
+  const ok=Boolean(auth?.armed)
+    && auth?.source==='analyzePlanBtn'
+    && auth?.phase==='pipeline'
+    && age>=0
+    && age<=ATMS_CLEAN_PLAN_AUTO_IMPORT_MAX_AGE_MS;
+  clearCleanPlanAutoImportAuthorization();
+  if(!ok){
+    persistAudit('clean_plan_auto_import_final_blocked',{source:String(auth?.source||''),phase:String(auth?.phase||''),ageMs:Number.isFinite(age)?age:null});
+    return{ok:false,source:String(auth?.source||''),ageMs:Number.isFinite(age)?age:null};
+  }
+  // Unmittelbar vor dem bestehenden applyImportedRides()-Guard eine normale,
+  // nur 5 Sekunden gültige CORE-006A-Freigabe erzeugen. So wird die Sicherheit
+  // nicht gelockert, obwohl Flug-/OCR-Prüfungen asynchron länger dauern dürfen.
+  armPlanImportAuthorization('clean-plan-auto');
+  persistAudit('clean_plan_auto_import_final_authorized',{source:auth.source,ageMs:age});
+  return{ok:true,source:auth.source,ageMs:age};
+}
+window.ATMSAuthorizeCleanPlanAutoImport=authorizeCleanPlanAutoImport;
+window.ATMSAuthorizeFinalCleanPlanAutoImport=authorizeFinalCleanPlanAutoImport;
+
 function installPlanImportTrustedClickGuard(){
   if(window.__atmsPlanImportTrustedClickGuard)return;
   document.addEventListener('click',event=>{
     const target=event.target instanceof Element?event.target:event.target?.parentElement;
-    const button=target?.closest?.('#importPlanBtn,#loadBtn');
+    const button=target?.closest?.('#analyzePlanBtn,#importPlanBtn,#loadBtn');
     if(!button)return;
 
     // Programmgesteuerte .click()-Aufrufe sind nicht vertrauenswürdig und dürfen
-    // weder plan-import.js noch den Legacy-JSON-Import erreichen.
+    // weder Analyse-Automatik noch plan-import.js/Legacy-JSON-Import autorisieren.
     if(event.isTrusted!==true){
       event.preventDefault();
       event.stopImmediatePropagation();
       persistAudit('plan_import_untrusted_click_blocked',{source:button.id||''});
       try{showToast('Automatischer Planimport aus Sicherheitsgründen blockiert','warn')}catch(_){}
+      return;
+    }
+    if(button.id==='analyzePlanBtn'){
+      armCleanPlanAutoImportAuthorization(button.id);
       return;
     }
     armPlanImportAuthorization(button.id||'');
