@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F15 · 23.09.2026: NATIVE MULTI-WINDOW SECOND-SOURCE FIX – Behebt den im P36F14-Realtest sichtbaren Sicherheits-False-Negative, bei dem eine exakt passende FlightStats-Airport-Board-Route nicht freigegeben wurde, wenn derselbe konkrete Flug in mehr als einem gueltigen 6-Stunden-Boardfenster derselben unabhaengigen Quelle vorkam. Mehrere Board-URLs derselben FlightStats-Domain gelten weiterhin nur als EINE Zweitquelle; Freigabe bleibt nur bei eindeutiger Route, exakter Flug-/Datums-/Richtungs-/Airportidentitaet und zwei unterschiedlichen Quellenhosts erlaubt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F14 · 23.09.2026: NATIVE STRICT DUAL-SOURCE PROMOTION – Nach erfolgreich bestaetigtem P36F13-Realtest werden ausschliesslich exakte, datumsspezifische FlightStats-Airport-Board-Treffer als unabhaengige Quelle 2 mit der bereits vorhandenen offiziellen Airportquelle zusammengefuehrt. verified/high und Entfernen von ⚠ manuell prüfen nur bei identischer Flugnummer + airportEventDate + Richtung + Airport + originIata + destinationIata und mindestens zwei unterschiedlichen dokumentierten Quellenhosts. Alle Abweichungen bleiben source_confirmed/manuell. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – Ersetzt den im Realtest zwar erreichbaren, aber datenlosen Einzel-Flug-Endpunkt durch eine rein diagnostische, datumsspezifische FlightStats-Airporttafel-Probe. Abfrage nur fuer bereits durch die offizielle Airportquelle source_confirmed bestaetigte Fluege; exakte Flugnummer + Richtung + Airport + Gegen-IATA muessen uebereinstimmen. Keine Hochstufung auf verified/high und keine Warnungsentfernung.
 // CORE-007D8A1F1D8P36F12 · 23.09.2026: NATIVE SECOND-SOURCE PROBE – Prüft in der Native-App ausschließlich diagnostisch eine unabhängige, registrierungsfreie FlightStats-Webquelle über eine streng freigegebene HTTPS-Route. Keine automatische Hochstufung auf verified/high, keine Warnungsentfernung und keine Änderung an FLIGHT-008; erst ein bestätigter Beweistest darf die spätere Zweitquellen-Automatik freigeben.
@@ -4792,11 +4793,13 @@
             const stateLabel = item?.routeMatch === true ? 'Route stimmt überein' : (item?.reachable === true ? 'erreichbar, keine sichere Übereinstimmung' : 'nicht erreichbar');
             const route = item?.originIata && item?.destinationIata ? ` · ${item.originIata}→${item.destinationIata}` : '';
             const reason = cellText(item?.reason);
-            return `${escapeHtml(flight)} · ${escapeHtml(stateLabel)}${escapeHtml(route)}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
+            const windowCount = Number(item?.sourceWindowCount || 0);
+            const windowText = windowCount > 1 ? ` · ${windowCount} Boardfenster derselben Quelle` : '';
+            return `${escapeHtml(flight)} · ${escapeHtml(stateLabel)}${escapeHtml(route)}${escapeHtml(windowText)}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
           }).join('<br>')
         : 'Keine Airport-Board-Zweitquellen-Probe gespeichert.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(121,229,157,.35);border-radius:10px">`
-        + `<b>🔎 Airport-Board-Zweitquelle · P36F14</b><br>`
+        + `<b>🔎 Airport-Board-Zweitquelle · P36F15</b><br>`
         + `<small>${escapeHtml(summaryText)}<br>${escapeHtml(promotionText)}<br>FLIGHT-008 bleibt strikt: Freigabe nur bei exakter Identität/Route und zwei unterschiedlichen dokumentierten Quellen.</small>`
         + `<div style="margin-top:8px"><b>Board-Kontexte</b><br><small>${contextText}</small></div>`
         + `<div style="margin-top:8px"><b>Flugabgleich</b><br><small>${rowText}</small></div>`
@@ -5899,6 +5902,19 @@
         const [originIata, destinationIata] = routePairs[0].split('>');
         const routeMatch = originIata === expectedOrigin && destinationIata === expectedDestination;
         const sourceUrls = [...new Set(matches.map(row => cellText(row?.__atmsBoardSourceUrl)).filter(Boolean))];
+        const safeSourceUrls = sourceUrls.map(url => safeFlightStatsBoardSourceUrl(url)).filter(Boolean).sort();
+        const safeSourceHosts = new Set(safeSourceUrls.map(url => {
+          try { return new URL(url).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) { return ''; }
+        }).filter(Boolean));
+        // P36F15: Ein Flug kann an der Grenze zweier 6h-Boardfenster in beiden Antworten vorkommen.
+        // Das sind NICHT zwei Quellen, sondern zwei URLs derselben FlightStats-Quelle. Solange alle
+        // gefundenen Board-URLs gueltig sind, derselben Domain entstammen und die Route eindeutig ist,
+        // darf eine kanonische URL als dokumentierter Nachweis fuer Quelle 2 verwendet werden.
+        const canonicalSourceUrl = sourceUrls.length > 0
+          && safeSourceUrls.length === sourceUrls.length
+          && safeSourceHosts.size === 1
+          ? safeSourceUrls[0]
+          : '';
         rows.push({
           flightNumber,
           reachable: true,
@@ -5909,7 +5925,9 @@
           airportIata: group.airportIata,
           airportEventDate: group.date,
           direction: group.direction,
-          sourceUrl: sourceUrls.length === 1 ? sourceUrls[0] : ''
+          sourceUrl: canonicalSourceUrl,
+          sourceUrls: safeSourceUrls,
+          sourceWindowCount: safeSourceUrls.length
         });
       }
     }
@@ -6055,7 +6073,7 @@
         try {
           window.ATMSNativeSecondSourceLastDiagnostic = null;
           window.ATMSNativeSecondSourceBoardLastDiagnostic = {
-            patch: 'CORE-007D8A1F1D8P36F14',
+            patch: 'CORE-007D8A1F1D8P36F15',
             checkedAt: new Date().toISOString(),
             ...secondSourceProbe,
             promotedFlights: dualSource.promotedFlights,
