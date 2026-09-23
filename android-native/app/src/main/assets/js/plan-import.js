@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F12 · 23.09.2026: NATIVE SECOND-SOURCE PROBE – Prüft in der Native-App ausschließlich diagnostisch eine unabhängige, registrierungsfreie FlightStats-Webquelle über eine streng freigegebene HTTPS-Route. Keine automatische Hochstufung auf verified/high, keine Warnungsentfernung und keine Änderung an FLIGHT-008; erst ein bestätigter Beweistest darf die spätere Zweitquellen-Automatik freigeben.
 // CORE-007D8A1F1D8P36F11 · 23.09.2026: NATIVE OFFICIAL-AIRPORT PERSISTENT DIAGNOSTIC – Macht die P36F9-Airportdiagnose im eingeklappten Technik-/Diagnosebereich dauerhaft sichtbar, damit ein spaeteres render()/Status-Update sie nicht mehr verdeckt. Reine Diagnoseanzeige; keine Änderung an Flugzuordnung, Quellen, OCR, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P36F10 · 23.09.2026: NATIVE OFFICIAL-AIRPORT OPEN-COUNT FIX – Behebt den P36F9-ReferenceError durch eine zentrale, eindeutige Zählfunktion für noch offene Flugzuordnungen. Doppelte Fahrten desselben Fluges/Datums/Airports/Richtungskontexts werden nur einmal gezählt; source_confirmed bleibt offen, verified/high wird nicht gezählt. Keine Änderung an Quellen, Routen, OCR, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P36F9 · 23.09.2026: NATIVE OFFICIAL-AIRPORT DIAGNOSTIC – Zeigt bei der nativen offiziellen Airport-Prüfung die tatsächlichen Provider-Ergebnisse pro offenem Flug (z. B. not_found/ambiguous/technical/unsupported), ohne Flugwerte zu verändern. Zusätzlich wird die Zahl der nach offiziellen Treffern tatsächlich noch offenen Fahrten korrekt berechnet. Reine Diagnose + Zählerkorrektur; keine Lockerung von FLIGHT-008, keine neuen Quellen, keine OCR-/PLAN-/DISPO-/LIVE-/Persistenzänderung.
@@ -4748,7 +4749,28 @@
         + `<div style="margin-top:8px"><b>Fehler / nicht unterstützt</b><br><small>${failureText}</small></div>`
         + `</div>`;
     })() : '';
-    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}</details>`;
+    const secondSourceDiag = (() => {
+      try { return window.ATMSNativeSecondSourceLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const secondSourceDiagHtml = secondSourceDiag ? (() => {
+      const summaryText = cellText(secondSourceDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const rows = Array.isArray(secondSourceDiag?.rows) ? secondSourceDiag.rows : [];
+      const rowText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const stateLabel = item?.routeMatch === true ? 'Route stimmt überein' : (item?.reachable === true ? 'erreichbar, keine sichere Übereinstimmung' : 'nicht erreichbar');
+            const route = item?.originIata && item?.destinationIata ? ` · ${item.originIata}→${item.destinationIata}` : '';
+            const reason = cellText(item?.reason);
+            return `${escapeHtml(flight)} · ${escapeHtml(stateLabel)}${escapeHtml(route)}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
+          }).join('<br>')
+        : 'Keine Zweitquellen-Probe gespeichert.';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(92,196,255,.35);border-radius:10px">`
+        + `<b>🔎 Zweitquellen-Probe · P36F12</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose – ändert weder verified/high noch ⚠ manuell prüfen.</small>`
+        + `<div style="margin-top:8px"><small>${rowText}</small></div>`
+        + `</div>`;
+    })() : '';
+    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}</details>`;
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
@@ -5005,6 +5027,7 @@
     state.autoImportCompleted = false;
     state.autoFlightSummary = null;
     try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
@@ -5607,6 +5630,112 @@
     return { checked, grounding, attempted: unresolved.length, verified, technicalFailures, firstTechnicalError, quotaBlocked };
   }
 
+
+  // CORE-007D8A1F1D8P36F12: Diagnostic-only independent second-source probe.
+  // This intentionally does NOT promote any flight to verified/high and never clears manual review.
+  function splitFlightNumberForSecondSource(value) {
+    const flightNumber = normalizeFlightForCurrentCheck(value);
+    const match = flightNumber.match(/^([A-Z0-9]{2,3})(\d{1,4}[A-Z]?)$/);
+    return match ? { flightNumber, carrier: match[1], number: match[2] } : null;
+  }
+
+  function nativeSecondSourceProbeUrl(item) {
+    const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+    const date = cellText(item?.airportEventDate || item?.date);
+    const dm = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!parts || !dm) return '';
+    return `https://www.flightstats.com/v2/api-next/flight-tracker/${encodeURIComponent(parts.carrier)}/${encodeURIComponent(parts.number)}/${dm[1]}/${Number(dm[2])}/${Number(dm[3])}`;
+  }
+
+  function nativeSecondSourceBridgeHost() {
+    try {
+      if (window.ATMSNativeFlightBridgeHost && typeof window.ATMSNativeFlightBridgeHost.requestJsonString === 'function') return window.ATMSNativeFlightBridgeHost;
+      if (window.ATMSNativeFlightBridge && typeof window.ATMSNativeFlightBridge.requestJsonString === 'function') return window.ATMSNativeFlightBridge;
+    } catch (_) {}
+    return null;
+  }
+
+  function nativeSecondSourceIata(point) {
+    if (!point) return '';
+    if (typeof point === 'string') return String(point).trim().toUpperCase();
+    return String(point?.iata || point?.fs || '').trim().toUpperCase();
+  }
+
+  function parseNativeSecondSourceProbe(item, payload) {
+    const data = payload && typeof payload === 'object' ? payload.data : null;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { reachable: true, routeMatch: false, reason: 'no_data', originIata: '', destinationIata: '' };
+    }
+    const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+    const reportedCarrier = String(data?.resultHeader?.carrier?.fs || data?.ticketHeader?.carrier?.fs || '').trim().toUpperCase();
+    const reportedNumber = String(data?.resultHeader?.flightNumber || data?.ticketHeader?.flightNumber || '').trim().toUpperCase();
+    const originIata = nativeSecondSourceIata(data?.departureAirport) || String(data?.resultHeader?.departureAirportFS || data?.positional?.departureAirportCode || '').trim().toUpperCase();
+    const destinationIata = nativeSecondSourceIata(data?.arrivalAirport) || String(data?.resultHeader?.arrivalAirportFS || data?.positional?.arrivalAirportCode || '').trim().toUpperCase();
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const scheduledDeparture = cellText(data?.schedule?.scheduledDeparture || data?.departureAirport?.date);
+    const queriedDate = cellText(item?.airportEventDate || item?.date);
+    const identityMatch = Boolean(parts)
+      && (!reportedCarrier || reportedCarrier === parts.carrier)
+      && (!reportedNumber || reportedNumber === parts.number);
+    const dateMatch = !scheduledDeparture || !queriedDate || scheduledDeparture.slice(0, 10) === queriedDate;
+    const routeMatch = identityMatch && dateMatch && /^[A-Z]{3}$/.test(originIata) && /^[A-Z]{3}$/.test(destinationIata)
+      && originIata === expectedOrigin && destinationIata === expectedDestination;
+    let reason = routeMatch ? 'route_match' : 'route_or_date_mismatch';
+    if (!originIata || !destinationIata) reason = 'route_missing';
+    else if (!identityMatch) reason = 'flight_identity_mismatch';
+    else if (!dateMatch) reason = 'date_mismatch';
+    return { reachable: true, routeMatch, reason, originIata, destinationIata, scheduledDeparture: scheduledDeparture || null };
+  }
+
+  async function runNativeSecondSourceProbe(officialChecked = [], options = {}) {
+    const bridge = nativeSecondSourceBridgeHost();
+    const eligible = (Array.isArray(officialChecked) ? officialChecked : []).filter(item => item?.officialAirportEvidence === true && /^[A-Z]{3}$/.test(String(item?.officialOriginIata || '').trim().toUpperCase()) && /^[A-Z]{3}$/.test(String(item?.officialDestinationIata || '').trim().toUpperCase()));
+    const rows = [];
+    if (!eligible.length) return { attempted: 0, reachable: 0, routeMatches: 0, rows, unavailable: false, text: '0 geprüft · 0 erreichbar · 0 Routenübereinstimmungen' };
+    if (!bridge) {
+      for (const item of eligible) rows.push({ flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber), reachable: false, routeMatch: false, reason: 'native_bridge_unavailable' });
+      return { attempted: eligible.length, reachable: 0, routeMatches: 0, rows, unavailable: true, text: `${eligible.length} geprüft · Native Bridge nicht verfügbar` };
+    }
+    for (let i = 0; i < eligible.length; i++) {
+      const item = eligible[i];
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      options?.onProgress?.({ current: i + 1, total: eligible.length, flightNumber });
+      const url = nativeSecondSourceProbeUrl(item);
+      if (!url) {
+        rows.push({ flightNumber, reachable: false, routeMatch: false, reason: 'invalid_probe_url' });
+        continue;
+      }
+      try {
+        const raw = bridge.requestJsonString(JSON.stringify({
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+          purpose: 'flightstats_probe',
+          airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+          method: 'GET',
+          url,
+          timeoutMs: 15000
+        }));
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          rows.push({ flightNumber, reachable: false, routeMatch: false, reason: message ? `transport:${message.slice(0, 180)}` : 'empty_response' });
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) {
+          rows.push({ flightNumber, reachable: true, routeMatch: false, reason: 'invalid_json' });
+          continue;
+        }
+        rows.push({ flightNumber, ...parseNativeSecondSourceProbe(item, payload) });
+      } catch (error) {
+        rows.push({ flightNumber, reachable: false, routeMatch: false, reason: `technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0, 220) });
+      }
+    }
+    const reachable = rows.filter(item => item.reachable === true).length;
+    const routeMatches = rows.filter(item => item.routeMatch === true).length;
+    return { attempted: eligible.length, reachable, routeMatches, rows, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} Routenübereinstimmung(en)` };
+  }
+
   async function runAutomaticFlightCheck(options = {}) {
     if (!state.rides.length) return;
     const status = $('importStatus');
@@ -5661,6 +5790,20 @@
       // als source_confirmed; eine zweite Quelle wird nicht simuliert oder geraten.
       const nativeOfficialOnly = typeof location !== 'undefined' && location.protocol === 'file:';
       if (nativeOfficialOnly) {
+        const secondSourceProbe = await runNativeSecondSourceProbe(officialChecked, {
+          onProgress: progress => {
+            if (!status) return;
+            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
+            status.textContent = `Zweitquellen-Probe ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+          }
+        });
+        try {
+          window.ATMSNativeSecondSourceLastDiagnostic = {
+            patch: 'CORE-007D8A1F1D8P36F12',
+            checkedAt: new Date().toISOString(),
+            ...secondSourceProbe
+          };
+        } catch (_) {}
         const applied = applyGeminiResultsToStagedPlan(officialChecked, new Date().toISOString());
         const openRideCount = unresolvedFlightRideCount();
         if (fallbackButton) fallbackButton.style.display = '';
@@ -5688,7 +5831,12 @@
           nativeBridgeAvailable: Boolean(officialSummary?.nativeState?.available),
           nativeBridgeCompatible: officialSummary?.nativeState ? Boolean(officialSummary.nativeState.compatible) : null,
           officialProviderDiagnostic: officialDiagnostic.text,
-          officialProviderDiagnosticRows: officialDiagnostic.rows
+          officialProviderDiagnosticRows: officialDiagnostic.rows,
+          secondSourceProbeAttempted: Number(secondSourceProbe?.attempted || 0),
+          secondSourceProbeReachable: Number(secondSourceProbe?.reachable || 0),
+          secondSourceProbeRouteMatches: Number(secondSourceProbe?.routeMatches || 0),
+          secondSourceProbeDiagnostic: cellText(secondSourceProbe?.text),
+          secondSourceProbeRows: Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : []
         };
       }
 
