@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F4 · 23.09.2026: CLEAN PLAN AUTO-IMPORT AUTH BRIDGE RESTORE – Stellt die von plan-import.js erwarteten sicheren Morgen-Modus-Freigaben wieder bereit: nur ein echter Nutzer-Klick auf „Planliste analysieren“ darf die automatische Pipeline freigeben; die asynchrone Flugprüfung kann danach ohne 5-Sekunden-Verlust laufen, und unmittelbar vor der automatischen Übernahme wird die bestehende kurzlebige Importfreigabe neu gesetzt. Programmgesteuerte Analyse-Klicks erhalten keine Auto-Import-Freigabe. Keine Änderung an OCR-, Flugprüf-, PLAN/DISPO/LIVE-, Persistenz-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P36F3 · 23.09.2026: SAFE RECOVERY SELF-TEST – Ergänzt einen kontrollierten Ein-Klick-Test für rides/done: aktuelle Werte werden vorab bytegenau geprüft, nur für Millisekunden aus localStorage entfernt, über die bestehende Schutzlogik wiederhergestellt und bei jeder Abweichung sofort aus dem lokalen Vorwert zurückgeschrieben. Keine Änderung an Fahrteninhalt, DONE-Status, Flight-Cache, LIVE-/PLAN-/DISPO-, Import-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P36F2 · 23.09.2026: DURABLE RIDES + DONE PERSISTENCE – Erweitert CORE-005V5 ausschließlich um die primären Fahrtdaten (rides) und den Erledigt-Status (done) im IndexedDB-Durable-Shadow. Bestehende Flight-Cache-, Verified-Backup-, Ride-Override-, LIVE-/PLAN-/DISPO-, Import-, GPS-, Routing-, Nachrichten- und Fahrerlogik bleiben unverändert.
 // CORE-007D8A1F1D8P28 · 21.09.2026: DEPARTURE DISPO LOCK + ARRIVAL NO-LIVE DISPLAY + DRIVER PROFILE LINK – Abflugverspätungen bleiben reine Fluginfo und verändern niemals die Abhol-/DISPO-Zeit; Ankunft ohne bestätigte LIVE-Abholzeit zeigt im Cockpit --:--; Live-Dispo verknüpft Fahrerprofile robuster mit importierten Fahrern. Bestehende Stable-Funktionen bleiben unverändert.
@@ -2471,6 +2472,90 @@ function consumePlanImportAuthorization(){
     ageMs:Number.isFinite(age)?age:null
   };
 }
+// CORE-007D8A1F1D8P36F4: Brücke zwischen echtem Analyse-Klick und der späteren
+// asynchronen Morgen-Modus-Übernahme. Die normale 5-Sekunden-Sperre von
+// applyImportedRides() bleibt unverändert; sie wird erst unmittelbar vor dem
+// automatischen Import neu autorisiert.
+const ATMS_CLEAN_PLAN_AUTO_AUTH_TTL_MS=15*60*1000;
+let atmsCleanPlanAutoImportAuthorization={armed:false,source:'',at:0};
+let atmsCleanPlanAutoImportFinalGate={ready:false,source:'',at:0};
+
+function installCleanPlanAutoImportAuthorizationBridge(){
+  if(window.__atmsCleanPlanAutoImportAuthorizationBridge)return;
+
+  document.addEventListener('click',event=>{
+    const target=event.target instanceof Element?event.target:event.target?.parentElement;
+    const button=target?.closest?.('#analyzePlanBtn');
+    if(!button)return;
+
+    atmsCleanPlanAutoImportFinalGate={ready:false,source:'',at:0};
+    if(event.isTrusted!==true){
+      atmsCleanPlanAutoImportAuthorization={armed:false,source:'',at:0};
+      persistAudit('clean_plan_auto_import_untrusted_analysis_blocked',{source:button.id||''});
+      return;
+    }
+
+    atmsCleanPlanAutoImportAuthorization={
+      armed:true,
+      source:button.id||'analyzePlanBtn',
+      at:Date.now()
+    };
+    persistAudit('clean_plan_auto_import_authorized',{source:button.id||'analyzePlanBtn'});
+  },true);
+
+  window.ATMSAuthorizeCleanPlanAutoImport=function(){
+    const auth=atmsCleanPlanAutoImportAuthorization;
+    atmsCleanPlanAutoImportAuthorization={armed:false,source:'',at:0};
+    const age=Date.now()-Number(auth?.at||0);
+    const ok=Boolean(auth?.armed)&&age>=0&&age<=ATMS_CLEAN_PLAN_AUTO_AUTH_TTL_MS;
+    if(!ok){
+      atmsCleanPlanAutoImportFinalGate={ready:false,source:'',at:0};
+      persistAudit('clean_plan_auto_import_gate_blocked',{
+        reason:'missing-or-expired-trusted-analysis-click',
+        source:String(auth?.source||''),
+        ageMs:Number.isFinite(age)?age:null
+      });
+      return {ok:false,source:String(auth?.source||''),ageMs:Number.isFinite(age)?age:null};
+    }
+
+    atmsCleanPlanAutoImportFinalGate={
+      ready:true,
+      source:String(auth?.source||'analyzePlanBtn'),
+      at:Date.now()
+    };
+    persistAudit('clean_plan_auto_import_pipeline_started',{
+      source:String(auth?.source||'analyzePlanBtn'),
+      ageMs:age
+    });
+    return {ok:true,source:String(auth?.source||'analyzePlanBtn'),ageMs:age};
+  };
+
+  window.ATMSAuthorizeFinalCleanPlanAutoImport=function(){
+    const gate=atmsCleanPlanAutoImportFinalGate;
+    atmsCleanPlanAutoImportFinalGate={ready:false,source:'',at:0};
+    const age=Date.now()-Number(gate?.at||0);
+    const ok=Boolean(gate?.ready)&&age>=0&&age<=ATMS_CLEAN_PLAN_AUTO_AUTH_TTL_MS;
+    if(!ok){
+      persistAudit('clean_plan_auto_import_final_gate_blocked',{
+        reason:'missing-or-expired-pipeline-gate',
+        source:String(gate?.source||''),
+        ageMs:Number.isFinite(age)?age:null
+      });
+      return {ok:false,source:String(gate?.source||''),ageMs:Number.isFinite(age)?age:null};
+    }
+
+    armPlanImportAuthorization('auto-clean-plan');
+    persistAudit('clean_plan_auto_import_final_authorized',{
+      source:String(gate?.source||'analyzePlanBtn'),
+      ageMs:age
+    });
+    return {ok:true,source:'auto-clean-plan',ageMs:age};
+  };
+
+  window.__atmsCleanPlanAutoImportAuthorizationBridge=true;
+}
+installCleanPlanAutoImportAuthorizationBridge();
+
 function installPlanImportTrustedClickGuard(){
   if(window.__atmsPlanImportTrustedClickGuard)return;
   document.addEventListener('click',event=>{
