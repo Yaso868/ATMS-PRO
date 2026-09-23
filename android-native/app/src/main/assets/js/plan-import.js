@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F10 · 23.09.2026: NATIVE OFFICIAL-AIRPORT OPEN-COUNT FIX – Behebt den P36F9-ReferenceError durch eine zentrale, eindeutige Zählfunktion für noch offene Flugzuordnungen. Doppelte Fahrten desselben Fluges/Datums/Airports/Richtungskontexts werden nur einmal gezählt; source_confirmed bleibt offen, verified/high wird nicht gezählt. Keine Änderung an Quellen, Routen, OCR, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P36F9 · 23.09.2026: NATIVE OFFICIAL-AIRPORT DIAGNOSTIC – Zeigt bei der nativen offiziellen Airport-Prüfung die tatsächlichen Provider-Ergebnisse pro offenem Flug (z. B. not_found/ambiguous/technical/unsupported), ohne Flugwerte zu verändern. Zusätzlich wird die Zahl der nach offiziellen Treffern tatsächlich noch offenen Fahrten korrekt berechnet. Reine Diagnose + Zählerkorrektur; keine Lockerung von FLIGHT-008, keine neuen Quellen, keine OCR-/PLAN-/DISPO-/LIVE-/Persistenzänderung.
 // CORE-007D8A1F1D8P36F6 · 23.09.2026: NATIVE OFFICIAL-AIRPORT CONTEXT BRIDGE – Behebt den im P36-Nativetest gefundenen Kontextfehler: frische OCR-Fahrten besitzen vor der Flugprüfung noch kein flightVerification.airportIata. DUS/CGN werden deshalb jetzt ausschließlich aus dem konkreten Airport der Fahrt (Von/Nach/sourcePlanAirportIata + Richtung) abgeleitet und die bestehende offizielle Airportquelle wird VOR Gemini geprüft. Eine einzelne offizielle Quelle darf nur einen bislang leeren Flugort als source_confirmed vorbefüllen; ⚠ manuell prüfen bleibt bestehen. verified/high bleibt strikt mindestens zwei unabhängigen datumsspezifischen Quellen vorbehalten. P36F5 darf die offizielle Airportquelle mit einer unabhängigen routengleichen Webquelle kombinieren. Keine Änderung an OCR, PLAN/DISPO/LIVE, Preisen, Fahrer/Fahrzeug oder Persistenz.
   // CORE-007D8A1F1D8P36F5 · 23.09.2026: STRICT SEARCH DUAL-SOURCE FALLBACK – Wenn die explizite URL-Context-Prüfung Flightradar24/FlightStats nicht abrufen kann, führt die Auto-Pipeline für genau diese offenen Flüge eine zusätzliche datumsspezifische Google-Search-Prüfung aus. Automatische Übernahme nur bei mindestens zwei unabhängigen geerdeten Webquellen, identischer IATA-Route und exaktem Airport-/Richtungsanker. Keine Lockerung von FLIGHT-008; keine Änderung an OCR, PLAN/DISPO/LIVE oder Persistenz.
@@ -4487,6 +4488,32 @@
       return null;
     }
     return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  function unresolvedFlightRideCount() {
+    const unresolved = new Set();
+    for (const ride of Array.isArray(state.rides) ? state.rides : []) {
+      const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
+      if (!flightNumber) continue;
+      const location = cellText(ride?.flightLocation);
+      const confidence = String(ride?.flightCheckConfidence || ride?.flightConfidence || '').trim().toLowerCase();
+      const verificationStatus = String(ride?.flightVerificationStatus || '').trim().toLowerCase();
+      const fullyVerified = Boolean(location)
+        && ride?.flightNeedsManualCheck !== true
+        && (ride?.flightVerified === true || confidence === 'verified' || (verificationStatus === 'verified' && confidence === 'high'));
+      if (fullyVerified) continue;
+      const eventContext = stagedAirportEventDateContext(ride);
+      const key = [
+        flightNumber,
+        cellText(ride?.date),
+        cellText(eventContext?.airportEventDate || ride?.date),
+        stagedFlightDirection(ride),
+        stagedAirportIata(ride),
+        normalizeTime(ride?.flightTime) || ''
+      ].join('|');
+      unresolved.add(key);
+    }
+    return unresolved.size;
   }
 
   function stagedPlanIsActive() {
