@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F3 · 23.09.2026: SAFE RECOVERY SELF-TEST – Ergänzt einen kontrollierten Ein-Klick-Test für rides/done: aktuelle Werte werden vorab bytegenau geprüft, nur für Millisekunden aus localStorage entfernt, über die bestehende Schutzlogik wiederhergestellt und bei jeder Abweichung sofort aus dem lokalen Vorwert zurückgeschrieben. Keine Änderung an Fahrteninhalt, DONE-Status, Flight-Cache, LIVE-/PLAN-/DISPO-, Import-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P36F2 · 23.09.2026: DURABLE RIDES + DONE PERSISTENCE – Erweitert CORE-005V5 ausschließlich um die primären Fahrtdaten (rides) und den Erledigt-Status (done) im IndexedDB-Durable-Shadow. Bestehende Flight-Cache-, Verified-Backup-, Ride-Override-, LIVE-/PLAN-/DISPO-, Import-, GPS-, Routing-, Nachrichten- und Fahrerlogik bleiben unverändert.
 // CORE-007D8A1F1D8P28 · 21.09.2026: DEPARTURE DISPO LOCK + ARRIVAL NO-LIVE DISPLAY + DRIVER PROFILE LINK – Abflugverspätungen bleiben reine Fluginfo und verändern niemals die Abhol-/DISPO-Zeit; Ankunft ohne bestätigte LIVE-Abholzeit zeigt im Cockpit --:--; Live-Dispo verknüpft Fahrerprofile robuster mit importierten Fahrern. Bestehende Stable-Funktionen bleiben unverändert.
 // CORE-007D8A1F1D8P27 · 17.09.2026: LIVE-DISPO PICKUP DELAY BASIS FIX – Fahrerwarnungen und Live-Dispo-Verspätungsbewertung verwenden jetzt ausschließlich die Differenz zwischen bestätigter LIVE-Abholzeit und DISPO-Zeit (Fallback PLAN), nicht mehr die reine Flugverspätung am Airport. Flugstatus, LIVE-Ankunft/Abflug, Arrival-Puffer, PLAN/DISPO/LIVE-Trennung, GPS, Routing, Nachrichten, Fahrer und Persistenz bleiben unverändert.
@@ -339,6 +340,57 @@ function persistenceSelfTest(){
     return {ok,storageWritable:ok,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString()};
   }catch(e){try{localStorage.removeItem(key)}catch(_){ }return {ok:false,storageWritable:false,safetySnapshot:Boolean(readPersistenceSafety()),checkedAt:new Date().toISOString(),error:String(e?.message||e)}}
 }
+function persistenceRecoverySelfTest(){
+  const keys=[KEY,DONE];
+  const before={};
+  const details={};
+  const checkedAt=new Date().toISOString();
+  try{
+    // Nur starten, wenn Primärwert, Safety-Snapshot und Durable-Shadow bytegenau übereinstimmen.
+    const snap=capturePersistenceSafety('recovery-selftest-preflight')||readPersistenceSafety();
+    for(const key of keys){
+      const raw=localStorage.getItem(key);
+      const shadow=snap?.storage?.[key];
+      const durable=persistenceDurableShadow?.storage?.[key];
+      details[key]={
+        present:typeof raw==='string',
+        safetyMatch:typeof raw==='string'&&shadow===raw,
+        durableMatch:typeof raw==='string'&&durable===raw,
+        length:typeof raw==='string'?raw.length:0
+      };
+      if(typeof raw!=='string'||shadow!==raw||durable!==raw){
+        return {ok:false,checkedAt,phase:'preflight',restored:0,byteExact:false,details,error:'Schutzkopien stimmen vor dem Test nicht bytegenau mit dem Primärwert überein.'};
+      }
+      before[key]=raw;
+    }
+
+    // Kontrollierte Ausfallsimulation: nur rides + done, unmittelbar gefolgt von Recovery.
+    for(const key of keys)localStorage.removeItem(key);
+    const missingBeforeRecovery=keys.every(key=>localStorage.getItem(key)===null);
+    const recovery=restoreMissingCriticalPersistence('recovery-selftest');
+    const byteExact=keys.every(key=>localStorage.getItem(key)===before[key]);
+    const ok=missingBeforeRecovery&&recovery.restored===keys.length&&byteExact;
+
+    // Unabhängig vom Testergebnis niemals einen Testzustand zurücklassen.
+    if(!byteExact){
+      for(const key of keys){
+        try{localStorage.setItem(key,before[key])}catch(_){ }
+      }
+    }
+    capturePersistenceSafety(ok?'recovery-selftest-ok':'recovery-selftest-rollback');
+    persistAudit('recovery_selftest',{ok,restored:recovery.restored,keys:recovery.keys||[],byteExact,missingBeforeRecovery});
+    return {ok,checkedAt,phase:'complete',restored:recovery.restored,keys:recovery.keys||[],missingBeforeRecovery,byteExact,details};
+  }catch(e){
+    for(const key of keys){
+      if(Object.prototype.hasOwnProperty.call(before,key)){
+        try{localStorage.setItem(key,before[key])}catch(_){ }
+      }
+    }
+    try{capturePersistenceSafety('recovery-selftest-exception-rollback')}catch(_){ }
+    persistAudit('recovery_selftest_failed',{message:String(e?.message||e)});
+    return {ok:false,checkedAt,phase:'exception',restored:0,byteExact:keys.every(key=>!Object.prototype.hasOwnProperty.call(before,key)||localStorage.getItem(key)===before[key]),details,error:String(e?.message||e)};
+  }
+}
 function persistenceDiagnosis(){
   const snap=readPersistenceSafety();
   let audit=[];try{audit=JSON.parse(localStorage.getItem(PERSIST_AUDIT_KEY)||'[]');if(!Array.isArray(audit))audit=[]}catch(_){audit=[]}
@@ -368,7 +420,7 @@ function ensurePersistenceSafetyPanel(){
     return true;
   }
   const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceRecoverySelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">🧪 Recovery-Selbsttest (rides + done)</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
   // CORE-005V3: Das Live-Flugdaten-Panel ist auf Mobil bereits nachweislich sichtbar.
   // Deshalb wird die Persistenz-Sicherheit als Kind dieses Panels gemountet.
   // Fallbacks bleiben nur fuer den unwahrscheinlichen Fall, dass Live noch nicht existiert.
@@ -384,6 +436,7 @@ function ensurePersistenceSafetyPanel(){
   }
   const paint=obj=>{const out=$('atmsPersistenceOutput');if(out)out.textContent=JSON.stringify(obj,null,2)};
   $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
+  $('atmsPersistenceRecoverySelfTestBtn')?.addEventListener('click',()=>{if(!confirm('Sicheren Recovery-Selbsttest für rides + done starten? ATMS prüft zuerst beide Schutzkopien bytegenau, entfernt die beiden Primärwerte nur kurzzeitig und stellt sie sofort automatisch wieder her. Bei jeder Abweichung wird der Vorwert zurückgeschrieben.'))return;const result=persistenceRecoverySelfTest();paint({recoverySelfTest:result,diagnosis:persistenceDiagnosis()});showToast(result.ok?'Recovery-Selbsttest OK':'Recovery-Selbsttest fehlgeschlagen',result.ok?'ok':'warn')});
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
   $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
   $('atmsRestorePreviousImportBtn')?.addEventListener('click',restorePreviousPlanImport);
