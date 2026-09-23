@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – Ersetzt den im Realtest zwar erreichbaren, aber datenlosen Einzel-Flug-Endpunkt durch eine rein diagnostische, datumsspezifische FlightStats-Airporttafel-Probe. Abfrage nur fuer bereits durch die offizielle Airportquelle source_confirmed bestaetigte Fluege; exakte Flugnummer + Richtung + Airport + Gegen-IATA muessen uebereinstimmen. Keine Hochstufung auf verified/high und keine Warnungsentfernung.
 // CORE-007D8A1F1D8P36F12 · 23.09.2026: NATIVE SECOND-SOURCE PROBE – Prüft in der Native-App ausschließlich diagnostisch eine unabhängige, registrierungsfreie FlightStats-Webquelle über eine streng freigegebene HTTPS-Route. Keine automatische Hochstufung auf verified/high, keine Warnungsentfernung und keine Änderung an FLIGHT-008; erst ein bestätigter Beweistest darf die spätere Zweitquellen-Automatik freigeben.
 // CORE-007D8A1F1D8P36F11 · 23.09.2026: NATIVE OFFICIAL-AIRPORT PERSISTENT DIAGNOSTIC – Macht die P36F9-Airportdiagnose im eingeklappten Technik-/Diagnosebereich dauerhaft sichtbar, damit ein spaeteres render()/Status-Update sie nicht mehr verdeckt. Reine Diagnoseanzeige; keine Änderung an Flugzuordnung, Quellen, OCR, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P36F10 · 23.09.2026: NATIVE OFFICIAL-AIRPORT OPEN-COUNT FIX – Behebt den P36F9-ReferenceError durch eine zentrale, eindeutige Zählfunktion für noch offene Flugzuordnungen. Doppelte Fahrten desselben Fluges/Datums/Airports/Richtungskontexts werden nur einmal gezählt; source_confirmed bleibt offen, verified/high wird nicht gezählt. Keine Änderung an Quellen, Routen, OCR, PLAN/DISPO/LIVE oder Persistenz.
@@ -4770,7 +4771,33 @@
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
     })() : '';
-    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}</details>`;
+    const secondSourceBoardDiag = (() => {
+      try { return window.ATMSNativeSecondSourceBoardLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const secondSourceBoardDiagHtml = secondSourceBoardDiag ? (() => {
+      const summaryText = cellText(secondSourceBoardDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const rows = Array.isArray(secondSourceBoardDiag?.rows) ? secondSourceBoardDiag.rows : [];
+      const contexts = Array.isArray(secondSourceBoardDiag?.contexts) ? secondSourceBoardDiag.contexts : [];
+      const contextText = contexts.length
+        ? contexts.map(item => `${escapeHtml(item?.direction || '?')} ${escapeHtml(item?.airportIata || '?')} ${escapeHtml(item?.date || '?')} · ${Number(item?.segmentsReachable || 0)}/${Number(item?.segmentsAttempted || 0)} Zeitfenster erreichbar · ${Number(item?.flightRows || 0)} Flugzeilen`).join('<br>')
+        : 'Keine Airport-Board-Kontexte gespeichert.';
+      const rowText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const stateLabel = item?.routeMatch === true ? 'Route stimmt überein' : (item?.reachable === true ? 'erreichbar, keine sichere Übereinstimmung' : 'nicht erreichbar');
+            const route = item?.originIata && item?.destinationIata ? ` · ${item.originIata}→${item.destinationIata}` : '';
+            const reason = cellText(item?.reason);
+            return `${escapeHtml(flight)} · ${escapeHtml(stateLabel)}${escapeHtml(route)}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
+          }).join('<br>')
+        : 'Keine Airport-Board-Zweitquellen-Probe gespeichert.';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(121,229,157,.35);border-radius:10px">`
+        + `<b>🔎 Airport-Board-Zweitquelle · P36F13</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose – ändert weder verified/high noch ⚠ manuell prüfen.</small>`
+        + `<div style="margin-top:8px"><b>Board-Kontexte</b><br><small>${contextText}</small></div>`
+        + `<div style="margin-top:8px"><b>Flugabgleich</b><br><small>${rowText}</small></div>`
+        + `</div>`;
+    })() : '';
+    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}</details>`;
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
@@ -5028,6 +5055,7 @@
     state.autoFlightSummary = null;
     try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
@@ -5736,6 +5764,143 @@
     return { attempted: eligible.length, reachable, routeMatches, rows, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} Routenübereinstimmung(en)` };
   }
 
+  // CORE-007D8A1F1D8P36F13: Diagnostic-only FlightStats airport-board second-source probe.
+  // The direct per-flight P36F12 endpoint returned reachable JSON without usable data in the real native test.
+  // This probe instead uses date-specific arrival/departure board windows and still never promotes verification.
+  function nativeSecondSourceBoardProbeUrl(context, hour) {
+    const airportIata = String(context?.airportIata || '').trim().toUpperCase();
+    const direction = String(context?.direction || '').trim().toLowerCase();
+    const date = cellText(context?.date);
+    const dm = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!/^[A-Z]{3}$/.test(airportIata) || !['arrival','departure'].includes(direction) || !dm || ![0,6,12,18].includes(Number(hour))) return '';
+    const boardType = direction === 'arrival' ? 'arr' : 'dep';
+    return `https://www.flightstats.com/v2/api-next/flight-tracker/${boardType}/${airportIata}/${dm[1]}/${Number(dm[2])}/${Number(dm[3])}/${Number(hour)}?carrierCode=&numHours=6`;
+  }
+
+  function parseNativeSecondSourceBoardSegment(payload) {
+    const data = payload && typeof payload === 'object' ? payload.data : null;
+    const flights = Array.isArray(data?.flights) ? data.flights : null;
+    if (!flights) return { ok: false, reason: 'no_board_data', flights: [] };
+    return { ok: true, reason: flights.length ? 'ok' : 'empty_board', flights };
+  }
+
+  function boardFlightIdentity(row) {
+    const carrier = String(row?.carrier?.fs || row?.carrier?.iata || '').trim().toUpperCase();
+    const number = String(row?.carrier?.flightNumber || row?.flightNumber || '').trim().toUpperCase();
+    return carrier && number ? `${carrier}${number}` : '';
+  }
+
+  function boardOppositeAirportIata(row) {
+    return String(row?.airport?.fs || row?.airport?.iata || '').trim().toUpperCase();
+  }
+
+  async function runNativeSecondSourceBoardProbe(officialChecked = [], options = {}) {
+    const bridge = nativeSecondSourceBridgeHost();
+    const eligible = (Array.isArray(officialChecked) ? officialChecked : []).filter(item => item?.officialAirportEvidence === true
+      && /^[A-Z]{3}$/.test(String(item?.airportIata || '').trim().toUpperCase())
+      && /^[A-Z]{3}$/.test(String(item?.officialOriginIata || '').trim().toUpperCase())
+      && /^[A-Z]{3}$/.test(String(item?.officialDestinationIata || '').trim().toUpperCase())
+      && ['arrival','departure'].includes(String(item?.direction || '').trim().toLowerCase()));
+    const rows = [], contexts = [];
+    if (!eligible.length) return { attempted: 0, reachable: 0, routeMatches: 0, rows, contexts, unavailable: false, text: '0 geprüft · 0 erreichbar · 0 Routenübereinstimmungen' };
+    if (!bridge) {
+      for (const item of eligible) rows.push({ flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber), reachable: false, routeMatch: false, reason: 'native_bridge_unavailable' });
+      return { attempted: eligible.length, reachable: 0, routeMatches: 0, rows, contexts, unavailable: true, text: `${eligible.length} geprüft · Native Bridge nicht verfügbar` };
+    }
+
+    const groups = new Map();
+    for (const item of eligible) {
+      const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      const date = cellText(item?.airportEventDate || item?.date);
+      const key = `${direction}|${airportIata}|${date}`;
+      if (!groups.has(key)) groups.set(key, { airportIata, direction, date, items: [], flights: [], segmentsAttempted: 0, segmentsReachable: 0, segmentReasons: [] });
+      groups.get(key).items.push(item);
+    }
+
+    let segmentIndex = 0;
+    const totalSegments = groups.size * 4;
+    for (const group of groups.values()) {
+      for (const hour of [0,6,12,18]) {
+        segmentIndex++;
+        group.segmentsAttempted++;
+        options?.onProgress?.({ current: segmentIndex, total: totalSegments, label: `${group.direction} ${group.airportIata} ${String(hour).padStart(2,'0')}:00` });
+        const url = nativeSecondSourceBoardProbeUrl(group, hour);
+        if (!url) { group.segmentReasons.push(`${hour}:invalid_url`); continue; }
+        try {
+          const raw = bridge.requestJsonString(JSON.stringify({
+            contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+            purpose: 'flightstats_board_probe',
+            airportIata: group.airportIata,
+            method: 'GET',
+            url,
+            timeoutMs: 15000
+          }));
+          if (!raw) {
+            let message = '';
+            try { message = cellText(bridge.lastError?.()); } catch (_) {}
+            group.segmentReasons.push(`${hour}:${message ? `transport:${message.slice(0,120)}` : 'empty_response'}`);
+            continue;
+          }
+          let payload;
+          try { payload = JSON.parse(String(raw)); } catch (_) {
+            group.segmentReasons.push(`${hour}:invalid_json`);
+            continue;
+          }
+          const parsed = parseNativeSecondSourceBoardSegment(payload);
+          if (!parsed.ok) {
+            group.segmentsReachable++;
+            group.segmentReasons.push(`${hour}:${parsed.reason}`);
+            continue;
+          }
+          group.segmentsReachable++;
+          group.flights.push(...parsed.flights);
+        } catch (error) {
+          group.segmentReasons.push(`${hour}:technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180));
+        }
+      }
+      contexts.push({
+        airportIata: group.airportIata,
+        direction: group.direction,
+        date: group.date,
+        segmentsAttempted: group.segmentsAttempted,
+        segmentsReachable: group.segmentsReachable,
+        flightRows: group.flights.length,
+        reasons: group.segmentReasons
+      });
+
+      for (const item of group.items) {
+        const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+        const matches = group.flights.filter(row => boardFlightIdentity(row) === flightNumber);
+        if (!matches.length) {
+          rows.push({ flightNumber, reachable: group.segmentsReachable > 0, routeMatch: false, reason: group.segmentsReachable > 0 ? 'flight_not_found_on_board' : 'board_unreachable' });
+          continue;
+        }
+        const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+        const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+        const routePairs = [...new Set(matches.map(row => {
+          const opposite = boardOppositeAirportIata(row);
+          if (!/^[A-Z]{3}$/.test(opposite)) return '';
+          return group.direction === 'arrival' ? `${opposite}>${group.airportIata}` : `${group.airportIata}>${opposite}`;
+        }).filter(Boolean))];
+        if (!routePairs.length) {
+          rows.push({ flightNumber, reachable: true, routeMatch: false, reason: 'opposite_airport_missing' });
+          continue;
+        }
+        if (routePairs.length > 1) {
+          rows.push({ flightNumber, reachable: true, routeMatch: false, reason: `ambiguous_routes:${routePairs.join(',')}`.slice(0,180) });
+          continue;
+        }
+        const [originIata, destinationIata] = routePairs[0].split('>');
+        const routeMatch = originIata === expectedOrigin && destinationIata === expectedDestination;
+        rows.push({ flightNumber, reachable: true, routeMatch, reason: routeMatch ? 'route_match' : 'route_mismatch', originIata, destinationIata });
+      }
+    }
+    const reachable = rows.filter(item => item.reachable === true).length;
+    const routeMatches = rows.filter(item => item.routeMatch === true).length;
+    return { attempted: eligible.length, reachable, routeMatches, rows, contexts, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} Routenübereinstimmung(en)` };
+  }
+
   async function runAutomaticFlightCheck(options = {}) {
     if (!state.rides.length) return;
     const status = $('importStatus');
@@ -5790,16 +5955,17 @@
       // als source_confirmed; eine zweite Quelle wird nicht simuliert oder geraten.
       const nativeOfficialOnly = typeof location !== 'undefined' && location.protocol === 'file:';
       if (nativeOfficialOnly) {
-        const secondSourceProbe = await runNativeSecondSourceProbe(officialChecked, {
+        const secondSourceProbe = await runNativeSecondSourceBoardProbe(officialChecked, {
           onProgress: progress => {
             if (!status) return;
-            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
-            status.textContent = `Zweitquellen-Probe ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), label = cellText(progress?.label);
+            status.textContent = `Airport-Board-Zweitquelle ${current}/${total}${label ? ` · ${label}` : ''} …`;
           }
         });
         try {
-          window.ATMSNativeSecondSourceLastDiagnostic = {
-            patch: 'CORE-007D8A1F1D8P36F12',
+          window.ATMSNativeSecondSourceLastDiagnostic = null;
+          window.ATMSNativeSecondSourceBoardLastDiagnostic = {
+            patch: 'CORE-007D8A1F1D8P36F13',
             checkedAt: new Date().toISOString(),
             ...secondSourceProbe
           };
@@ -5836,7 +6002,8 @@
           secondSourceProbeReachable: Number(secondSourceProbe?.reachable || 0),
           secondSourceProbeRouteMatches: Number(secondSourceProbe?.routeMatches || 0),
           secondSourceProbeDiagnostic: cellText(secondSourceProbe?.text),
-          secondSourceProbeRows: Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : []
+          secondSourceProbeRows: Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : [],
+          secondSourceProbeContexts: Array.isArray(secondSourceProbe?.contexts) ? secondSourceProbe.contexts : []
         };
       }
 
