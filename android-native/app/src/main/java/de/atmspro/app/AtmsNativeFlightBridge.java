@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – streng allowlistete arr/dep-Airporttafel-Probe, nur Diagnose, keine Verifizierungsfreigabe.
 package de.atmspro.app;
 
 import android.webkit.JavascriptInterface;
@@ -21,6 +22,8 @@ import java.nio.charset.StandardCharsets;
  * - DUS-Produktivzugriff bleibt auf den explizit freigegebenen DUS-HTTPS-Endpunkt begrenzt.
  * - P36F12 erlaubt zusätzlich ausschließlich einen streng validierten FlightStats-Web-JSON-Pfad
  *   für eine DIAGNOSE-Probe. Dieser Pfad darf niemals selbst Flugstatus/Verifizierung freigeben.
+ * - P36F13 erlaubt zusätzlich ausschließlich datumsspezifische FlightStats-Airport-Board-Pfade
+ *   (arr/dep, 6-Stunden-Fenster) für eine DIAGNOSE-Zweitquellenprobe. Keine Verifizierungsfreigabe in Java.
  * - Rückgabe ist unveränderter JSON-Text der jeweils validierten Quelle.
  */
 public final class AtmsNativeFlightBridge {
@@ -44,9 +47,13 @@ public final class AtmsNativeFlightBridge {
             String urlText = request.optString("url", "");
             String purpose = request.optString("purpose", "");
             boolean flightStatsProbe = "flightstats_probe".equals(purpose);
+            boolean flightStatsBoardProbe = "flightstats_board_probe".equals(purpose);
             URI validated;
             String sourceLabel;
-            if (flightStatsProbe) {
+            if (flightStatsBoardProbe) {
+                validated = validateFlightStatsBoardProbe(method, urlText);
+                sourceLabel = "FlightStats board probe";
+            } else if (flightStatsProbe) {
                 validated = validateFlightStatsProbe(method, urlText);
                 sourceLabel = "FlightStats probe";
             } else {
@@ -65,7 +72,7 @@ public final class AtmsNativeFlightBridge {
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("X-Requested-With", "XMLHttpRequest");
-            if (flightStatsProbe) {
+            if (flightStatsProbe || flightStatsBoardProbe) {
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16; ATMS PRO Native) AppleWebKit/537.36");
                 connection.setRequestProperty("Accept-Language", "de-DE,de;q=0.9,en;q=0.8");
             }
@@ -101,6 +108,35 @@ public final class AtmsNativeFlightBridge {
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    private static URI validateFlightStatsBoardProbe(String method, String urlText) throws Exception {
+        if (!"GET".equalsIgnoreCase(method == null ? "" : method.trim())) {
+            throw new SecurityException("FlightStats board probe method not allowed");
+        }
+        URI uri = new URI(urlText == null ? "" : urlText.trim());
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new SecurityException("FlightStats board probe protocol not allowed");
+        }
+        if (!"www.flightstats.com".equalsIgnoreCase(uri.getHost())) {
+            throw new SecurityException("FlightStats board probe host not allowed");
+        }
+        String path = uri.getPath();
+        if (path == null || !path.matches("/v2/api-next/flight-tracker/(arr|dep)/[A-Z]{3}/[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}/(0|6|12|18)")) {
+            throw new SecurityException("FlightStats board probe path not allowed");
+        }
+        String query = uri.getRawQuery();
+        if (!"carrierCode=&numHours=6".equals(query)) {
+            throw new SecurityException("FlightStats board probe query not allowed");
+        }
+        if (uri.getUserInfo() != null || uri.getFragment() != null) {
+            throw new SecurityException("FlightStats board probe URL extras not allowed");
+        }
+        int port = uri.getPort();
+        if (port != -1 && port != 443) {
+            throw new SecurityException("FlightStats board probe port not allowed");
+        }
+        return uri;
     }
 
     private static URI validateFlightStatsProbe(String method, String urlText) throws Exception {
