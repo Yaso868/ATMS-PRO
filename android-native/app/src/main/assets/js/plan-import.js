@@ -1,3 +1,4 @@
+  // CORE-007D8A1F1D8P36 · 22.09.2026: OFFICIAL AIRPORT AUTO-FLIGHT – Der saubere Planimport prüft DUS/CGN zuerst direkt über die vorhandene offizielle Airport-Datenschicht. Ein eindeutiger datumsspezifischer Einzelquellen-Treffer darf ausschließlich als source_confirmed übernommen werden; verified/high bleibt strikt mindestens zwei unabhängigen Quellen vorbehalten. airportIata + airportEventDate + Richtung werden beim Matching zwingend geprüft. Nur ungelöste Fälle fallen auf den bestehenden Gemini-/manuellen Fallback zurück. Keine Änderung an OCR-, Preis-, Fahrer-, PLAN/DISPO/LIVE-, Signing- oder Persistenzlogik.
   // CORE-007D8A1F1D8P31F5F6 · 18.09.2026: AUTO-FLIGHT EXPLICIT URL SOURCES – FLIGHT-008 nutzt für die automatische Routenprüfung zwei explizite, datumsspezifische Webquellen (Flightradar24 + FlightStats) via Gemini URL Context. Google Search bleibt nur ergänzend. Keine Lockerung der Zwei-Quellen-Regel.
   // CORE-007D8A1F1D8P31F5F4 · 18.09.2026: AUTO-FLIGHT RESPONSE NORMALIZATION FIX – Gemini-Antworten werden robust normalisiert: string "false" zählt nicht mehr als Konflikt; für die Route sind die kanonischen IATA-Endpunkte maßgeblich, Stadtnamen sind nur Darstellung.
   // CORE-007D8A1F1D8P31F5F2 · 18.09.2026: AUTO-FLIGHT DUAL-SOURCE VERIFIER – FLIGHT-008 bleibt strikt. Wenn Google Search in der ersten Prüfung weniger als zwei unabhängige Quellen liefert, fordert ATMS automatisch eine zweite unabhängige Bestätigung an und übernimmt nur übereinstimmende Routen.
@@ -20,6 +21,7 @@
 
   const PLAN_IMPORT_SCRIPT_URL = document.currentScript?.src || new URL('./js/plan-import.js', location.href).href;
   let autoFlightModulePromise = null;
+  let officialFlightProviderPromise = null;
 
   // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
 
@@ -4502,26 +4504,50 @@
     return keys.size;
   }
 
+  function stagedAirportEventDateContext(ride) {
+    try {
+      const context = window.ATMSAirportEventDateContextForRide?.(ride);
+      if (context?.airportEventDate) {
+        return {
+          airportEventDate: cellText(context.airportEventDate),
+          derived: Boolean(context.derived)
+        };
+      }
+    } catch (_) {}
+    return { airportEventDate: cellText(ride?.date), derived: false };
+  }
+
+  function stagedAirportIata(ride) {
+    const raw = String(ride?.flightVerification?.airportIata || '').trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(raw) ? raw : '';
+  }
+
   function findCheckedFlightForRide(ride, checked) {
     const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
     if (!flight) return null;
     const date = cellText(ride?.date);
+    const airportEventDate = stagedAirportEventDateContext(ride).airportEventDate;
     const direction = stagedFlightDirection(ride);
-    const flightTime = cellText(ride?.flightTime);
+    const airportIata = stagedAirportIata(ride);
+    const flightTime = normalizeTime(ride?.flightTime);
     const candidates = (Array.isArray(checked) ? checked : []).filter(item => {
       if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
       const checkedDate = cellText(item?.date);
       if (date ? checkedDate !== date : Boolean(checkedDate)) return false;
+      const checkedAirportEventDate = cellText(item?.airportEventDate);
+      if (airportEventDate ? checkedAirportEventDate !== airportEventDate : Boolean(checkedAirportEventDate)) return false;
       const checkedDirection = String(item?.direction || 'unknown').trim().toLowerCase();
       if (direction !== 'unknown' ? checkedDirection !== direction : checkedDirection !== 'unknown') return false;
+      const checkedAirportIata = String(item?.airportIata || '').trim().toUpperCase();
+      if (airportIata ? checkedAirportIata !== airportIata : Boolean(checkedAirportIata)) return false;
       return true;
     });
     if (!candidates.length) return null;
     if (flightTime) {
-      const exact = candidates.filter(item => cellText(item?.flightTime) === flightTime);
+      const exact = candidates.filter(item => normalizeTime(item?.flightTime) === flightTime);
       if (exact.length === 1) return exact[0];
       if (exact.length > 1) return null;
-      if (candidates.length === 1 && !cellText(candidates[0]?.flightTime)) return candidates[0];
+      if (candidates.length === 1 && !normalizeTime(candidates[0]?.flightTime)) return candidates[0];
       return null;
     }
     return candidates.length === 1 ? candidates[0] : null;
@@ -4531,27 +4557,65 @@
     return Boolean(state.rides.length && $('planAnalysis') && !$('planAnalysis').classList.contains('hidden'));
   }
 
+  function normalizedFlightLocationKey(value) {
+    return normalizeFlightLocation(cellText(value)).toLocaleLowerCase('de-DE');
+  }
+
+  function checkedFlightAcceptance(ride, hit) {
+    const location = cellText(hit?.flightLocation || hit?.relevantLocation);
+    const iata = String(hit?.iata || hit?.relevantIata || '').trim().toUpperCase();
+    const confidence = String(hit?.confidence || '').trim().toLowerCase();
+    const status = String(hit?.status || '').trim().toLowerCase();
+    const sourceCount = checkedSourceCount(hit);
+    const verified = status === 'verified'
+      && (confidence === 'verified' || confidence === 'high')
+      && Boolean(location)
+      && /^[A-Z]{3}$/.test(iata)
+      && !Boolean(hit?.conflict)
+      && sourceCount >= 2;
+
+    let sourceConflict = Boolean(hit?.conflict);
+    const existingLocation = cellText(ride?.flightLocation);
+    const existingIata = String(ride?.iata || '').trim().toUpperCase();
+    if (!sourceConflict && hit?.sourceConfirmed === true && location) {
+      if (/^[A-Z]{3}$/.test(existingIata) && /^[A-Z]{3}$/.test(iata) && existingIata !== iata) {
+        sourceConflict = true;
+      } else if (existingLocation && existingLocation !== 'Flugort prüfen' && !/^[A-Z]{3}$/.test(existingIata)) {
+        sourceConflict = normalizedFlightLocationKey(existingLocation) !== normalizedFlightLocationKey(location);
+      }
+    }
+
+    const sourceConfirmed = !verified
+      && hit?.sourceConfirmed === true
+      && status === 'needs_manual_check'
+      && (confidence === 'source_confirmed' || confidence === 'medium')
+      && sourceCount === 1
+      && Boolean(location)
+      && /^[A-Z]{3}$/.test(iata)
+      && !sourceConflict;
+
+    return { location, iata, verified, sourceConfirmed, accepted: Boolean(verified || sourceConfirmed), sourceConflict };
+  }
+
   function applyGeminiResultsToStagedPlan(checked, appliedAt = new Date().toISOString()) {
     if (!Array.isArray(checked) || !checked.length || !state.rides.length) {
-      return { matchedRides: 0, verifiedRides: 0, uncertainRides: 0 };
+      return { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 };
     }
-    let matchedRides = 0, verifiedRides = 0, uncertainRides = 0;
+    let matchedRides = 0, verifiedRides = 0, sourceConfirmedRides = 0, uncertainRides = 0;
     state.rides = state.rides.map(ride => {
       const hit = findCheckedFlightForRide(ride, checked);
       if (!hit) return ride;
       matchedRides++;
-      const location = cellText(hit?.flightLocation || hit?.relevantLocation);
-      const iata = String(hit?.iata || hit?.relevantIata || '').trim().toUpperCase();
-      const confidence = String(hit?.confidence || '').trim().toLowerCase();
-      const status = String(hit?.status || '').trim().toLowerCase();
-      const verified = status === 'verified' && (confidence === 'verified' || confidence === 'high') && Boolean(location) && !Boolean(hit?.conflict) && checkedSourceCount(hit) >= 2;
-      if (verified) verifiedRides++; else uncertainRides++;
+      const accepted = checkedFlightAcceptance(ride, hit);
+      if (accepted.verified) verifiedRides++;
+      else if (accepted.sourceConfirmed) sourceConfirmedRides++;
+      else uncertainRides++;
       return {
         ...ride,
-        flightLocation: verified ? normalizeFlightLocation(location) : ride.flightLocation,
-        iata: verified && /^[A-Z]{3}$/.test(iata) ? iata : (ride.iata || ''),
-        flightCheckConfidence: verified ? 'verified' : 'uncertain',
-        flightNeedsManualCheck: !verified,
+        flightLocation: accepted.accepted ? normalizeFlightLocation(accepted.location) : ride.flightLocation,
+        iata: accepted.accepted && /^[A-Z]{3}$/.test(accepted.iata) ? accepted.iata : (ride.iata || ''),
+        flightCheckConfidence: accepted.verified ? 'verified' : (accepted.sourceConfirmed ? 'source_confirmed' : 'uncertain'),
+        flightNeedsManualCheck: !accepted.accepted,
         flightCheckSourceNote: cellText(hit?.sourceNote) || ride.flightCheckSourceNote || '',
         flightCheckedAt: appliedAt,
         flightAutoModel: cellText(hit?.modelUsed)
@@ -4559,7 +4623,7 @@
     });
     state.issues = validate(state.rides);
     render();
-    return { matchedRides, verifiedRides, uncertainRides };
+    return { matchedRides, verifiedRides, sourceConfirmedRides, uncertainRides };
   }
 
   window.ATMSPlanImportHasStagedRides = stagedPlanIsActive;
@@ -5054,7 +5118,10 @@
       if (status) {
         const parts = ['Fahrten automatisch übernommen', 'Morgen-Modus aktiv'];
         if (flightSummary?.verifiedRides > 0) {
-          parts.push(`${flightSummary.verifiedRides} Fahrt(en) mit Flugort automatisch geprüft`);
+          parts.push(`${flightSummary.verifiedRides} Fahrt(en) mit Flugort verifiziert`);
+        }
+        if (flightSummary?.sourceConfirmedRides > 0) {
+          parts.push(`${flightSummary.sourceConfirmedRides} Fahrt(en) durch offizielle Airport-Quelle bestätigt`);
         }
         if (flightSummary?.uncertainRides > 0) {
           parts.push(`${flightSummary.uncertainRides} Flugzuordnung(en) bleiben sicher offen`);
@@ -5062,7 +5129,7 @@
         if (flightSummary?.quotaBlocked) {
           parts.push('Gemini-Kontingent derzeit erreicht');
         } else if (flightSummary?.serviceUnavailable) {
-          parts.push('Flugort-Automatik derzeit nicht verfügbar');
+          parts.push(flightSummary?.sourceConfirmedRides > 0 ? 'weitere Flugprüfung derzeit nicht verfügbar' : 'Flugort-Automatik derzeit nicht verfügbar');
         } else if (Number(flightSummary?.technicalFailureCount || 0) > 0) {
           parts.push(`${flightSummary.technicalFailureCount} technische Flugprüfung(en) fehlgeschlagen`);
           if (flightSummary?.firstTechnicalError) parts.push(`Technik: ${cellText(flightSummary.firstTechnicalError).slice(0, 120)}`);
@@ -5101,6 +5168,159 @@
     return true;
   }
 
+  async function ensureOfficialFlightProvider() {
+    if (window.ATMSOfficialFlightProvider && typeof window.ATMSOfficialFlightProvider.fetchLive === 'function') {
+      return window.ATMSOfficialFlightProvider;
+    }
+    if (!officialFlightProviderPromise) {
+      officialFlightProviderPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P36', PLAN_IMPORT_SCRIPT_URL).href;
+        script.async = true;
+        script.onload = () => {
+          const provider = window.ATMSOfficialFlightProvider;
+          if (!provider || typeof provider.fetchLive !== 'function') {
+            reject(new Error('Offizielle Airport-Datenschicht wurde geladen, stellt aber keine Flugprüfung bereit.'));
+            return;
+          }
+          resolve(provider);
+        };
+        script.onerror = () => reject(new Error('Offizielle Airport-Datenschicht konnte nicht geladen werden.'));
+        document.head.appendChild(script);
+      }).catch(error => {
+        officialFlightProviderPromise = null;
+        throw error;
+      });
+    }
+    return officialFlightProviderPromise;
+  }
+
+  function officialFlightItemsForRides(rides = state.rides) {
+    const items = new Map();
+    for (const ride of Array.isArray(rides) ? rides : []) {
+      const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber);
+      const date = cellText(ride?.date);
+      const eventContext = stagedAirportEventDateContext(ride);
+      const airportEventDate = cellText(eventContext.airportEventDate || date);
+      const direction = stagedFlightDirection(ride);
+      const airportIata = stagedAirportIata(ride);
+      const flightTime = cellText(ride?.flightTime);
+      if (!flightNumber || !date || !airportEventDate || !['arrival', 'departure'].includes(direction)) continue;
+      if (!['DUS', 'CGN'].includes(airportIata)) continue;
+      const key = [flightNumber, date, airportEventDate, direction, airportIata, flightTime].join('|');
+      if (!items.has(key)) {
+        items.set(key, {
+          flightNumber,
+          date,
+          airportEventDate,
+          airportEventDateDerived: Boolean(eventContext.derived),
+          direction,
+          airportIata,
+          flightTime: flightTime || null
+        });
+      }
+    }
+    return [...items.values()];
+  }
+
+  function officialProviderResultToChecked(item) {
+    const location = cellText(item?.route?.location);
+    const iata = String(item?.route?.iata || '').trim().toUpperCase();
+    const sources = Array.isArray(item?.sources) ? item.sources : [];
+    return {
+      flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber),
+      date: cellText(item?.date),
+      airportEventDate: cellText(item?.airportEventDate || item?.date),
+      airportEventDateDerived: Boolean(item?.airportEventDateDerived),
+      dateAssumed: false,
+      flightTime: cellText(item?.flightTime),
+      direction: String(item?.direction || 'unknown').trim().toLowerCase(),
+      airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+      flightLocation: location,
+      relevantLocation: location,
+      iata,
+      relevantIata: iata,
+      status: 'needs_manual_check',
+      confidence: 'source_confirmed',
+      sourceConfirmed: true,
+      conflict: Boolean(item?.sourceConflict),
+      sources,
+      explicitSourceCount: checkedSourceCount({ sources }),
+      sourceCount: checkedSourceCount({ sources }),
+      sourceNote: cellText(item?.sourceNote) || 'Eindeutiger datumsspezifischer Treffer aus offizieller Airport-Einzelquelle.',
+      modelUsed: 'official-airport-provider'
+    };
+  }
+
+  async function runOfficialAirportFlightCheck(rides, { status, expectedGeneration } = {}) {
+    const items = officialFlightItemsForRides(rides);
+    if (!items.length) {
+      return {
+        attempted: false,
+        checked: [],
+        applied: { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 },
+        failures: [],
+        unsupported: []
+      };
+    }
+    let provider;
+    try {
+      provider = await ensureOfficialFlightProvider();
+    } catch (error) {
+      return {
+        attempted: true,
+        checked: [],
+        applied: { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 },
+        failures: [{ reason: 'provider_unavailable', message: cellText(error?.message) }],
+        unsupported: [],
+        providerUnavailable: true
+      };
+    }
+    if (expectedGeneration !== null && expectedGeneration !== undefined && expectedGeneration !== state.pipelineGeneration) {
+      return { attempted: true, stale: true, checked: [], applied: { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 }, failures: [], unsupported: [] };
+    }
+    if (status) status.textContent = 'Plan sauber · DUS/CGN werden über die offizielle Airport-Quelle geprüft …';
+    const result = await provider.fetchLive(items, {
+      onProgress: progress => {
+        if (!status) return;
+        const current = Number(progress?.current || 0);
+        const total = Number(progress?.total || 0);
+        const flight = cellText(progress?.flightNumber);
+        status.textContent = `Offizielle Airport-Prüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+      }
+    });
+    if (expectedGeneration !== null && expectedGeneration !== undefined && expectedGeneration !== state.pipelineGeneration) {
+      return { attempted: true, stale: true, checked: [], applied: { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 }, failures: [], unsupported: [] };
+    }
+    const checked = (Array.isArray(result?.flights) ? result.flights : [])
+      .map(officialProviderResultToChecked)
+      .filter(item => item.flightNumber && item.date && item.airportEventDate && item.airportIata && item.flightLocation && /^[A-Z]{3}$/.test(item.iata) && item.explicitSourceCount === 1 && !item.conflict);
+    const applied = checked.length
+      ? applyGeminiResultsToStagedPlan(checked, cellText(result?.checkedAt) || new Date().toISOString())
+      : { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 };
+    return {
+      attempted: true,
+      checked,
+      applied,
+      failures: Array.isArray(result?.failures) ? result.failures : [],
+      unsupported: Array.isArray(result?.unsupported) ? result.unsupported : [],
+      providerUnavailable: false
+    };
+  }
+
+  function rideResolvedByCheckedResults(ride, checked) {
+    const hit = findCheckedFlightForRide(ride, checked);
+    return Boolean(hit && checkedFlightAcceptance(ride, hit).accepted);
+  }
+
+  function unresolvedFlightRideCount() {
+    return state.rides.filter(ride => {
+      if (!normalizeFlightForCurrentCheck(ride?.flightNumber)) return false;
+      if (!cellText(ride?.flightLocation)) return true;
+      return Boolean(ride?.flightNeedsManualCheck || ride?.flightCheckConfidence === 'uncertain');
+    }).length;
+  }
+
   async function ensureAutoFlightService() {
     if (window.ATMSAutoFlight && typeof window.ATMSAutoFlight.verifyFlights === 'function') {
       return window.ATMSAutoFlight;
@@ -5130,48 +5350,119 @@
     const automaticPipeline = Boolean(options?.automaticPipeline);
     const expectedGeneration = Number.isFinite(Number(options?.expectedGeneration)) ? Number(options.expectedGeneration) : null;
 
-    if (sessionStorage.getItem(quotaSessionKey) === '1') {
-      if (fallbackButton) fallbackButton.style.display = '';
-      if (status) status.textContent = automaticPipeline
-        ? 'Plan ist sauber. Flugort-Automatik pausiert wegen erreichtem Gemini-Kontingent; die Fahrten werden trotzdem automatisch übernommen.'
-        : 'Automatische Flugprüfung ist in dieser Sitzung wegen erreichtem Gemini-Kontingent pausiert. Es werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
-      if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
-      return { ok: false, quotaBlocked: true, technicalFailureCount: 0 };
-    }
-
-    let service = null;
-    try {
-      service = await ensureAutoFlightService();
-    } catch (error) {
-      if (fallbackButton) fallbackButton.style.display = '';
-      const message = cellText(error?.message) || 'Auto-Flight-Modul konnte nicht geladen werden.';
-      if (status) status.textContent = automaticPipeline
-        ? `Plan ist sauber. Flugort-Automatik derzeit nicht verfügbar (${message}); die Fahrten werden trotzdem automatisch übernommen.`
-        : `Automatische Flugprüfung ist noch nicht verfügbar: ${message}. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.`;
-      if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung nicht verfügbar', 'warn');
-      return { ok: false, serviceUnavailable: true, errorMessage: message, technicalFailureCount: 0 };
-    }
-
     if (button) {
       button.disabled = true;
       button.setAttribute('aria-busy', 'true');
     }
-    if (fallbackButton) fallbackButton.style.display = 'none';
+
+    let official = {
+      checked: [],
+      applied: { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 },
+      failures: [],
+      unsupported: []
+    };
 
     try {
-      if (status) status.textContent = automaticPipeline ? 'Plan sauber · Flugorte werden automatisch mit Gemini + aktuellen Webquellen geprüft …' : 'Automatische aktuelle Flugprüfung wird gestartet …';
-      const result = await service.verifyFlights(state.rides, {
+      official = await runOfficialAirportFlightCheck(state.rides, { status, expectedGeneration });
+      if (official?.stale) return { ok: false, stale: true, technicalFailureCount: 0 };
+
+      const officialChecked = Array.isArray(official?.checked) ? official.checked : [];
+      const remainingRides = state.rides.filter(ride => {
+        if (!normalizeFlightForCurrentCheck(ride?.flightNumber)) return false;
+        return !rideResolvedByCheckedResults(ride, officialChecked);
+      });
+      const sourceConfirmedRides = Number(official?.applied?.sourceConfirmedRides || 0);
+      const officialFailures = Array.isArray(official?.failures) ? official.failures : [];
+      const officialTechnicalFailures = officialFailures.filter(item => ['technical', 'provider_unavailable'].includes(String(item?.reason || '').trim().toLowerCase()));
+      const officialFailureCount = officialTechnicalFailures.length;
+      const officialFirstTechnicalError = cellText(officialTechnicalFailures[0]?.message);
+
+      if (!remainingRides.length) {
+        if (fallbackButton) fallbackButton.style.display = 'none';
+        if (status) status.textContent = `Offizielle Airport-Prüfung abgeschlossen: ${sourceConfirmedRides} Fahrt(en) datumsspezifisch bestätigt.`;
+        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Offizielle Airport-Prüfung abgeschlossen', 'ok');
+        return {
+          ok: officialFailureCount === 0,
+          checkedCount: officialChecked.length,
+          verifiedRides: Number(official?.applied?.verifiedRides || 0),
+          sourceConfirmedRides,
+          uncertainRides: unresolvedFlightRideCount(),
+          matchedRides: Number(official?.applied?.matchedRides || 0),
+          technicalFailureCount: officialFailureCount,
+          firstTechnicalError: officialFirstTechnicalError,
+          noGroundingFlights: 0,
+          singleSourceFlights: officialChecked.length,
+          conflictFlights: 0,
+          officialProviderUsed: officialChecked.length > 0
+        };
+      }
+
+      if (sessionStorage.getItem(quotaSessionKey) === '1') {
+        if (fallbackButton) fallbackButton.style.display = '';
+        if (status) status.textContent = sourceConfirmedRides
+          ? `${sourceConfirmedRides} Fahrt(en) durch offizielle Airport-Quelle bestätigt. Weitere Flüge bleiben offen, weil das Gemini-Kontingent in dieser Sitzung erreicht ist.`
+          : (automaticPipeline
+            ? 'Plan ist sauber. Flugort-Automatik pausiert wegen erreichtem Gemini-Kontingent; die Fahrten werden trotzdem automatisch übernommen.'
+            : 'Automatische Flugprüfung ist in dieser Sitzung wegen erreichtem Gemini-Kontingent pausiert. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.');
+        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
+        return {
+          ok: sourceConfirmedRides > 0,
+          quotaBlocked: true,
+          verifiedRides: 0,
+          sourceConfirmedRides,
+          uncertainRides: unresolvedFlightRideCount(),
+          matchedRides: Number(official?.applied?.matchedRides || 0),
+          technicalFailureCount: officialFailureCount,
+          firstTechnicalError: officialFirstTechnicalError,
+          singleSourceFlights: officialChecked.length,
+          officialProviderUsed: officialChecked.length > 0
+        };
+      }
+
+      let service = null;
+      try {
+        service = await ensureAutoFlightService();
+      } catch (error) {
+        if (fallbackButton) fallbackButton.style.display = '';
+        const message = cellText(error?.message) || 'Auto-Flight-Modul konnte nicht geladen werden.';
+        if (status) status.textContent = sourceConfirmedRides
+          ? `${sourceConfirmedRides} Fahrt(en) durch offizielle Airport-Quelle bestätigt. Weitere Flugprüfung derzeit nicht verfügbar (${message}).`
+          : (automaticPipeline
+            ? `Plan ist sauber. Flugort-Automatik derzeit nicht verfügbar (${message}); die Fahrten werden trotzdem automatisch übernommen.`
+            : `Automatische Flugprüfung ist noch nicht verfügbar: ${message}. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.`);
+        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Weitere Flugprüfung nicht verfügbar', 'warn');
+        return {
+          ok: sourceConfirmedRides > 0,
+          serviceUnavailable: true,
+          errorMessage: message,
+          verifiedRides: 0,
+          sourceConfirmedRides,
+          uncertainRides: unresolvedFlightRideCount(),
+          matchedRides: Number(official?.applied?.matchedRides || 0),
+          technicalFailureCount: officialFailureCount,
+          firstTechnicalError: officialFirstTechnicalError,
+          singleSourceFlights: officialChecked.length,
+          officialProviderUsed: officialChecked.length > 0
+        };
+      }
+
+      if (fallbackButton) fallbackButton.style.display = 'none';
+      if (status) status.textContent = sourceConfirmedRides
+        ? `${sourceConfirmedRides} Fahrt(en) offiziell bestätigt · übrige Flüge werden mit den bisherigen Webquellen geprüft …`
+        : (automaticPipeline ? 'Plan sauber · Flugorte werden automatisch mit aktuellen Webquellen geprüft …' : 'Automatische aktuelle Flugprüfung wird gestartet …');
+
+      const result = await service.verifyFlights(remainingRides, {
         onProgress: progress => {
           if (!status) return;
           const current = Number(progress?.current || 0);
           const total = Number(progress?.total || 0);
           const flight = cellText(progress?.flightNumber);
-          status.textContent = `Aktuelle Flugprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+          status.textContent = `Aktuelle Zusatzprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
         }
       });
 
       const checked = Array.isArray(result?.checked) ? result.checked : [];
-      if (!checked.length) throw new Error('Die automatische Flugprüfung hat kein auswertbares Ergebnis zurückgegeben.');
+      if (!checked.length) throw new Error('Die automatische Zusatzprüfung hat kein auswertbares Ergebnis zurückgegeben.');
       if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) {
         return { ok: false, stale: true, technicalFailureCount: 0 };
       }
@@ -5179,60 +5470,67 @@
       const applied = applyGeminiResultsToStagedPlan(checked, cellText(result?.completedAt) || new Date().toISOString());
       if (typeof service.renderGrounding === 'function') service.renderGrounding(result?.grounding || []);
 
-      const technicalFailures = Number(result?.technicalFailureCount || 0);
-      const firstTechnicalError = cellText(result?.firstTechnicalError);
-      const quotaFailure = technicalFailures > 0 && /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(firstTechnicalError);
+      const technicalFailures = Number(result?.technicalFailureCount || 0) + officialFailureCount;
+      const firstTechnicalError = cellText(result?.firstTechnicalError) || officialFirstTechnicalError;
+      const quotaFailure = Number(result?.technicalFailureCount || 0) > 0 && /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(cellText(result?.firstTechnicalError));
       if (technicalFailures > 0) {
         if (fallbackButton) fallbackButton.style.display = '';
         if (quotaFailure) {
           sessionStorage.setItem(quotaSessionKey, '1');
-          if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Gemini-Kontingent ist derzeit erreicht; weitere automatische Aufrufe werden in dieser Sitzung gestoppt. Vorhandene Flugorte bleiben erhalten. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.`;
+          if (status) status.textContent = `Automatische Flugprüfung: ${sourceConfirmedRides} offiziell bestätigt · ${applied.verifiedRides} zusätzlich verifiziert · ${unresolvedFlightRideCount()} offen. Gemini-Kontingent ist derzeit erreicht.`;
           if (typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
         } else {
-          if (status) status.textContent = `Automatische Flugprüfung: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher. Technischer Fehler bei ${technicalFailures} Flug/Flügen. Vorhandene Flugorte bleiben bei Unsicherheit erhalten.`;
+          if (status) status.textContent = `Automatische Flugprüfung: ${sourceConfirmedRides} offiziell bestätigt · ${applied.verifiedRides} zusätzlich verifiziert · ${unresolvedFlightRideCount()} offen. Technische Teilfehler: ${technicalFailures}.`;
           if (typeof window.showToast === 'function') window.showToast('Flugprüfung teilweise technisch fehlgeschlagen', 'warn');
         }
       } else {
-        if (status) status.textContent = `Automatische Flugprüfung abgeschlossen: ${applied.verifiedRides} Fahrt(en) sicher aktualisiert · ${applied.uncertainRides} unsicher → vorhandener Flugort bleibt.`;
-        if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung abgeschlossen', applied.uncertainRides ? 'warn' : 'ok');
+        if (status) status.textContent = `Automatische Flugprüfung abgeschlossen: ${sourceConfirmedRides} offiziell bestätigt · ${applied.verifiedRides} zusätzlich verifiziert · ${unresolvedFlightRideCount()} offen.`;
+        if (typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung abgeschlossen', unresolvedFlightRideCount() ? 'warn' : 'ok');
       }
 
       const noGroundingFlights = checked.filter(item => !item?.technicalFailure && checkedSourceCount(item) === 0).length;
-      const singleSourceFlights = checked.filter(item => !item?.technicalFailure && checkedSourceCount(item) === 1).length;
+      const singleSourceFlights = officialChecked.length + checked.filter(item => !item?.technicalFailure && checkedSourceCount(item) === 1).length;
       const conflictFlights = checked.filter(item => !item?.technicalFailure && Boolean(item?.conflict)).length;
       try {
         window.dispatchEvent(new CustomEvent('atms:gemini-flight-result', { detail: { checked, scope: 'staged-auto' } }));
       } catch (_) {}
       return {
         ok: technicalFailures === 0,
-        checkedCount: checked.length,
-        verifiedRides: applied.verifiedRides,
-        uncertainRides: applied.uncertainRides,
-        matchedRides: applied.matchedRides,
+        checkedCount: officialChecked.length + checked.length,
+        verifiedRides: Number(official?.applied?.verifiedRides || 0) + applied.verifiedRides,
+        sourceConfirmedRides: sourceConfirmedRides + Number(applied.sourceConfirmedRides || 0),
+        uncertainRides: unresolvedFlightRideCount(),
+        matchedRides: Number(official?.applied?.matchedRides || 0) + applied.matchedRides,
         technicalFailureCount: technicalFailures,
         firstTechnicalError,
         noGroundingFlights,
         singleSourceFlights,
         conflictFlights,
-        quotaBlocked: quotaFailure
+        quotaBlocked: quotaFailure,
+        officialProviderUsed: officialChecked.length > 0
       };
     } catch (error) {
       if (fallbackButton) fallbackButton.style.display = '';
       const message = cellText(error?.message) || 'unbekannter technischer Fehler';
       const quotaFailure = /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(message);
-      if (quotaFailure) {
-        sessionStorage.setItem(quotaSessionKey, '1');
-        if (status) status.textContent = automaticPipeline
-          ? 'Flugort-Automatik wegen erreichtem Gemini-Kontingent pausiert. Die Fahrten werden trotzdem automatisch übernommen.'
-          : 'Automatische Flugprüfung derzeit wegen erreichtem Gemini-Kontingent nicht verfügbar. Es wurden keine Fahrtdaten überschrieben und in dieser Sitzung werden keine weiteren Quota-Aufrufe gesendet. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.';
-        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Gemini-Kontingent erreicht · Fallback verwenden', 'warn');
-      } else {
-        if (status) status.textContent = automaticPipeline
-          ? `Flugort-Automatik technisch nicht verfügbar (${message}). Die Fahrten werden trotzdem automatisch übernommen.`
-          : `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
-        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
-      }
-      return { ok: false, quotaBlocked: quotaFailure, errorMessage: message, technicalFailureCount: 1 };
+      if (quotaFailure) sessionStorage.setItem(quotaSessionKey, '1');
+      if (status) status.textContent = automaticPipeline
+        ? `Flugort-Automatik technisch nicht vollständig verfügbar (${message}). Die Fahrten werden trotzdem automatisch übernommen.`
+        : `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`;
+      if (!automaticPipeline && typeof window.showToast === 'function') window.showToast('Automatische Flugprüfung fehlgeschlagen', 'warn');
+      return {
+        ok: false,
+        quotaBlocked: quotaFailure,
+        errorMessage: message,
+        verifiedRides: 0,
+        sourceConfirmedRides: Number(official?.applied?.sourceConfirmedRides || 0),
+        uncertainRides: unresolvedFlightRideCount(),
+        matchedRides: Number(official?.applied?.matchedRides || 0),
+        technicalFailureCount: 1 + (Array.isArray(official?.failures) ? official.failures.filter(item => ['technical', 'provider_unavailable'].includes(String(item?.reason || '').trim().toLowerCase())).length : 0),
+        firstTechnicalError: message,
+        singleSourceFlights: Array.isArray(official?.checked) ? official.checked.length : 0,
+        officialProviderUsed: Array.isArray(official?.checked) && official.checked.length > 0
+      };
     } finally {
       if (button) {
         button.disabled = !state.rides.some(ride => ride.flightNumber);

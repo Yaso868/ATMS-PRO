@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36 · 22.09.2026: Provider-Ausgaben spiegeln flightTime zurück, damit der neue automatische Planimport gleiche Flugnummern am selben Tag weiterhin streng unterscheiden kann. DUS-/CGN-Endpunkte, Parser und Native-Allowlist bleiben unverändert.
 // CORE-007D8A1F1D8P31F11 · 20.09.2026
 // NATIVE-APP-BRIDGE – die spätere native Hülle kann ihren freigegebenen Netzwerktransport
 // zur Laufzeit registrieren oder als window.ATMSNativeFlightBridge bereitstellen. ATMS erkennt
@@ -247,6 +248,7 @@ async function runDusNativeTransportSelfTest(){
     const checks={
       oneResult:Boolean(hit&&result.flights.length===1),
       flightNumber:hit?.flightNumber==='OS168',
+      flightTime:hit?.flightTime==='20:00',
       route:hit?.route?.iata==='VIE'&&hit?.route?.location==='Wien',
       scheduled:hit?.airportScheduledTime==='20:00',
       actual:hit?.airportActualTime==='20:08',
@@ -264,10 +266,10 @@ async function runDusNativeTransportSelfTest(){
       checks,
       request:capturedRequest,
       received:hit?{
-        flightNumber:hit.flightNumber,route:hit.route,scheduled:hit.airportScheduledTime,
+        flightNumber:hit.flightNumber,flightTime:hit.flightTime,route:hit.route,scheduled:hit.airportScheduledTime,
         estimated:hit.airportEstimatedTime,actual:hit.airportActualTime,status:hit.status,delayMinutes:hit.delayMinutes
       }:null,
-      expected:{flightNumber:'OS168',route:{location:'Wien',iata:'VIE'},scheduled:'20:00',actual:'20:08',status:'departed',delayMinutes:8},
+      expected:{flightNumber:'OS168',flightTime:'20:00',route:{location:'Wien',iata:'VIE'},scheduled:'20:00',actual:'20:08',status:'departed',delayMinutes:8},
       failures:result?.failures||[],unsupported:result?.unsupported||[]
     };
   }catch(error){
@@ -346,7 +348,7 @@ async function fetchCgnItem(item){
   const row=matches[0],times=cgnTimes(row,item.direction),status=statusFromCgn(row,item.direction,times.scheduled,times.estimated,times.actual);
   const current=times.actual||times.estimated,delay=current&&times.scheduled?minuteDelta(times.scheduled,current):null;
   return{
-    ok:true,flightNumber:expectedFlight,date:text(item.date),airportEventDate:eventDate,airportEventDateDerived:Boolean(item.airportEventDateDerived),
+    ok:true,flightNumber:expectedFlight,date:text(item.date),airportEventDate:eventDate,airportEventDateDerived:Boolean(item.airportEventDateDerived),flightTime:clock(item.flightTime)||null,
     direction:item.direction,airportIata:'CGN',status,airportScheduledTime:times.scheduled||null,airportEstimatedTime:times.estimated||null,
     airportActualTime:times.actual||null,delayMinutes:Number.isFinite(delay)?delay:null,confirmed:true,sourceConflict:false,resolutionMode:'single_primary',
     prioritySourceUrl:null,sources:[{name:'Köln Bonn Airport',url:CGN_ENDPOINT}],sourceNote:'Offizielle CGN-Flugquelle direkt von koeln-bonn-airport.de',
@@ -382,7 +384,7 @@ async function fetchDusItem(item){
   const status=statusFromDus(row,item.direction,scheduled,estimated,actual),current=actual||estimated,delay=current&&scheduled?minuteDelta(scheduled,current):null;
   const point=item.direction==='departure'?(row?.destination||row?.arrivalDestination):(row?.origin||row?.departureOrigin||row?.destination);
   return{
-    ok:true,flightNumber:expectedFlight,date:text(item.date),airportEventDate:eventDate,airportEventDateDerived:Boolean(item.airportEventDateDerived),
+    ok:true,flightNumber:expectedFlight,date:text(item.date),airportEventDate:eventDate,airportEventDateDerived:Boolean(item.airportEventDateDerived),flightTime:clock(item.flightTime)||null,
     direction:item.direction,airportIata:'DUS',status,airportScheduledTime:scheduled||null,airportEstimatedTime:estimated||null,airportActualTime:actual||null,
     delayMinutes:Number.isFinite(delay)?delay:null,confirmed:true,sourceConflict:false,resolutionMode:'single_primary',prioritySourceUrl:null,
     sources:[{name:'Düsseldorf Airport',url:DUS_ENDPOINT}],sourceNote:'Offizielle DUS-Flugquelle direkt von dus.com über nativen Transport',
@@ -415,7 +417,7 @@ async function fetchLive(items,{onProgress}={}){
 }
 
 window.ATMSOfficialFlightProvider={
-  version:'CORE-007D8A1F1D8P31F11',
+  version:'CORE-007D8A1F1D8P36',
   endpoints:{CGN:CGN_ENDPOINT,DUS:DUS_ENDPOINT},
   nativeTransportContract:getNativeTransportContract(),
   getNativeTransportContract,
