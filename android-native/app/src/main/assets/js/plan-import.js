@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F11 · 23.09.2026: NATIVE OFFICIAL-AIRPORT PERSISTENT DIAGNOSTIC – Macht die P36F9-Airportdiagnose im eingeklappten Technik-/Diagnosebereich dauerhaft sichtbar, damit ein spaeteres render()/Status-Update sie nicht mehr verdeckt. Reine Diagnoseanzeige; keine Änderung an Flugzuordnung, Quellen, OCR, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P36F10 · 23.09.2026: NATIVE OFFICIAL-AIRPORT OPEN-COUNT FIX – Behebt den P36F9-ReferenceError durch eine zentrale, eindeutige Zählfunktion für noch offene Flugzuordnungen. Doppelte Fahrten desselben Fluges/Datums/Airports/Richtungskontexts werden nur einmal gezählt; source_confirmed bleibt offen, verified/high wird nicht gezählt. Keine Änderung an Quellen, Routen, OCR, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P36F9 · 23.09.2026: NATIVE OFFICIAL-AIRPORT DIAGNOSTIC – Zeigt bei der nativen offiziellen Airport-Prüfung die tatsächlichen Provider-Ergebnisse pro offenem Flug (z. B. not_found/ambiguous/technical/unsupported), ohne Flugwerte zu verändern. Zusätzlich wird die Zahl der nach offiziellen Treffern tatsächlich noch offenen Fahrten korrekt berechnet. Reine Diagnose + Zählerkorrektur; keine Lockerung von FLIGHT-008, keine neuen Quellen, keine OCR-/PLAN-/DISPO-/LIVE-/Persistenzänderung.
 // CORE-007D8A1F1D8P36F6 · 23.09.2026: NATIVE OFFICIAL-AIRPORT CONTEXT BRIDGE – Behebt den im P36-Nativetest gefundenen Kontextfehler: frische OCR-Fahrten besitzen vor der Flugprüfung noch kein flightVerification.airportIata. DUS/CGN werden deshalb jetzt ausschließlich aus dem konkreten Airport der Fahrt (Von/Nach/sourcePlanAirportIata + Richtung) abgeleitet und die bestehende offizielle Airportquelle wird VOR Gemini geprüft. Eine einzelne offizielle Quelle darf nur einen bislang leeren Flugort als source_confirmed vorbefüllen; ⚠ manuell prüfen bleibt bestehen. verified/high bleibt strikt mindestens zwei unabhängigen datumsspezifischen Quellen vorbehalten. P36F5 darf die offizielle Airportquelle mit einer unabhängigen routengleichen Webquelle kombinieren. Keine Änderung an OCR, PLAN/DISPO/LIVE, Preisen, Fahrer/Fahrzeug oder Persistenz.
@@ -4713,7 +4714,41 @@
           }).join('<br>') : escapeHtml('Keine Rohdiagnose-Einträge erzeugt – technischen Grund im Diagnose-Selbstcheck oben prüfen.')}</div>
         </div>`;
 
-    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}</details>`;
+    const airportDiag = (() => {
+      try { return window.ATMSOfficialAirportLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const airportDiagHtml = airportDiag ? (() => {
+      const summaryText = cellText(airportDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const checked = Array.isArray(airportDiag?.checked) ? airportDiag.checked : [];
+      const rows = Array.isArray(airportDiag?.rows) ? airportDiag.rows : [];
+      const nativeState = airportDiag?.nativeState && typeof airportDiag.nativeState === 'object' ? airportDiag.nativeState : null;
+      const checkedText = checked.length
+        ? checked.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const location = cellText(item?.relevantLocation) || '–';
+            const iata = String(item?.relevantIata || '').trim().toUpperCase();
+            return `${escapeHtml(flight)} → ${escapeHtml(location)}${iata ? ` (${escapeHtml(iata)})` : ''}`;
+          }).join('<br>')
+        : 'Keine offiziellen Treffer gespeichert.';
+      const failureText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const reason = cellText(item?.reason) || 'unknown';
+            const message = cellText(item?.message);
+            return `${escapeHtml(flight)} · ${escapeHtml(reason)}${message ? ` · ${escapeHtml(message)}` : ''}`;
+          }).join('<br>')
+        : 'Keine Provider-Fehler/Unsupported-Einträge gespeichert.';
+      const bridgeText = nativeState
+        ? `Native Bridge: ${nativeState.available ? 'verfügbar' : 'nicht verfügbar'}${Object.prototype.hasOwnProperty.call(nativeState, 'compatible') ? ` · kompatibel: ${nativeState.compatible ? 'ja' : 'nein'}` : ''}`
+        : 'Native Bridge: kein Status gespeichert';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,193,7,.35);border-radius:10px">`
+        + `<b>📡 Airport-Diagnose · P36F11</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>${escapeHtml(bridgeText)}</small>`
+        + `<div style="margin-top:8px"><b>Treffer</b><br><small>${checkedText}</small></div>`
+        + `<div style="margin-top:8px"><b>Fehler / nicht unterstützt</b><br><small>${failureText}</small></div>`
+        + `</div>`;
+    })() : '';
+    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}</details>`;
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
@@ -4969,6 +5004,7 @@
     state.autoPipelineInProgress = false;
     state.autoImportCompleted = false;
     state.autoFlightSummary = null;
+    try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
