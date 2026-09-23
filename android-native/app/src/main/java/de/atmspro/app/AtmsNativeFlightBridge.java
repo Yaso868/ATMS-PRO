@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F16 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT ROUTE PROBE – erlaubt ausschließlich FlightStats other-days GET für die diagnostische Prüfung noch offener Flugnummern. Keine Freigabe/Übernahme in Java.
 // CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – streng allowlistete arr/dep-Airporttafel-Probe, nur Diagnose, keine Verifizierungsfreigabe.
 package de.atmspro.app;
 
@@ -48,9 +49,13 @@ public final class AtmsNativeFlightBridge {
             String purpose = request.optString("purpose", "");
             boolean flightStatsProbe = "flightstats_probe".equals(purpose);
             boolean flightStatsBoardProbe = "flightstats_board_probe".equals(purpose);
+            boolean flightStatsOtherDaysProbe = "flightstats_other_days_probe".equals(purpose);
             URI validated;
             String sourceLabel;
-            if (flightStatsBoardProbe) {
+            if (flightStatsOtherDaysProbe) {
+                validated = validateFlightStatsOtherDaysProbe(method, urlText);
+                sourceLabel = "FlightStats other-days probe";
+            } else if (flightStatsBoardProbe) {
                 validated = validateFlightStatsBoardProbe(method, urlText);
                 sourceLabel = "FlightStats board probe";
             } else if (flightStatsProbe) {
@@ -72,7 +77,7 @@ public final class AtmsNativeFlightBridge {
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("X-Requested-With", "XMLHttpRequest");
-            if (flightStatsProbe || flightStatsBoardProbe) {
+            if (flightStatsProbe || flightStatsBoardProbe || flightStatsOtherDaysProbe) {
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16; ATMS PRO Native) AppleWebKit/537.36");
                 connection.setRequestProperty("Accept-Language", "de-DE,de;q=0.9,en;q=0.8");
             }
@@ -108,6 +113,31 @@ public final class AtmsNativeFlightBridge {
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    private static URI validateFlightStatsOtherDaysProbe(String method, String urlText) throws Exception {
+        if (!"GET".equalsIgnoreCase(method == null ? "" : method.trim())) {
+            throw new SecurityException("FlightStats other-days probe method not allowed");
+        }
+        URI uri = new URI(urlText == null ? "" : urlText.trim());
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new SecurityException("FlightStats other-days probe protocol not allowed");
+        }
+        if (!"www.flightstats.com".equalsIgnoreCase(uri.getHost())) {
+            throw new SecurityException("FlightStats other-days probe host not allowed");
+        }
+        String path = uri.getPath();
+        if (path == null || !path.matches("/v2/api-next/flight-tracker/other-days/[A-Z0-9]{2,3}/[0-9]{1,4}[A-Z]?")) {
+            throw new SecurityException("FlightStats other-days probe path not allowed");
+        }
+        if (uri.getRawQuery() != null || uri.getUserInfo() != null || uri.getFragment() != null) {
+            throw new SecurityException("FlightStats other-days probe URL extras not allowed");
+        }
+        int port = uri.getPort();
+        if (port != -1 && port != 443) {
+            throw new SecurityException("FlightStats other-days probe port not allowed");
+        }
+        return uri;
     }
 
     private static URI validateFlightStatsBoardProbe(String method, String urlText) throws Exception {
