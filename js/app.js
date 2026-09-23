@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F7W1 · 23.09.2026: WEB MANUAL CHECK SAFETY RESTORE – Stellt die FLIGHT-008-Sicherheitsanzeige in der Web-App wieder her: nur verified/high mit verifiziertem Flugort ist warnungsfrei. source_confirmed, unsichere/manuelle Prüfungen, Quellenkonflikte und Flüge ohne verifizierten Flugort zeigen sichtbar "⚠ manuell prüfen". PLAN/DISPO/LIVE, OCR, Persistenz, GPS, Routing, Nachrichten, Fahrer und bestehende Importlogik bleiben unverändert.
 // CORE-007D8A1F1D8P36F4 · 23.09.2026: CLEAN PLAN AUTO-IMPORT AUTH BRIDGE RESTORE – Stellt die von plan-import.js erwarteten sicheren Morgen-Modus-Freigaben wieder bereit: nur ein echter Nutzer-Klick auf „Planliste analysieren“ darf die automatische Pipeline freigeben; die asynchrone Flugprüfung kann danach ohne 5-Sekunden-Verlust laufen, und unmittelbar vor der automatischen Übernahme wird die bestehende kurzlebige Importfreigabe neu gesetzt. Programmgesteuerte Analyse-Klicks erhalten keine Auto-Import-Freigabe. Keine Änderung an OCR-, Flugprüf-, PLAN/DISPO/LIVE-, Persistenz-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P36F3 · 23.09.2026: SAFE RECOVERY SELF-TEST – Ergänzt einen kontrollierten Ein-Klick-Test für rides/done: aktuelle Werte werden vorab bytegenau geprüft, nur für Millisekunden aus localStorage entfernt, über die bestehende Schutzlogik wiederhergestellt und bei jeder Abweichung sofort aus dem lokalen Vorwert zurückgeschrieben. Keine Änderung an Fahrteninhalt, DONE-Status, Flight-Cache, LIVE-/PLAN-/DISPO-, Import-, GPS-, Routing-, Nachrichten- oder Fahrerlogik.
 // CORE-007D8A1F1D8P36F2 · 23.09.2026: DURABLE RIDES + DONE PERSISTENCE – Erweitert CORE-005V5 ausschließlich um die primären Fahrtdaten (rides) und den Erledigt-Status (done) im IndexedDB-Durable-Shadow. Bestehende Flight-Cache-, Verified-Backup-, Ride-Override-, LIVE-/PLAN-/DISPO-, Import-, GPS-, Routing-, Nachrichten- und Fahrerlogik bleiben unverändert.
@@ -709,6 +710,25 @@ function hasFlightNumber(r){
   const value=String(r?.flightNumber||'').trim();
   return Boolean(value&&value!=='-'&&value!=='–');
 }
+// P36F7W1: Nur eine wirklich verifizierte Prüfung mit vorhandenem Flugort ist warnungsfrei.
+// source_confirmed bleibt absichtlich sichtbar manuell prüfpflichtig; ein vorhandener
+// Planort allein ist ebenfalls keine Verifikation. Alte explizite flightVerified=true-
+// Datensätze bleiben kompatibel, sofern ein Flugort vorhanden und kein Konflikt gesetzt ist.
+function flightNeedsManualReview(r){
+  if(!hasFlightNumber(r))return false;
+  const location=String(r?.flightLocation||'').trim();
+  const confidence=String(r?.flightCheckConfidence||r?.flightConfidence||'').trim().toLowerCase();
+  const status=String(r?.flightVerificationStatus||'').trim().toLowerCase();
+  const conflict=Boolean(r?.flightConflict===true||r?.flightSourceConflict===true||r?.conflict===true);
+  if(conflict)return true;
+  if(r?.flightNeedsManualCheck===true)return true;
+  const explicitlyVerified=Boolean(location)&&(
+    r?.flightVerified===true ||
+    confidence==='verified' ||
+    (status==='verified'&&(confidence==='high'||confidence==='verified'))
+  );
+  return !explicitlyVerified;
+}
 function listedTimeLabel(r){return hasFlightNumber(r)?'Flugzeit Liste':'Listenzeit'}
 function listedFlightTimeMarkup(r){
   const value=listedFlightTimeOf(r);
@@ -771,7 +791,7 @@ function rideCard(r,i){
   const airportStopName=rideAirportStopName(r,routeStops);
   const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`${airportStopName} → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → ${airportStopName}`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
   const bundleFlightLabel=r.bundleDirection==='airport_to_hotels'?'Herkunft':'Zielort';
-  const manualFlightCheck=Boolean(r.flightNeedsManualCheck||r.flightCheckConfidence==='uncertain');
+  const manualFlightCheck=flightNeedsManualReview(r);
   const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">⚠ manuell prüfen</span>`:'';
   const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${manualFlightBadge}</div>`:'';
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
@@ -788,10 +808,7 @@ const stats=$('dashboardStats');
 if(stats){
  const drivers=[...new Set(rides.map(r=>r.driver).filter(Boolean))];
  const flights=[...new Set(rides.map(r=>r.flightNumber).filter(Boolean))];
- const notices=rides.filter(r=>{
-   const confidence=String(r?.flightCheckConfidence||'').trim().toLowerCase();
-   return Boolean(r?.flightNeedsManualCheck || confidence==='uncertain' || r?.flightConflict===true || r?.conflict===true);
- }).length;
+ const notices=rides.filter(r=>flightNeedsManualReview(r)).length;
 
  stats.innerHTML=`
  <div class="dashboard-stat">
