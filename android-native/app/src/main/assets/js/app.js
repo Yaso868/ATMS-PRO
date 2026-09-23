@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F7 · 23.09.2026: NATIVE MANUAL CHECK SAFETY RESTORE – Stellt die FLIGHT-008-Sicherheitsanzeige wieder her: nur verified/high (mindestens zwei unabhaengige datumsspezifische Quellen) ist warnungsfrei. source_confirmed aus genau einer Quelle, unsichere/manuelle Pruefungen, Quellenkonflikte und Fluege ohne verifizierten Flugort zeigen sichtbar "⚠ manuell prüfen". Die Einquellen-Route darf weiterhin als source_confirmed angezeigt werden; PLAN/DISPO/LIVE, OCR, Airport-Bridge, Persistenz, GPS, Routing und Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P36F1 · 23.09.2026: NATIVE CLEAN-PLAN AUTO-IMPORT AUTH BRIDGE – Der echte Nutzer-Klick auf „Planliste analysieren“ autorisiert die bestehende asynchrone Morgen-Modus-/Auto-Flight-Pipeline sicher bis zur finalen Übernahme. Programmgesteuerte Klicks bleiben blockiert; die finale Freigabe erzeugt unmittelbar vor applyImportedRides() die bestehende kurzlebige CORE-006A-Importfreigabe. Keine Änderung an OCR, Flugmatching, PLAN/DISPO/LIVE, Persistenz oder Signing.
 // CORE-007D8A1F1D8P33F1 · 22.09.2026: CLEAN START FLIGHT CACHE FIX – Clean-Start-Sicherheits-Snapshot verwendet die vorhandene getFlightCache()-API statt der nicht definierten readFlightCache-Referenz. P33-Historie, P32-Merge, P31-Flugsemantik sowie PLAN/DISPO/LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P33 · 22.09.2026: VISIBLE PLAN HISTORY & CLEAN START – sichtbare Planlisten-Historie, gezieltes Historien-Löschen und sicherer Neustart des Planbereichs; P32-Merge, P31-Flugsemantik, PLAN/DISPO/LIVE-Trennung und Grund-Einstellungen bleiben geschützt.
@@ -664,6 +665,25 @@ function hasFlightNumber(r){
   const value=String(r?.flightNumber||'').trim();
   return Boolean(value&&value!=='-'&&value!=='–');
 }
+// P36F7: Nur eine wirklich verifizierte Zwei-Quellen-Pruefung ist warnungsfrei.
+// source_confirmed bleibt absichtlich sichtbar manuell pruefpflichtig; ein vorhandener
+// Planort allein ist ebenfalls keine Verifikation. Alte explizite flightVerified=true-
+// Datensaetze bleiben kompatibel, sofern ein Flugort vorhanden und kein Konflikt gesetzt ist.
+function flightNeedsManualReview(r){
+  if(!hasFlightNumber(r))return false;
+  const location=String(r?.flightLocation||'').trim();
+  const confidence=String(r?.flightCheckConfidence||r?.flightConfidence||'').trim().toLowerCase();
+  const status=String(r?.flightVerificationStatus||'').trim().toLowerCase();
+  const conflict=Boolean(r?.flightConflict===true||r?.flightSourceConflict===true||r?.conflict===true);
+  if(conflict)return true;
+  if(r?.flightNeedsManualCheck===true)return true;
+  const explicitlyVerified=Boolean(location)&&(
+    r?.flightVerified===true ||
+    confidence==='verified' ||
+    (status==='verified'&&(confidence==='high'||confidence==='verified'))
+  );
+  return !explicitlyVerified;
+}
 function listedTimeLabel(r){return hasFlightNumber(r)?'Flugzeit Liste':'Listenzeit'}
 function listedFlightTimeMarkup(r){
   const value=listedFlightTimeOf(r);
@@ -726,7 +746,7 @@ function rideCard(r,i){
   const airportStopName=rideAirportStopName(r,routeStops);
   const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`${airportStopName} → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → ${airportStopName}`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
   const bundleFlightLabel=r.bundleDirection==='airport_to_hotels'?'Herkunft':'Zielort';
-  const manualFlightCheck=Boolean(r.flightNeedsManualCheck||r.flightCheckConfidence==='uncertain');
+  const manualFlightCheck=flightNeedsManualReview(r);
   const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">⚠ manuell prüfen</span>`:'';
   const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${manualFlightBadge}</div>`:'';
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
@@ -743,10 +763,7 @@ const stats=$('dashboardStats');
 if(stats){
  const drivers=[...new Set(rides.map(r=>r.driver).filter(Boolean))];
  const flights=[...new Set(rides.map(r=>r.flightNumber).filter(Boolean))];
- const notices=rides.filter(r=>{
-   const confidence=String(r?.flightCheckConfidence||'').trim().toLowerCase();
-   return Boolean(r?.flightNeedsManualCheck || confidence==='uncertain' || r?.flightConflict===true || r?.conflict===true);
- }).length;
+ const notices=rides.filter(flightNeedsManualReview).length;
 
  stats.innerHTML=`
  <div class="dashboard-stat">
@@ -1394,10 +1411,11 @@ function applyFlightCacheToRides(source){
       if(String(next.flightLocation||'').trim()!==nextLocation){next.flightLocation=nextLocation;rowChanged=true;}
       if(String(next.iata||'').trim().toUpperCase()!==nextIata){next.iata=nextIata;rowChanged=true;}
       const restoredConfidence=verified?'verified':'source_confirmed';
+      const restoredNeedsManual=Boolean(!verified||hit.conflict);
       if(next.flightCheckConfidence!==restoredConfidence){next.flightCheckConfidence=restoredConfidence;rowChanged=true;}
-      if(next.flightNeedsManualCheck!==false){next.flightNeedsManualCheck=false;rowChanged=true;}
+      if(next.flightNeedsManualCheck!==restoredNeedsManual){next.flightNeedsManualCheck=restoredNeedsManual;rowChanged=true;}
       if(Boolean(next.flightConflict)!==Boolean(hit.conflict)){next.flightConflict=Boolean(hit.conflict);rowChanged=true;}
-      verifiedRestored++;
+      if(verified&&!hit.conflict)verifiedRestored++;else manualRestored++;
     }else{
       // Unsichere Pruefungen duerfen den vorhandenen Planort niemals loeschen oder ersetzen.
       // Der manuelle Hinweis wird aber sofort wiederhergestellt, damit der Zaehler nach Neuimport stimmt.
@@ -1827,7 +1845,8 @@ function applyGeminiFlightResult(){
         flightLocation:accepted?hit.flightLocation:r.flightLocation,
         iata:accepted?hit.iata:(r.iata||''),
         flightCheckConfidence:verified?'verified':(sourceConfirmed?'source_confirmed':'uncertain'),
-        flightNeedsManualCheck:!accepted,
+        flightNeedsManualCheck:Boolean(!verified||hit.conflict),
+        flightConflict:Boolean(hit.conflict),
         flightCheckSourceNote:String(hit.sourceNote||'').trim(),
         flightCheckedAt:checkedAt
       };
