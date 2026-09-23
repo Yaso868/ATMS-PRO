@@ -1,3 +1,4 @@
+  // CORE-007D8A1F1D8P36F5 · 23.09.2026: STRICT SEARCH DUAL-SOURCE FALLBACK – Wenn die explizite URL-Context-Prüfung Flightradar24/FlightStats nicht abrufen kann, führt die Auto-Pipeline für genau diese offenen Flüge eine zusätzliche datumsspezifische Google-Search-Prüfung aus. Automatische Übernahme nur bei mindestens zwei unabhängigen geerdeten Webquellen, identischer IATA-Route und exaktem Airport-/Richtungsanker. Keine Lockerung von FLIGHT-008; keine Änderung an OCR, PLAN/DISPO/LIVE oder Persistenz.
   // CORE-007D8A1F1D8P31F5F6 · 18.09.2026: AUTO-FLIGHT EXPLICIT URL SOURCES – FLIGHT-008 nutzt für die automatische Routenprüfung zwei explizite, datumsspezifische Webquellen (Flightradar24 + FlightStats) via Gemini URL Context. Google Search bleibt nur ergänzend. Keine Lockerung der Zwei-Quellen-Regel.
   // CORE-007D8A1F1D8P31F5F4 · 18.09.2026: AUTO-FLIGHT RESPONSE NORMALIZATION FIX – Gemini-Antworten werden robust normalisiert: string "false" zählt nicht mehr als Konflikt; für die Route sind die kanonischen IATA-Endpunkte maßgeblich, Stadtnamen sind nur Darstellung.
   // CORE-007D8A1F1D8P31F5F2 · 18.09.2026: AUTO-FLIGHT DUAL-SOURCE VERIFIER – FLIGHT-008 bleibt strikt. Wenn Google Search in der ersten Prüfung weniger als zwei unabhängige Quellen liefert, fordert ATMS automatisch eine zweite unabhängige Bestätigung an und übernimmt nur übereinstimmende Routen.
@@ -8,15 +9,7 @@
   // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS. Nach einem echten Nutzer-Klick auf „Planliste analysieren“ werden vollständig saubere OCR-Planlisten (0 Hinweise, 0 Fehler) automatisch übernommen und die Fahrtenansicht geöffnet. Offene Flugprüfungen blockieren den Plan nicht. Unsichere OCR-/Preis-/Datumsfälle bleiben weiterhin manuell. Diagnoseblöcke sind im normalen Import eingeklappt.
 // CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
 (() => {
-// CORE-007D8A1F1D8P34F2 · 22.09.2026: MIRRORED DISPO TIME OCR RECOVERY – Bei ungültiger primärer DISPO-Zeit wird zusätzlich die zweite, in ATMS-Planlisten redundant vorhandene DISPO-Uhrzeitspalte gezielt lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; P34-Guard bleibt aktiv.
-// CORE-007D8A1F1D8P34F3 · 22.09.2026: VALID MIRROR DISPO FALLBACK – Eine nicht-leere, aber ungültige Primär-OCR-Zeit (z. B. „BE“) darf eine bereits gültig erkannte redundante DISPO-Zeit nicht mehr überstimmen. Primär bleibt maßgeblich, wenn gültig; sonst wird ausschließlich eine gültige timeMirror-Zeit verwendet. Bei zwei gültigen abweichenden Zeiten bleibt die bestehende Warnung aktiv; P34-Guard bleibt Fallback.
-// CORE-007D8A1F1D8P34F4 · 22.09.2026: INNER-CELL TIME OCR – Bei fehlender/ungültiger DISPO-Zeit werden Primär- und Mirror-Zeit zusätzlich innerhalb der Tabellenlinien ausgeschnitten. Dadurch stören vertikale/horizontale Zellrahmen die lokale Ziffern-OCR nicht. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Ableitung aus Flugzeit oder Nachbarzeilen.
-// CORE-007D8A1F1D8P34F5 · 22.09.2026: VALID TIME MISMATCH GUARD – Eine Abweichungswarnung zwischen DISPO-Zeit und timeMirror wird nur noch erzeugt, wenn BEIDE Werte echte gültige Uhrzeiten sind. OCR-Artefakte wie „BE“ bleiben Diagnose, dürfen nach erfolgreicher Zeitrettung aber keinen falschen Hinweis erzeugen.
-// CORE-007D8A1F1D8P34 · 22.09.2026: INVALID DISPO TIME OCR GUARD – Nicht-leere OCR-Artefakte wie 'BE' gelten nie als gültige DISPO-Zeit. Die gezielte lokale Uhrzeit-Nachlese behandelt fehlende UND ungültige Primärzeiten; nur eindeutiger Mehrfach-Konsens darf korrigieren. Bleibt die Zeit ungültig, blockiert die Validierung den Import statt fälschlich 'OCR sauber' zu melden. Keine Änderung an P33F1 Clean-Start, P33 Planhistorie, P32 Merge, Flugprüfung oder PLAN/DISPO/LIVE.
   'use strict';
-
-  // CORE-007D8A1F1D8P34F1 · 22.09.2026: INVALID DISPO TIME DIGIT-ONLY OCR RECOVERY
-
 
   const PLAN_IMPORT_SCRIPT_URL = document.currentScript?.src || new URL('./js/plan-import.js', location.href).href;
   let autoFlightModulePromise = null;
@@ -830,14 +823,7 @@
     // CORE-006J: Verbindliche Zeitsemantik der aktuellen ATMS-Bildlisten.
     const primaryDispoTime = normalizeTime(valueAt(row, mapping, 'time'));
     const mirroredDispoTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
-    // P34F3: normalizeTime() gibt unbekannten OCR-Text absichtlich unverändert
-    // zurück. Deshalb darf ein nicht-leeres Artefakt wie „BE“ nicht per || eine
-    // bereits gültige redundante DISPO-Zeit verdrängen.
-    const primaryDispoTimeValid = timeToMinutes(primaryDispoTime) !== null;
-    const mirroredDispoTimeValid = timeToMinutes(mirroredDispoTime) !== null;
-    const dispoTime = primaryDispoTimeValid
-      ? primaryDispoTime
-      : (mirroredDispoTimeValid ? mirroredDispoTime : primaryDispoTime);
+    const dispoTime = primaryDispoTime || mirroredDispoTime;
     const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
 
     return {
@@ -853,13 +839,8 @@
       dispoTime,
       dispo_time: dispoTime,
       timeMirror: mirroredDispoTime,
-      primaryDispoTimeOcr: primaryDispoTime,
-      primaryDispoTimeValid,
-      mirroredDispoTimeValid,
       flightTime: listedFlightTime,
-      timeSemanticSource: primaryDispoTimeValid
-        ? 'primary-dispo-time'
-        : (mirroredDispoTimeValid ? 'valid-mirror-dispo-fallback' : 'invalid-dispo-time'),
+      timeSemanticSource: 'dispo+mirror+listed-flight-time',
       pickup,
       destination,
       customer,
@@ -939,24 +920,11 @@
 
     rides.forEach(ride => {
       const row = ride.sourceRow;
-      const normalizedRideTime = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
-      if (!normalizedRideTime) {
-        issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
-      } else if (timeToMinutes(normalizedRideTime) === null) {
-        issues.push({ level: 'error', row, text: `DISPO-Zeit „${normalizedRideTime}“ ist keine gültige Uhrzeit – Original-Planliste prüfen` });
-      }
+      if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
       // CORE-007A: Eine per eindeutigem Mehrfach-Konsens korrigierte Zeit ist bereits
       // gelöst. timeOcrInitial/timeRecoveredFromTargetedOcr bleiben als interne Diagnose
       // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
-      const normalizedDispoForMirrorCheck = normalizeTime(ride.dispoTime);
-      const normalizedMirrorForCheck = normalizeTime(ride.timeMirror);
-      const dispoForMirrorCheckValid = timeToMinutes(normalizedDispoForMirrorCheck) !== null;
-      const mirrorForCheckValid = timeToMinutes(normalizedMirrorForCheck) !== null;
-      // P34F5: Nur zwei tatsächlich gültige Uhrzeiten dürfen eine
-      // DISPO-vs.-Mirror-Abweichungswarnung erzeugen. Ein OCR-Artefakt wie "BE"
-      // bleibt intern erhalten, ist aber keine zweite Zeitangabe.
-      if (dispoForMirrorCheckValid && mirrorForCheckValid &&
-          normalizedDispoForMirrorCheck !== normalizedMirrorForCheck) {
+      if (ride.dispoTime && ride.timeMirror && normalizeTime(ride.dispoTime) !== normalizeTime(ride.timeMirror)) {
         issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.dispoTime} und gespiegelte DISPO-Zeit ${ride.timeMirror} weichen ab – Original-Planliste prüfen` });
       }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
@@ -3477,27 +3445,16 @@
     const timeCol = mapping?.time;
     if (timeCol === undefined) return rides;
     const boundaries = imageMeta.boundaries || [];
-    const timeColumns = [
-      { key: 'primary', index: timeCol },
-      ...(mapping?.timeMirror !== undefined && mapping.timeMirror !== timeCol
-        ? [{ key: 'mirror', index: mapping.timeMirror }]
-        : [])
-    ].map(col => ({
-      ...col,
-      left: Number(boundaries[col.index]),
-      right: Number(boundaries[col.index + 1])
-    })).filter(col => Number.isFinite(col.left) && Number.isFinite(col.right) && col.right > col.left);
-    if (!timeColumns.length) return rides;
+    const left = Number(boundaries[timeCol]);
+    const right = Number(boundaries[timeCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
 
     const status = $('importStatus');
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
 
     for (let i = 0; i < out.length; i++) {
       const ride = out[i];
-      const initialRawTime = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
-      // P34: Nicht-leere OCR-Artefakte (z. B. "BE") sind genauso unsicher wie
-      // eine fehlende Zeit. Nur eine bereits echte HH:MM-Zeit darf übersprungen werden.
-      if (initialRawTime && timeToMinutes(initialRawTime) !== null) continue;
+      if (ride.time) continue;
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
       if (!rowMeta) continue;
@@ -3506,85 +3463,36 @@
       const y1 = Number(rowMeta.y1 || 0);
       const rowHeight = Math.max(18, y1 - y0);
       const padY = Math.max(2, rowHeight * 0.18);
-      const regions = [];
-      timeColumns.forEach(col => {
-        const cellWidth = Math.max(8, col.right - col.left);
-        const padX = Math.max(1, cellWidth * 0.04);
-
-        // P34F4: Die bisherigen Crops enthielten absichtlich etwas Rand, damit
-        // abgeschnittene Zeichen nicht verloren gehen. Bei schmalen Uhrzeitzellen
-        // geraten dadurch jedoch die Tabellenlinien in den Crop. Im reproduzierten
-        // EW9765-Fall ist die zweite "21:30" visuell vollständig vorhanden, während
-        // die lokale OCR mit den Zellrahmen keinen gültigen Kandidaten liefert.
-        // Deshalb zuerst zwei zusätzliche, strikt innerhalb der Zelllinien liegende
-        // Crops. Die alten Crops bleiben als Fallback erhalten.
-        const innerPadX = Math.max(3, cellWidth * 0.10);
-        const innerPadY = Math.max(2, rowHeight * 0.14);
-        const innerX0 = col.left + innerPadX;
-        const innerX1 = col.right - innerPadX;
-        const innerY0 = y0 + innerPadY;
-        const innerY1 = y1 - innerPadY;
-        if (innerX1 > innerX0 && innerY1 > innerY0) {
-          regions.push([innerX0, innerY0, innerX1, innerY1, 3, `${col.key}-inner`]);
-          regions.push([innerX0, innerY0, innerX1, innerY1, 4, `${col.key}-inner`]);
-        }
-
-        regions.push([col.left + padX, y0 - padY, col.right - padX, y1 + padY, 2, col.key]);
-        regions.push([col.left, y0 - padY, col.right, y1 + padY, 3, col.key]);
-      });
-
-      if (status) status.textContent = `Uhrzeitzellen Zeile ${ride.sourceRow} werden lokal nachgelesen …`;
-      const votes = new Map();
-      const voteColumns = new Map();
-      const attempts = [];
-      // P34F1: Bei einer bereits ungueltigen Primaer-OCR reicht die normale
-      // Tesseract-Lesung oft nicht aus (z. B. Ziffern werden als "BE" gelesen).
-      // Deshalb dieselbe eng begrenzte Uhrzeitzelle zusaetzlich mit rein
-      // numerischer Zeichenliste als Einzelzeile/Einzelwort lesen. Es bleibt bei
-      // der Sicherheitsregel: nur ein Mehrfach-Konsens darf automatisch ersetzen.
-      const ocrModes = [
-        { name: 'default', options: {} },
-        { name: 'single-line-digits', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789:.' } },
-        { name: 'single-word-digits', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: '0123456789:.' } }
+      const cellWidth = Math.max(8, right - left);
+      const padX = Math.max(1, cellWidth * 0.04);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - padY, right, y1 + padY, 3]
       ];
+
+      if (status) status.textContent = `Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
       try {
-        for (const [x0, cy0, x1, cy1, scale, columnKey] of regions) {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          for (const mode of ocrModes) {
-            const second = await Tesseract.recognize(crop, 'eng', mode.options);
-            const candidates = rideTimeCandidatesFromOcrResult(second);
-            attempts.push({ column: columnKey, mode: mode.name, scale, candidates: candidates.slice() });
-            if (candidates.length !== 1) continue;
-            const candidate = normalizeTime(candidates[0]);
-            if (timeToMinutes(candidate) === null) continue;
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = rideTimeCandidatesFromOcrResult(second);
+          if (candidates.length === 1) {
+            const candidate = candidates[0];
             votes.set(candidate, (votes.get(candidate) || 0) + 1);
-            if (!voteColumns.has(candidate)) voteColumns.set(candidate, new Set());
-            voteColumns.get(candidate).add(String(columnKey).replace(/-inner$/, ''));
           }
         }
       } catch (_) {
-        ride.timeTargetedOcrAttempts = attempts;
         continue;
       }
-      ride.timeTargetedOcrAttempts = attempts;
 
       const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       if (!ranked.length) continue;
       if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
-      // P34: Auch bei ungültiger Primär-OCR gilt die bestehende Sicherheitsregel:
-      // mindestens zwei gezielte Nachlese-Crops müssen denselben gültigen Wert liefern.
-      if (ranked[0][1] < 2) continue;
-      const recovered = normalizeTime(ranked[0][0]);
-      if (timeToMinutes(recovered) === null) continue;
-      ride.timeOcrInitial = initialRawTime;
+      const recovered = ranked[0][0];
       ride.time = recovered;
       ride.planTime = recovered;
-      ride.dispoTime = recovered;
-      ride.dispo_time = recovered;
       ride.timeRecoveredFromTargetedOcr = true;
-      ride.timeRecoverySource = voteColumns.get(recovered)?.size >= 2
-        ? 'targeted_primary_and_mirror_time_consensus'
-        : 'targeted_missing_or_invalid_time_cell_consensus';
     }
     return out;
   }
@@ -4202,7 +4110,7 @@
     const sourceRows = rideList.map(ride => Number(ride?.sourceRow || 0)).filter(Number.isFinite);
     const matrixIndexes = sourceRows.map(row => row - 1);
     const matchedMatrixIndexes = matrixIndexes.filter(index => Boolean(rowMeta[index]));
-    const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','timeMirror','flightTime','driver']
+    const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','flightTime','driver']
       .map(field => `${field}=${mapping?.[field] ?? '–'}`).join(', ');
     const diagList = Array.isArray(diagnostics) ? diagnostics : [];
     const routeDiagnostics = diagList.filter(item => item?.kind === 'route').length;
@@ -5121,6 +5029,201 @@
     return autoFlightModulePromise;
   }
 
+
+  // CORE-007D8A1F1D8P36F5: Search-only fallback for flights whose explicit
+  // URL-Context sources could not be retrieved. FLIGHT-008 stays strict:
+  // two independent grounded sources + identical canonical IATA route are mandatory.
+  let strictSearchFallbackModelsPromise = null;
+
+  function autoFlightSearchSourceIdentity(source) {
+    const url = cellText(source?.url || source?.uri);
+    const title = cellText(source?.name || source?.title);
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) {}
+    const googleRedirect = /(?:^|\.)(?:google\.com|googleapis\.com|cloud\.google\.com|vertexaisearch\.cloud\.google\.com)$/.test(host);
+    if (host && !googleRedirect) return `host:${host}`;
+    const titleKey = title.toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    return titleKey ? `title:${titleKey}` : (url ? `url:${url}` : '');
+  }
+
+  function uniqueAutoFlightSearchSources(sources) {
+    const out = [], seen = new Set();
+    for (const source of Array.isArray(sources) ? sources : []) {
+      const key = autoFlightSearchSourceIdentity(source);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(source);
+    }
+    return out.slice(0, 12);
+  }
+
+  function parseAutoFlightSearchJson(raw) {
+    const source = cellText(raw);
+    if (!source) return {};
+    const attempts = [source, source.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()];
+    const first = source.indexOf('{'), last = source.lastIndexOf('}');
+    if (first >= 0 && last > first) attempts.push(source.slice(first, last + 1));
+    for (const candidate of attempts) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  function autoFlightSearchBoolean(value) {
+    if (value === true || value === false) return value;
+    const normalized = cellText(value).toLowerCase();
+    if (['true', '1', 'yes', 'ja', 'y'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'nein', 'n', ''].includes(normalized)) return false;
+    return false;
+  }
+
+  function extractAutoFlightSearchGrounding(response) {
+    const metadata = response?.candidates?.[0]?.groundingMetadata || null;
+    const chunks = Array.isArray(metadata?.groundingChunks) ? metadata.groundingChunks : [];
+    const sources = [];
+    for (const chunk of chunks) {
+      const web = chunk?.web;
+      const url = cellText(web?.uri), name = cellText(web?.title);
+      if (!url || !name) continue;
+      sources.push({ name, url, kind: 'google_search_fallback' });
+    }
+    const renderedContent = cellText(metadata?.searchEntryPoint?.renderedContent);
+    return {
+      renderedContent,
+      renderedContents: renderedContent ? [renderedContent] : [],
+      sources: uniqueAutoFlightSearchSources(sources),
+      webSearchQueries: Array.isArray(metadata?.webSearchQueries) ? metadata.webSearchQueries.map(cellText).filter(Boolean) : []
+    };
+  }
+
+  async function ensureStrictSearchFallbackModels() {
+    if (strictSearchFallbackModelsPromise) return strictSearchFallbackModelsPromise;
+    strictSearchFallbackModelsPromise = (async () => {
+      const [appSdk, aiSdk] = await Promise.all([
+        import('https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js'),
+        import('https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js')
+      ]);
+      if (!appSdk.getApps().length) throw new Error('Firebase-App für die strikte Web-Fallback-Prüfung ist noch nicht initialisiert.');
+      const ai = aiSdk.getAI(appSdk.getApp(), { backend: new aiSdk.GoogleAIBackend() });
+      const options = { tools: [{ googleSearch: {} }] };
+      return {
+        primary: aiSdk.getGenerativeModel(ai, { model: 'gemini-3.8-flash', ...options }),
+        fallback: aiSdk.getGenerativeModel(ai, { model: 'gemini-3.5-flash', ...options })
+      };
+    })().catch(error => { strictSearchFallbackModelsPromise = null; throw error; });
+    return strictSearchFallbackModelsPromise;
+  }
+
+  function buildStrictSearchFallbackPrompt(item) {
+    const payload = {
+      flightNumber: cellText(item?.flightNumber), date: cellText(item?.date),
+      airportEventDate: cellText(item?.airportEventDate || item?.date),
+      direction: cellText(item?.direction), airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+      flightTime: cellText(item?.flightTime) || null,
+      locationFromPlan: cellText(item?.flightLocation || item?.relevantLocation) || null
+    };
+    return `ATMS PRO – FLIGHT-008 strikte datumsspezifische Zwei-Quellen-Webprüfung.\n\n` +
+`Die direkte URL-Context-Prüfung war technisch nicht vollständig abrufbar. Prüfe deshalb GENAU DIESEN EINEN Flug über Google Search neu.\n\n` +
+`VERBINDLICHE REGELN:\n` +
+`1. Nutze mindestens ZWEI voneinander unabhängige, datumsspezifische öffentliche Quellen. Bevorzugt: Airline, offizieller Airport, Flightradar24, FlightStats oder FlightAware.\n` +
+`2. Beide Quellen müssen die konkrete Flugnummer am airportEventDate und DIESELBE Route (originIata + destinationIata) bestätigen.\n` +
+`3. Historische/typische Routen, allgemeine Flugplanseiten ohne Datum oder eine einzige Quelle reichen NICHT.\n` +
+`4. airportIata ist verbindlicher Airport-Anker.\n` +
+`5. direction=arrival: airportIata muss destinationIata sein; relevantLocation ist der HERKUNFTSORT.\n` +
+`6. direction=departure: airportIata muss originIata sein; relevantLocation ist der ZIELORT.\n` +
+`7. flightTime ist nur ein Unterscheidungsmerkmal. Bei Mehrdeutigkeit: needs_manual_check.\n` +
+`8. locationFromPlan ist nur Vergleichswert und niemals Beweis.\n` +
+`9. Bei Widerspruch zwischen Quellen conflict=true und needs_manual_check.\n` +
+`10. confirmedByTwoIndependentSources=true NUR wenn mindestens zwei unabhängige aktuelle Webquellen dieselbe konkrete Route datumsspezifisch bestätigen.\n` +
+`11. Erfinde keine Route, Stadt, IATA-Codes, Quelle oder Zeit.\n` +
+`12. Antworte ausschließlich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, confirmedByTwoIndependentSources, sourceNote.\n` +
+`status: candidate|needs_manual_check. confidence: high|medium|low.\n\nPrüfdaten:\n${JSON.stringify(payload, null, 2)}`;
+  }
+
+  function isStrictSearchModelAvailabilityError(error) {
+    const message = `${cellText(error?.code)} ${cellText(error?.message)}`.toLowerCase();
+    return /model|not.?found|not.?available|unsupported|deprecated|retired|404|410/.test(message);
+  }
+
+  async function generateStrictSearchFallback(prompt) {
+    const models = await ensureStrictSearchFallbackModels();
+    try { return { result: await models.primary.generateContent(prompt), modelUsed: 'gemini-3.8-flash', fallbackUsed: false }; }
+    catch (primaryError) {
+      if (!isStrictSearchModelAvailabilityError(primaryError) || !models.fallback) throw primaryError;
+      return { result: await models.fallback.generateContent(prompt), modelUsed: 'gemini-3.5-flash', fallbackUsed: true };
+    }
+  }
+
+  function checkedFlightIdentity(item) {
+    return [normalizeFlightForCurrentCheck(item?.flightNumber), cellText(item?.date), String(item?.direction || 'unknown').trim().toLowerCase(), cellText(item?.flightTime)].join('|');
+  }
+
+  function parseStrictSearchFallbackResult(item, generated) {
+    const response = generated?.result?.response;
+    const grounding = extractAutoFlightSearchGrounding(response);
+    const parsed = parseAutoFlightSearchJson(response?.text?.() || '');
+    const originCity = cellText(parsed?.originCity), destinationCity = cellText(parsed?.destinationCity);
+    const originIata = String(parsed?.originIata || '').trim().toUpperCase();
+    const destinationIata = String(parsed?.destinationIata || '').trim().toUpperCase();
+    const relevantIata = String((item?.direction === 'arrival' ? originIata : destinationIata) || parsed?.relevantIata || '').trim().toUpperCase();
+    const relevantLocation = cellText((item?.direction === 'arrival' ? originCity : destinationCity) || parsed?.relevantLocation);
+    const routeComplete = /^[A-Z]{3}$/.test(originIata) && /^[A-Z]{3}$/.test(destinationIata);
+    const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+    const airportAnchored = item?.direction === 'arrival' ? destinationIata === airportIata : item?.direction === 'departure' ? originIata === airportIata : false;
+    const declaredRelevantIata = String(parsed?.relevantIata || '').trim().toUpperCase();
+    const semanticMismatch = Boolean(declaredRelevantIata && relevantIata && declaredRelevantIata !== relevantIata);
+    const conflict = autoFlightSearchBoolean(parsed?.conflict) || semanticMismatch || (routeComplete && !airportAnchored);
+    const confirmed = autoFlightSearchBoolean(parsed?.confirmedByTwoIndependentSources);
+    const sourceCount = grounding.sources.length;
+    const candidate = Boolean(routeComplete && airportAnchored && relevantLocation && /^[A-Z]{3}$/.test(relevantIata) && !conflict && confirmed && sourceCount >= 2 && cellText(parsed?.status).toLowerCase() !== 'needs_manual_check');
+    const modelName = generated?.fallbackUsed ? `${generated.modelUsed} (Fallback)` : generated?.modelUsed;
+    const noteBase = candidate ? `Strikte Web-Fallback-Prüfung: ${sourceCount} unabhängige datumsspezifische Quellen bestätigen dieselbe Route.` : sourceCount < 2 ? `Strikte Web-Fallback-Prüfung: nur ${sourceCount} unabhängige Quelle(n) – FLIGHT-008 bleibt offen.` : conflict ? 'Strikte Web-Fallback-Prüfung: Quellen-/Airport-Konflikt – FLIGHT-008 bleibt offen.' : 'Strikte Web-Fallback-Prüfung konnte die Route nicht mit zwei unabhängigen Quellen sicher bestätigen.';
+    const modelNote = cellText(parsed?.sourceNote);
+    const sourceNote = `${noteBase}${modelNote ? ` · ${modelNote}` : ''} · Modell: ${modelName}`;
+    return {
+      checked: {
+        flightNumber: cellText(item?.flightNumber), date: cellText(item?.date), airportEventDate: cellText(item?.airportEventDate || item?.date), airportEventDateDerived: Boolean(item?.airportEventDateDerived), dateAssumed: false, flightTime: cellText(item?.flightTime), direction: cellText(item?.direction) || 'unknown', airportIata: airportIata || null,
+        flightLocation: candidate ? relevantLocation : cellText(item?.flightLocation || item?.relevantLocation), relevantLocation: candidate ? relevantLocation : cellText(item?.flightLocation || item?.relevantLocation), iata: candidate ? relevantIata : '', confidence: candidate ? 'verified' : 'uncertain', status: candidate ? 'verified' : 'needs_manual_check', conflict,
+        sources: grounding.sources, sourceCount, sourceNote, geminiReportedCheckedAt: new Date().toISOString(), verificationDowngraded: !candidate, modelUsed: modelName, verificationPasses: 1, searchFallback: true
+      },
+      grounding: { ...grounding, flightNumber: cellText(item?.flightNumber), date: cellText(item?.date), airportEventDate: cellText(item?.airportEventDate || item?.date), airportIata: airportIata || null, direction: cellText(item?.direction), verificationPasses: 1, searchFallback: true }
+    };
+  }
+
+  async function runStrictSearchFallback(primaryChecked, options = {}) {
+    const unresolved = (Array.isArray(primaryChecked) ? primaryChecked : []).filter(item => !item?.technicalFailure && !Boolean(item?.conflict) && checkedSourceCount(item) < 2 && normalizeFlightForCurrentCheck(item?.flightNumber) && cellText(item?.date) && ['arrival', 'departure'].includes(String(item?.direction || '').trim().toLowerCase()) && String(item?.airportIata || '').trim());
+    if (!unresolved.length) return { checked: primaryChecked, grounding: [], attempted: 0, verified: 0, technicalFailures: 0, firstTechnicalError: '', quotaBlocked: false };
+    const replacements = new Map(), grounding = [];
+    let technicalFailures = 0, firstTechnicalError = '', quotaBlocked = false;
+    for (let i = 0; i < unresolved.length; i++) {
+      const item = unresolved[i];
+      options?.onProgress?.({ current: i + 1, total: unresolved.length, flightNumber: item.flightNumber });
+      try {
+        const generated = await generateStrictSearchFallback(buildStrictSearchFallbackPrompt(item));
+        const parsed = parseStrictSearchFallbackResult(item, generated);
+        replacements.set(checkedFlightIdentity(item), parsed.checked);
+        grounding.push(parsed.grounding);
+      } catch (error) {
+        technicalFailures++;
+        const message = cellText(error?.message) || 'unbekannter Fehler';
+        if (!firstTechnicalError) firstTechnicalError = message;
+        if (/(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(message)) { quotaBlocked = true; break; }
+      }
+    }
+    const checked = (Array.isArray(primaryChecked) ? primaryChecked : []).map(item => {
+      const replacement = replacements.get(checkedFlightIdentity(item));
+      if (!replacement) return item;
+      const replacementSources = checkedSourceCount(replacement), originalSources = checkedSourceCount(item);
+      const replacementVerified = String(replacement?.status || '').toLowerCase() === 'verified' && replacementSources >= 2;
+      return replacementVerified || replacementSources > originalSources ? replacement : item;
+    });
+    const verified = checked.filter(item => Boolean(item?.searchFallback) && String(item?.status || '').toLowerCase() === 'verified' && checkedSourceCount(item) >= 2).length;
+    return { checked, grounding, attempted: unresolved.length, verified, technicalFailures, firstTechnicalError, quotaBlocked };
+  }
+
   async function runAutomaticFlightCheck(options = {}) {
     if (!state.rides.length) return;
     const status = $('importStatus');
@@ -5170,18 +5273,37 @@
         }
       });
 
-      const checked = Array.isArray(result?.checked) ? result.checked : [];
+      let checked = Array.isArray(result?.checked) ? result.checked : [];
       if (!checked.length) throw new Error('Die automatische Flugprüfung hat kein auswertbares Ergebnis zurückgegeben.');
       if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) {
         return { ok: false, stale: true, technicalFailureCount: 0 };
       }
 
-      const applied = applyGeminiResultsToStagedPlan(checked, cellText(result?.completedAt) || new Date().toISOString());
-      if (typeof service.renderGrounding === 'function') service.renderGrounding(result?.grounding || []);
+      let groundingRecords = Array.isArray(result?.grounding) ? result.grounding : [];
+      let strictSearchSummary = { attempted: 0, verified: 0, technicalFailures: 0, firstTechnicalError: '', quotaBlocked: false, grounding: [] };
+      const needsStrictSearchFallback = checked.some(item => !item?.technicalFailure && !Boolean(item?.conflict) && checkedSourceCount(item) < 2);
+      if (needsStrictSearchFallback) {
+        if (status) status.textContent = 'Direkte Flugquellen teilweise nicht abrufbar · strikte Zwei-Quellen-Webprüfung läuft …';
+        strictSearchSummary = await runStrictSearchFallback(checked, {
+          onProgress: progress => {
+            if (!status) return;
+            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
+            status.textContent = `Strikte Zwei-Quellen-Webprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+          }
+        });
+        checked = Array.isArray(strictSearchSummary?.checked) ? strictSearchSummary.checked : checked;
+        groundingRecords = [...groundingRecords, ...(Array.isArray(strictSearchSummary?.grounding) ? strictSearchSummary.grounding : [])];
+        if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) return { ok: false, stale: true, technicalFailureCount: 0 };
+      }
 
-      const technicalFailures = Number(result?.technicalFailureCount || 0);
-      const firstTechnicalError = cellText(result?.firstTechnicalError);
-      const quotaFailure = technicalFailures > 0 && /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(firstTechnicalError);
+      const applied = applyGeminiResultsToStagedPlan(checked, cellText(result?.completedAt) || new Date().toISOString());
+      if (typeof service.renderGrounding === 'function') service.renderGrounding(groundingRecords);
+
+      const primaryTechnicalFailures = Number(result?.technicalFailureCount || 0);
+      const fallbackTechnicalFailures = Number(strictSearchSummary?.technicalFailures || 0);
+      const technicalFailures = primaryTechnicalFailures + fallbackTechnicalFailures;
+      const firstTechnicalError = cellText(result?.firstTechnicalError) || cellText(strictSearchSummary?.firstTechnicalError);
+      const quotaFailure = Boolean(strictSearchSummary?.quotaBlocked) || (technicalFailures > 0 && /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(firstTechnicalError));
       if (technicalFailures > 0) {
         if (fallbackButton) fallbackButton.style.display = '';
         if (quotaFailure) {
@@ -5214,6 +5336,8 @@
         noGroundingFlights,
         singleSourceFlights,
         conflictFlights,
+        strictSearchFallbackAttempted: Number(strictSearchSummary?.attempted || 0),
+        strictSearchFallbackVerified: Number(strictSearchSummary?.verified || 0),
         quotaBlocked: quotaFailure
       };
     } catch (error) {
