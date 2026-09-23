@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F14 · 23.09.2026: NATIVE STRICT DUAL-SOURCE PROMOTION – Nach erfolgreich bestaetigtem P36F13-Realtest werden ausschliesslich exakte, datumsspezifische FlightStats-Airport-Board-Treffer als unabhaengige Quelle 2 mit der bereits vorhandenen offiziellen Airportquelle zusammengefuehrt. verified/high und Entfernen von ⚠ manuell prüfen nur bei identischer Flugnummer + airportEventDate + Richtung + Airport + originIata + destinationIata und mindestens zwei unterschiedlichen dokumentierten Quellenhosts. Alle Abweichungen bleiben source_confirmed/manuell. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – Ersetzt den im Realtest zwar erreichbaren, aber datenlosen Einzel-Flug-Endpunkt durch eine rein diagnostische, datumsspezifische FlightStats-Airporttafel-Probe. Abfrage nur fuer bereits durch die offizielle Airportquelle source_confirmed bestaetigte Fluege; exakte Flugnummer + Richtung + Airport + Gegen-IATA muessen uebereinstimmen. Keine Hochstufung auf verified/high und keine Warnungsentfernung.
 // CORE-007D8A1F1D8P36F12 · 23.09.2026: NATIVE SECOND-SOURCE PROBE – Prüft in der Native-App ausschließlich diagnostisch eine unabhängige, registrierungsfreie FlightStats-Webquelle über eine streng freigegebene HTTPS-Route. Keine automatische Hochstufung auf verified/high, keine Warnungsentfernung und keine Änderung an FLIGHT-008; erst ein bestätigter Beweistest darf die spätere Zweitquellen-Automatik freigeben.
 // CORE-007D8A1F1D8P36F11 · 23.09.2026: NATIVE OFFICIAL-AIRPORT PERSISTENT DIAGNOSTIC – Macht die P36F9-Airportdiagnose im eingeklappten Technik-/Diagnosebereich dauerhaft sichtbar, damit ein spaeteres render()/Status-Update sie nicht mehr verdeckt. Reine Diagnoseanzeige; keine Änderung an Flugzuordnung, Quellen, OCR, PLAN/DISPO/LIVE oder Persistenz.
@@ -4778,6 +4779,10 @@
       const summaryText = cellText(secondSourceBoardDiag?.text) || 'Keine Zusammenfassung verfügbar';
       const rows = Array.isArray(secondSourceBoardDiag?.rows) ? secondSourceBoardDiag.rows : [];
       const contexts = Array.isArray(secondSourceBoardDiag?.contexts) ? secondSourceBoardDiag.contexts : [];
+      const promoted = Number(secondSourceBoardDiag?.promotedFlights || 0);
+      const promotionText = promoted > 0
+        ? `${promoted} Flug/Flüge mit zwei unabhängigen datumsspezifischen Quellen auf verified/high freigegeben.`
+        : 'Keine Zweitquellen-Freigabe erfolgt.';
       const contextText = contexts.length
         ? contexts.map(item => `${escapeHtml(item?.direction || '?')} ${escapeHtml(item?.airportIata || '?')} ${escapeHtml(item?.date || '?')} · ${Number(item?.segmentsReachable || 0)}/${Number(item?.segmentsAttempted || 0)} Zeitfenster erreichbar · ${Number(item?.flightRows || 0)} Flugzeilen`).join('<br>')
         : 'Keine Airport-Board-Kontexte gespeichert.';
@@ -4791,8 +4796,8 @@
           }).join('<br>')
         : 'Keine Airport-Board-Zweitquellen-Probe gespeichert.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(121,229,157,.35);border-radius:10px">`
-        + `<b>🔎 Airport-Board-Zweitquelle · P36F13</b><br>`
-        + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose – ändert weder verified/high noch ⚠ manuell prüfen.</small>`
+        + `<b>🔎 Airport-Board-Zweitquelle · P36F14</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>${escapeHtml(promotionText)}<br>FLIGHT-008 bleibt strikt: Freigabe nur bei exakter Identität/Route und zwei unterschiedlichen dokumentierten Quellen.</small>`
         + `<div style="margin-top:8px"><b>Board-Kontexte</b><br><small>${contextText}</small></div>`
         + `<div style="margin-top:8px"><b>Flugabgleich</b><br><small>${rowText}</small></div>`
         + `</div>`;
@@ -5854,7 +5859,7 @@
             continue;
           }
           group.segmentsReachable++;
-          group.flights.push(...parsed.flights);
+          group.flights.push(...parsed.flights.map(row => ({ ...row, __atmsBoardSourceUrl: url })));
         } catch (error) {
           group.segmentReasons.push(`${hour}:technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180));
         }
@@ -5893,12 +5898,96 @@
         }
         const [originIata, destinationIata] = routePairs[0].split('>');
         const routeMatch = originIata === expectedOrigin && destinationIata === expectedDestination;
-        rows.push({ flightNumber, reachable: true, routeMatch, reason: routeMatch ? 'route_match' : 'route_mismatch', originIata, destinationIata });
+        const sourceUrls = [...new Set(matches.map(row => cellText(row?.__atmsBoardSourceUrl)).filter(Boolean))];
+        rows.push({
+          flightNumber,
+          reachable: true,
+          routeMatch,
+          reason: routeMatch ? 'route_match' : 'route_mismatch',
+          originIata,
+          destinationIata,
+          airportIata: group.airportIata,
+          airportEventDate: group.date,
+          direction: group.direction,
+          sourceUrl: sourceUrls.length === 1 ? sourceUrls[0] : ''
+        });
       }
     }
     const reachable = rows.filter(item => item.reachable === true).length;
     const routeMatches = rows.filter(item => item.routeMatch === true).length;
     return { attempted: eligible.length, reachable, routeMatches, rows, contexts, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} Routenübereinstimmung(en)` };
+  }
+
+  function safeFlightStatsBoardSourceUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'www.flightstats.com') return '';
+      if (!/^\/v2\/api-next\/flight-tracker\/(?:arr|dep)\/[A-Z]{3}\/\d{4}\/\d{1,2}\/\d{1,2}\/(?:0|6|12|18)$/.test(url.pathname)) return '';
+      if (url.searchParams.get('numHours') !== '6') return '';
+      return url.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function promoteOfficialEvidenceWithNativeBoard(officialChecked = [], secondSourceProbe = null) {
+    const rows = Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : [];
+    let promotedFlights = 0;
+    const promotions = [];
+    const checked = (Array.isArray(officialChecked) ? officialChecked : []).map(item => {
+      if (item?.officialAirportEvidence !== true) return item;
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+      const airportEventDate = cellText(item?.airportEventDate || item?.date);
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+      const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+      if (!flightNumber || !/^[A-Z]{3}$/.test(airportIata) || !/^\d{4}-\d{2}-\d{2}$/.test(airportEventDate)
+        || !['arrival','departure'].includes(direction) || !/^[A-Z]{3}$/.test(expectedOrigin) || !/^[A-Z]{3}$/.test(expectedDestination)) return item;
+
+      const candidates = rows.filter(row => row?.routeMatch === true
+        && cellText(row?.reason) === 'route_match'
+        && normalizeFlightForCurrentCheck(row?.flightNumber) === flightNumber
+        && String(row?.airportIata || '').trim().toUpperCase() === airportIata
+        && cellText(row?.airportEventDate) === airportEventDate
+        && String(row?.direction || '').trim().toLowerCase() === direction
+        && String(row?.originIata || '').trim().toUpperCase() === expectedOrigin
+        && String(row?.destinationIata || '').trim().toUpperCase() === expectedDestination
+        && Boolean(safeFlightStatsBoardSourceUrl(row?.sourceUrl)));
+      if (candidates.length !== 1) return item;
+
+      const boardSourceUrl = safeFlightStatsBoardSourceUrl(candidates[0]?.sourceUrl);
+      const sources = mergeDocumentedFlightSources([
+        ...(Array.isArray(item?.sources) ? item.sources : []),
+        { name: 'FlightStats Airport Board', url: boardSourceUrl }
+      ]);
+      const sourceHosts = new Set(sources.map(source => {
+        try { return new URL(String(source?.url || '')).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) { return ''; }
+      }).filter(Boolean));
+      if (sources.length < 2 || sourceHosts.size < 2) return item;
+
+      promotedFlights++;
+      promotions.push({ flightNumber, airportEventDate, direction, airportIata, originIata: expectedOrigin, destinationIata: expectedDestination });
+      return {
+        ...item,
+        confidence: 'high',
+        status: 'verified',
+        conflict: false,
+        sources,
+        sourceCount: sources.length,
+        explicitSourceCount: sources.length,
+        sourceNote: `Zwei unabhängige datumsspezifische Quellen bestätigen ${flightNumber} am ${airportEventDate}: offizielle Airportquelle + FlightStats Airport Board · ${expectedOrigin} -> ${expectedDestination}.`,
+        modelUsed: 'Official Airport Provider + FlightStats Airport Board',
+        nativeSecondSourceEvidence: true,
+        nativeSecondSourceCheckedAt: new Date().toISOString()
+      };
+    });
+    return {
+      checked,
+      promotedFlights,
+      remainingSingleSourceFlights: checked.filter(item => item?.officialAirportEvidence === true && !(String(item?.status || '').toLowerCase() === 'verified' && ['high','verified'].includes(String(item?.confidence || '').toLowerCase()))).length,
+      promotions
+    };
   }
 
   async function runAutomaticFlightCheck(options = {}) {
@@ -5962,20 +6051,26 @@
             status.textContent = `Airport-Board-Zweitquelle ${current}/${total}${label ? ` · ${label}` : ''} …`;
           }
         });
+        const dualSource = promoteOfficialEvidenceWithNativeBoard(officialChecked, secondSourceProbe);
         try {
           window.ATMSNativeSecondSourceLastDiagnostic = null;
           window.ATMSNativeSecondSourceBoardLastDiagnostic = {
-            patch: 'CORE-007D8A1F1D8P36F13',
+            patch: 'CORE-007D8A1F1D8P36F14',
             checkedAt: new Date().toISOString(),
-            ...secondSourceProbe
+            ...secondSourceProbe,
+            promotedFlights: dualSource.promotedFlights,
+            remainingSingleSourceFlights: dualSource.remainingSingleSourceFlights,
+            promotions: dualSource.promotions
           };
         } catch (_) {}
-        const applied = applyGeminiResultsToStagedPlan(officialChecked, new Date().toISOString());
+        const applied = applyGeminiResultsToStagedPlan(dualSource.checked, new Date().toISOString());
         const openRideCount = unresolvedFlightRideCount();
         if (fallbackButton) fallbackButton.style.display = '';
-        if (status) status.textContent = applied.sourceConfirmedRides > 0
-          ? `${applied.sourceConfirmedRides} Fahrt(en) aus offizieller Airportquelle erkannt; FLIGHT-008-Zweitquelle bleibt offen.`
-          : 'Offizielle Airportprüfung abgeschlossen, aber keine sichere Flugzuordnung gefunden.';
+        if (status) status.textContent = dualSource.promotedFlights > 0
+          ? `${dualSource.promotedFlights} Flug/Flüge durch zwei unabhängige datumsspezifische Quellen verifiziert · ${openRideCount} Flugprüfung(en) bleiben offen.`
+          : (applied.sourceConfirmedRides > 0
+            ? `${applied.sourceConfirmedRides} Fahrt(en) aus offizieller Airportquelle erkannt; FLIGHT-008-Zweitquelle bleibt offen.`
+            : 'Offizielle Airportprüfung abgeschlossen, aber keine sichere Flugzuordnung gefunden.');
         return {
           ok: officialFailureCount === 0,
           nativeOfficialOnly: true,
@@ -5987,7 +6082,7 @@
           technicalFailureCount: officialFailureCount,
           firstTechnicalError: officialFirstTechnicalError,
           noGroundingFlights: 0,
-          singleSourceFlights: officialChecked.length,
+          singleSourceFlights: dualSource.remainingSingleSourceFlights,
           conflictFlights: 0,
           officialProviderAttempted: Number(officialSummary?.attempted || 0),
           officialProviderMatched: Number(officialSummary?.matched || 0),
@@ -6001,6 +6096,7 @@
           secondSourceProbeAttempted: Number(secondSourceProbe?.attempted || 0),
           secondSourceProbeReachable: Number(secondSourceProbe?.reachable || 0),
           secondSourceProbeRouteMatches: Number(secondSourceProbe?.routeMatches || 0),
+          secondSourceProbePromoted: Number(dualSource.promotedFlights || 0),
           secondSourceProbeDiagnostic: cellText(secondSourceProbe?.text),
           secondSourceProbeRows: Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : [],
           secondSourceProbeContexts: Array.isArray(secondSourceProbe?.contexts) ? secondSourceProbe.contexts : []
