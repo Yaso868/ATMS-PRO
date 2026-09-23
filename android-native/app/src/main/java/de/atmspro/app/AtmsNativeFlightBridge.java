@@ -18,8 +18,10 @@ import java.nio.charset.StandardCharsets;
  * Vertrag mit js/flight-data-provider.js:
  * - JavaScript ruft requestJsonString(JSON-string) auf.
  * - Nur ATMS-FLIGHT-NATIVE-1 wird akzeptiert.
- * - Nur der explizit freigegebene DUS-HTTPS-Endpunkt darf angesprochen werden.
- * - Rückgabe ist der unveränderte JSON-Text des Airports.
+ * - DUS-Produktivzugriff bleibt auf den explizit freigegebenen DUS-HTTPS-Endpunkt begrenzt.
+ * - P36F12 erlaubt zusätzlich ausschließlich einen streng validierten FlightStats-Web-JSON-Pfad
+ *   für eine DIAGNOSE-Probe. Dieser Pfad darf niemals selbst Flugstatus/Verifizierung freigeben.
+ * - Rückgabe ist unveränderter JSON-Text der jeweils validierten Quelle.
  */
 public final class AtmsNativeFlightBridge {
     private static final int MIN_TIMEOUT_MS = 1_000;
@@ -38,12 +40,22 @@ public final class AtmsNativeFlightBridge {
                 throw new SecurityException("Native contract version mismatch");
             }
             String airport = request.optString("airportIata", "");
-            if (!"DUS".equalsIgnoreCase(airport)) {
-                throw new SecurityException("Native airport not allowed");
-            }
             String method = request.optString("method", "GET");
             String urlText = request.optString("url", "");
-            URI validated = DusRequestPolicy.validate(method, urlText);
+            String purpose = request.optString("purpose", "");
+            boolean flightStatsProbe = "flightstats_probe".equals(purpose);
+            URI validated;
+            String sourceLabel;
+            if (flightStatsProbe) {
+                validated = validateFlightStatsProbe(method, urlText);
+                sourceLabel = "FlightStats probe";
+            } else {
+                if (!"DUS".equalsIgnoreCase(airport)) {
+                    throw new SecurityException("Native airport not allowed");
+                }
+                validated = DusRequestPolicy.validate(method, urlText);
+                sourceLabel = "DUS";
+            }
 
             int requestedTimeout = request.optInt("timeoutMs", DEFAULT_TIMEOUT_MS);
             int timeoutMs = Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, requestedTimeout));
@@ -53,6 +65,10 @@ public final class AtmsNativeFlightBridge {
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("X-Requested-With", "XMLHttpRequest");
+            if (flightStatsProbe) {
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16; ATMS PRO Native) AppleWebKit/537.36");
+                connection.setRequestProperty("Accept-Language", "de-DE,de;q=0.9,en;q=0.8");
+            }
             connection.setRequestProperty("Cache-Control", "no-store");
             connection.setUseCaches(false);
             connection.setConnectTimeout(timeoutMs);
@@ -66,13 +82,13 @@ public final class AtmsNativeFlightBridge {
                 if (errorBody == null) errorBody = "";
                 errorBody = errorBody.trim();
                 if (errorBody.length() > 1200) errorBody = errorBody.substring(0, 1200) + "…";
-                throw new IllegalStateException("DUS HTTP " + status
+                throw new IllegalStateException(sourceLabel + " HTTP " + status
                         + (errorBody.isEmpty() ? "" : " | " + errorBody));
             }
 
             String body = readUtf8(connection.getInputStream());
             if (body == null || body.trim().isEmpty()) {
-                throw new IllegalStateException("DUS returned empty body");
+                throw new IllegalStateException(sourceLabel + " returned empty body");
             }
 
             // Nur gültiges JSON an ATMS zurückgeben.
@@ -85,6 +101,31 @@ public final class AtmsNativeFlightBridge {
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    private static URI validateFlightStatsProbe(String method, String urlText) throws Exception {
+        if (!"GET".equalsIgnoreCase(method == null ? "" : method.trim())) {
+            throw new SecurityException("FlightStats probe method not allowed");
+        }
+        URI uri = new URI(urlText == null ? "" : urlText.trim());
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new SecurityException("FlightStats probe protocol not allowed");
+        }
+        if (!"www.flightstats.com".equalsIgnoreCase(uri.getHost())) {
+            throw new SecurityException("FlightStats probe host not allowed");
+        }
+        String path = uri.getPath();
+        if (path == null || !path.matches("/v2/api-next/flight-tracker/[A-Z0-9]{2,3}/[0-9]{1,4}[A-Z]?/[0-9]{4}/[0-9]{1,2}/[0-9]{1,2}")) {
+            throw new SecurityException("FlightStats probe path not allowed");
+        }
+        if (uri.getRawQuery() != null || uri.getUserInfo() != null || uri.getFragment() != null) {
+            throw new SecurityException("FlightStats probe URL extras not allowed");
+        }
+        int port = uri.getPort();
+        if (port != -1 && port != 443) {
+            throw new SecurityException("FlightStats probe port not allowed");
+        }
+        return uri;
     }
 
     @JavascriptInterface
