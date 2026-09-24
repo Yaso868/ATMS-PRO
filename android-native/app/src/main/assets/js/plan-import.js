@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P41 · 24.09.2026: FLIGHTSTATS BOARD ARRIVAL TIME-FIELD PROBE – rein diagnostischer Folgebeweis nach P39F1/P40F1. Prüft die bereits vorhandene, registrierungsfreie FlightStats-Airport-Board-Zweitquelle bei eindeutigen DUS-Ankünften auf eigene Estimated-/Actual-/Gate-/Runway-Zeitfelder und zeigt die tatsächlich gelieferten Feldpfade/Werte neben der offiziellen DUS-Zeit. Keine automatische Bestätigung oder Übernahme, keine Änderung an PLAN/DISPO/LIVE/Persistenz und keine neue Quelle.
 // CORE-007D8A1F1D8P40F1 · 24.09.2026: NATIVE LIVE NON-BLOCKING FIX – P40 uses the new async native bridge for DUS + FlightStats so network timeouts no longer block/freeze the Android WebView UI. If the async bridge is unavailable, P40 fails closed instead of falling back to blocking network I/O.
 // CORE-007D8A1F1D8P40 · 24.09.2026: NATIVE LIVE STATUS AUTO-CONFIRM – automatisiert ausschließlich den aktuellen operativen Flugstatus über zwei unabhängige native Quellen (offizielle Düsseldorf-Airport-Livequelle + FlightStats Einzel-Flug). Bestätigung nur bei exakter Flug-/Datums-/Airport-/Richtungs-/Routenidentität und gleichem, im P39/P39F1-Realtest belegtem Status departed/landed/cancelled. scheduled/on_time/delayed bleiben ohne eigene Zweitquellenzeit offen. Estimated/Actual/LIVE-Zeit werden bewusst NICHT bestätigt oder übernommen; PLAN/DISPO bleiben unverändert, manuelle Bestätigungen werden nicht berührt. Keine neue Quelle, Registrierung oder kostenpflichtige API.
 // CORE-007D8A1F1D8P39F2 · 24.09.2026: ANALYSIS RACE GUARD – verhindert überlappende Planlisten-Analyse-/Auto-Pipeline-Läufe derselben Auswahl. Der Analyse-Button bleibt bis zum Ende der laufenden Auto-Pipeline gesperrt; jeder neue echte Analyse-Lauf erhält eine neue Generation und veraltete Native-Flugprüfungen dürfen vor dem Anwenden ihrer Ergebnisse nicht mehr in den aktuellen Staging-State schreiben. Flüchtige Diagnoseanzeigen werden beim neuen Analyse-Lauf zurückgesetzt. Keine Änderung an OCR-, FLIGHT-008-, LIVE-, PLAN- oder DISPO-Regeln.
@@ -4866,6 +4867,38 @@
         + `<div style="font-size:11px;opacity:.76;margin-top:8px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
         + `</div>`;
     })();
+    const p41BoardArrivalTimeDiag = (() => {
+      try { return window.ATMSP41BoardArrivalTimeFieldDiagnostic || null; } catch (_) { return null; }
+    })();
+    const p41BoardArrivalTimeDiagHtml = (() => {
+      const button = `<button type="button" id="p41BoardArrivalTimeDiagBtn" style="width:100%;padding:10px;border-radius:10px;font-weight:800;margin-top:8px">🧪 P41 Board-Ankunfts-Zeitfelder prüfen</button>`;
+      const note = `<div style="font-size:11px;opacity:.78;line-height:1.45;margin-top:6px">Nur Diagnose: prüft die eindeutigen DUS-Ankünfte gegen die bereits vorhandene FlightStats-Airport-Board-Zweitquelle und listet deren eigene zeitbezogene Feldpfade/Werte. Keine Übernahme.</div>`;
+      if (!p41BoardArrivalTimeDiag) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,205,90,.42);border-radius:10px"><b>🧪 FlightStats Board Ankunfts-Zeitfeld-Scan · P41</b>${note}${button}<div id="p41BoardArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px;opacity:.82">Noch nicht gestartet.</div></div>`;
+      if (p41BoardArrivalTimeDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 FlightStats Board Ankunfts-Zeitfeld-Scan · P41</b>${note}${button}<div id="p41BoardArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p41BoardArrivalTimeDiag.error)}</div></div>`;
+      const rows = Array.isArray(p41BoardArrivalTimeDiag.rows) ? p41BoardArrivalTimeDiag.rows : [];
+      const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
+      const rowHtml = rows.length ? rows.map(row => {
+        const official = row?.official || {}, board = row?.flightStatsBoard || {};
+        const route = row?.originIata && row?.destinationIata ? `${row.originIata}→${row.destinationIata}` : '?→DUS';
+        const candidates = Array.isArray(board?.timeCandidates) ? board.timeCandidates : [];
+        const candidateText = candidates.length ? candidates.map(item => {
+          const suffix = item?.clock ? ` [${item.clock}]` : '';
+          return `${escapeHtml(item?.path || '?')}=${escapeHtml(item?.value || '–')}${escapeHtml(suffix)}`;
+        }).join('<br>') : 'Keine zusätzlichen zeitbezogenen Board-Felder erkannt.';
+        return `<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">`
+          + `<b>${escapeHtml(row?.flightNumber || '?')}</b> · ${escapeHtml(route)} · ${escapeHtml(row?.airportEventDate || row?.date || '?')}<br>`
+          + `<small>DUS: Status ${escapeHtml(official?.status || 'unknown')} · Plan ${clockOrDash(official?.scheduled)} · Estimated ${clockOrDash(official?.estimated)} · Actual ${clockOrDash(official?.actual)}<br>`
+          + `FlightStats Board: ${board?.reachable === false ? 'nicht erreichbar' : 'erreichbar'} · Route ${board?.routeMatch ? 'passt' : 'nicht sicher'} · Treffer ${Number(board?.matchCount || 0)} · Estimated-Key ${board?.hasEstimatedKey ? 'JA' : 'nein'} · Actual-Key ${board?.hasActualKey ? 'JA' : 'nein'} · Grund ${escapeHtml(board?.reason || '–')}<br>`
+          + `<span style="opacity:.8">Board-Zeitfelder:</span><br>${candidateText}</small>`
+          + `</div>`;
+      }).join('') : '<div style="font-size:11px;margin-top:8px">Keine geeigneten DUS-Ankünfte gefunden.</div>';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,205,90,.42);border-radius:10px">`
+        + `<b>🧪 FlightStats Board Ankunfts-Zeitfeld-Scan · P41</b>${note}${button}`
+        + `<div id="p41BoardArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px"><b>${Number(p41BoardArrivalTimeDiag.attempted || 0)} geprüft · ${Number(p41BoardArrivalTimeDiag.routeMatches || 0)} Route passend · ${Number(p41BoardArrivalTimeDiag.withEstimatedKey || 0)} mit Estimated-Key · ${Number(p41BoardArrivalTimeDiag.withActualKey || 0)} mit Actual-Key</b></div>`
+        + rowHtml
+        + `<div style="font-size:11px;opacity:.76;margin-top:8px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
+        + `</div>`;
+    })();
     const unresolvedFlightRouteDiag = (() => {
       try { return window.ATMSNativeUnresolvedFlightRouteLastDiagnostic || null; } catch (_) { return null; }
     })();
@@ -4901,11 +4934,12 @@
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
     })() : '';
-    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
+    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
 
     $('p39NativeLiveDiagBtn')?.addEventListener('click', runP39NativeLiveDiagnostic);
     $('p39ArrivalTimeDiagBtn')?.addEventListener('click', runP39ArrivalTimeFieldDiagnostic);
+    $('p41BoardArrivalTimeDiagBtn')?.addEventListener('click', runP41BoardArrivalTimeFieldDiagnostic);
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
@@ -4974,6 +5008,7 @@
     try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
+    try { window.ATMSP41BoardArrivalTimeFieldDiagnostic = null; } catch (_) {}
   }
 
   async function analyze() {
@@ -5195,6 +5230,7 @@
     try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
+    try { window.ATMSP41BoardArrivalTimeFieldDiagnostic = null; } catch (_) {}
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
@@ -6341,6 +6377,181 @@
     }
   }
 
+
+
+  // CORE-007D8A1F1D8P41: Diagnostic-only FlightStats Airport-Board arrival time-field probe.
+  // The board is already the proven independent second source from P36F15. This probe only
+  // exposes time-like fields that are actually present in exact flight rows; it never mutates rides.
+  function p41CollectBoardTimeFields(value, path = '', out = [], depth = 0) {
+    if (depth > 6 || out.length >= 36 || value === null || value === undefined) return out;
+    if (Array.isArray(value)) {
+      for (let i = 0; i < Math.min(value.length, 8) && out.length < 36; i++) p41CollectBoardTimeFields(value[i], `${path}[${i}]`, out, depth + 1);
+      return out;
+    }
+    if (typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        if (out.length >= 36) break;
+        const childPath = path ? `${path}.${key}` : key;
+        p41CollectBoardTimeFields(child, childPath, out, depth + 1);
+      }
+      return out;
+    }
+    const lower = String(path || '').toLowerCase();
+    if (!/(time|date|sched|estim|actual|gate|runway|status|delay)/.test(lower)) return out;
+    const raw = cellText(value);
+    if (!raw) return out;
+    const clock = p39Clock(value);
+    out.push({ path: String(path || '?'), value: raw.slice(0, 120), clock });
+    return out;
+  }
+
+  async function p41FlightStatsBoardArrivalTimeProbe(item) {
+    const bridge = nativeSecondSourceBridgeHost();
+    if (!bridge) return { reachable: false, routeMatch: false, reason: 'native_bridge_unavailable', matchCount: 0, timeCandidates: [], hasEstimatedKey: false, hasActualKey: false, errors: [] };
+    const group = {
+      airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+      direction: 'arrival',
+      date: cellText(item?.airportEventDate || item?.date)
+    };
+    const matches = [], sourceUrls = [], errors = [];
+    for (const hour of [0,6,12,18]) {
+      const url = nativeSecondSourceBoardProbeUrl(group, hour);
+      if (!url) continue;
+      try {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1', purpose: 'flightstats_board_probe', airportIata: group.airportIata,
+          method: 'GET', url, timeoutMs: 15000
+        });
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          errors.push(`${hour}:${message || 'empty_response'}`);
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) { errors.push(`${hour}:invalid_json`); continue; }
+        const parsed = parseNativeSecondSourceBoardSegment(payload);
+        if (!parsed.ok) { errors.push(`${hour}:${parsed.reason}`); continue; }
+        for (const row of parsed.flights) {
+          if (boardFlightIdentity(row) !== normalizeFlightForCurrentCheck(item?.flightNumber)) continue;
+          matches.push(row);
+          sourceUrls.push(url);
+        }
+      } catch (error) {
+        errors.push(`${hour}:technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0, 180));
+      }
+    }
+    if (!matches.length) return { reachable: errors.length < 4, routeMatch: false, reason: 'flight_not_found_on_board', matchCount: 0, timeCandidates: [], hasEstimatedKey: false, hasActualKey: false, sourceUrls: [...new Set(sourceUrls)], errors };
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const routePairs = [...new Set(matches.map(row => {
+      const opposite = boardOppositeAirportIata(row);
+      return /^[A-Z]{3}$/.test(opposite) ? `${opposite}>${group.airportIata}` : '';
+    }).filter(Boolean))];
+    const routePair = routePairs.length === 1 ? routePairs[0] : '';
+    const [originIata, destinationIata] = routePair ? routePair.split('>') : ['', ''];
+    const routeMatch = Boolean(routePair && originIata === expectedOrigin && destinationIata === expectedDestination);
+    const candidateMap = new Map();
+    for (const row of matches) {
+      const fields = p41CollectBoardTimeFields(row);
+      for (const field of fields) {
+        const key = `${field.path}|${field.value}`;
+        if (!candidateMap.has(key)) candidateMap.set(key, field);
+      }
+    }
+    const timeCandidates = [...candidateMap.values()].slice(0, 36);
+    const hasEstimatedKey = timeCandidates.some(field => /estim/i.test(field.path));
+    const hasActualKey = timeCandidates.some(field => /actual/i.test(field.path));
+    return {
+      reachable: true,
+      routeMatch,
+      reason: routeMatch ? 'board_time_fields_exposed' : (routePairs.length > 1 ? 'ambiguous_routes' : 'route_mismatch'),
+      originIata, destinationIata,
+      matchCount: matches.length,
+      timeCandidates,
+      hasEstimatedKey,
+      hasActualKey,
+      sourceUrls: [...new Set(sourceUrls)],
+      errors
+    };
+  }
+
+  async function runP41BoardArrivalTimeFieldDiagnostic() {
+    const button = $('p41BoardArrivalTimeDiagBtn');
+    const statusBox = $('p41BoardArrivalTimeDiagStatus');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); }
+    if (statusBox) statusBox.textContent = 'P41 prüft FlightStats-Board-Zeitfelder der DUS-Ankünfte …';
+    try {
+      const all = officialProviderItemsFromRides(state.rides)
+        .filter(item => String(item?.airportIata || '').trim().toUpperCase() === 'DUS')
+        .filter(item => String(item?.direction || '').trim().toLowerCase() === 'arrival');
+      const seen = new Set(), items = [];
+      for (const item of all) {
+        const key = officialFlightBaseIdentity(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key); items.push(item);
+      }
+      if (!items.length) throw new Error('Keine eindeutigen DUS-Ankünfte in der analysierten Planliste gefunden.');
+      const provider = await ensureOfficialFlightProvider();
+      const rows = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+        if (statusBox) statusBox.textContent = `P41 ${i + 1}/${items.length}: ${flightNumber} …`;
+        let official = null, officialFailure = '';
+        try {
+          const officialBatch = await provider.fetchLive([item]);
+          official = Array.isArray(officialBatch?.flights) ? officialBatch.flights[0] : null;
+          if (!official) {
+            const failure = (Array.isArray(officialBatch?.failures) ? officialBatch.failures[0] : null)
+              || (Array.isArray(officialBatch?.unsupported) ? officialBatch.unsupported[0] : null);
+            officialFailure = cellText(failure?.reason) || 'official_not_found';
+          }
+        } catch (error) {
+          officialFailure = `official_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0, 180);
+        }
+        const originIata = String(official?.route?.iata || '').trim().toUpperCase();
+        const secondItem = { ...item, officialAirportEvidence: Boolean(official), officialOriginIata: originIata, officialDestinationIata: 'DUS' };
+        const board = official && /^[A-Z]{3}$/.test(originIata)
+          ? await p41FlightStatsBoardArrivalTimeProbe(secondItem)
+          : { reachable: false, routeMatch: false, reason: officialFailure || 'official_route_missing', matchCount: 0, timeCandidates: [], hasEstimatedKey: false, hasActualKey: false, errors: [] };
+        rows.push({
+          flightNumber,
+          date: cellText(item?.date),
+          airportEventDate: cellText(item?.airportEventDate || item?.date),
+          direction: 'arrival', airportIata: 'DUS', originIata, destinationIata: 'DUS',
+          official: official ? {
+            status: official?.status || 'unknown',
+            scheduled: p39Clock(official?.airportScheduledTime),
+            estimated: p39Clock(official?.airportEstimatedTime),
+            actual: p39Clock(official?.airportActualTime),
+            delayMinutes: Number.isFinite(Number(official?.delayMinutes)) ? Number(official.delayMinutes) : null
+          } : { status: 'unknown', scheduled: '', estimated: '', actual: '', delayMinutes: null, reason: officialFailure },
+          flightStatsBoard: board
+        });
+      }
+      window.ATMSP41BoardArrivalTimeFieldDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P41', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        attempted: rows.length,
+        routeMatches: rows.filter(row => row?.flightStatsBoard?.routeMatch === true).length,
+        withEstimatedKey: rows.filter(row => row?.flightStatsBoard?.hasEstimatedKey === true).length,
+        withActualKey: rows.filter(row => row?.flightStatsBoard?.hasActualKey === true).length,
+        rows
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P41 Board-Ankunfts-Zeitfeld-Scan abgeschlossen', 'ok');
+    } catch (error) {
+      window.ATMSP41BoardArrivalTimeFieldDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P41', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        error: cellText(error?.message) || String(error || 'Unbekannter Fehler')
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P41 Diagnose nicht vollständig', 'warn');
+    } finally {
+      const freshButton = $('p41BoardArrivalTimeDiagBtn');
+      if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
+    }
+  }
 
   // CORE-007D8A1F1D8P40: Native two-source status-only check for app.js.
   // Returns evidence only. It never mutates staged rides, PLAN, DISPO, LIVE storage or persistence.
