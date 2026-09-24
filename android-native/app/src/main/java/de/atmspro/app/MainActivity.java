@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P40F1 · 24.09.2026: NATIVE LIVE NON-BLOCKING BRIDGE – P40 network requests can run off the WebView/UI thread via an async Promise bridge; existing synchronous bridge remains for backward compatibility.
 package de.atmspro.app;
 
 import android.Manifest;
@@ -58,7 +59,7 @@ public final class MainActivity extends Activity {
         // Android-Objekt bewusst unter einem Host-Namen veroeffentlichen.
         // Die ATMS-kompatible JS-Huelle wird erst nach dem Laden injiziert.
         webView.addJavascriptInterface(
-                new AtmsNativeFlightBridge(),
+                new AtmsNativeFlightBridge(webView),
                 "ATMSNativeFlightBridgeHost");
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -176,9 +177,19 @@ public final class MainActivity extends Activity {
     private static void installAtmsBridge(WebView view) {
         String script = "(function(){"
                 + "if(!window.ATMSNativeFlightBridgeHost)return;"
+                + "var seq=0;"
+                + "window.__ATMSNativeFlightBridgePending=window.__ATMSNativeFlightBridgePending||{};"
+                + "window.__ATMSNativeFlightBridgeResolve=function(id,body,error){"
+                + "var p=window.__ATMSNativeFlightBridgePending[id];if(!p)return;delete window.__ATMSNativeFlightBridgePending[id];"
+                + "if(error){p.reject(new Error(String(error)));}else{p.resolve(String(body||''));}};"
                 + "window.ATMSNativeFlightBridge={"
                 + "contractVersion:'ATMS-FLIGHT-NATIVE-1',"
                 + "requestJsonString:function(s){return window.ATMSNativeFlightBridgeHost.requestJsonString(String(s));},"
+                + "requestJsonStringAsync:function(s){return new Promise(function(resolve,reject){"
+                + "seq+=1;var id='atms-native-'+Date.now().toString(36)+'-'+seq.toString(36);"
+                + "window.__ATMSNativeFlightBridgePending[id]={resolve:resolve,reject:reject};"
+                + "try{window.ATMSNativeFlightBridgeHost.requestJsonStringAsync(String(s),id);}"
+                + "catch(e){delete window.__ATMSNativeFlightBridgePending[id];reject(e);}});},"
                 + "lastError:function(){return window.ATMSNativeFlightBridgeHost.lastError();}"
                 + "};"
                 + "try{if(typeof window.ATMSNotifyNativeFlightBridgeReady==='function'){window.ATMSNotifyNativeFlightBridgeReady();}}catch(e){}"

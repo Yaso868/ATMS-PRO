@@ -1,8 +1,10 @@
+// CORE-007D8A1F1D8P40F1 · 24.09.2026: ASYNC NATIVE FLIGHT BRIDGE – network work can run on a worker thread and return through a WebView Promise callback without blocking the UI thread.
 // CORE-007D8A1F1D8P36F16 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT ROUTE PROBE – erlaubt ausschließlich FlightStats other-days GET für die diagnostische Prüfung noch offener Flugnummern. Keine Freigabe/Übernahme in Java.
 // CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – streng allowlistete arr/dep-Airporttafel-Probe, nur Diagnose, keine Verifizierungsfreigabe.
 package de.atmspro.app;
 
 import android.webkit.JavascriptInterface;
+import android.webkit.WebView;
 
 import org.json.JSONObject;
 
@@ -33,6 +35,11 @@ public final class AtmsNativeFlightBridge {
     private static final int DEFAULT_TIMEOUT_MS = 15_000;
 
     private volatile String lastError = "";
+    private final WebView webView;
+
+    public AtmsNativeFlightBridge(WebView webView) {
+        this.webView = webView;
+    }
 
     @JavascriptInterface
     public String requestJsonString(String requestJson) {
@@ -113,6 +120,33 @@ public final class AtmsNativeFlightBridge {
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    @JavascriptInterface
+    public void requestJsonStringAsync(String requestJson, String requestId) {
+        final String safeRequestId = requestId == null ? "" : requestId.trim();
+        if (!safeRequestId.matches("[A-Za-z0-9._:-]{1,120}")) {
+            return;
+        }
+
+        new Thread(() -> {
+            String body = requestJsonString(requestJson);
+            String error = body == null || body.isEmpty() ? lastError : "";
+            deliverAsyncResult(
+                    safeRequestId,
+                    body == null ? "" : body,
+                    error == null ? "" : error);
+        }, "ATMS-Flight-Bridge").start();
+    }
+
+    private void deliverAsyncResult(String requestId, String body, String error) {
+        String script = "(function(){try{if(typeof window.__ATMSNativeFlightBridgeResolve==='function'){"
+                + "window.__ATMSNativeFlightBridgeResolve("
+                + JSONObject.quote(requestId) + ","
+                + JSONObject.quote(body) + ","
+                + JSONObject.quote(error) + ");"
+                + "}}catch(e){}})();";
+        webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
     private static URI validateFlightStatsOtherDaysProbe(String method, String urlText) throws Exception {
