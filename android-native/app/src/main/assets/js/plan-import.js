@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P40 · 24.09.2026: NATIVE LIVE STATUS AUTO-CONFIRM – automatisiert ausschließlich den aktuellen operativen Flugstatus über zwei unabhängige native Quellen (offizielle Düsseldorf-Airport-Livequelle + FlightStats Einzel-Flug). Bestätigung nur bei exakter Flug-/Datums-/Airport-/Richtungs-/Routenidentität und gleichem, im P39/P39F1-Realtest belegtem Status departed/landed/cancelled. scheduled/on_time/delayed bleiben ohne eigene Zweitquellenzeit offen. Estimated/Actual/LIVE-Zeit werden bewusst NICHT bestätigt oder übernommen; PLAN/DISPO bleiben unverändert, manuelle Bestätigungen werden nicht berührt. Keine neue Quelle, Registrierung oder kostenpflichtige API.
 // CORE-007D8A1F1D8P39F2 · 24.09.2026: ANALYSIS RACE GUARD – verhindert überlappende Planlisten-Analyse-/Auto-Pipeline-Läufe derselben Auswahl. Der Analyse-Button bleibt bis zum Ende der laufenden Auto-Pipeline gesperrt; jeder neue echte Analyse-Lauf erhält eine neue Generation und veraltete Native-Flugprüfungen dürfen vor dem Anwenden ihrer Ergebnisse nicht mehr in den aktuellen Staging-State schreiben. Flüchtige Diagnoseanzeigen werden beim neuen Analyse-Lauf zurückgesetzt. Keine Änderung an OCR-, FLIGHT-008-, LIVE-, PLAN- oder DISPO-Regeln.
 // CORE-007D8A1F1D8P39F1 · 24.09.2026: NATIVE LIVE ARRIVAL TIME-FIELD PROBE – erweitert P39 ausschließlich diagnostisch um einen Mehrflug-Test der DUS-Ankünfte aus der analysierten Planliste. Für jede eindeutige Ankunft werden offizielle DUS-LIVE-Felder und die bereits allowlistete FlightStats-Einzelflugquelle getrennt gelesen und Status/Plan/Estimated/Actual nebeneinander angezeigt. Keine automatische Bestätigung, keine Änderung an PLAN/DISPO/LIVE/Persistenz, keine neue Quelle oder Registrierung.
 // CORE-007D8A1F1D8P39 · 24.09.2026: NATIVE LIVE DUAL-SOURCE DIAGNOSTIC – rein diagnostischer Beweistest fuer einen automatisch ausgewaehlten DUS-Flug. Fragt die bestehende offizielle DUS-Livequelle und die bereits allowlistete FlightStats-Zweitquelle nativ ab und zeigt Status/Plan-/Estimated-/Actual-Zeiten sowie beobachtete Abweichungen nebeneinander. Schreibt keinerlei PLAN-, DISPO- oder LIVE-Daten und aendert keine Bestaetigungslogik.
@@ -6327,6 +6328,201 @@
       if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
     }
   }
+
+
+  // CORE-007D8A1F1D8P40: Native two-source status-only check for app.js.
+  // Returns evidence only. It never mutates staged rides, PLAN, DISPO, LIVE storage or persistence.
+  function p40SourceHost(value) {
+    try { return new URL(String(value || '').trim()).hostname.replace(/^www\./i, '').toLowerCase(); }
+    catch (_) { return ''; }
+  }
+
+  function p40SafeStatus(value) {
+    const status = p39NormalizeStatus(value);
+    return ['scheduled','on_time','delayed','departed','landed','cancelled'].includes(status) ? status : 'unknown';
+  }
+
+  function p40NormalizedInputItem(raw) {
+    const flightNumber = normalizeFlightForCurrentCheck(raw?.flightNumber);
+    const date = cellText(raw?.date);
+    const airportEventDate = cellText(raw?.airportEventDate || raw?.date);
+    const direction = String(raw?.direction || '').trim().toLowerCase();
+    const airportIata = String(raw?.airportIata || '').trim().toUpperCase();
+    if (!flightNumber || !date || !airportEventDate || !['arrival','departure'].includes(direction) || !/^[A-Z]{3}$/.test(airportIata)) return null;
+    return {
+      flightNumber, date, airportEventDate,
+      airportEventDateDerived: Boolean(raw?.airportEventDateDerived),
+      direction, airportIata,
+      flightTime: cellText(raw?.flightTime) || null
+    };
+  }
+
+  async function p40NativeLiveStatusCheck(inputItems = []) {
+    const checkedAt = new Date().toISOString();
+    const dedup = new Map();
+    for (const raw of Array.isArray(inputItems) ? inputItems : []) {
+      const item = p40NormalizedInputItem(raw);
+      if (!item) continue;
+      const key = officialFlightBaseIdentity(item);
+      if (!dedup.has(key)) dedup.set(key, item);
+    }
+    const items = [...dedup.values()];
+    const flights = [];
+    if (!items.length) return { patch:'CORE-007D8A1F1D8P40', checkedAt, statusOnly:true, timeFieldsConfirmed:false, flights, attempted:0, confirmed:0 };
+
+    let provider = null;
+    let providerError = '';
+    try { provider = await ensureOfficialFlightProvider(); }
+    catch (error) { providerError = cellText(error?.message) || String(error || 'official_provider_unavailable'); }
+    const bridge = nativeSecondSourceBridgeHost();
+
+    for (const item of items) {
+      const base = {
+        flightNumber:item.flightNumber, date:item.date, airportEventDate:item.airportEventDate,
+        airportEventDateDerived:Boolean(item.airportEventDateDerived), direction:item.direction,
+        airportIata:item.airportIata, status:'unknown', confirmed:false, statusConfirmed:false,
+        timeConfirmed:false, airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
+        delayMinutes:null, sources:[], sourceConflict:false, resolutionMode:'unconfirmed', sourceNote:''
+      };
+
+      if (item.airportIata !== 'DUS') {
+        flights.push({ ...base, sourceNote:'P40 Status-Automatik ist im Beweistest ausschließlich für DUS freigegeben.' });
+        continue;
+      }
+      if (!provider) {
+        flights.push({ ...base, sourceNote:`Offizielle DUS-Quelle nicht verfügbar: ${providerError || 'unknown'}` });
+        continue;
+      }
+      if (!bridge) {
+        flights.push({ ...base, sourceNote:'Native Flight Bridge für FlightStats nicht verfügbar.' });
+        continue;
+      }
+
+      let official = null;
+      let officialFailure = '';
+      try {
+        const batch = await provider.fetchLive([item]);
+        official = Array.isArray(batch?.flights) ? batch.flights[0] : null;
+        if (!official) {
+          const failure = (Array.isArray(batch?.failures) ? batch.failures[0] : null)
+            || (Array.isArray(batch?.unsupported) ? batch.unsupported[0] : null);
+          officialFailure = cellText(failure?.reason) || 'official_not_found';
+        }
+      } catch (error) {
+        officialFailure = `official_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180);
+      }
+      if (!official) {
+        flights.push({ ...base, sourceNote:`Offizielle DUS-Quelle ohne eindeutigen Treffer: ${officialFailure || 'unknown'}` });
+        continue;
+      }
+
+      const officialFlight = normalizeFlightForCurrentCheck(official?.flightNumber || item.flightNumber);
+      const officialDate = cellText(official?.date || item.date);
+      const officialEventDate = cellText(official?.airportEventDate || item.airportEventDate || item.date);
+      const officialDirection = String(official?.direction || item.direction).trim().toLowerCase();
+      const officialAirport = String(official?.airportIata || item.airportIata).trim().toUpperCase();
+      const identityOk = officialFlight === item.flightNumber
+        && officialDate === item.date
+        && officialEventDate === item.airportEventDate
+        && officialDirection === item.direction
+        && officialAirport === item.airportIata;
+      if (!identityOk) {
+        flights.push({ ...base, sourceNote:'Offizielle DUS-Quelle passt nicht exakt zu Flug/Datum/Ereignistag/Richtung/Airport.' });
+        continue;
+      }
+
+      const relevantIata = String(official?.route?.iata || '').trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(relevantIata)) {
+        flights.push({ ...base, sourceNote:'Offizielle DUS-Quelle liefert keine eindeutige Gegen-IATA.' });
+        continue;
+      }
+      const officialOriginIata = item.direction === 'arrival' ? relevantIata : item.airportIata;
+      const officialDestinationIata = item.direction === 'arrival' ? item.airportIata : relevantIata;
+      const officialStatus = p40SafeStatus(official?.status);
+      const secondItem = { ...item, officialAirportEvidence:true, officialOriginIata, officialDestinationIata };
+      const singleUrl = nativeSecondSourceProbeUrl(secondItem);
+      if (!singleUrl) {
+        flights.push({ ...base, sourceNote:'FlightStats Einzel-Flug-URL konnte nicht sicher gebildet werden.' });
+        continue;
+      }
+
+      let second = { reachable:false, usable:false, reason:'not_requested', routeMatch:false, status:'unknown', scheduled:'', estimated:'', actual:'', sourceUrl:singleUrl };
+      try {
+        const raw = bridge.requestJsonString(JSON.stringify({
+          contractVersion:'ATMS-FLIGHT-NATIVE-1', purpose:'flightstats_probe', airportIata:'DUS',
+          method:'GET', url:singleUrl, timeoutMs:15000
+        }));
+        if (raw) {
+          try { second = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl:singleUrl }; }
+          catch (_) { second = { ...second, reachable:true, reason:'invalid_json' }; }
+        } else {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          second = { ...second, reason:message ? `transport:${message.slice(0,180)}` : 'empty_response' };
+        }
+      } catch (error) {
+        second = { ...second, reason:`technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180) };
+      }
+
+      const secondStatus = p40SafeStatus(second?.status);
+      const officialSources = mergeDocumentedFlightSources(official?.sources || []);
+      const sources = mergeDocumentedFlightSources(officialSources, [{ name:'FlightStats Einzel-Flug', url:singleUrl }]);
+      const hosts = [...new Set(sources.map(source => p40SourceHost(source?.url)).filter(Boolean))];
+      const officialHostPresent = officialSources.some(source => {
+        const host = p40SourceHost(source?.url);
+        return host && !/(^|\.)flightstats\.com$/i.test(host);
+      });
+      const flightStatsHostPresent = hosts.some(host => /(^|\.)flightstats\.com$/i.test(host));
+      const statusAgreement = officialStatus !== 'unknown' && officialStatus === secondStatus;
+      // P40 deliberately promotes only statuses proven by the P39/P39F1 real-device evidence.
+      // scheduled/on_time/delayed stay unconfirmed here because FlightStats may derive them
+      // without an independent Estimated/Actual timestamp.
+      const provenStatus = ['departed','landed','cancelled'].includes(officialStatus);
+      const confirmed = Boolean(
+        second?.reachable !== false
+        && second?.routeMatch === true
+        && second?.originIata === officialOriginIata
+        && second?.destinationIata === officialDestinationIata
+        && statusAgreement
+        && provenStatus
+        && officialHostPresent
+        && flightStatsHostPresent
+        && hosts.length >= 2
+      );
+
+      const statusText = confirmed ? officialStatus : 'unknown';
+      const reason = confirmed
+        ? `Status ${officialStatus} durch Düsseldorf Airport + FlightStats für ${officialOriginIata}→${officialDestinationIata} bestätigt. Exakte Estimated-/Actual-Zeit bleibt unbestätigt und wird nicht übernommen.`
+        : `Keine automatische Statusfreigabe: DUS=${officialStatus}, FlightStats=${secondStatus}, routeMatch=${second?.routeMatch === true ? 'ja' : 'nein'}, provenStatus=${provenStatus ? 'ja' : 'nein'}, reason=${cellText(second?.reason) || 'unknown'}.`;
+      flights.push({
+        ...base,
+        status:statusText,
+        confirmed,
+        statusConfirmed:confirmed,
+        timeConfirmed:false,
+        originIata:officialOriginIata,
+        destinationIata:officialDestinationIata,
+        observedOfficialStatus:officialStatus,
+        observedFlightStatsStatus:secondStatus,
+        observedOfficialScheduledTime:p39Clock(official?.airportScheduledTime) || null,
+        observedOfficialEstimatedTime:p39Clock(official?.airportEstimatedTime) || null,
+        observedOfficialActualTime:p39Clock(official?.airportActualTime) || null,
+        sources,
+        sourceConflict:!confirmed && officialStatus !== 'unknown' && secondStatus !== 'unknown' && officialStatus !== secondStatus,
+        resolutionMode:confirmed ? 'native_status_consensus' : 'unconfirmed',
+        sourceNote:reason
+      });
+    }
+
+    return {
+      patch:'CORE-007D8A1F1D8P40', checkedAt, statusOnly:true, timeFieldsConfirmed:false,
+      attempted:flights.length,
+      confirmed:flights.filter(row => row.confirmed === true).length,
+      flights
+    };
+  }
+
+  window.ATMSNativeLiveStatusCheck = p40NativeLiveStatusCheck;
 
 
   // CORE-007D8A1F1D8P36F16: Diagnostic-only unresolved-flight route probe.
