@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F20 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT OPERATOR-ALIAS DIAGNOSTIC – Behebt ausschließlich den P36F19-Diagnosefilter für FlightStats-Other-Days-Zeilen, deren kanonische Tracker-URL wegen eines Operating-Carriers einen anderen Carrier-Code, aber dieselbe Flugnummer trägt. Solche Zeilen werden nur dann diagnostisch als Operator-Alias akzeptiert, wenn am exakten Zieltag genau eine Zeile existiert, die Flugnummer identisch ist und genau eine IATA-Route vorliegt. Keine Fremdroute wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Airline-/Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F19 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT TARGET-ROW DIAGNOSTIC – Erweitert ausschließlich den diagnostischen P36F18-Other-Days-Routencheck um Zieltag-Zeilenzaehler und sichere Filterdiagnose (Identitaetsfilter/fehlende IATA-Route). Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F18 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT ROW-DATE PRIORITY FIX – Behebt den im P36F17-Realtest sichtbaren Diagnose-False-Negative: FlightStats-Other-Days liefert neben flugzeilenspezifischen Tagesfeldern auch Day-Group-Rahmendaten fuer mehrere Nachbartage. Fuer den exakten Tagesabgleich haben jetzt ausschliesslich flugzeilenspezifische URL-/Zeit-/Datumsfelder Vorrang; Day-Group-Felder duerfen nur dann als Fallback dienen, wenn sie genau ein Datum ergeben. Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F17 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT DATE SHAPE FIX – Erweitert ausschließlich den diagnostischen P36F16-Other-Days-Routencheck um robuste, explizite Datumsfelder der FlightStats-Antwort (URL-Query, sortTime/ISO-Felder sowie dayGroup date1/date2 in beiden MMM-DD/DD-MMM-Formen). Keine Route, kein Ort und kein Datum wird geraten; nur exakte 2026-09-23-artige Kandidaten werden ausgewertet. Keine Hochstufung, keine Warnungsentfernung, keine Java-Änderung.
@@ -4826,7 +4827,7 @@
               ? ` · Datumsfelder: ${item.observedDateCandidates.map(value => cellText(value)).filter(Boolean).join(', ')}`
               : '';
             const filterStats = Number.isFinite(Number(item?.exactDateRows))
-              ? ` · Zieltag-Zeilen: ${Number(item.exactDateRows)} · Identität verworfen: ${Number(item?.identityRejectedRows || 0)} · Route fehlt: ${Number(item?.routeMissingRows || 0)}`
+              ? ` · Zieltag-Zeilen: ${Number(item.exactDateRows)} · Identität verworfen: ${Number(item?.identityRejectedRows || 0)} · Operator-Alias: ${Number(item?.operatorAliasRows || 0)} · Route fehlt: ${Number(item?.routeMissingRows || 0)}`
               : '';
             const samples = Array.isArray(item?.targetRowSamples) && item.targetRowSamples.length
               ? ` · Zieltag-Samples: ${item.targetRowSamples.map(sample => {
@@ -4839,7 +4840,7 @@
           }).join('<br>')
         : 'Keine offenen Flugnummern für den Routencheck.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.4);border-radius:10px">`
-        + `<b>🚫 Offener Flug-Routencheck · P36F19</b><br>`
+        + `<b>🚫 Offener Flug-Routencheck · P36F20</b><br>`
         + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose: Fremdrouten werden niemals als Flugort übernommen und entfernen keine Warnung.</small>`
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
@@ -5892,8 +5893,9 @@
     const airportIata = String(item?.airportIata || '').trim().toUpperCase();
     const parts = splitFlightNumberForSecondSource(item?.flightNumber);
     const routes = [];
+    const operatorAliasRoutes = [];
     const observedDateCandidates = [];
-    let exactDateRows = 0, identityRejectedRows = 0, routeMissingRows = 0;
+    let exactDateRows = 0, identityRejectedRows = 0, routeMissingRows = 0, operatorAliasRows = 0;
     const targetRowSamples = [];
     const addSample = sample => {
       if (targetRowSamples.length < 6) targetRowSamples.push(sample);
@@ -5907,59 +5909,103 @@
         exactDateRows++;
         const rawUrl = cellText(flight?.url);
         let identityOk = true;
+        let operatorAlias = false;
         let urlPath = '';
+        let trackerCarrier = '';
+        let trackerNumber = '';
         if (rawUrl && parts) {
           try {
             const url = new URL(rawUrl, 'https://www.flightstats.com');
             urlPath = cellText(url.pathname);
-            const path = url.pathname.toUpperCase();
-            if (!path.includes(`/FLIGHT-TRACKER/${parts.carrier}/${parts.number}`)) identityOk = false;
+            const trackerMatch = url.pathname.toUpperCase().match(/^\/FLIGHT-TRACKER\/([A-Z0-9]{2,3})\/(\d{1,4}[A-Z]?)\/?$/);
+            if (trackerMatch) {
+              trackerCarrier = trackerMatch[1];
+              trackerNumber = trackerMatch[2];
+              if (trackerCarrier === parts.carrier && trackerNumber === parts.number) {
+                identityOk = true;
+              } else if (trackerCarrier !== parts.carrier && trackerNumber === parts.number) {
+                // P36F20: FlightStats may canonicalize a marketed flight to the operating carrier.
+                // This is accepted ONLY as a diagnostic candidate. The endpoint itself is still
+                // scoped to the requested flight, and final use below additionally requires exactly
+                // one target-date row and one unique IATA route. No flight location is imported.
+                identityOk = true;
+                operatorAlias = true;
+              } else {
+                identityOk = false;
+              }
+            } else if (!url.pathname.toUpperCase().includes(`/FLIGHT-TRACKER/${parts.carrier}/${parts.number}`)) {
+              identityOk = false;
+            }
           } catch (_) {}
         }
         const originIata = nativeSecondSourceIata(flight?.departureAirport);
         const destinationIata = nativeSecondSourceIata(flight?.arrivalAirport);
         if (!identityOk) {
           identityRejectedRows++;
-          addSample({ exactDate, originIata, destinationIata, urlPath, verdict: 'identity_rejected' });
+          addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'identity_rejected' });
           continue;
         }
         if (!/^[A-Z]{3}$/.test(originIata) || !/^[A-Z]{3}$/.test(destinationIata)) {
           routeMissingRows++;
-          addSample({ exactDate, originIata, destinationIata, urlPath, verdict: 'route_missing' });
+          addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'route_missing' });
           continue;
         }
-        addSample({ exactDate, originIata, destinationIata, urlPath, verdict: 'route_candidate' });
-        routes.push({ originIata, destinationIata, exactDate });
+        if (operatorAlias) {
+          operatorAliasRows++;
+          addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'operator_alias_candidate' });
+          operatorAliasRoutes.push({ originIata, destinationIata, exactDate, trackerCarrier, trackerNumber, operatorAlias: true });
+          continue;
+        }
+        addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'route_candidate' });
+        routes.push({ originIata, destinationIata, exactDate, operatorAlias: false });
       }
     }
     const uniqueRoutes = [...new Map(routes.map(route => [`${route.originIata}>${route.destinationIata}`, route])).values()];
+    const uniqueOperatorAliasRoutes = [...new Map(operatorAliasRoutes.map(route => [`${route.originIata}>${route.destinationIata}`, route])).values()];
     const diagnosticBase = {
       observedDateCandidates: observedDateCandidates.slice(0, 12),
       exactDateRows,
       identityRejectedRows,
       routeMissingRows,
+      operatorAliasRows,
       targetRowSamples
     };
-    if (!uniqueRoutes.length) {
+    let resolvedRoutes = uniqueRoutes;
+    let resolvedViaOperatorAlias = false;
+    // P36F20 safety gate: an operating-carrier URL is diagnostic evidence only when
+    // there is exactly one row for the exact target date and that row yields one route.
+    // Multiple rows, multiple routes or mixed identity evidence stay unresolved.
+    if (!resolvedRoutes.length && exactDateRows === 1 && identityRejectedRows === 0 && routeMissingRows === 0
+      && operatorAliasRows === 1 && uniqueOperatorAliasRoutes.length === 1) {
+      resolvedRoutes = uniqueOperatorAliasRoutes;
+      resolvedViaOperatorAlias = true;
+    }
+    if (!resolvedRoutes.length) {
       let reason = 'exact_date_not_found';
-      if (exactDateRows > 0 && identityRejectedRows === exactDateRows) reason = 'exact_date_identity_rejected';
+      if (operatorAliasRows > 0) reason = 'operator_alias_ambiguous';
+      else if (exactDateRows > 0 && identityRejectedRows === exactDateRows) reason = 'exact_date_identity_rejected';
       else if (exactDateRows > 0 && routeMissingRows > 0 && identityRejectedRows + routeMissingRows >= exactDateRows) reason = 'exact_date_route_missing';
       else if (exactDateRows > 0) reason = 'exact_date_filtered_without_route';
       return { reachable: true, exactDateFound: exactDateRows > 0, airportConflict: false, reason, routes: [], ...diagnosticBase };
     }
-    if (uniqueRoutes.length !== 1) return { reachable: true, exactDateFound: true, airportConflict: false, reason: 'ambiguous_routes', routes: uniqueRoutes, ...diagnosticBase };
-    const route = uniqueRoutes[0];
+    if (resolvedRoutes.length !== 1) return { reachable: true, exactDateFound: true, airportConflict: false, reason: 'ambiguous_routes', routes: resolvedRoutes, ...diagnosticBase };
+    const route = resolvedRoutes[0];
     const includesExpectedAirport = route.originIata === airportIata || route.destinationIata === airportIata;
     return {
       reachable: true,
       exactDateFound: true,
       airportConflict: !includesExpectedAirport,
-      reason: includesExpectedAirport ? 'route_includes_expected_airport' : 'airport_conflict',
+      reason: resolvedViaOperatorAlias
+        ? (includesExpectedAirport ? 'operator_alias_route_includes_expected_airport' : 'operator_alias_airport_conflict')
+        : (includesExpectedAirport ? 'route_includes_expected_airport' : 'airport_conflict'),
       originIata: route.originIata,
       destinationIata: route.destinationIata,
       airportIata,
       airportEventDate: targetDate,
-      routes: uniqueRoutes,
+      operatorAlias: resolvedViaOperatorAlias,
+      trackerCarrier: cellText(route?.trackerCarrier),
+      trackerNumber: cellText(route?.trackerNumber),
+      routes: resolvedRoutes,
       ...diagnosticBase
     };
   }
