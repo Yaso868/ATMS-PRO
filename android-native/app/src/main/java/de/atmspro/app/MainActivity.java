@@ -2,9 +2,13 @@ package de.atmspro.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.GeolocationPermissions;
+import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -15,16 +19,20 @@ import android.webkit.WebViewClient;
 import androidx.webkit.WebViewAssetLoader;
 
 /**
- * P31F13: aktuelle bestätigte ATMS-Weboberfläche als lokale Android-Assets.
- * Die DUS-Abfrage läuft weiterhin ausschließlich über die bestätigte Native Flight Bridge.
- * P37: Native Standortberechtigung + sicherer appassets-Origin für HTML5-Geolocation.
+ * P31F13: aktuelle bestaetigte ATMS-Weboberflaeche als lokale Android-Assets.
+ * Die DUS-Abfrage laeuft weiterhin ausschliesslich ueber die bestaetigte Native Flight Bridge.
+ * P36F8: Native Datei-Auswahl fuer Bild/Planliste via Android-Systempicker wiederhergestellt.
+ * P37B: Native Standortberechtigung + sicherer appassets-Origin fuer HTML5-Geolocation,
+ *       ohne die bestaetigte Datei-/Planlisten-Auswahl zu entfernen.
  */
 public final class MainActivity extends Activity {
+    private static final int FILE_CHOOSER_REQUEST_CODE = 3608;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 3701;
     private static final String LOCAL_APP_URL =
             "https://appassets.androidplatform.net/assets/index.html";
 
     private WebView webView;
+    private ValueCallback<Uri[]> pendingFileChooser;
     private String pendingGeolocationOrigin;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
 
@@ -38,7 +46,8 @@ public final class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
+        // Fuer vom Android-Systempicker gelieferte content://-URIs weiterhin erforderlich.
+        settings.setAllowContentAccess(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setGeolocationEnabled(true);
 
@@ -46,11 +55,34 @@ public final class MainActivity extends Activity {
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
 
-        // Android-Objekt bewusst unter einem Host-Namen veröffentlichen.
-        // Die ATMS-kompatible JS-Hülle wird erst nach dem Laden injiziert.
-        webView.addJavascriptInterface(new AtmsNativeFlightBridge(), "ATMSNativeFlightBridgeHost");
+        // Android-Objekt bewusst unter einem Host-Namen veroeffentlichen.
+        // Die ATMS-kompatible JS-Huelle wird erst nach dem Laden injiziert.
+        webView.addJavascriptInterface(
+                new AtmsNativeFlightBridge(),
+                "ATMSNativeFlightBridgeHost");
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(
+                    WebView view,
+                    ValueCallback<Uri[]> filePathCallback,
+                    FileChooserParams fileChooserParams) {
+                if (pendingFileChooser != null) {
+                    pendingFileChooser.onReceiveValue(null);
+                }
+                pendingFileChooser = filePathCallback;
+                try {
+                    Intent chooserIntent = fileChooserParams.createIntent();
+                    chooserIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                    startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST_CODE);
+                    return true;
+                } catch (ActivityNotFoundException | SecurityException error) {
+                    pendingFileChooser.onReceiveValue(null);
+                    pendingFileChooser = null;
+                    return false;
+                }
+            }
+
             @Override
             public void onGeolocationPermissionsShowPrompt(
                     String origin,
@@ -61,7 +93,10 @@ public final class MainActivity extends Activity {
                 }
 
                 if (pendingGeolocationCallback != null) {
-                    pendingGeolocationCallback.invoke(pendingGeolocationOrigin, false, false);
+                    pendingGeolocationCallback.invoke(
+                            pendingGeolocationOrigin,
+                            false,
+                            false);
                 }
                 pendingGeolocationOrigin = origin;
                 pendingGeolocationCallback = callback;
@@ -80,7 +115,8 @@ public final class MainActivity extends Activity {
             public WebResourceResponse shouldInterceptRequest(
                     WebView view,
                     WebResourceRequest request) {
-                WebResourceResponse response = assetLoader.shouldInterceptRequest(request.getUrl());
+                WebResourceResponse response =
+                        assetLoader.shouldInterceptRequest(request.getUrl());
                 if (response != null) {
                     return response;
                 }
@@ -105,6 +141,18 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != FILE_CHOOSER_REQUEST_CODE || pendingFileChooser == null) {
+            return;
+        }
+
+        Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        pendingFileChooser.onReceiveValue(result);
+        pendingFileChooser = null;
+    }
+
+    @Override
     public void onRequestPermissionsResult(
             int requestCode,
             String[] permissions,
@@ -116,7 +164,10 @@ public final class MainActivity extends Activity {
 
         boolean granted = hasLocationPermission();
         if (pendingGeolocationCallback != null) {
-            pendingGeolocationCallback.invoke(pendingGeolocationOrigin, granted, false);
+            pendingGeolocationCallback.invoke(
+                    pendingGeolocationOrigin,
+                    granted,
+                    false);
             pendingGeolocationCallback = null;
             pendingGeolocationOrigin = null;
         }
