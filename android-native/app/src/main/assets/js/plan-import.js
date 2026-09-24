@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F19 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT TARGET-ROW DIAGNOSTIC – Erweitert ausschließlich den diagnostischen P36F18-Other-Days-Routencheck um Zieltag-Zeilenzaehler und sichere Filterdiagnose (Identitaetsfilter/fehlende IATA-Route). Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F18 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT ROW-DATE PRIORITY FIX – Behebt den im P36F17-Realtest sichtbaren Diagnose-False-Negative: FlightStats-Other-Days liefert neben flugzeilenspezifischen Tagesfeldern auch Day-Group-Rahmendaten fuer mehrere Nachbartage. Fuer den exakten Tagesabgleich haben jetzt ausschliesslich flugzeilenspezifische URL-/Zeit-/Datumsfelder Vorrang; Day-Group-Felder duerfen nur dann als Fallback dienen, wenn sie genau ein Datum ergeben. Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F17 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT DATE SHAPE FIX – Erweitert ausschließlich den diagnostischen P36F16-Other-Days-Routencheck um robuste, explizite Datumsfelder der FlightStats-Antwort (URL-Query, sortTime/ISO-Felder sowie dayGroup date1/date2 in beiden MMM-DD/DD-MMM-Formen). Keine Route, kein Ort und kein Datum wird geraten; nur exakte 2026-09-23-artige Kandidaten werden ausgewertet. Keine Hochstufung, keine Warnungsentfernung, keine Java-Änderung.
 // CORE-007D8A1F1D8P36F16 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT ROUTE PROBE – Prüft ausschließlich noch offene offizielle Airport-Nichttreffer über die datumsspezifische FlightStats-Other-Days-Webquelle. Eine dort eindeutige Route, die den Fahrt-Airport nicht enthält, wird NUR diagnostisch als Airport-Konflikt sichtbar gemacht; kein Flugort wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
@@ -4824,11 +4825,21 @@
             const dateCandidates = Array.isArray(item?.observedDateCandidates) && item.observedDateCandidates.length
               ? ` · Datumsfelder: ${item.observedDateCandidates.map(value => cellText(value)).filter(Boolean).join(', ')}`
               : '';
-            return `${escapeHtml(flight)} · ${escapeHtml(route)} · ${escapeHtml(label)}${reason ? ` · ${escapeHtml(reason)}` : ''}${escapeHtml(dateCandidates)}`;
+            const filterStats = Number.isFinite(Number(item?.exactDateRows))
+              ? ` · Zieltag-Zeilen: ${Number(item.exactDateRows)} · Identität verworfen: ${Number(item?.identityRejectedRows || 0)} · Route fehlt: ${Number(item?.routeMissingRows || 0)}`
+              : '';
+            const samples = Array.isArray(item?.targetRowSamples) && item.targetRowSamples.length
+              ? ` · Zieltag-Samples: ${item.targetRowSamples.map(sample => {
+                  const sampleRoute = sample?.originIata && sample?.destinationIata ? `${sample.originIata}→${sample.destinationIata}` : '–';
+                  const samplePath = cellText(sample?.urlPath);
+                  return `${sampleRoute}/${cellText(sample?.verdict) || '?'}${samplePath ? `@${samplePath}` : ''}`;
+                }).join(' | ')}`
+              : '';
+            return `${escapeHtml(flight)} · ${escapeHtml(route)} · ${escapeHtml(label)}${reason ? ` · ${escapeHtml(reason)}` : ''}${escapeHtml(dateCandidates)}${escapeHtml(filterStats)}${escapeHtml(samples)}`;
           }).join('<br>')
         : 'Keine offenen Flugnummern für den Routencheck.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.4);border-radius:10px">`
-        + `<b>🚫 Offener Flug-Routencheck · P36F18</b><br>`
+        + `<b>🚫 Offener Flug-Routencheck · P36F19</b><br>`
         + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose: Fremdrouten werden niemals als Flugort übernommen und entfernen keine Warnung.</small>`
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
@@ -5882,29 +5893,61 @@
     const parts = splitFlightNumberForSecondSource(item?.flightNumber);
     const routes = [];
     const observedDateCandidates = [];
+    let exactDateRows = 0, identityRejectedRows = 0, routeMissingRows = 0;
+    const targetRowSamples = [];
+    const addSample = sample => {
+      if (targetRowSamples.length < 6) targetRowSamples.push(sample);
+    };
     for (const dayGroup of data) {
       for (const flight of Array.isArray(dayGroup?.flights) ? dayGroup.flights : []) {
         const dateEvidence = flightStatsOtherDaysDateEvidence(dayGroup, flight);
         for (const candidate of dateEvidence.observed) if (!observedDateCandidates.includes(candidate)) observedDateCandidates.push(candidate);
         const exactDate = exactDateFromFlightStatsOtherDaysRow(dayGroup, flight);
         if (!exactDate || exactDate !== targetDate) continue;
+        exactDateRows++;
         const rawUrl = cellText(flight?.url);
+        let identityOk = true;
+        let urlPath = '';
         if (rawUrl && parts) {
           try {
             const url = new URL(rawUrl, 'https://www.flightstats.com');
+            urlPath = cellText(url.pathname);
             const path = url.pathname.toUpperCase();
-            if (!path.includes(`/FLIGHT-TRACKER/${parts.carrier}/${parts.number}`)) continue;
+            if (!path.includes(`/FLIGHT-TRACKER/${parts.carrier}/${parts.number}`)) identityOk = false;
           } catch (_) {}
         }
         const originIata = nativeSecondSourceIata(flight?.departureAirport);
         const destinationIata = nativeSecondSourceIata(flight?.arrivalAirport);
-        if (!/^[A-Z]{3}$/.test(originIata) || !/^[A-Z]{3}$/.test(destinationIata)) continue;
+        if (!identityOk) {
+          identityRejectedRows++;
+          addSample({ exactDate, originIata, destinationIata, urlPath, verdict: 'identity_rejected' });
+          continue;
+        }
+        if (!/^[A-Z]{3}$/.test(originIata) || !/^[A-Z]{3}$/.test(destinationIata)) {
+          routeMissingRows++;
+          addSample({ exactDate, originIata, destinationIata, urlPath, verdict: 'route_missing' });
+          continue;
+        }
+        addSample({ exactDate, originIata, destinationIata, urlPath, verdict: 'route_candidate' });
         routes.push({ originIata, destinationIata, exactDate });
       }
     }
     const uniqueRoutes = [...new Map(routes.map(route => [`${route.originIata}>${route.destinationIata}`, route])).values()];
-    if (!uniqueRoutes.length) return { reachable: true, exactDateFound: false, airportConflict: false, reason: 'exact_date_not_found', routes: [], observedDateCandidates: observedDateCandidates.slice(0, 12) };
-    if (uniqueRoutes.length !== 1) return { reachable: true, exactDateFound: true, airportConflict: false, reason: 'ambiguous_routes', routes: uniqueRoutes };
+    const diagnosticBase = {
+      observedDateCandidates: observedDateCandidates.slice(0, 12),
+      exactDateRows,
+      identityRejectedRows,
+      routeMissingRows,
+      targetRowSamples
+    };
+    if (!uniqueRoutes.length) {
+      let reason = 'exact_date_not_found';
+      if (exactDateRows > 0 && identityRejectedRows === exactDateRows) reason = 'exact_date_identity_rejected';
+      else if (exactDateRows > 0 && routeMissingRows > 0 && identityRejectedRows + routeMissingRows >= exactDateRows) reason = 'exact_date_route_missing';
+      else if (exactDateRows > 0) reason = 'exact_date_filtered_without_route';
+      return { reachable: true, exactDateFound: exactDateRows > 0, airportConflict: false, reason, routes: [], ...diagnosticBase };
+    }
+    if (uniqueRoutes.length !== 1) return { reachable: true, exactDateFound: true, airportConflict: false, reason: 'ambiguous_routes', routes: uniqueRoutes, ...diagnosticBase };
     const route = uniqueRoutes[0];
     const includesExpectedAirport = route.originIata === airportIata || route.destinationIata === airportIata;
     return {
@@ -5916,7 +5959,8 @@
       destinationIata: route.destinationIata,
       airportIata,
       airportEventDate: targetDate,
-      routes: uniqueRoutes
+      routes: uniqueRoutes,
+      ...diagnosticBase
     };
   }
 
