@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P44 · 24.09.2026: NATIVE DUS ACTUAL ARRIVAL WITH DUAL-SOURCE STATUS GATE – Für DUS-Ankünfte darf die offizielle Düsseldorf-Airport-Actual-Zeit operativ als LIVE-Landungszeit verwendet werden, aber ausschließlich wenn Düsseldorf Airport + FlightStats denselben Flug/Tag/Airport/dieselbe Route und den Status landed unabhängig bestätigen. Die exakte Minute wird ausdrücklich NICHT als Zwei-Quellen-minutengenau bestätigt bezeichnet; Flightradar24 bleibt manuelle Zusatzkontrolle. Abflüge, PLAN, DISPO, FLIGHT-008 und manuelle Bestätigungen bleiben unverändert.
 // CORE-007D8A1F1D8P43C · 24.09.2026: P43 NULL-DELTA DIAGNOSTIC FIX – korrigiert ausschließlich die P43-Diagnoseausgabe: fehlende FlightStats-Runway-Zeiten/null dürfen nicht mehr als 0-Minuten-Abweichung gezählt oder als „+0 Min.“ angezeigt werden. HTTP-/Quellenverhalten, PLAN/DISPO/LIVE/Persistenz und sämtliche Bestätigungsregeln bleiben unverändert.
 // CORE-007D8A1F1D8P43 · 24.09.2026: FLIGHTSTATS FLICK RUNWAY-TIME PROBE – rein diagnostischer Folgebeweis nach P42. Liest über die bereits bekannte FlightStats flightId den streng allowlisteten Detail-Endpunkt /api-next/flick/<flightId> und prüft dessen lokale Actual-Runway-/Arrival-Felder gegen die offizielle DUS-Landungszeit. Keine automatische Bestätigung/Übernahme; PLAN/DISPO/LIVE/Persistenz unverändert.
 // CORE-007D8A1F1D8P42 · 24.09.2026: FLIGHTSTATS CURRENT-SCHEMA ARRIVAL TIME PROBE – rein diagnostischer Folgebeweis nach P41. Liest die bereits allowlistete FlightStats-Einzelflug-JSON-Antwort erneut und wertet die tatsächlich vorhandenen current-schema Felder schedule.estimatedActualArrival(+Title/+Runway) sowie arrivalAirport.times.estimatedActual aus. Vergleicht sie mit der offiziellen DUS-Zeit, ohne eine LIVE-Zeit zu bestätigen oder zu übernehmen. Keine Änderung an PLAN/DISPO/LIVE/Persistenz und keine neue Quelle.
@@ -6972,7 +6973,9 @@
           flightNumber:item.flightNumber, date:item.date, airportEventDate:item.airportEventDate,
           airportEventDateDerived:Boolean(item.airportEventDateDerived), direction:item.direction,
           airportIata:item.airportIata, status:'unknown', confirmed:false, statusConfirmed:false,
-          timeConfirmed:false, airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
+          timeConfirmed:false, timeMinuteDualSourceConfirmed:false,
+          officialActualOperationallyAccepted:false, officialActualTime:null,
+          airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
           delayMinutes:null, sources:[], sourceConflict:false, resolutionMode:'unconfirmed',
           sourceNote:'P40F1: asynchrone Native Flight Bridge nicht verfügbar; keine blockierende LIVE-Prüfung gestartet.'
         });
@@ -7002,7 +7005,9 @@
         flightNumber:item.flightNumber, date:item.date, airportEventDate:item.airportEventDate,
         airportEventDateDerived:Boolean(item.airportEventDateDerived), direction:item.direction,
         airportIata:item.airportIata, status:'unknown', confirmed:false, statusConfirmed:false,
-        timeConfirmed:false, airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
+        timeConfirmed:false, timeMinuteDualSourceConfirmed:false,
+        officialActualOperationallyAccepted:false, officialActualTime:null,
+        airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
         delayMinutes:null, sources:[], sourceConflict:false, resolutionMode:'unconfirmed', sourceNote:''
       };
 
@@ -7112,33 +7117,55 @@
       );
 
       const statusText = confirmed ? officialStatus : 'unknown';
-      const reason = confirmed
-        ? `Status ${officialStatus} durch Düsseldorf Airport + FlightStats für ${officialOriginIata}→${officialDestinationIata} bestätigt. Exakte Estimated-/Actual-Zeit bleibt unbestätigt und wird nicht übernommen.`
-        : `Keine automatische Statusfreigabe: DUS=${officialStatus}, FlightStats=${secondStatus}, routeMatch=${second?.routeMatch === true ? 'ja' : 'nein'}, provenStatus=${provenStatus ? 'ja' : 'nein'}, reason=${cellText(second?.reason) || 'unknown'}.`;
+      const officialActual = p39Clock(official?.airportActualTime) || null;
+      // P44: the exact minute remains a one-source timestamp. It may only become an
+      // operational LIVE arrival after the independent FlightStats source has confirmed
+      // the exact flight identity/route and the same terminal status "landed".
+      const officialActualOperationallyAccepted = Boolean(
+        confirmed
+        && item.direction === 'arrival'
+        && officialStatus === 'landed'
+        && officialActual
+      );
+      const reason = officialActualOperationallyAccepted
+        ? `Status landed und Route ${officialOriginIata}→${officialDestinationIata} durch Düsseldorf Airport + FlightStats bestätigt. Operative LIVE-Landungszeit ${officialActual} stammt aus der offiziellen Düsseldorf-Airport-Actual-Zeit. Die exakte Minute ist NICHT durch FlightStats minutengenau bestätigt; Flightradar24 bleibt manuelle Zusatzkontrolle.`
+        : confirmed
+          ? `Status ${officialStatus} durch Düsseldorf Airport + FlightStats für ${officialOriginIata}→${officialDestinationIata} bestätigt. Exakte Estimated-/Actual-Zeit bleibt ohne P44-Ankunftsfreigabe unbestätigt und wird nicht übernommen.`
+          : `Keine automatische Statusfreigabe: DUS=${officialStatus}, FlightStats=${secondStatus}, routeMatch=${second?.routeMatch === true ? 'ja' : 'nein'}, provenStatus=${provenStatus ? 'ja' : 'nein'}, reason=${cellText(second?.reason) || 'unknown'}.`;
       flights.push({
         ...base,
         status:statusText,
         confirmed,
         statusConfirmed:confirmed,
+        // Deliberately false: P44 does not claim a two-source exact-minute match.
         timeConfirmed:false,
+        timeMinuteDualSourceConfirmed:false,
+        officialActualOperationallyAccepted,
+        officialActualTime:officialActualOperationallyAccepted ? officialActual : null,
         originIata:officialOriginIata,
         destinationIata:officialDestinationIata,
         observedOfficialStatus:officialStatus,
         observedFlightStatsStatus:secondStatus,
         observedOfficialScheduledTime:p39Clock(official?.airportScheduledTime) || null,
         observedOfficialEstimatedTime:p39Clock(official?.airportEstimatedTime) || null,
-        observedOfficialActualTime:p39Clock(official?.airportActualTime) || null,
+        observedOfficialActualTime:officialActual,
         sources,
         sourceConflict:!confirmed && officialStatus !== 'unknown' && secondStatus !== 'unknown' && officialStatus !== secondStatus,
-        resolutionMode:confirmed ? 'native_status_consensus' : 'unconfirmed',
+        resolutionMode:officialActualOperationallyAccepted ? 'native_arrival_official_actual_dual_status' : (confirmed ? 'native_status_consensus' : 'unconfirmed'),
         sourceNote:reason
       });
     }
 
     return {
-      patch:'CORE-007D8A1F1D8P40F1', checkedAt, statusOnly:true, timeFieldsConfirmed:false, asyncBridge:true,
+      patch:'CORE-007D8A1F1D8P44', checkedAt,
+      statusOnly:false,
+      timeFieldsConfirmed:false,
+      exactMinuteDualSourceConfirmed:false,
+      officialActualOperationalPolicy:'DUS arrival actual allowed only after independent FlightStats identity/route + landed-status confirmation',
+      asyncBridge:true,
       attempted:flights.length,
       confirmed:flights.filter(row => row.confirmed === true).length,
+      operationalArrivalTimes:flights.filter(row => row.officialActualOperationallyAccepted === true && Boolean(row.officialActualTime)).length,
       flights
     };
   }
