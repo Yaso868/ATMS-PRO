@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F17 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT DATE SHAPE FIX – Erweitert ausschließlich den diagnostischen P36F16-Other-Days-Routencheck um robuste, explizite Datumsfelder der FlightStats-Antwort (URL-Query, sortTime/ISO-Felder sowie dayGroup date1/date2 in beiden MMM-DD/DD-MMM-Formen). Keine Route, kein Ort und kein Datum wird geraten; nur exakte 2026-09-23-artige Kandidaten werden ausgewertet. Keine Hochstufung, keine Warnungsentfernung, keine Java-Änderung.
 // CORE-007D8A1F1D8P36F16 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT ROUTE PROBE – Prüft ausschließlich noch offene offizielle Airport-Nichttreffer über die datumsspezifische FlightStats-Other-Days-Webquelle. Eine dort eindeutige Route, die den Fahrt-Airport nicht enthält, wird NUR diagnostisch als Airport-Konflikt sichtbar gemacht; kein Flugort wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F15 · 23.09.2026: NATIVE MULTI-WINDOW SECOND-SOURCE FIX – Behebt den im P36F14-Realtest sichtbaren Sicherheits-False-Negative, bei dem eine exakt passende FlightStats-Airport-Board-Route nicht freigegeben wurde, wenn derselbe konkrete Flug in mehr als einem gueltigen 6-Stunden-Boardfenster derselben unabhaengigen Quelle vorkam. Mehrere Board-URLs derselben FlightStats-Domain gelten weiterhin nur als EINE Zweitquelle; Freigabe bleibt nur bei eindeutiger Route, exakter Flug-/Datums-/Richtungs-/Airportidentitaet und zwei unterschiedlichen Quellenhosts erlaubt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F14 · 23.09.2026: NATIVE STRICT DUAL-SOURCE PROMOTION – Nach erfolgreich bestaetigtem P36F13-Realtest werden ausschliesslich exakte, datumsspezifische FlightStats-Airport-Board-Treffer als unabhaengige Quelle 2 mit der bereits vorhandenen offiziellen Airportquelle zusammengefuehrt. verified/high und Entfernen von ⚠ manuell prüfen nur bei identischer Flugnummer + airportEventDate + Richtung + Airport + originIata + destinationIata und mindestens zwei unterschiedlichen dokumentierten Quellenhosts. Alle Abweichungen bleiben source_confirmed/manuell. Keine Routen-Hardcodes.
@@ -4819,11 +4820,14 @@
             const airport = String(item?.airportIata || '').trim().toUpperCase();
             const label = item?.airportConflict === true ? `passt nicht zum Fahrt-Airport ${airport || '?'}` : (item?.exactDateFound === true ? `enthält Fahrt-Airport ${airport || '?'}` : 'kein exakter Tagesdatensatz');
             const reason = cellText(item?.reason);
-            return `${escapeHtml(flight)} · ${escapeHtml(route)} · ${escapeHtml(label)}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
+            const dateCandidates = Array.isArray(item?.observedDateCandidates) && item.observedDateCandidates.length
+              ? ` · Datumsfelder: ${item.observedDateCandidates.map(value => cellText(value)).filter(Boolean).join(', ')}`
+              : '';
+            return `${escapeHtml(flight)} · ${escapeHtml(route)} · ${escapeHtml(label)}${reason ? ` · ${escapeHtml(reason)}` : ''}${escapeHtml(dateCandidates)}`;
           }).join('<br>')
         : 'Keine offenen Flugnummern für den Routencheck.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.4);border-radius:10px">`
-        + `<b>🚫 Offener Flug-Routencheck · P36F16</b><br>`
+        + `<b>🚫 Offener Flug-Routencheck · P36F17</b><br>`
         + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose: Fremdrouten werden niemals als Flugort übernommen und entfernen keine Warnung.</small>`
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
@@ -5807,25 +5811,51 @@
     return `https://www.flightstats.com/v2/api-next/flight-tracker/other-days/${encodeURIComponent(parts.carrier)}/${encodeURIComponent(parts.number)}`;
   }
 
-  function exactDateFromFlightStatsOtherDaysRow(dayGroup, flight) {
+  function flightStatsOtherDaysDateCandidates(dayGroup, flight) {
+    const out = [];
+    const add = value => {
+      const iso = cellText(value);
+      if (/^20\d{2}-\d{2}-\d{2}$/.test(iso) && !out.includes(iso)) out.push(iso);
+    };
+    const addIsoPrefix = value => {
+      const m = cellText(value).match(/^(20\d{2})-(\d{1,2})-(\d{1,2})(?:T|\s|$)/);
+      if (m) add(validIsoPlanDate(m[1], m[2], m[3]));
+    };
     const rawUrl = cellText(flight?.url);
     if (rawUrl) {
       try {
         const url = new URL(rawUrl, 'https://www.flightstats.com');
-        const year = url.searchParams.get('year');
-        const month = url.searchParams.get('month');
-        const date = url.searchParams.get('date');
-        const iso = validIsoPlanDate(year, month, date);
-        if (iso) return iso;
+        add(validIsoPlanDate(url.searchParams.get('year'), url.searchParams.get('month'), url.searchParams.get('date')));
       } catch (_) {}
     }
+    [flight?.sortTime, flight?.date, flight?.dateLocal, flight?.departureDate, flight?.scheduledDeparture,
+      flight?.departureTimeLocal, flight?.publishedDeparture, dayGroup?.isoDate, dayGroup?.dateIso, dayGroup?.date]
+      .forEach(addIsoPrefix);
+
     const year = String(dayGroup?.year || '').trim();
-    const date2 = String(dayGroup?.date2 || '').trim();
-    const m = date2.match(/^([A-Za-z]{3})-(\d{1,2})$/);
-    if (!/^\d{4}$/.test(year) || !m) return '';
-    const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
-    const month = months[m[1].toLowerCase()];
-    return month ? validIsoPlanDate(year, month, m[2]) : '';
+    if (/^\d{4}$/.test(year)) {
+      const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
+      for (const raw of [dayGroup?.date1, dayGroup?.date2]) {
+        const text = cellText(raw).replace(/[.,]/g, '').replace(/[\s_/]+/g, '-').replace(/-+/g, '-');
+        let m = text.match(/^([A-Za-z]{3,4})-(\d{1,2})$/);
+        if (m) {
+          const month = months[m[1].toLowerCase()];
+          if (month) add(validIsoPlanDate(year, month, m[2]));
+          continue;
+        }
+        m = text.match(/^(\d{1,2})-([A-Za-z]{3,4})$/);
+        if (m) {
+          const month = months[m[2].toLowerCase()];
+          if (month) add(validIsoPlanDate(year, month, m[1]));
+        }
+      }
+    }
+    return out;
+  }
+
+  function exactDateFromFlightStatsOtherDaysRow(dayGroup, flight) {
+    const candidates = flightStatsOtherDaysDateCandidates(dayGroup, flight);
+    return candidates.length === 1 ? candidates[0] : '';
   }
 
   function parseNativeUnresolvedFlightOtherDays(item, payload) {
@@ -5835,9 +5865,12 @@
     const airportIata = String(item?.airportIata || '').trim().toUpperCase();
     const parts = splitFlightNumberForSecondSource(item?.flightNumber);
     const routes = [];
+    const observedDateCandidates = [];
     for (const dayGroup of data) {
       for (const flight of Array.isArray(dayGroup?.flights) ? dayGroup.flights : []) {
-        const exactDate = exactDateFromFlightStatsOtherDaysRow(dayGroup, flight);
+        const dateCandidates = flightStatsOtherDaysDateCandidates(dayGroup, flight);
+        for (const candidate of dateCandidates) if (!observedDateCandidates.includes(candidate)) observedDateCandidates.push(candidate);
+        const exactDate = dateCandidates.length === 1 ? dateCandidates[0] : '';
         if (!exactDate || exactDate !== targetDate) continue;
         const rawUrl = cellText(flight?.url);
         if (rawUrl && parts) {
@@ -5854,7 +5887,7 @@
       }
     }
     const uniqueRoutes = [...new Map(routes.map(route => [`${route.originIata}>${route.destinationIata}`, route])).values()];
-    if (!uniqueRoutes.length) return { reachable: true, exactDateFound: false, airportConflict: false, reason: 'exact_date_not_found', routes: [] };
+    if (!uniqueRoutes.length) return { reachable: true, exactDateFound: false, airportConflict: false, reason: 'exact_date_not_found', routes: [], observedDateCandidates: observedDateCandidates.slice(0, 12) };
     if (uniqueRoutes.length !== 1) return { reachable: true, exactDateFound: true, airportConflict: false, reason: 'ambiguous_routes', routes: uniqueRoutes };
     const route = uniqueRoutes[0];
     const includesExpectedAirport = route.originIata === airportIata || route.destinationIata === airportIata;
