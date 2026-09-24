@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P43C · 24.09.2026: P43 NULL-DELTA DIAGNOSTIC FIX – korrigiert ausschließlich die P43-Diagnoseausgabe: fehlende FlightStats-Runway-Zeiten/null dürfen nicht mehr als 0-Minuten-Abweichung gezählt oder als „+0 Min.“ angezeigt werden. HTTP-/Quellenverhalten, PLAN/DISPO/LIVE/Persistenz und sämtliche Bestätigungsregeln bleiben unverändert.
 // CORE-007D8A1F1D8P43 · 24.09.2026: FLIGHTSTATS FLICK RUNWAY-TIME PROBE – rein diagnostischer Folgebeweis nach P42. Liest über die bereits bekannte FlightStats flightId den streng allowlisteten Detail-Endpunkt /api-next/flick/<flightId> und prüft dessen lokale Actual-Runway-/Arrival-Felder gegen die offizielle DUS-Landungszeit. Keine automatische Bestätigung/Übernahme; PLAN/DISPO/LIVE/Persistenz unverändert.
 // CORE-007D8A1F1D8P42 · 24.09.2026: FLIGHTSTATS CURRENT-SCHEMA ARRIVAL TIME PROBE – rein diagnostischer Folgebeweis nach P41. Liest die bereits allowlistete FlightStats-Einzelflug-JSON-Antwort erneut und wertet die tatsächlich vorhandenen current-schema Felder schedule.estimatedActualArrival(+Title/+Runway) sowie arrivalAirport.times.estimatedActual aus. Vergleicht sie mit der offiziellen DUS-Zeit, ohne eine LIVE-Zeit zu bestätigen oder zu übernehmen. Keine Änderung an PLAN/DISPO/LIVE/Persistenz und keine neue Quelle.
 // CORE-007D8A1F1D8P41 · 24.09.2026: FLIGHTSTATS BOARD ARRIVAL TIME-FIELD PROBE – rein diagnostischer Folgebeweis nach P39F1/P40F1. Prüft die bereits vorhandene, registrierungsfreie FlightStats-Airport-Board-Zweitquelle bei eindeutigen DUS-Ankünften auf eigene Estimated-/Actual-/Gate-/Runway-Zeitfelder und zeigt die tatsächlich gelieferten Feldpfade/Werte neben der offiziellen DUS-Zeit. Keine automatische Bestätigung oder Übernahme, keine Änderung an PLAN/DISPO/LIVE/Persistenz und keine neue Quelle.
@@ -4939,7 +4940,7 @@
       if (p43FlickArrivalTimeDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 FlightStats Detail-/Runway-Ankunftszeit · P43</b>${note}${button}<div id="p43FlickArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p43FlickArrivalTimeDiag.error)}</div></div>`;
       const rows = Array.isArray(p43FlickArrivalTimeDiag.rows) ? p43FlickArrivalTimeDiag.rows : [];
       const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
-      const deltaText = value => Number.isFinite(Number(value)) ? `${Number(value) >= 0 ? '+' : ''}${Number(value)} Min.` : '–';
+      const deltaText = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? `${Number(value) >= 0 ? '+' : ''}${Number(value)} Min.` : '–';
       const rowHtml = rows.length ? rows.map(row => {
         const official = row?.official || {}, fs = row?.flightStatsDetail || {};
         const route = row?.originIata && row?.destinationIata ? `${row.originIata}→${row.destinationIata}` : '?→DUS';
@@ -6900,8 +6901,8 @@
         detailReachable:rows.filter(row => row?.flightStatsDetail?.reachable === true).length,
         routeMatches:rows.filter(row => row?.flightStatsDetail?.routeMatch === true).length,
         withActualRunway:rows.filter(row => Boolean(row?.flightStatsDetail?.actualRunwayArrival)).length,
-        sameMinute:rows.filter(row => Number.isFinite(Number(row?.flightStatsDetail?.runwayDeltaMinutes)) && Number(row.flightStatsDetail.runwayDeltaMinutes) === 0).length,
-        withinOneMinute:rows.filter(row => Number.isFinite(Number(row?.flightStatsDetail?.runwayDeltaMinutes)) && Math.abs(Number(row.flightStatsDetail.runwayDeltaMinutes)) <= 1).length,
+        sameMinute:rows.filter(row => row?.flightStatsDetail?.runwayDeltaMinutes !== null && row?.flightStatsDetail?.runwayDeltaMinutes !== undefined && Number.isFinite(Number(row.flightStatsDetail.runwayDeltaMinutes)) && Number(row.flightStatsDetail.runwayDeltaMinutes) === 0).length,
+        withinOneMinute:rows.filter(row => row?.flightStatsDetail?.runwayDeltaMinutes !== null && row?.flightStatsDetail?.runwayDeltaMinutes !== undefined && Number.isFinite(Number(row.flightStatsDetail.runwayDeltaMinutes)) && Math.abs(Number(row.flightStatsDetail.runwayDeltaMinutes)) <= 1).length,
         rows
       };
       render();
