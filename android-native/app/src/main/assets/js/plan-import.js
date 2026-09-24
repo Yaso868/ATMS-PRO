@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F18 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT ROW-DATE PRIORITY FIX – Behebt den im P36F17-Realtest sichtbaren Diagnose-False-Negative: FlightStats-Other-Days liefert neben flugzeilenspezifischen Tagesfeldern auch Day-Group-Rahmendaten fuer mehrere Nachbartage. Fuer den exakten Tagesabgleich haben jetzt ausschliesslich flugzeilenspezifische URL-/Zeit-/Datumsfelder Vorrang; Day-Group-Felder duerfen nur dann als Fallback dienen, wenn sie genau ein Datum ergeben. Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F17 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT DATE SHAPE FIX – Erweitert ausschließlich den diagnostischen P36F16-Other-Days-Routencheck um robuste, explizite Datumsfelder der FlightStats-Antwort (URL-Query, sortTime/ISO-Felder sowie dayGroup date1/date2 in beiden MMM-DD/DD-MMM-Formen). Keine Route, kein Ort und kein Datum wird geraten; nur exakte 2026-09-23-artige Kandidaten werden ausgewertet. Keine Hochstufung, keine Warnungsentfernung, keine Java-Änderung.
 // CORE-007D8A1F1D8P36F16 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT ROUTE PROBE – Prüft ausschließlich noch offene offizielle Airport-Nichttreffer über die datumsspezifische FlightStats-Other-Days-Webquelle. Eine dort eindeutige Route, die den Fahrt-Airport nicht enthält, wird NUR diagnostisch als Airport-Konflikt sichtbar gemacht; kein Flugort wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F15 · 23.09.2026: NATIVE MULTI-WINDOW SECOND-SOURCE FIX – Behebt den im P36F14-Realtest sichtbaren Sicherheits-False-Negative, bei dem eine exakt passende FlightStats-Airport-Board-Route nicht freigegeben wurde, wenn derselbe konkrete Flug in mehr als einem gueltigen 6-Stunden-Boardfenster derselben unabhaengigen Quelle vorkam. Mehrere Board-URLs derselben FlightStats-Domain gelten weiterhin nur als EINE Zweitquelle; Freigabe bleibt nur bei eindeutiger Route, exakter Flug-/Datums-/Richtungs-/Airportidentitaet und zwei unterschiedlichen Quellenhosts erlaubt. Keine Routen-Hardcodes.
@@ -4827,7 +4828,7 @@
           }).join('<br>')
         : 'Keine offenen Flugnummern für den Routencheck.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.4);border-radius:10px">`
-        + `<b>🚫 Offener Flug-Routencheck · P36F17</b><br>`
+        + `<b>🚫 Offener Flug-Routencheck · P36F18</b><br>`
         + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose: Fremdrouten werden niemals als Flugort übernommen und entfernen keine Warnung.</small>`
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
@@ -5811,26 +5812,33 @@
     return `https://www.flightstats.com/v2/api-next/flight-tracker/other-days/${encodeURIComponent(parts.carrier)}/${encodeURIComponent(parts.number)}`;
   }
 
-  function flightStatsOtherDaysDateCandidates(dayGroup, flight) {
-    const out = [];
-    const add = value => {
+  function flightStatsOtherDaysDateEvidence(dayGroup, flight) {
+    const rowSpecific = [], groupScoped = [];
+    const addTo = (bucket, value) => {
       const iso = cellText(value);
-      if (/^20\d{2}-\d{2}-\d{2}$/.test(iso) && !out.includes(iso)) out.push(iso);
+      if (/^20\d{2}-\d{2}-\d{2}$/.test(iso) && !bucket.includes(iso)) bucket.push(iso);
     };
-    const addIsoPrefix = value => {
+    const addIsoPrefixTo = (bucket, value) => {
       const m = cellText(value).match(/^(20\d{2})-(\d{1,2})-(\d{1,2})(?:T|\s|$)/);
-      if (m) add(validIsoPlanDate(m[1], m[2], m[3]));
+      if (m) addTo(bucket, validIsoPlanDate(m[1], m[2], m[3]));
     };
+
+    // P36F18: row-specific evidence has priority. Day-group fields can describe
+    // neighbouring days around the row and must not make a concrete flight row
+    // artificially ambiguous.
     const rawUrl = cellText(flight?.url);
     if (rawUrl) {
       try {
         const url = new URL(rawUrl, 'https://www.flightstats.com');
-        add(validIsoPlanDate(url.searchParams.get('year'), url.searchParams.get('month'), url.searchParams.get('date')));
+        addTo(rowSpecific, validIsoPlanDate(url.searchParams.get('year'), url.searchParams.get('month'), url.searchParams.get('date')));
       } catch (_) {}
     }
     [flight?.sortTime, flight?.date, flight?.dateLocal, flight?.departureDate, flight?.scheduledDeparture,
-      flight?.departureTimeLocal, flight?.publishedDeparture, dayGroup?.isoDate, dayGroup?.dateIso, dayGroup?.date]
-      .forEach(addIsoPrefix);
+      flight?.departureTimeLocal, flight?.publishedDeparture]
+      .forEach(value => addIsoPrefixTo(rowSpecific, value));
+
+    [dayGroup?.isoDate, dayGroup?.dateIso, dayGroup?.date]
+      .forEach(value => addIsoPrefixTo(groupScoped, value));
 
     const year = String(dayGroup?.year || '').trim();
     if (/^\d{4}$/.test(year)) {
@@ -5840,22 +5848,30 @@
         let m = text.match(/^([A-Za-z]{3,4})-(\d{1,2})$/);
         if (m) {
           const month = months[m[1].toLowerCase()];
-          if (month) add(validIsoPlanDate(year, month, m[2]));
+          if (month) addTo(groupScoped, validIsoPlanDate(year, month, m[2]));
           continue;
         }
         m = text.match(/^(\d{1,2})-([A-Za-z]{3,4})$/);
         if (m) {
           const month = months[m[2].toLowerCase()];
-          if (month) add(validIsoPlanDate(year, month, m[1]));
+          if (month) addTo(groupScoped, validIsoPlanDate(year, month, m[1]));
         }
       }
     }
-    return out;
+
+    const observed = [...new Set([...rowSpecific, ...groupScoped])];
+    return { rowSpecific, groupScoped, observed };
+  }
+
+  function flightStatsOtherDaysDateCandidates(dayGroup, flight) {
+    return flightStatsOtherDaysDateEvidence(dayGroup, flight).observed;
   }
 
   function exactDateFromFlightStatsOtherDaysRow(dayGroup, flight) {
-    const candidates = flightStatsOtherDaysDateCandidates(dayGroup, flight);
-    return candidates.length === 1 ? candidates[0] : '';
+    const evidence = flightStatsOtherDaysDateEvidence(dayGroup, flight);
+    if (evidence.rowSpecific.length === 1) return evidence.rowSpecific[0];
+    if (evidence.rowSpecific.length > 1) return '';
+    return evidence.groupScoped.length === 1 ? evidence.groupScoped[0] : '';
   }
 
   function parseNativeUnresolvedFlightOtherDays(item, payload) {
@@ -5868,9 +5884,9 @@
     const observedDateCandidates = [];
     for (const dayGroup of data) {
       for (const flight of Array.isArray(dayGroup?.flights) ? dayGroup.flights : []) {
-        const dateCandidates = flightStatsOtherDaysDateCandidates(dayGroup, flight);
-        for (const candidate of dateCandidates) if (!observedDateCandidates.includes(candidate)) observedDateCandidates.push(candidate);
-        const exactDate = dateCandidates.length === 1 ? dateCandidates[0] : '';
+        const dateEvidence = flightStatsOtherDaysDateEvidence(dayGroup, flight);
+        for (const candidate of dateEvidence.observed) if (!observedDateCandidates.includes(candidate)) observedDateCandidates.push(candidate);
+        const exactDate = exactDateFromFlightStatsOtherDaysRow(dayGroup, flight);
         if (!exactDate || exactDate !== targetDate) continue;
         const rawUrl = cellText(flight?.url);
         if (rawUrl && parts) {
