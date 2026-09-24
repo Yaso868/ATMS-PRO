@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P43 · 24.09.2026: FLIGHTSTATS FLICK RUNWAY-TIME PROBE – erlaubt ausschließlich den FlightStats Detail-Endpunkt /api-next/flick/<flightId> mit festem nicht-geheimem Diagnose-rqid/guid. Nur Diagnose; keine automatische LIVE-Zeitfreigabe in Java.
 // CORE-007D8A1F1D8P40F1 · 24.09.2026: ASYNC NATIVE FLIGHT BRIDGE – network work can run on a worker thread and return through a WebView Promise callback without blocking the UI thread.
 // CORE-007D8A1F1D8P36F16 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT ROUTE PROBE – erlaubt ausschließlich FlightStats other-days GET für die diagnostische Prüfung noch offener Flugnummern. Keine Freigabe/Übernahme in Java.
 // CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – streng allowlistete arr/dep-Airporttafel-Probe, nur Diagnose, keine Verifizierungsfreigabe.
@@ -57,9 +58,13 @@ public final class AtmsNativeFlightBridge {
             boolean flightStatsProbe = "flightstats_probe".equals(purpose);
             boolean flightStatsBoardProbe = "flightstats_board_probe".equals(purpose);
             boolean flightStatsOtherDaysProbe = "flightstats_other_days_probe".equals(purpose);
+            boolean flightStatsFlickProbe = "flightstats_flick_probe".equals(purpose);
             URI validated;
             String sourceLabel;
-            if (flightStatsOtherDaysProbe) {
+            if (flightStatsFlickProbe) {
+                validated = validateFlightStatsFlickProbe(method, urlText);
+                sourceLabel = "FlightStats flick probe";
+            } else if (flightStatsOtherDaysProbe) {
                 validated = validateFlightStatsOtherDaysProbe(method, urlText);
                 sourceLabel = "FlightStats other-days probe";
             } else if (flightStatsBoardProbe) {
@@ -84,7 +89,7 @@ public final class AtmsNativeFlightBridge {
             connection.setRequestMethod("GET");
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("X-Requested-With", "XMLHttpRequest");
-            if (flightStatsProbe || flightStatsBoardProbe || flightStatsOtherDaysProbe) {
+            if (flightStatsProbe || flightStatsBoardProbe || flightStatsOtherDaysProbe || flightStatsFlickProbe) {
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 16; ATMS PRO Native) AppleWebKit/537.36");
                 connection.setRequestProperty("Accept-Language", "de-DE,de;q=0.9,en;q=0.8");
             }
@@ -147,6 +152,34 @@ public final class AtmsNativeFlightBridge {
                 + JSONObject.quote(error) + ");"
                 + "}}catch(e){}})();";
         webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
+    private static URI validateFlightStatsFlickProbe(String method, String urlText) throws Exception {
+        if (!"GET".equalsIgnoreCase(method == null ? "" : method.trim())) {
+            throw new SecurityException("FlightStats flick probe method not allowed");
+        }
+        URI uri = new URI(urlText == null ? "" : urlText.trim());
+        if (!"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new SecurityException("FlightStats flick probe protocol not allowed");
+        }
+        if (!"www.flightstats.com".equalsIgnoreCase(uri.getHost())) {
+            throw new SecurityException("FlightStats flick probe host not allowed");
+        }
+        String path = uri.getPath();
+        if (path == null || !path.matches("/v2/api-next/flick/[0-9]{1,20}")) {
+            throw new SecurityException("FlightStats flick probe path not allowed");
+        }
+        if (!"guid=atmspro&rqid=atmspro".equals(uri.getRawQuery())) {
+            throw new SecurityException("FlightStats flick probe query not allowed");
+        }
+        if (uri.getUserInfo() != null || uri.getFragment() != null) {
+            throw new SecurityException("FlightStats flick probe URL extras not allowed");
+        }
+        int port = uri.getPort();
+        if (port != -1 && port != 443) {
+            throw new SecurityException("FlightStats flick probe port not allowed");
+        }
+        return uri;
     }
 
     private static URI validateFlightStatsOtherDaysProbe(String method, String urlText) throws Exception {
