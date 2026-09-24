@@ -6416,10 +6416,15 @@
       const officialFailureCount = officialTechnicalFailures.length;
       const officialFirstTechnicalError = cellText(officialTechnicalFailures[0]?.message);
 
-      // In der lokalen Android-WebView ist Firebase/App-Check absichtlich nicht aktiv.
-      // Dort endet die automatische Stufe nach der offiziellen Airportquelle sicher
-      // als source_confirmed; eine zweite Quelle wird nicht simuliert oder geraten.
-      const nativeOfficialOnly = typeof location !== 'undefined' && location.protocol === 'file:';
+      // CORE-007D8A1F1D8P38 · 24.09.2026: NATIVE APPASSETS ORIGIN FLIGHT-CHECK RESTORE –
+      // P37 wechselte die Android-WebView fuer GPS von file:// auf den sicheren WebViewAssetLoader-Origin
+      // https://appassets.androidplatform.net/. Die Native-Flugpruefung muss beide legitimen lokalen
+      // Urspruenge erkennen, damit die bereits bestaetigte P36F15-FlightStats-Zweitquelle weiterlaeuft.
+      // Keine Lockerung von FLIGHT-008, keine neue Quelle und keine Cloud-/Kostenabhaengigkeit.
+      const nativeOfficialOnly = typeof location !== 'undefined' && (
+        location.protocol === 'file:' ||
+        (location.protocol === 'https:' && location.hostname === 'appassets.androidplatform.net')
+      );
       if (nativeOfficialOnly) {
         const secondSourceProbe = await runNativeSecondSourceBoardProbe(officialChecked, {
           onProgress: progress => {
