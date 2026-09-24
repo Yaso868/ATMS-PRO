@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F22 · 24.09.2026: NATIVE AIRPORT-CONFLICT USER WARNING – Überführt ausschließlich einen im P36F21-Realtest eindeutig erkannten, datumsspezifischen Fremdrouten-Konflikt aus der Technikdiagnose in sichere Fahrten-Metadaten. Die fremde Route wird NICHT als Flugort übernommen; die Fahrt bleibt manuell offen und erhält nur einen sichtbaren Airport-Konflikt-Hinweis. Keine Route/Airline wird hart codiert.
 // CORE-007D8A1F1D8P36F21 · 24.09.2026: NATIVE FLIGHT NUMBER SPLIT FIX – Behebt den im P36F20-Realtest sichtbar gewordenen generischen Flugnummern-Parserfehler: Bei normalen zweistelligen IATA-Designatoren wie JU422 durfte die greedy 2–3-Zeichen-Regel nicht JU4/22 bilden. Der Parser bevorzugt jetzt strikt einen zweistelligen alphanumerischen IATA-Designator und erlaubt einen dreistelligen Fallback nur als alphabetischen Code. Dadurch wird die Other-Days-Abfrage mit JU/422 statt JU4/22 aufgebaut. Keine Route/Airline wird hart codiert; der unresolved-flight Check bleibt rein diagnostisch, übernimmt keinen Fremdflugort, setzt kein verified/high und entfernt keine Warnung.
 // CORE-007D8A1F1D8P36F20 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT OPERATOR-ALIAS DIAGNOSTIC – Behebt ausschließlich den P36F19-Diagnosefilter für FlightStats-Other-Days-Zeilen, deren kanonische Tracker-URL wegen eines Operating-Carriers einen anderen Carrier-Code, aber dieselbe Flugnummer trägt. Solche Zeilen werden nur dann diagnostisch als Operator-Alias akzeptiert, wenn am exakten Zieltag genau eine Zeile existiert, die Flugnummer identisch ist und genau eine IATA-Route vorliegt. Keine Fremdroute wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Airline-/Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F19 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT TARGET-ROW DIAGNOSTIC – Erweitert ausschließlich den diagnostischen P36F18-Other-Days-Routencheck um Zieltag-Zeilenzaehler und sichere Filterdiagnose (Identitaetsfilter/fehlende IATA-Route). Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
@@ -4841,7 +4842,7 @@
           }).join('<br>')
         : 'Keine offenen Flugnummern für den Routencheck.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.4);border-radius:10px">`
-        + `<b>🚫 Offener Flug-Routencheck · P36F21</b><br>`
+        + `<b>🚫 Offener Flug-Routencheck · P36F22</b><br>`
         + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose: Fremdrouten werden niemals als Flugort übernommen und entfernen keine Warnung.</small>`
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
@@ -6075,6 +6076,61 @@
     return { attempted: eligible.length, reachable, conflicts, rows, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${conflicts} Airport-Konflikt(e)` };
   }
 
+  function applyNativeAirportConflictWarningsToStagedPlan(probe, appliedAt = new Date().toISOString()) {
+    const conflictRows = (Array.isArray(probe?.rows) ? probe.rows : []).filter(item => {
+      const origin = String(item?.originIata || '').trim().toUpperCase();
+      const destination = String(item?.destinationIata || '').trim().toUpperCase();
+      const airport = String(item?.airportIata || '').trim().toUpperCase();
+      return item?.reachable === true && item?.exactDateFound === true && item?.airportConflict === true
+        && /^[A-Z]{3}$/.test(origin) && /^[A-Z]{3}$/.test(destination) && /^[A-Z]{3}$/.test(airport);
+    });
+    if (!conflictRows.length || !state.rides.length) return { matchedRides: 0, conflictFlights: conflictRows.length };
+
+    const conflictMap = new Map();
+    for (const item of conflictRows) {
+      const key = [
+        normalizeFlightForCurrentCheck(item?.flightNumber),
+        cellText(item?.airportEventDate),
+        String(item?.airportIata || '').trim().toUpperCase(),
+        String(item?.direction || '').trim().toLowerCase()
+      ].join('|');
+      if (!conflictMap.has(key)) conflictMap.set(key, item);
+    }
+
+    let matchedRides = 0;
+    state.rides = state.rides.map(ride => {
+      const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
+      if (!flight) return ride;
+      const key = [
+        flight,
+        stagedAirportEventDateContext(ride).airportEventDate,
+        stagedAirportIata(ride),
+        stagedFlightDirection(ride)
+      ].join('|');
+      const hit = conflictMap.get(key);
+      if (!hit) return ride;
+      matchedRides++;
+      const origin = String(hit.originIata || '').trim().toUpperCase();
+      const destination = String(hit.destinationIata || '').trim().toUpperCase();
+      const airport = String(hit.airportIata || '').trim().toUpperCase();
+      return {
+        ...ride,
+        flightNeedsManualCheck: true,
+        flightAirportConflict: true,
+        flightAirportConflictReason: cellText(hit.reason) || 'airport_conflict',
+        flightAirportConflictAirportIata: airport,
+        flightAirportConflictOriginIata: origin,
+        flightAirportConflictDestinationIata: destination,
+        flightAirportConflictCheckedAt: appliedAt,
+        flightAirportConflictSourceUrl: cellText(hit.sourceUrl),
+        flightCheckSourceNote: `Datumsspezifischer Airport-Konflikt: Zweitquelle fuehrt ${flight} als ${origin}→${destination}; Fahrt-Airport ${airport} ist nicht Teil der Route. Fremdroute wird nicht als Flugort uebernommen; manuell pruefen.`
+      };
+    });
+    state.issues = validate(state.rides);
+    render();
+    return { matchedRides, conflictFlights: conflictMap.size };
+  }
+
   // CORE-007D8A1F1D8P36F13: Diagnostic-only FlightStats airport-board second-source probe.
   // The direct per-flight P36F12 endpoint returned reachable JSON without usable data in the real native test.
   // This probe instead uses date-specific arrival/departure board windows and still never promotes verification.
@@ -6382,7 +6438,7 @@
         });
         try {
           window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = {
-            patch: 'CORE-007D8A1F1D8P36F16',
+            patch: 'CORE-007D8A1F1D8P36F22',
             checkedAt: new Date().toISOString(),
             ...unresolvedFlightRouteProbe
           };
@@ -6398,7 +6454,9 @@
             promotions: dualSource.promotions
           };
         } catch (_) {}
-        const applied = applyGeminiResultsToStagedPlan(dualSource.checked, new Date().toISOString());
+        const appliedAt = new Date().toISOString();
+        const applied = applyGeminiResultsToStagedPlan(dualSource.checked, appliedAt);
+        const airportConflictApplied = applyNativeAirportConflictWarningsToStagedPlan(unresolvedFlightRouteProbe, appliedAt);
         const openRideCount = unresolvedFlightRideCount();
         if (fallbackButton) fallbackButton.style.display = '';
         if (status) status.textContent = dualSource.promotedFlights > 0
@@ -6439,7 +6497,9 @@
           unresolvedFlightRouteProbeReachable: Number(unresolvedFlightRouteProbe?.reachable || 0),
           unresolvedFlightRouteProbeConflicts: Number(unresolvedFlightRouteProbe?.conflicts || 0),
           unresolvedFlightRouteProbeDiagnostic: cellText(unresolvedFlightRouteProbe?.text),
-          unresolvedFlightRouteProbeRows: Array.isArray(unresolvedFlightRouteProbe?.rows) ? unresolvedFlightRouteProbe.rows : []
+          unresolvedFlightRouteProbeRows: Array.isArray(unresolvedFlightRouteProbe?.rows) ? unresolvedFlightRouteProbe.rows : [],
+          airportConflictWarningFlights: Number(airportConflictApplied?.conflictFlights || 0),
+          airportConflictWarningRides: Number(airportConflictApplied?.matchedRides || 0)
         };
       }
 
