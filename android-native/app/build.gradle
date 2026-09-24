@@ -13,13 +13,11 @@ android {
         versionCode 3
         versionName '1.4.0-p31f13'
     }
-
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
     def stableKeyAlias = System.getenv('ATMS_SIGNING_KEY_ALIAS')
     def stableKeyPassword = System.getenv('ATMS_SIGNING_KEY_PASSWORD')
     def stableSigningAvailable = stableKeystore && stableStorePassword && stableKeyAlias && stableKeyPassword
-
     if (stableSigningAvailable) {
         signingConfigs {
             atmsStable {
@@ -30,7 +28,6 @@ android {
             }
         }
     }
-
     buildTypes {
         debug {
             if (stableSigningAvailable) {
@@ -42,4 +39,8 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
 }
