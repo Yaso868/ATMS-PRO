@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P40F1 · 24.09.2026: NATIVE LIVE NON-BLOCKING FIX – P40 uses the new async native bridge for DUS + FlightStats so network timeouts no longer block/freeze the Android WebView UI. If the async bridge is unavailable, P40 fails closed instead of falling back to blocking network I/O.
 // CORE-007D8A1F1D8P40 · 24.09.2026: NATIVE LIVE STATUS AUTO-CONFIRM – automatisiert ausschließlich den aktuellen operativen Flugstatus über zwei unabhängige native Quellen (offizielle Düsseldorf-Airport-Livequelle + FlightStats Einzel-Flug). Bestätigung nur bei exakter Flug-/Datums-/Airport-/Richtungs-/Routenidentität und gleichem, im P39/P39F1-Realtest belegtem Status departed/landed/cancelled. scheduled/on_time/delayed bleiben ohne eigene Zweitquellenzeit offen. Estimated/Actual/LIVE-Zeit werden bewusst NICHT bestätigt oder übernommen; PLAN/DISPO bleiben unverändert, manuelle Bestätigungen werden nicht berührt. Keine neue Quelle, Registrierung oder kostenpflichtige API.
 // CORE-007D8A1F1D8P39F2 · 24.09.2026: ANALYSIS RACE GUARD – verhindert überlappende Planlisten-Analyse-/Auto-Pipeline-Läufe derselben Auswahl. Der Analyse-Button bleibt bis zum Ende der laufenden Auto-Pipeline gesperrt; jeder neue echte Analyse-Lauf erhält eine neue Generation und veraltete Native-Flugprüfungen dürfen vor dem Anwenden ihrer Ergebnisse nicht mehr in den aktuellen Staging-State schreiben. Flüchtige Diagnoseanzeigen werden beim neuen Analyse-Lauf zurückgesetzt. Keine Änderung an OCR-, FLIGHT-008-, LIVE-, PLAN- oder DISPO-Regeln.
 // CORE-007D8A1F1D8P39F1 · 24.09.2026: NATIVE LIVE ARRIVAL TIME-FIELD PROBE – erweitert P39 ausschließlich diagnostisch um einen Mehrflug-Test der DUS-Ankünfte aus der analysierten Planliste. Für jede eindeutige Ankunft werden offizielle DUS-LIVE-Felder und die bereits allowlistete FlightStats-Einzelflugquelle getrennt gelesen und Status/Plan/Estimated/Actual nebeneinander angezeigt. Keine automatische Bestätigung, keine Änderung an PLAN/DISPO/LIVE/Persistenz, keine neue Quelle oder Registrierung.
@@ -5823,10 +5824,21 @@
 
   function nativeSecondSourceBridgeHost() {
     try {
-      if (window.ATMSNativeFlightBridgeHost && typeof window.ATMSNativeFlightBridgeHost.requestJsonString === 'function') return window.ATMSNativeFlightBridgeHost;
+      // P40F1: prefer the JS wrapper because only it exposes the Promise-based async bridge safely.
       if (window.ATMSNativeFlightBridge && typeof window.ATMSNativeFlightBridge.requestJsonString === 'function') return window.ATMSNativeFlightBridge;
+      if (window.ATMSNativeFlightBridgeHost && typeof window.ATMSNativeFlightBridgeHost.requestJsonString === 'function') return window.ATMSNativeFlightBridgeHost;
     } catch (_) {}
     return null;
+  }
+  async function nativeSecondSourceRequestJsonString(bridge, request) {
+    if (!bridge) return '';
+    const payload = typeof request === 'string' ? request : JSON.stringify(request);
+    if (typeof bridge.requestJsonStringAsync === 'function') {
+      return await bridge.requestJsonStringAsync(payload);
+    }
+    // Legacy diagnostic fallback only. P40 itself refuses to run without the async bridge.
+    if (typeof bridge.requestJsonString === 'function') return bridge.requestJsonString(payload);
+    return '';
   }
 
   function nativeSecondSourceIata(point) {
@@ -5881,14 +5893,14 @@
         continue;
       }
       try {
-        const raw = bridge.requestJsonString(JSON.stringify({
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
           contractVersion: 'ATMS-FLIGHT-NATIVE-1',
           purpose: 'flightstats_probe',
           airportIata: String(item?.airportIata || '').trim().toUpperCase(),
           method: 'GET',
           url,
           timeoutMs: 15000
-        }));
+        });
         if (!raw) {
           let message = '';
           try { message = cellText(bridge.lastError?.()); } catch (_) {}
@@ -6035,14 +6047,14 @@
       const url = nativeSecondSourceBoardProbeUrl(group, hour);
       if (!url) continue;
       try {
-        const raw = bridge.requestJsonString(JSON.stringify({
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
           contractVersion: 'ATMS-FLIGHT-NATIVE-1',
           purpose: 'flightstats_board_probe',
           airportIata: group.airportIata,
           method: 'GET',
           url,
           timeoutMs: 15000
-        }));
+        });
         if (!raw) {
           let message = '';
           try { message = cellText(bridge.lastError?.()); } catch (_) {}
@@ -6141,9 +6153,9 @@
       let single = { reachable: false, usable: false, reason: 'native_bridge_unavailable', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '' };
       const singleUrl = nativeSecondSourceProbeUrl(secondItem);
       if (bridge && singleUrl) {
-        const raw = bridge.requestJsonString(JSON.stringify({
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
           contractVersion: 'ATMS-FLIGHT-NATIVE-1', purpose: 'flightstats_probe', airportIata: 'DUS', method: 'GET', url: singleUrl, timeoutMs: 15000
-        }));
+        });
         if (raw) {
           try { single = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl: singleUrl }; }
           catch (_) { single = { ...single, reachable: true, reason: 'invalid_json', sourceUrl: singleUrl }; }
@@ -6258,14 +6270,14 @@
             single = { ...single, reason: 'invalid_probe_url' };
           } else {
             try {
-              const raw = bridge.requestJsonString(JSON.stringify({
+              const raw = await nativeSecondSourceRequestJsonString(bridge, {
                 contractVersion: 'ATMS-FLIGHT-NATIVE-1',
                 purpose: 'flightstats_probe',
                 airportIata: 'DUS',
                 method: 'GET',
                 url: singleUrl,
                 timeoutMs: 15000
-              }));
+              });
               if (raw) {
                 try { single = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl: singleUrl }; }
                 catch (_) { single = { ...single, reachable: true, reason: 'invalid_json', sourceUrl: singleUrl }; }
@@ -6368,13 +6380,44 @@
     }
     const items = [...dedup.values()];
     const flights = [];
-    if (!items.length) return { patch:'CORE-007D8A1F1D8P40', checkedAt, statusOnly:true, timeFieldsConfirmed:false, flights, attempted:0, confirmed:0 };
+    if (!items.length) return { patch:'CORE-007D8A1F1D8P40F1', checkedAt, statusOnly:true, timeFieldsConfirmed:false, asyncBridge:true, flights, attempted:0, confirmed:0 };
 
     let provider = null;
     let providerError = '';
     try { provider = await ensureOfficialFlightProvider(); }
     catch (error) { providerError = cellText(error?.message) || String(error || 'official_provider_unavailable'); }
     const bridge = nativeSecondSourceBridgeHost();
+    const asyncBridgeReady = Boolean(bridge && typeof bridge.requestJsonStringAsync === 'function');
+    if (!asyncBridgeReady) {
+      for (const item of items) {
+        flights.push({
+          flightNumber:item.flightNumber, date:item.date, airportEventDate:item.airportEventDate,
+          airportEventDateDerived:Boolean(item.airportEventDateDerived), direction:item.direction,
+          airportIata:item.airportIata, status:'unknown', confirmed:false, statusConfirmed:false,
+          timeConfirmed:false, airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
+          delayMinutes:null, sources:[], sourceConflict:false, resolutionMode:'unconfirmed',
+          sourceNote:'P40F1: asynchrone Native Flight Bridge nicht verfügbar; keine blockierende LIVE-Prüfung gestartet.'
+        });
+      }
+      return {
+        patch:'CORE-007D8A1F1D8P40F1', checkedAt, statusOnly:true, timeFieldsConfirmed:false,
+        asyncBridge:false, attempted:flights.length, confirmed:0, flights
+      };
+    }
+    if (provider && typeof provider.registerTransport === 'function') {
+      try {
+        provider.registerTransport('DUS', async request => {
+          const raw = await bridge.requestJsonStringAsync(JSON.stringify(request));
+          if (!raw) {
+            let message = '';
+            try { message = cellText(bridge.lastError?.()); } catch (_) {}
+            throw new Error(message || 'Native async DUS transport returned empty response');
+          }
+          try { return JSON.parse(String(raw)); }
+          catch (_) { throw new Error('Native async DUS transport returned invalid JSON'); }
+        });
+      } catch (_) {}
+    }
 
     for (const item of items) {
       const base = {
@@ -6448,10 +6491,10 @@
 
       let second = { reachable:false, usable:false, reason:'not_requested', routeMatch:false, status:'unknown', scheduled:'', estimated:'', actual:'', sourceUrl:singleUrl };
       try {
-        const raw = bridge.requestJsonString(JSON.stringify({
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
           contractVersion:'ATMS-FLIGHT-NATIVE-1', purpose:'flightstats_probe', airportIata:'DUS',
           method:'GET', url:singleUrl, timeoutMs:15000
-        }));
+        });
         if (raw) {
           try { second = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl:singleUrl }; }
           catch (_) { second = { ...second, reachable:true, reason:'invalid_json' }; }
@@ -6515,7 +6558,7 @@
     }
 
     return {
-      patch:'CORE-007D8A1F1D8P40', checkedAt, statusOnly:true, timeFieldsConfirmed:false,
+      patch:'CORE-007D8A1F1D8P40F1', checkedAt, statusOnly:true, timeFieldsConfirmed:false, asyncBridge:true,
       attempted:flights.length,
       confirmed:flights.filter(row => row.confirmed === true).length,
       flights
@@ -6751,14 +6794,14 @@
         continue;
       }
       try {
-        const raw = bridge.requestJsonString(JSON.stringify({
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
           contractVersion: 'ATMS-FLIGHT-NATIVE-1',
           purpose: 'flightstats_other_days_probe',
           airportIata: item.airportIata,
           method: 'GET',
           url,
           timeoutMs: 15000
-        }));
+        });
         if (!raw) {
           let message = '';
           try { message = cellText(bridge.lastError?.()); } catch (_) {}
@@ -6899,14 +6942,14 @@
         const url = nativeSecondSourceBoardProbeUrl(group, hour);
         if (!url) { group.segmentReasons.push(`${hour}:invalid_url`); continue; }
         try {
-          const raw = bridge.requestJsonString(JSON.stringify({
+          const raw = await nativeSecondSourceRequestJsonString(bridge, {
             contractVersion: 'ATMS-FLIGHT-NATIVE-1',
             purpose: 'flightstats_board_probe',
             airportIata: group.airportIata,
             method: 'GET',
             url,
             timeoutMs: 15000
-          }));
+          });
           if (!raw) {
             let message = '';
             try { message = cellText(bridge.lastError?.()); } catch (_) {}
