@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P36F21 · 24.09.2026: NATIVE FLIGHT NUMBER SPLIT FIX – Behebt den im P36F20-Realtest sichtbar gewordenen generischen Flugnummern-Parserfehler: Bei normalen zweistelligen IATA-Designatoren wie JU422 durfte die greedy 2–3-Zeichen-Regel nicht JU4/22 bilden. Der Parser bevorzugt jetzt strikt einen zweistelligen alphanumerischen IATA-Designator und erlaubt einen dreistelligen Fallback nur als alphabetischen Code. Dadurch wird die Other-Days-Abfrage mit JU/422 statt JU4/22 aufgebaut. Keine Route/Airline wird hart codiert; der unresolved-flight Check bleibt rein diagnostisch, übernimmt keinen Fremdflugort, setzt kein verified/high und entfernt keine Warnung.
 // CORE-007D8A1F1D8P36F20 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT OPERATOR-ALIAS DIAGNOSTIC – Behebt ausschließlich den P36F19-Diagnosefilter für FlightStats-Other-Days-Zeilen, deren kanonische Tracker-URL wegen eines Operating-Carriers einen anderen Carrier-Code, aber dieselbe Flugnummer trägt. Solche Zeilen werden nur dann diagnostisch als Operator-Alias akzeptiert, wenn am exakten Zieltag genau eine Zeile existiert, die Flugnummer identisch ist und genau eine IATA-Route vorliegt. Keine Fremdroute wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Airline-/Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F19 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT TARGET-ROW DIAGNOSTIC – Erweitert ausschließlich den diagnostischen P36F18-Other-Days-Routencheck um Zieltag-Zeilenzaehler und sichere Filterdiagnose (Identitaetsfilter/fehlende IATA-Route). Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
 // CORE-007D8A1F1D8P36F18 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT ROW-DATE PRIORITY FIX – Behebt den im P36F17-Realtest sichtbaren Diagnose-False-Negative: FlightStats-Other-Days liefert neben flugzeilenspezifischen Tagesfeldern auch Day-Group-Rahmendaten fuer mehrere Nachbartage. Fuer den exakten Tagesabgleich haben jetzt ausschliesslich flugzeilenspezifische URL-/Zeit-/Datumsfelder Vorrang; Day-Group-Felder duerfen nur dann als Fallback dienen, wenn sie genau ein Datum ergeben. Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
@@ -4840,7 +4841,7 @@
           }).join('<br>')
         : 'Keine offenen Flugnummern für den Routencheck.';
       return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.4);border-radius:10px">`
-        + `<b>🚫 Offener Flug-Routencheck · P36F20</b><br>`
+        + `<b>🚫 Offener Flug-Routencheck · P36F21</b><br>`
         + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose: Fremdrouten werden niemals als Flugort übernommen und entfernen keine Warnung.</small>`
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
@@ -5712,7 +5713,12 @@
   // This intentionally does NOT promote any flight to verified/high and never clears manual review.
   function splitFlightNumberForSecondSource(value) {
     const flightNumber = normalizeFlightForCurrentCheck(value);
-    const match = flightNumber.match(/^([A-Z0-9]{2,3})(\d{1,4}[A-Z]?)$/);
+    // P36F21: Prefer a 2-character IATA designator. The previous greedy 2–3
+    // character carrier group could swallow the first flight-number digit
+    // (e.g. JU422 -> JU4/22). A 3-character fallback is accepted only when
+    // all three carrier characters are letters, avoiding that ambiguity.
+    let match = flightNumber.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
+    if (!match) match = flightNumber.match(/^([A-Z]{3})(\d{1,4}[A-Z]?)$/);
     return match ? { flightNumber, carrier: match[1], number: match[2] } : null;
   }
 
