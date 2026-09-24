@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P39 · 24.09.2026: NATIVE LIVE DUAL-SOURCE DIAGNOSTIC – rein diagnostischer Beweistest fuer einen automatisch ausgewaehlten DUS-Flug. Fragt die bestehende offizielle DUS-Livequelle und die bereits allowlistete FlightStats-Zweitquelle nativ ab und zeigt Status/Plan-/Estimated-/Actual-Zeiten sowie beobachtete Abweichungen nebeneinander. Schreibt keinerlei PLAN-, DISPO- oder LIVE-Daten und aendert keine Bestaetigungslogik.
 // CORE-007D8A1F1D8P36F22 · 24.09.2026: NATIVE AIRPORT-CONFLICT USER WARNING – Überführt ausschließlich einen im P36F21-Realtest eindeutig erkannten, datumsspezifischen Fremdrouten-Konflikt aus der Technikdiagnose in sichere Fahrten-Metadaten. Die fremde Route wird NICHT als Flugort übernommen; die Fahrt bleibt manuell offen und erhält nur einen sichtbaren Airport-Konflikt-Hinweis. Keine Route/Airline wird hart codiert.
 // CORE-007D8A1F1D8P36F21 · 24.09.2026: NATIVE FLIGHT NUMBER SPLIT FIX – Behebt den im P36F20-Realtest sichtbar gewordenen generischen Flugnummern-Parserfehler: Bei normalen zweistelligen IATA-Designatoren wie JU422 durfte die greedy 2–3-Zeichen-Regel nicht JU4/22 bilden. Der Parser bevorzugt jetzt strikt einen zweistelligen alphanumerischen IATA-Designator und erlaubt einen dreistelligen Fallback nur als alphabetischen Code. Dadurch wird die Other-Days-Abfrage mit JU/422 statt JU4/22 aufgebaut. Keine Route/Airline wird hart codiert; der unresolved-flight Check bleibt rein diagnostisch, übernimmt keinen Fremdflugort, setzt kein verified/high und entfernt keine Warnung.
 // CORE-007D8A1F1D8P36F20 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT OPERATOR-ALIAS DIAGNOSTIC – Behebt ausschließlich den P36F19-Diagnosefilter für FlightStats-Other-Days-Zeilen, deren kanonische Tracker-URL wegen eines Operating-Carriers einen anderen Carrier-Code, aber dieselbe Flugnummer trägt. Solche Zeilen werden nur dann diagnostisch als Operator-Alias akzeptiert, wenn am exakten Zieltag genau eine Zeile existiert, die Flugnummer identisch ist und genau eine IATA-Route vorliegt. Keine Fremdroute wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Airline-/Routen-Hardcodes.
@@ -4812,6 +4813,28 @@
         + `<div style="margin-top:8px"><b>Flugabgleich</b><br><small>${rowText}</small></div>`
         + `</div>`;
     })() : '';
+    const p39LiveDiag = (() => {
+      try { return window.ATMSP39NativeLiveLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const p39LiveDiagHtml = (() => {
+      const button = `<button type="button" id="p39NativeLiveDiagBtn" style="width:100%;padding:10px;border-radius:10px;font-weight:800;margin-top:8px">🧪 P39 Native-LIVE-Diagnose starten</button>`;
+      const note = `<div style="font-size:11px;opacity:.78;line-height:1.45;margin-top:6px">Nur Beweistest: liest DUS + FlightStats. Ändert weder PLAN noch DISPO noch LIVE.</div>`;
+      if (!p39LiveDiag) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(190,145,255,.42);border-radius:10px"><b>🧪 Native LIVE-Zweitquellen-Diagnose · P39</b>${note}${button}<div id="p39NativeLiveDiagStatus" style="font-size:11px;margin-top:7px;opacity:.82">Noch nicht gestartet.</div></div>`;
+      if (p39LiveDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 Native LIVE-Zweitquellen-Diagnose · P39</b>${note}${button}<div id="p39NativeLiveDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p39LiveDiag.error)}</div></div>`;
+      const selected = p39LiveDiag.selected || {}, official = p39LiveDiag.official || {}, fs = p39LiveDiag.flightStats || {}, second = fs.selected || {}, cmp = p39LiveDiag.comparison || {};
+      const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
+      const deltaLabel = value => Number.isFinite(Number(value)) ? `${Number(value) >= 0 ? '+' : ''}${Number(value)} Min.` : '–';
+      const agreement = cmp.statusAgreement === true ? 'ja' : (cmp.statusAgreement === false ? 'nein' : 'nicht vergleichbar');
+      const secondLabel = fs.selectedMode === 'single_flight' ? 'FlightStats Einzel-Flug' : 'FlightStats Airport Board';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(190,145,255,.42);border-radius:10px">`
+        + `<b>🧪 Native LIVE-Zweitquellen-Diagnose · P39</b>${note}${button}`
+        + `<div id="p39NativeLiveDiagStatus" style="font-size:11px;margin-top:7px"><b>${escapeHtml(selected.flightNumber || '?')}</b> · ${escapeHtml(selected.direction || '?')} · ${escapeHtml(selected.originIata || '?')}→${escapeHtml(selected.destinationIata || '?')} · ${escapeHtml(selected.airportEventDate || selected.date || '?')}</div>`
+        + `<div style="margin-top:8px"><b>Quelle 1 · Düsseldorf Airport</b><br><small>Status ${escapeHtml(official.status || 'unknown')} · Plan ${clockOrDash(official.scheduled)} · Estimated ${clockOrDash(official.estimated)} · Actual ${clockOrDash(official.actual)} · Delay ${escapeHtml(deltaLabel(official.delayMinutes))}</small></div>`
+        + `<div style="margin-top:8px"><b>Quelle 2 · ${escapeHtml(secondLabel)}</b><br><small>${second?.reachable === false ? 'nicht erreichbar' : 'erreichbar'} · Route ${second?.routeMatch ? 'passt' : 'nicht sicher'} · Status ${escapeHtml(second?.status || 'unknown')} · Plan/Anzeige ${clockOrDash(second?.scheduled)} · Estimated ${clockOrDash(second?.estimated)} · Actual ${clockOrDash(second?.actual)} · Grund ${escapeHtml(second?.reason || '–')}</small></div>`
+        + `<div style="margin-top:8px"><b>Beobachteter Vergleich</b><br><small>Status gleich: ${escapeHtml(agreement)} · Planzeit-Abweichung ${escapeHtml(deltaLabel(cmp.scheduledDeltaMinutes))} · aktuelle Zeit-Abweichung ${escapeHtml(deltaLabel(cmp.currentDeltaMinutes))} · zweite Quelle mit eigenem LIVE-Signal: ${cmp.secondHasLiveSignal ? 'ja' : 'nein'}.</small></div>`
+        + `<div style="font-size:11px;opacity:.76;margin-top:7px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
+        + `</div>`;
+    })();
     const unresolvedFlightRouteDiag = (() => {
       try { return window.ATMSNativeUnresolvedFlightRouteLastDiagnostic || null; } catch (_) { return null; }
     })();
@@ -4847,8 +4870,10 @@
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
     })() : '';
-    const diagnosticHtml = `<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
+    const diagnosticHtml = `<details ${p39LiveDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${p39LiveDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
+
+    $('p39NativeLiveDiagBtn')?.addEventListener('click', runP39NativeLiveDiagnostic);
 
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
@@ -5107,6 +5132,7 @@
     try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
@@ -5818,6 +5844,296 @@
     const reachable = rows.filter(item => item.reachable === true).length;
     const routeMatches = rows.filter(item => item.routeMatch === true).length;
     return { attempted: eligible.length, reachable, routeMatches, rows, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} Routenübereinstimmung(en)` };
+  }
+
+
+  // CORE-007D8A1F1D8P39: Native LIVE dual-source proof diagnostic.
+  // Safety invariant: this code only reads network sources and stores a transient diagnostic
+  // object on window. It never mutates state.rides and never writes PLAN/DISPO/LIVE storage.
+  function p39Clock(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') {
+      for (const key of ['time24','local','dateLocal','date','time','value']) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const hit = p39Clock(value[key]);
+          if (hit) return hit;
+        }
+      }
+      return '';
+    }
+    const raw = String(value).trim();
+    if (!raw) return '';
+    const iso = raw.match(/(?:T|\s)([01]\d|2[0-3]):([0-5]\d)/);
+    if (iso) return `${iso[1]}:${iso[2]}`;
+    const direct = raw.match(/(?:^|\D)([01]?\d|2[0-3]):([0-5]\d)(?:\D|$)/);
+    return direct ? `${String(Number(direct[1])).padStart(2,'0')}:${direct[2]}` : '';
+  }
+
+  function p39MinuteDelta(from, to) {
+    const a = p39Clock(from), b = p39Clock(to);
+    if (!a || !b) return null;
+    const [ah, am] = a.split(':').map(Number), [bh, bm] = b.split(':').map(Number);
+    let d = (bh * 60 + bm) - (ah * 60 + am);
+    if (d < -720) d += 1440;
+    if (d > 720) d -= 1440;
+    return d;
+  }
+
+  function p39NormalizeStatus(value) {
+    const raw = cellText(value).toLowerCase();
+    if (!raw) return 'unknown';
+    if (/annull|cancel/.test(raw)) return 'cancelled';
+    if (/landed|gelandet|arrived|angekommen/.test(raw)) return 'landed';
+    if (/departed|abgeflogen|gestartet|take.?off/.test(raw)) return 'departed';
+    if (/delay|verspät|verspaet/.test(raw)) return 'delayed';
+    if (/on.?time|pünkt|puenkt/.test(raw)) return 'on_time';
+    if (/sched|geplant/.test(raw)) return 'scheduled';
+    return 'unknown';
+  }
+
+  function p39StatusFromFlightStats(data, direction, scheduled, estimated, actual) {
+    const note = data?.flightNote && typeof data.flightNote === 'object' ? data.flightNote : {};
+    if (note.canceled === true) return 'cancelled';
+    if (direction === 'arrival' && (note.landed === true || data?.isLanded === true)) return 'landed';
+    if (direction === 'departure' && (note.hasDepartedRunway === true || note.hasDepartedGate === true)) return 'departed';
+    const labels = [
+      data?.status?.statusDescription, data?.status?.status, data?.status,
+      note?.message, note?.phase, data?.flightStatus, data?.recordStatus
+    ].map(cellText).filter(Boolean);
+    for (const label of labels) {
+      const normalized = p39NormalizeStatus(label);
+      if (normalized !== 'unknown') return normalized;
+    }
+    const current = actual || estimated;
+    const delta = scheduled && current ? p39MinuteDelta(scheduled, current) : null;
+    if (Number.isFinite(delta) && delta > 0) return 'delayed';
+    return scheduled ? 'scheduled' : 'unknown';
+  }
+
+  function p39FlightStatsSingleLive(item, payload) {
+    const rawData = payload && typeof payload === 'object' ? payload.data : null;
+    const data = Array.isArray(rawData) ? (rawData[0] || null) : rawData;
+    if (!data || typeof data !== 'object') {
+      return { reachable: true, usable: false, reason: 'no_data', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '' };
+    }
+    const route = parseNativeSecondSourceProbe(item, payload);
+    const direction = String(item?.direction || '').trim().toLowerCase();
+    const schedule = data?.schedule && typeof data.schedule === 'object' ? data.schedule : {};
+    const sideTimes = direction === 'arrival'
+      ? (data?.arrivalTimes && typeof data.arrivalTimes === 'object' ? data.arrivalTimes : {})
+      : (data?.departureTimes && typeof data.departureTimes === 'object' ? data.departureTimes : {});
+    const scheduled = p39Clock(direction === 'arrival'
+      ? (schedule.scheduledArrival || schedule.scheduledGateArrival || data?.scheduledGateArrival || sideTimes?.scheduledGate || data?.arrivalTime)
+      : (schedule.scheduledDeparture || schedule.scheduledGateDeparture || data?.scheduledGateDeparture || sideTimes?.scheduledGate || data?.departureTime));
+    const estimated = p39Clock(direction === 'arrival'
+      ? (schedule.estimatedGateArrival || schedule.estimatedRunwayArrival || data?.estimatedGateArrival || data?.estimatedRunwayArrival || sideTimes?.estimatedGate || sideTimes?.estimatedRunway)
+      : (schedule.estimatedGateDeparture || schedule.estimatedRunwayDeparture || data?.estimatedGateDeparture || data?.estimatedRunwayDeparture || sideTimes?.estimatedGate || sideTimes?.estimatedRunway));
+    const actual = p39Clock(direction === 'arrival'
+      ? (schedule.actualGateArrival || schedule.actualRunwayArrival || data?.actualGateArrival || data?.actualRunwayArrival || sideTimes?.actualGate || sideTimes?.actualRunway)
+      : (schedule.actualGateDeparture || schedule.actualRunwayDeparture || data?.actualGateDeparture || data?.actualRunwayDeparture || sideTimes?.actualGate || sideTimes?.actualRunway));
+    const status = p39StatusFromFlightStats(data, direction, scheduled, estimated, actual);
+    const usable = Boolean(route?.routeMatch && (scheduled || estimated || actual || status !== 'unknown'));
+    return {
+      reachable: true,
+      usable,
+      reason: usable ? 'live_fields_available' : (route?.reason || 'live_fields_missing'),
+      routeMatch: Boolean(route?.routeMatch),
+      originIata: route?.originIata || '',
+      destinationIata: route?.destinationIata || '',
+      status,
+      scheduled,
+      estimated,
+      actual,
+      delayMinutes: scheduled && (actual || estimated) ? p39MinuteDelta(scheduled, actual || estimated) : null
+    };
+  }
+
+  function p39BoardStatus(row, direction, scheduled) {
+    const labels = [row?.status?.statusDescription, row?.status?.status, row?.status, row?.flightStatus, row?.statusDescription]
+      .map(cellText).filter(Boolean);
+    for (const label of labels) {
+      const normalized = p39NormalizeStatus(label);
+      if (normalized !== 'unknown') return normalized;
+    }
+    return scheduled ? 'scheduled' : 'unknown';
+  }
+
+  async function p39FlightStatsBoardLive(item) {
+    const bridge = nativeSecondSourceBridgeHost();
+    if (!bridge) return { reachable: false, usable: false, reason: 'native_bridge_unavailable', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '', sourceUrls: [] };
+    const group = {
+      airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+      direction: String(item?.direction || '').trim().toLowerCase(),
+      date: cellText(item?.airportEventDate || item?.date)
+    };
+    const matches = [], sourceUrls = [], errors = [];
+    for (const hour of [0,6,12,18]) {
+      const url = nativeSecondSourceBoardProbeUrl(group, hour);
+      if (!url) continue;
+      try {
+        const raw = bridge.requestJsonString(JSON.stringify({
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+          purpose: 'flightstats_board_probe',
+          airportIata: group.airportIata,
+          method: 'GET',
+          url,
+          timeoutMs: 15000
+        }));
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          errors.push(`${hour}:${message || 'empty_response'}`);
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) { errors.push(`${hour}:invalid_json`); continue; }
+        const parsed = parseNativeSecondSourceBoardSegment(payload);
+        if (!parsed.ok) { errors.push(`${hour}:${parsed.reason}`); continue; }
+        for (const row of parsed.flights) {
+          if (boardFlightIdentity(row) !== normalizeFlightForCurrentCheck(item?.flightNumber)) continue;
+          matches.push({ ...row, __atmsBoardSourceUrl: url });
+          sourceUrls.push(url);
+        }
+      } catch (error) {
+        errors.push(`${hour}:technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180));
+      }
+    }
+    if (!matches.length) return { reachable: sourceUrls.length > 0 || errors.length < 4, usable: false, reason: 'flight_not_found_on_board', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '', sourceUrls: [...new Set(sourceUrls)], errors };
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const routePairs = [...new Set(matches.map(row => {
+      const opposite = boardOppositeAirportIata(row);
+      if (!/^[A-Z]{3}$/.test(opposite)) return '';
+      return group.direction === 'arrival' ? `${opposite}>${group.airportIata}` : `${group.airportIata}>${opposite}`;
+    }).filter(Boolean))];
+    const routePair = routePairs.length === 1 ? routePairs[0] : '';
+    const [originIata, destinationIata] = routePair ? routePair.split('>') : ['', ''];
+    const routeMatch = Boolean(routePair && originIata === expectedOrigin && destinationIata === expectedDestination);
+    const eventKey = group.direction === 'arrival' ? 'arrivalTime' : 'departureTime';
+    const clocks = matches.map(row => p39Clock(row?.[eventKey])).filter(Boolean);
+    const distinctClocks = [...new Set(clocks)];
+    const scheduled = distinctClocks.length === 1 ? distinctClocks[0] : '';
+    const statuses = [...new Set(matches.map(row => p39BoardStatus(row, group.direction, p39Clock(row?.[eventKey]))).filter(status => status !== 'unknown'))];
+    const status = statuses.length === 1 ? statuses[0] : (statuses.length ? 'ambiguous' : 'unknown');
+    return {
+      reachable: true,
+      usable: Boolean(routeMatch && (scheduled || status !== 'unknown')),
+      reason: routeMatch ? (distinctClocks.length > 1 ? 'ambiguous_board_times' : 'board_fields_available') : (routePairs.length > 1 ? 'ambiguous_routes' : 'route_mismatch'),
+      routeMatch,
+      originIata,
+      destinationIata,
+      status,
+      scheduled,
+      estimated: '',
+      actual: '',
+      delayMinutes: null,
+      sourceUrls: [...new Set(matches.map(row => cellText(row?.__atmsBoardSourceUrl)).filter(Boolean))],
+      matchCount: matches.length,
+      errors
+    };
+  }
+
+  function p39LocalRideScore(item) {
+    let score = 0;
+    const key = officialFlightBaseIdentity(item);
+    for (const ride of state.rides) {
+      const rideItem = officialProviderItemsFromRides([ride])[0];
+      if (!rideItem || officialFlightBaseIdentity(rideItem) !== key) continue;
+      if (ride?.liveManualConfirmed === true) score += 100;
+      if (cellText(ride?.liveFlightActualTime || ride?.actualDepartureTime || ride?.actualLandingTime)) score += 80;
+      if (cellText(ride?.liveFlightEstimatedTime)) score += 50;
+      if (['departed','landed','delayed','cancelled'].includes(String(ride?.flightStatus || ride?.liveFlightStatus || '').toLowerCase())) score += 30;
+      const hhmm = p39Clock(ride?.flightTime || ride?.time);
+      if (hhmm) score += Number(hhmm.replace(':','')) / 100000;
+    }
+    return score;
+  }
+
+  async function runP39NativeLiveDiagnostic() {
+    const button = $('p39NativeLiveDiagBtn');
+    const statusBox = $('p39NativeLiveDiagStatus');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); }
+    if (statusBox) statusBox.textContent = 'P39 Diagnose läuft: offizielle DUS-Livequelle …';
+    try {
+      const items = officialProviderItemsFromRides(state.rides).filter(item => String(item?.airportIata || '').trim().toUpperCase() === 'DUS');
+      if (!items.length) throw new Error('Keine geeigneten DUS-Flüge in der analysierten Planliste gefunden.');
+      const ranked = [...items].sort((a,b) => p39LocalRideScore(b) - p39LocalRideScore(a));
+      const selected = ranked[0];
+      const provider = await ensureOfficialFlightProvider();
+      const officialBatch = await provider.fetchLive([selected]);
+      const official = Array.isArray(officialBatch?.flights) ? officialBatch.flights[0] : null;
+      if (!official) {
+        const failure = (Array.isArray(officialBatch?.failures) ? officialBatch.failures[0] : null) || (Array.isArray(officialBatch?.unsupported) ? officialBatch.unsupported[0] : null);
+        throw new Error(`Offizielle DUS-Livequelle ohne Treffer${failure?.reason ? ` (${failure.reason})` : ''}.`);
+      }
+      const direction = String(selected.direction || '').toLowerCase();
+      const routeIata = String(official?.route?.iata || '').trim().toUpperCase();
+      const officialOriginIata = direction === 'arrival' ? routeIata : 'DUS';
+      const officialDestinationIata = direction === 'arrival' ? 'DUS' : routeIata;
+      const secondItem = { ...selected, officialAirportEvidence: true, officialOriginIata, officialDestinationIata };
+
+      if (statusBox) statusBox.textContent = 'P39 Diagnose läuft: FlightStats Einzel-Flugquelle …';
+      const bridge = nativeSecondSourceBridgeHost();
+      let single = { reachable: false, usable: false, reason: 'native_bridge_unavailable', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '' };
+      const singleUrl = nativeSecondSourceProbeUrl(secondItem);
+      if (bridge && singleUrl) {
+        const raw = bridge.requestJsonString(JSON.stringify({
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1', purpose: 'flightstats_probe', airportIata: 'DUS', method: 'GET', url: singleUrl, timeoutMs: 15000
+        }));
+        if (raw) {
+          try { single = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl: singleUrl }; }
+          catch (_) { single = { ...single, reachable: true, reason: 'invalid_json', sourceUrl: singleUrl }; }
+        } else {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          single = { ...single, reason: message ? `transport:${message.slice(0,180)}` : 'empty_response', sourceUrl: singleUrl };
+        }
+      }
+
+      if (statusBox) statusBox.textContent = 'P39 Diagnose läuft: FlightStats Airport-Board …';
+      const board = await p39FlightStatsBoardLive(secondItem);
+      const second = single.usable ? single : board;
+      const officialCurrent = p39Clock(official?.airportActualTime || official?.airportEstimatedTime);
+      const secondCurrent = p39Clock(second?.actual || second?.estimated);
+      const comparison = {
+        routeMatch: Boolean(second?.routeMatch),
+        statusAgreement: second?.status && second.status !== 'unknown' && second.status !== 'ambiguous' ? String(official?.status || 'unknown') === String(second.status) : null,
+        scheduledDeltaMinutes: official?.airportScheduledTime && second?.scheduled ? p39MinuteDelta(official.airportScheduledTime, second.scheduled) : null,
+        currentDeltaMinutes: officialCurrent && secondCurrent ? p39MinuteDelta(officialCurrent, secondCurrent) : null,
+        secondHasLiveSignal: Boolean(second?.actual || second?.estimated || (second?.status && !['unknown','scheduled','ambiguous'].includes(second.status)))
+      };
+      window.ATMSP39NativeLiveLastDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P39',
+        checkedAt: new Date().toISOString(),
+        diagnosticOnly: true,
+        noMutation: true,
+        selected: { flightNumber: selected.flightNumber, date: selected.date, airportEventDate: selected.airportEventDate, direction, airportIata: 'DUS', originIata: officialOriginIata, destinationIata: officialDestinationIata },
+        official: {
+          source: 'Düsseldorf Airport',
+          status: official?.status || 'unknown',
+          scheduled: p39Clock(official?.airportScheduledTime),
+          estimated: p39Clock(official?.airportEstimatedTime),
+          actual: p39Clock(official?.airportActualTime),
+          delayMinutes: Number.isFinite(Number(official?.delayMinutes)) ? Number(official.delayMinutes) : null,
+          routeIata,
+          sourceUrl: Array.isArray(official?.sources) ? cellText(official.sources[0]?.url) : ''
+        },
+        flightStats: { selectedMode: single.usable ? 'single_flight' : 'airport_board', single, board, selected: second },
+        comparison
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P39 Native-LIVE-Diagnose abgeschlossen', 'ok');
+    } catch (error) {
+      window.ATMSP39NativeLiveLastDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P39', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        error: cellText(error?.message) || String(error || 'Unbekannter Fehler')
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P39 Diagnose nicht vollständig', 'warn');
+    } finally {
+      const freshButton = $('p39NativeLiveDiagBtn');
+      if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
+    }
   }
 
 
