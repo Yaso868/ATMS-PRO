@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P39F2 · 24.09.2026: ANALYSIS RACE GUARD – verhindert überlappende Planlisten-Analyse-/Auto-Pipeline-Läufe derselben Auswahl. Der Analyse-Button bleibt bis zum Ende der laufenden Auto-Pipeline gesperrt; jeder neue echte Analyse-Lauf erhält eine neue Generation und veraltete Native-Flugprüfungen dürfen vor dem Anwenden ihrer Ergebnisse nicht mehr in den aktuellen Staging-State schreiben. Flüchtige Diagnoseanzeigen werden beim neuen Analyse-Lauf zurückgesetzt. Keine Änderung an OCR-, FLIGHT-008-, LIVE-, PLAN- oder DISPO-Regeln.
 // CORE-007D8A1F1D8P39F1 · 24.09.2026: NATIVE LIVE ARRIVAL TIME-FIELD PROBE – erweitert P39 ausschließlich diagnostisch um einen Mehrflug-Test der DUS-Ankünfte aus der analysierten Planliste. Für jede eindeutige Ankunft werden offizielle DUS-LIVE-Felder und die bereits allowlistete FlightStats-Einzelflugquelle getrennt gelesen und Status/Plan/Estimated/Actual nebeneinander angezeigt. Keine automatische Bestätigung, keine Änderung an PLAN/DISPO/LIVE/Persistenz, keine neue Quelle oder Registrierung.
 // CORE-007D8A1F1D8P39 · 24.09.2026: NATIVE LIVE DUAL-SOURCE DIAGNOSTIC – rein diagnostischer Beweistest fuer einen automatisch ausgewaehlten DUS-Flug. Fragt die bestehende offizielle DUS-Livequelle und die bereits allowlistete FlightStats-Zweitquelle nativ ab und zeigt Status/Plan-/Estimated-/Actual-Zeiten sowie beobachtete Abweichungen nebeneinander. Schreibt keinerlei PLAN-, DISPO- oder LIVE-Daten und aendert keine Bestaetigungslogik.
 // CORE-007D8A1F1D8P36F22 · 24.09.2026: NATIVE AIRPORT-CONFLICT USER WARNING – Überführt ausschließlich einen im P36F21-Realtest eindeutig erkannten, datumsspezifischen Fremdrouten-Konflikt aus der Technikdiagnose in sichere Fahrten-Metadaten. Die fremde Route wird NICHT als Flugort übernommen; die Fahrt bleibt manuell offen und erhält nur einen sichtbaren Airport-Konflikt-Hinweis. Keine Route/Airline wird hart codiert.
@@ -81,7 +82,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, autoImportCompleted: false, autoPipelineInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -4957,12 +4958,36 @@
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
   }
 
+  function releaseAnalysisRunGuard(generation = state.pipelineGeneration) {
+    if (generation !== state.pipelineGeneration) return;
+    state.analysisRunInProgress = false;
+    const analyzeButton = $('analyzePlanBtn');
+    if (analyzeButton) analyzeButton.disabled = !state.file;
+  }
+
+  function resetTransientFlightDiagnosticsForAnalysis() {
+    try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
+  }
+
   async function analyze() {
-    if (!state.file) return;
+    if (!state.file || state.analysisRunInProgress || state.autoPipelineInProgress) return;
+    state.analysisRunInProgress = true;
+    state.pipelineGeneration += 1;
+    const generation = state.pipelineGeneration;
+    const analyzeButton = $('analyzePlanBtn');
+    if (analyzeButton) analyzeButton.disabled = true;
+    resetTransientFlightDiagnosticsForAnalysis();
+    let pipelineStarted = false;
     try {
       currentPlanDate();
       $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
       const result = await readFile(state.file);
+      if (generation !== state.pipelineGeneration) return;
       if (result.kind === 'json') {
         const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
         if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
@@ -4980,7 +5005,8 @@
         state.issues = validate(state.rides.map((ride, index) => ({ ...ride, sourceRow: index + 1 })));
         if ($('planProfileInfo')) $('planProfileInfo').innerHTML = '<b>ATMS JSON</b><span>100 % Erkennung</span><small>Bestehende ATMS-Datenstruktur erkannt.</small>';
         render();
-        maybeAutoImportCleanPlan();
+        pipelineStarted = maybeAutoImportCleanPlan();
+        if (!pipelineStarted) releaseAnalysisRunGuard(generation);
         return;
       }
 
@@ -5127,6 +5153,7 @@
         state.ocrDiagnosticSelfCheck = null;
       }
 
+      if (generation !== state.pipelineGeneration) return;
       state.matrix = matrix;
       state.rides = assignRideDates(preparedRides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
@@ -5136,11 +5163,13 @@
       localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);
       render();
-      maybeAutoImportCleanPlan();
+      pipelineStarted = maybeAutoImportCleanPlan();
+      if (!pipelineStarted) releaseAnalysisRunGuard(generation);
     } catch (error) {
       $('importStatus').textContent = `Fehler: ${error.message}`;
       $('planAnalysis').classList.add('hidden');
       $('importPlanBtn').disabled = true;
+      releaseAnalysisRunGuard(generation);
     }
   }
 
@@ -5155,6 +5184,7 @@
     state.meta = {};
     state.pipelineGeneration += 1;
     state.autoPipelineInProgress = false;
+    state.analysisRunInProgress = false;
     state.autoImportCompleted = false;
     state.autoFlightSummary = null;
     try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
@@ -5162,6 +5192,7 @@
     try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
@@ -5286,7 +5317,10 @@
       }
       return true;
     } finally {
-      if (generation === state.pipelineGeneration) state.autoPipelineInProgress = false;
+      if (generation === state.pipelineGeneration) {
+        state.autoPipelineInProgress = false;
+        releaseAnalysisRunGuard(generation);
+      }
     }
   }
 
@@ -6915,6 +6949,9 @@
             status.textContent = `Offener Flug-Routencheck ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
           }
         });
+        if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) {
+          return { ok: false, stale: true, technicalFailureCount: 0 };
+        }
         try {
           window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = {
             patch: 'CORE-007D8A1F1D8P36F22',
