@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P58 · 25.09.2026: DRIVER DEU-COLUMN MODE-PARALLEL OCR PERFORMANCE FIX – P57/P54 hat driver_deu_column_ocr mit rund 23 s als einen der größten verbleibenden OCR-Einzelblöcke belegt. P58 startet die drei bereits vorhandenen deutschen Fahrer-Spalten-OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Versuch-Reihenfolge aus.
+// Crop-Geometrie, PSM-Versuche, Drei-Lauf-Stimmen, Zwei-Stimmen-Mindestkonsens, Gleichstandsblockade, Diakritik-/Namenszusatz-Sicherheitsprüfung und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Flugnummern, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P57 · 25.09.2026: MISSING-FLIGHT CROP-PARALLEL OCR PERFORMANCE FIX – P56/P54 hat missing_flight_targeted_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P57 startet die bereits vorhandenen bis zu drei unveränderten Flugzellen-Crops einer fehlenden Flugnummer parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Crop-Reihenfolge aus.
 // Crop-Geometrie, Kandidatenbereinigung, Ein-Crop-/Zwei-Crop-Stimmenlogik, Sicherheitsgrenzen und manuelle Prüfflags bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P56 · 25.09.2026: ROUTE DEU-COLUMN MODE-PARALLEL OCR PERFORMANCE FIX – P55/P54 hat route_deu_column_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P56 startet innerhalb jeder unveränderten Routen-Spalte die beiden bereits vorhandenen deutschen OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin in derselben Versuch-Reihenfolge aus.
@@ -3031,9 +3033,16 @@
     if (status) status.textContent = 'Fahrer-Spalte wird lokal mit deutscher OCR gegengeprüft …';
 
     try {
-      for (const attempt of attempts) {
+      // P58: Die drei bestehenden OCR-Versuche derselben unveränderten Fahrer-Spalte
+      // werden gleichzeitig gestartet. Promise.all bewahrt die attempts-Reihenfolge;
+      // Auswertung, Stimmen, Mindestkonsens und Sicherheitsregeln bleiben identisch.
+      const attemptResults = await Promise.all(attempts.map(attempt => {
         const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-        const second = await Tesseract.recognize(crop, 'deu', attempt.options);
+        return Tesseract.recognize(crop, 'deu', attempt.options)
+          .then(second => ({ attempt, second }));
+      }));
+
+      for (const { attempt, second } of attemptResults) {
         const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
 
         rowsWithMeta.forEach(item => {
