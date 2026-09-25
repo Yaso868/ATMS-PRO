@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P57 · 25.09.2026: MISSING-FLIGHT CROP-PARALLEL OCR PERFORMANCE FIX – P56/P54 hat missing_flight_targeted_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P57 startet die bereits vorhandenen bis zu drei unveränderten Flugzellen-Crops einer fehlenden Flugnummer parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Crop-Reihenfolge aus.
+// Crop-Geometrie, Kandidatenbereinigung, Ein-Crop-/Zwei-Crop-Stimmenlogik, Sicherheitsgrenzen und manuelle Prüfflags bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P56 · 25.09.2026: ROUTE DEU-COLUMN MODE-PARALLEL OCR PERFORMANCE FIX – P55/P54 hat route_deu_column_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P56 startet innerhalb jeder unveränderten Routen-Spalte die beiden bereits vorhandenen deutschen OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin in derselben Versuch-Reihenfolge aus.
 // Crop-Geometrie, PSM-Versuche, Zwei-Lauf-Konsens, Diakritik-Sicherheitsprüfung und alle Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Flugnummern, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P55 · 25.09.2026: LONG-PREFIX MODE-PARALLEL OCR PERFORMANCE FIX – P54 hat long_prefix_flight_ocr mit rund 98 s als größten Einzel-Flaschenhals belegt. P55 führt innerhalb jedes unveränderten Flugzellen-Crops die drei bereits vorhandenen OCR-Modi parallel auf ihren jeweils getrennten, bereits von P53 wiederverwendeten Workern aus. Crop-Geometrie, drei Modi, Stimmen, Crop-Support, P46-Fail-safe, P49-S↔9-Ziffernprobe und sämtliche Übernahmeschwellen bleiben unverändert.
@@ -3787,9 +3789,14 @@
         // 2) genau ein Kandidat insgesamt, wenn alle übrigen Crops gar keinen Kandidaten liefern.
         const votes = new Map();
         const attempts = [];
-        for (const [x0, cy0, x1, cy1, scale] of regions) {
+        // P57: Die bereits vorhandenen, unabhängigen Crops derselben Flugzelle werden
+        // gleichzeitig OCR-gelesen. Promise.all bewahrt die regions-Reihenfolge, sodass
+        // Kandidaten, Versuchsliste und Stimmenlogik danach exakt wie zuvor ausgewertet werden.
+        const regionResults = await Promise.all(regions.map(([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          const second = await Tesseract.recognize(crop, 'eng');
+          return Tesseract.recognize(crop, 'eng');
+        }));
+        for (const second of regionResults) {
           const candidates = [...new Set(
             flightCandidatesFromOcrResult(second)
               .map(candidate => sanitizeTargetedFlightCandidate(candidate, ride.planTime || ride.time))
