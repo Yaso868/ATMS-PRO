@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P47 · 25.09.2026: S↔9 FLIGHT BOUNDARY DIGIT PROBE – löst ausschließlich den bereits als auffällig erkannten OCR-Grenzfall, bei dem an Position 3 eines vermeintlich 3-buchstabigen Flugpräfixes ein 'S' steht, obwohl die Flugnummer nach einem 2-stelligen Designator mit '9' weitergeht. Eine automatische Korrektur ist nur erlaubt, wenn eine zusätzliche Ziffern-only-OCR der konkreten Flugzelle in mindestens zwei unterschiedlich zugeschnittenen Crops exakt denselben erwarteten Zahlenteil liest; andere Ziffern bleiben unverändert und konkurrierende gleich lange Mehrfach-Evidenz blockiert die Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P46 · 25.09.2026: SUSPICIOUS FLIGHT OCR FAIL-SAFE – auffällige 3+ Buchstaben-Präfixe dürfen nach der lokalen Flugzellen-Gegenprüfung nicht mehr still als unauffällige Flugnummer durchgehen. Ein sicher belegter 2-stelliger Alternativkandidat darf jetzt zusätzlich den generischen OCR-Grenzfall 'drittes Präfixzeichen als erste Ziffer' abbilden; ohne sichere Alternative bleibt der Wert sichtbar prüfpflichtig. Zeigt die Primär-Rohzelle nur einen leeren/Strich-Platzhalter und findet auch die lokale Gegenprüfung keinen Flugkandidaten, wird der OCR-Scheinwert verworfen statt importiert. Keine Flugnummern-, Airline- oder Routen-Hardcodes; P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P45 · 25.09.2026: BATCHED EARLY-TIME OCR PERFORMANCE FIX – ersetzt die bisherige serielle 00:00–05:59-Zellprüfung (bis zu 9 Tesseract-Läufe je Fahrt) durch drei gebündelte OCR-Durchläufe über die komplette DISPO-Zeitspalte. Die Ergebnisse werden weiterhin pro Quellzeile getrennt ausgewertet; eine abweichende Uhrzeit wird nur bei mindestens zwei exakt übereinstimmenden unabhängigen Batch-Läufen und eindeutigem Konsens übernommen.
 // Folgetag-Logik, Primär-OCR, Fahrer-/Orts-OCR, Flugprüfung, PLAN/DISPO/LIVE und Persistenz bleiben unverändert; keine Uhrzeit wird geraten oder hart codiert.
@@ -3957,6 +3958,34 @@
     return longPrefixBoundaryGlyphShiftMatch(initial, candidate);
   }
 
+  // P47: Nur der konkrete S↔9-Grenzfall wird zusätzlich geprüft. Die Funktion
+  // erzeugt KEINE Korrektur aus einer Flugnummern-/Airline-Liste, sondern nur den
+  // Kandidaten, dessen Zahlenteil anschließend direkt aus der Bildzelle belegt
+  // werden muss. Beispielstruktur: ABS123 -> AB9123; die übrigen Ziffern müssen
+  // exakt erhalten bleiben. Maximal vier Ziffern im resultierenden Zahlenteil.
+  function sNineBoundaryDigitProbeSpec(initialValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const match = initial.match(/^([A-Z]{2})S(\d{1,3})$/);
+    if (!match) return null;
+    const expectedTail = `9${match[2]}`;
+    if (expectedTail.length < 2 || expectedTail.length > 4) return null;
+    const candidate = normalizeFlightNumber(`${match[1]}${expectedTail}`);
+    if (!candidate || candidate === initial || diagnosticFlightPrefixLength(candidate) !== 2) return null;
+    return { candidate, expectedTail };
+  }
+
+  function digitOnlyTokensFromOcrResult(result) {
+    const found = new Set();
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    parts.forEach(part => {
+      const matches = cellText(part).match(/\d{1,4}/g) || [];
+      matches.forEach(token => found.add(token));
+    });
+    return [...found];
+  }
+
   function rawFlightCellHasOnlyPlaceholder(imageMeta, rowMeta, columnIndex) {
     const boundaries = imageMeta?.boundaries || [];
     const rawWords = imageMeta?.rawOcrWords || [];
@@ -4081,9 +4110,79 @@
         if (routeType === 'departure') ride.departureFlight = recovered;
         ride.flightDirection = routeType;
         ride.flightRecoveredFromLongPrefixOcr = true;
-        ride.flightLongPrefixOcrEvidence = { votes: winner[1], crops: supportingCrops, initialVotes };
+        ride.flightLongPrefixOcrEvidence = { mode: 'full_flight_consensus', votes: winner[1], crops: supportingCrops, initialVotes };
         ride.flightLongPrefixOcrUnresolved = false;
         continue;
+      }
+
+      // P47: Wenn die normale Volltext-Gegen-OCR keinen sicheren Sieger liefert,
+      // darf ausschließlich ein S↔9-Grenzfall einen zusätzlichen Ziffern-only-Probe
+      // erhalten. Der erwartete Zahlenteil muss in mindestens zwei verschiedenen
+      // Crops exakt gelesen werden. Ein konkurrierender gleich langer Zahlenteil mit
+      // ebenfalls mindestens zwei Crops blockiert die Korrektur. Dadurch wird weder
+      // aus dem Flugkontext geraten noch eine konkrete Flugnummer fest eingebaut.
+      const sNineProbe = sNineBoundaryDigitProbeSpec(initial);
+      if (sNineProbe) {
+        const expectedCropSupport = new Set();
+        const competingSupport = new Map();
+        try {
+          for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
+            const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
+            const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+            const second = await Tesseract.recognize(crop, 'eng', {
+              tessedit_pageseg_mode: '8',
+              tessedit_char_whitelist: '0123456789'
+            });
+            const digitTokens = digitOnlyTokensFromOcrResult(second);
+            const exactExpected = digitTokens.includes(sNineProbe.expectedTail);
+            const sameLengthCompetitors = digitTokens.filter(token =>
+              token.length === sNineProbe.expectedTail.length && token !== sNineProbe.expectedTail
+            );
+            if (exactExpected) expectedCropSupport.add(cropIndex);
+            sameLengthCompetitors.forEach(token => {
+              if (!competingSupport.has(token)) competingSupport.set(token, new Set());
+              competingSupport.get(token).add(cropIndex);
+            });
+            const rawText = cellText(second?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+            const rawWords = (Array.isArray(second?.data?.words) ? second.data.words : [])
+              .map(word => cellText(word?.text).replace(/\s+/g, ' ').trim())
+              .filter(Boolean)
+              .join(' ')
+              .slice(0, 80);
+            attempts.push({
+              crop: cropIndex + 1,
+              mode: 'digit-tail-psm8',
+              scale,
+              rawText,
+              rawWords,
+              candidates: exactExpected ? [sNineProbe.candidate] : [],
+              digitTokens: digitTokens.slice()
+            });
+          }
+        } catch (_) {
+          // Fail closed: P46 bleibt wirksam; ohne belastbaren Zusatzbeweis wird
+          // die auffällige Flugnummer weiterhin nur als prüfpflichtig markiert.
+        }
+
+        const competitorWithMultiCropSupport = [...competingSupport.values()]
+          .some(crops => crops.size >= 2);
+        if (expectedCropSupport.size >= 2 && !competitorWithMultiCropSupport) {
+          const recovered = sNineProbe.candidate;
+          ride.flightNumber = recovered;
+          if (routeType === 'arrival') ride.arrivalFlight = recovered;
+          if (routeType === 'departure') ride.departureFlight = recovered;
+          ride.flightDirection = routeType;
+          ride.flightRecoveredFromLongPrefixOcr = true;
+          ride.flightRecoveredFromS9BoundaryProbe = true;
+          ride.flightLongPrefixOcrEvidence = {
+            mode: 's9_digit_tail_consensus',
+            crops: expectedCropSupport.size,
+            expectedTail: sNineProbe.expectedTail,
+            initialVotes
+          };
+          ride.flightLongPrefixOcrUnresolved = false;
+          continue;
+        }
       }
 
       // P46 Fail-safe: Ein auffälliger 3+ Buchstaben-Präfix darf nach erfolgloser
@@ -4360,7 +4459,7 @@
         ? 'PRÜFUNG OFFEN'
         : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P46',
+      version: 'CORE-007D8A1F1D8P47',
       status,
       reason,
       rides: rideList.length,
