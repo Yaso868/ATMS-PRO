@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P49 · 25.09.2026: PRIMARY-WORD TAIL CROP CONSENSUS – verbessert ausschließlich die bereits fail-safe S↔9-Ziffernprobe: statt die komplette Flugzelle erneut als Ziffern zu lesen, werden aus dem Primär-OCR-Wort drei unterschiedlich zugeschnittene Tail-Crops ab der generischen Grenze nach dem zweistelligen Designator erzeugt. Die Zwei-Crop-Konsensschwelle bleibt unverändert; ohne mindestens zwei identische Tail-Lesungen keine Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46/P48-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P48 · 25.09.2026: DEDICATED WORKER DIGIT-PARAMETER FIX – behebt ausschließlich den im P47-Realtest belegten Konfigurationsfehler der S↔9-Ziffernprobe: Tesseract.recognize(image, lang, options) reicht den dritten Parameter bei Tesseract.js v5 als Worker-Erstelloptionen weiter und setzt dadurch tessedit_char_whitelist/pageseg_mode nicht als OCR-Parameter. P48 verwendet für genau diese bereits auffällige Zusatzprobe einen dedizierten Tesseract-Worker, setzt PSM 8 + Ziffern-Whitelist ausdrücklich via worker.setParameters() und beendet den Worker danach. Die bestehende Zwei-Crop-Konsensregel bleibt unverändert; keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P47 · 25.09.2026: S↔9 FLIGHT BOUNDARY DIGIT PROBE – löst ausschließlich den bereits als auffällig erkannten OCR-Grenzfall, bei dem an Position 3 eines vermeintlich 3-buchstabigen Flugpräfixes ein 'S' steht, obwohl die Flugnummer nach einem 2-stelligen Designator mit '9' weitergeht. Eine automatische Korrektur ist nur erlaubt, wenn eine zusätzliche Ziffern-only-OCR der konkreten Flugzelle in mindestens zwei unterschiedlich zugeschnittenen Crops exakt denselben erwarteten Zahlenteil liest; andere Ziffern bleiben unverändert und konkurrierende gleich lange Mehrfach-Evidenz blockiert die Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P46 · 25.09.2026: SUSPICIOUS FLIGHT OCR FAIL-SAFE – auffällige 3+ Buchstaben-Präfixe dürfen nach der lokalen Flugzellen-Gegenprüfung nicht mehr still als unauffällige Flugnummer durchgehen. Ein sicher belegter 2-stelliger Alternativkandidat darf jetzt zusätzlich den generischen OCR-Grenzfall 'drittes Präfixzeichen als erste Ziffer' abbilden; ohne sichere Alternative bleibt der Wert sichtbar prüfpflichtig. Zeigt die Primär-Rohzelle nur einen leeren/Strich-Platzhalter und findet auch die lokale Gegenprüfung keinen Flugkandidaten, wird der OCR-Scheinwert verworfen statt importiert. Keine Flugnummern-, Airline- oder Routen-Hardcodes; P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
@@ -3987,6 +3988,87 @@
     return [...found];
   }
 
+
+  // P49: Für den bereits streng eingegrenzten S↔9-Fall werden die Ziffern nicht
+  // mehr aus der kompletten Flugzelle gelesen. Stattdessen wird das Primär-OCR-Wort
+  // mit exakt demselben normalisierten Inhalt lokalisiert und ab der generischen
+  // Grenze NACH dem zweistelligen Designator in drei unterschiedlich zugeschnittenen
+  // Tail-Crops erneut gelesen. Dadurch kann ein Buchstabe, der die Ziffern-OCR links
+  // verfälscht, entfernt werden, ohne irgendeine konkrete Flugnummer zu kennen.
+  function primaryRawFlightWordBounds(imageMeta, rowMeta, columnIndex, initialValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[columnIndex + 1]);
+    if (!initial || !Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return null;
+
+    const rowY0 = Number(rowMeta.y0 || 0);
+    const rowY1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, rowY1 - rowY0);
+    const matches = rawWords.filter(word => {
+      const x0 = Number(word?.x0 || 0);
+      const x1 = Number(word?.x1 || 0);
+      const y0 = Number(word?.y0 || 0);
+      const y1 = Number(word?.y1 || 0);
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      if (!(x1 > x0 && y1 > y0)) return false;
+      if (cx < left || cx >= right) return false;
+      if (cy < rowY0 - rowHeight * 0.25 || cy > rowY1 + rowHeight * 0.25) return false;
+      return normalizeFlightNumber(word?.text) === initial;
+    }).sort((a,b) => {
+      const confidenceDelta = Number(b?.confidence || 0) - Number(a?.confidence || 0);
+      if (confidenceDelta) return confidenceDelta;
+      return (Number(b?.x1 || 0) - Number(b?.x0 || 0)) - (Number(a?.x1 || 0) - Number(a?.x0 || 0));
+    });
+
+    const word = matches[0];
+    if (!word) return null;
+    const x0 = Number(word.x0 || 0);
+    const x1 = Number(word.x1 || 0);
+    const y0 = Number(word.y0 || 0);
+    const y1 = Number(word.y1 || 0);
+    if (!(x1 > x0 && y1 > y0)) return null;
+    return { x0, x1, y0, y1, cellLeft: left, cellRight: right };
+  }
+
+  function sNineBoundaryTailProbeRegions(imageMeta, rowMeta, columnIndex, initialValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const probe = sNineBoundaryDigitProbeSpec(initial);
+    const word = probe ? primaryRawFlightWordBounds(imageMeta, rowMeta, columnIndex, initial) : null;
+    if (!probe || !word || initial.length < 4) return [];
+
+    const width = Math.max(1, word.x1 - word.x0);
+    const height = Math.max(1, word.y1 - word.y0);
+    if (width < 12 || height < 5) return [];
+
+    // Zwei Zeichen gehören zum Designator. Die drei Geometrien schneiden leicht
+    // unterschiedlich um diese rein strukturell bestimmte Grenze. Die Werte sind
+    // absichtlich relativ zur Wortbreite/-höhe und nicht auf eine Flugnummer bezogen.
+    const designatorBoundaryRatio = 2 / initial.length;
+    const specs = [
+      { shift: -0.07, yPad: 0.35, rightPad: 0.08, scale: 4 },
+      { shift: -0.04, yPad: 0.48, rightPad: 0.10, scale: 5 },
+      { shift:  0.05, yPad: 0.65, rightPad: 0.12, scale: 6 }
+    ];
+
+    return specs.map((spec, index) => {
+      const startRatio = Math.max(0.08, Math.min(0.78, designatorBoundaryRatio + spec.shift));
+      const x0 = Math.max(word.cellLeft + 1, word.x0 + width * startRatio);
+      const x1 = Math.min(word.cellRight - 1, word.x1 + width * spec.rightPad);
+      return {
+        x0,
+        y0: word.y0 - height * spec.yPad,
+        x1,
+        y1: word.y1 + height * spec.yPad,
+        scale: spec.scale,
+        crop: index + 1,
+        mode: 'digit-tail-wordcrop-worker-psm8'
+      };
+    }).filter(region => region.x1 - region.x0 >= 6 && region.y1 - region.y0 >= 5);
+  }
+
   function rawFlightCellHasOnlyPlaceholder(imageMeta, rowMeta, columnIndex) {
     const boundaries = imageMeta?.boundaries || [];
     const rawWords = imageMeta?.rawOcrWords || [];
@@ -4139,19 +4221,27 @@
             tessedit_char_whitelist: '0123456789'
           });
 
-          for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
-            const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
-            const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const tailRegions = sNineBoundaryTailProbeRegions(imageMeta, rowMeta, colIndex, initial);
+          const digitRegions = tailRegions.length >= 2
+            ? tailRegions
+            : regions.map(([x0, y0, x1, y1, scale], index) => ({
+                x0, y0, x1, y1, scale, crop: index + 1, mode: 'digit-tail-worker-psm8-fallback'
+              }));
+
+          for (let cropIndex = 0; cropIndex < digitRegions.length; cropIndex++) {
+            const region = digitRegions[cropIndex];
+            const crop = cropCanvasRegion(imageCanvas, region.x0, region.y0, region.x1, region.y1, region.scale);
             const second = await digitWorker.recognize(crop);
             const digitTokens = digitOnlyTokensFromOcrResult(second);
             const exactExpected = digitTokens.includes(sNineProbe.expectedTail);
             const sameLengthCompetitors = digitTokens.filter(token =>
               token.length === sNineProbe.expectedTail.length && token !== sNineProbe.expectedTail
             );
-            if (exactExpected) expectedCropSupport.add(cropIndex);
+            const cropKey = Number(region.crop || cropIndex + 1);
+            if (exactExpected) expectedCropSupport.add(cropKey);
             sameLengthCompetitors.forEach(token => {
               if (!competingSupport.has(token)) competingSupport.set(token, new Set());
-              competingSupport.get(token).add(cropIndex);
+              competingSupport.get(token).add(cropKey);
             });
             const rawText = cellText(second?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
             const rawWords = (Array.isArray(second?.data?.words) ? second.data.words : [])
@@ -4160,9 +4250,9 @@
               .join(' ')
               .slice(0, 80);
             attempts.push({
-              crop: cropIndex + 1,
-              mode: 'digit-tail-worker-psm8',
-              scale,
+              crop: cropKey,
+              mode: region.mode || 'digit-tail-worker-psm8',
+              scale: region.scale,
               rawText,
               rawWords,
               candidates: exactExpected ? [sNineProbe.candidate] : [],
@@ -4196,7 +4286,7 @@
           ride.flightRecoveredFromLongPrefixOcr = true;
           ride.flightRecoveredFromS9BoundaryProbe = true;
           ride.flightLongPrefixOcrEvidence = {
-            mode: 's9_digit_tail_worker_consensus',
+            mode: 's9_primary_word_tail_crop_consensus',
             crops: expectedCropSupport.size,
             expectedTail: sNineProbe.expectedTail,
             initialVotes
@@ -4480,7 +4570,7 @@
         ? 'PRÜFUNG OFFEN'
         : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P48',
+      version: 'CORE-007D8A1F1D8P49',
       status,
       reason,
       rides: rideList.length,
