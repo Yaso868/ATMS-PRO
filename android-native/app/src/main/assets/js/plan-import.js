@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P45 · 25.09.2026: BATCHED EARLY-TIME OCR PERFORMANCE FIX – ersetzt die bisherige serielle 00:00–05:59-Zellprüfung (bis zu 9 Tesseract-Läufe je Fahrt) durch drei gebündelte OCR-Durchläufe über die komplette DISPO-Zeitspalte. Die Ergebnisse werden weiterhin pro Quellzeile getrennt ausgewertet; eine abweichende Uhrzeit wird nur bei mindestens zwei exakt übereinstimmenden unabhängigen Batch-Läufen und eindeutigem Konsens übernommen.
+// Folgetag-Logik, Primär-OCR, Fahrer-/Orts-OCR, Flugprüfung, PLAN/DISPO/LIVE und Persistenz bleiben unverändert; keine Uhrzeit wird geraten oder hart codiert.
 // CORE-007D8A1F1D8P44 · 24.09.2026: NATIVE DUS ACTUAL ARRIVAL WITH DUAL-SOURCE STATUS GATE – Für DUS-Ankünfte darf die offizielle Düsseldorf-Airport-Actual-Zeit operativ als LIVE-Landungszeit verwendet werden, aber ausschließlich wenn Düsseldorf Airport + FlightStats denselben Flug/Tag/Airport/dieselbe Route und den Status landed unabhängig bestätigen. Die exakte Minute wird ausdrücklich NICHT als Zwei-Quellen-minutengenau bestätigt bezeichnet; Flightradar24 bleibt manuelle Zusatzkontrolle. Abflüge, PLAN, DISPO, FLIGHT-008 und manuelle Bestätigungen bleiben unverändert.
 // CORE-007D8A1F1D8P43C · 24.09.2026: P43 NULL-DELTA DIAGNOSTIC FIX – korrigiert ausschließlich die P43-Diagnoseausgabe: fehlende FlightStats-Runway-Zeiten/null dürfen nicht mehr als 0-Minuten-Abweichung gezählt oder als „+0 Min.“ angezeigt werden. HTTP-/Quellenverhalten, PLAN/DISPO/LIVE/Persistenz und sämtliche Bestätigungsregeln bleiben unverändert.
 // CORE-007D8A1F1D8P43 · 24.09.2026: FLIGHTSTATS FLICK RUNWAY-TIME PROBE – rein diagnostischer Folgebeweis nach P42. Liest über die bereits bekannte FlightStats flightId den streng allowlisteten Detail-Endpunkt /api-next/flick/<flightId> und prüft dessen lokale Actual-Runway-/Arrival-Felder gegen die offizielle DUS-Landungszeit. Keine automatische Bestätigung/Übernahme; PLAN/DISPO/LIVE/Persistenz unverändert.
@@ -3524,6 +3526,53 @@
   }
 
 
+  function timeWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta) {
+    const grouped = new Map();
+    const words = Array.isArray(result?.data?.words) ? result.data.words : [];
+
+    words.forEach(word => {
+      const token = cellText(word?.text)
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il]/g, '1')
+        .replace(/[^0-9:.]/g, '');
+      const bbox = word?.bbox || {};
+      const y0 = Number(bbox.y0);
+      const y1 = Number(bbox.y1);
+      const x0 = Number(bbox.x0);
+      const confidence = Number(word?.confidence);
+      if (!token || !/\d/.test(token) || ![x0, y0, y1].every(Number.isFinite)) return;
+      if (Number.isFinite(confidence) && confidence < 20) return;
+
+      const sourceCy = cropTop + ((y0 + y1) / 2) / cropScale;
+      let best = null;
+      let bestDistance = Infinity;
+      rowsWithMeta.forEach(item => {
+        const meta = item.meta;
+        const rowHeight = Math.max(8, Number(meta.y1) - Number(meta.y0));
+        const pad = Math.max(2, rowHeight * 0.28);
+        if (sourceCy < Number(meta.y0) - pad || sourceCy > Number(meta.y1) + pad) return;
+        const distance = Math.abs(sourceCy - Number(meta.cy));
+        if (distance < bestDistance) {
+          best = item;
+          bestDistance = distance;
+        }
+      });
+      if (!best) return;
+
+      const list = grouped.get(best.sourceRow) || [];
+      list.push({ text: token, x: x0 / cropScale });
+      grouped.set(best.sourceRow, list);
+    });
+
+    const byRow = new Map();
+    grouped.forEach((items, sourceRow) => {
+      const joined = items.sort((a,b) => a.x - b.x).map(item => item.text).join('');
+      const candidates = rideTimeCandidatesFromOcrResult({ data: { text: joined, words: [] } });
+      if (candidates.length === 1) byRow.set(sourceRow, normalizeTime(candidates[0]));
+    });
+    return byRow;
+  }
+
   async function recoverSuspiciousRideTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const timeCol = mapping?.time;
@@ -3535,76 +3584,93 @@
 
     const status = $('importStatus');
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
-
-    for (let i = 0; i < out.length; i++) {
-      const ride = out[i];
+    const rowsWithMeta = out.map((ride, rideIndex) => {
       const initial = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
       const initialMinutes = timeToMinutes(initial);
-      if (initialMinutes === null || initialMinutes >= NEXT_DAY_CUTOFF_MINUTES) continue;
+      if (initialMinutes === null || initialMinutes >= NEXT_DAY_CUTOFF_MINUTES) return null;
 
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
-      if (!rowMeta) continue;
+      if (!rowMeta) return null;
+      const y0 = Number(rowMeta.y0);
+      const y1 = Number(rowMeta.y1);
+      const cy = Number(rowMeta.cy ?? ((y0 + y1) / 2));
+      if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
+      return {
+        rideIndex,
+        sourceRow: Number(ride.sourceRow),
+        initial,
+        meta: { y0, y1, cy }
+      };
+    }).filter(Boolean);
+    if (!rowsWithMeta.length) return out;
 
-      const y0 = Number(rowMeta.y0 || 0);
-      const y1 = Number(rowMeta.y1 || 0);
-      const rowHeight = Math.max(18, y1 - y0);
-      const cellWidth = Math.max(8, right - left);
-      const padY = Math.max(2, rowHeight * 0.16);
-      const padX = Math.max(1, cellWidth * 0.035);
-      const regions = [
-        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
-        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
-        [left, y0 - Math.max(2, rowHeight * 0.10), right, y1 + Math.max(2, rowHeight * 0.10), 3]
-      ];
-      const ocrModes = [
-        { name: 'default', options: {} },
-        { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: '0123456789:.' } },
-        { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: '0123456789:.' } }
-      ];
+    const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
+    const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
+    const cellWidth = Math.max(8, right - left);
+    const padX = Math.max(1, cellWidth * 0.035);
+    const attempts = [
+      { name: 'early-time-column-psm4', scale: 2, options: { tessedit_pageseg_mode: '4', tessedit_char_whitelist: '0123456789:.' } },
+      { name: 'early-time-column-psm6', scale: 3, options: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: '0123456789:.' } },
+      { name: 'early-time-column-psm11', scale: 2, options: { tessedit_pageseg_mode: '11', tessedit_char_whitelist: '0123456789:.' } }
+    ];
+    const votesByRow = new Map();
+    const attemptLogByRow = new Map();
 
-      if (status) status.textContent = `Verdächtige Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
-      const votes = new Map();
-      const attempts = [];
+    if (status) {
+      status.textContent = `${rowsWithMeta.length} frühe Uhrzeit(en) werden gebündelt lokal gegengeprüft …`;
+    }
 
-      try {
-        for (const [x0, cy0, x1, cy1, scale] of regions) {
-          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          for (const mode of ocrModes) {
-            const second = await Tesseract.recognize(crop, 'eng', mode.options);
-            const candidates = rideTimeCandidatesFromOcrResult(second);
-            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
-            if (candidates.length !== 1) continue;
-            const candidate = normalizeTime(candidates[0]);
-            if (timeToMinutes(candidate) === null) continue;
-            votes.set(candidate, (votes.get(candidate) || 0) + 1);
-          }
-        }
-      } catch (_) {
-        ride.timeSuspiciousOcrAttempts = attempts;
-        continue;
+    try {
+      for (const attempt of attempts) {
+        const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
+        const second = await Tesseract.recognize(crop, 'eng', attempt.options);
+        const rowCandidates = timeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
+
+        rowsWithMeta.forEach(item => {
+          const candidate = normalizeTime(rowCandidates.get(item.sourceRow) || '');
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          log.push({ mode: attempt.name, scale: attempt.scale, candidates: candidate ? [candidate] : [] });
+          attemptLogByRow.set(item.sourceRow, log);
+          if (timeToMinutes(candidate) === null) return;
+          const rowVotes = votesByRow.get(item.sourceRow) || new Map();
+          rowVotes.set(candidate, (rowVotes.get(candidate) || 0) + 1);
+          votesByRow.set(item.sourceRow, rowVotes);
+        });
       }
+    } catch (_) {
+      // Der Primär-OCR-Wert bleibt unverändert, wenn die gebündelte Sicherheits-
+      // Gegenprüfung technisch nicht verfügbar ist. Die Analyse darf nicht wieder
+      // in hunderte serielle Zell-OCR-Aufrufe zurückfallen.
+    }
 
-      ride.timeSuspiciousOcrAttempts = attempts;
-      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    rowsWithMeta.forEach(item => {
+      const ride = out[item.rideIndex];
+      ride.timeSuspiciousOcrAttempts = attemptLogByRow.get(item.sourceRow) || [];
+      const ranked = [...(votesByRow.get(item.sourceRow) || new Map()).entries()]
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       const winner = ranked[0] || null;
       const runner = ranked[1] || null;
 
-      // Keine Korrektur aufgrund eines Einzel-Treffers. Mindestens zwei lokale
-      // OCR-Versuche müssen dieselbe alternative Zeit liefern und eindeutig gewinnen.
-      if (!winner || winner[1] < 2) continue;
-      if (runner && winner[1] === runner[1]) continue;
+      // Unverändert streng: Kein Einzel-Treffer korrigiert eine Uhrzeit. Mindestens
+      // zwei getrennte Batch-OCR-Läufe müssen exakt dieselbe Zeit lesen und eindeutig gewinnen.
+      if (!winner || winner[1] < 2) return;
+      if (runner && winner[1] === runner[1]) return;
       const recovered = normalizeTime(winner[0]);
-      if (!recovered || recovered === initial) continue;
+      if (!recovered || timeToMinutes(recovered) === null) return;
 
-      ride.timeOcrInitial = initial;
+      ride.timeSuspiciousBatchConfirmed = recovered === item.initial;
+      ride.timeSuspiciousBatchCandidate = recovered;
+      if (recovered === item.initial) return;
+
+      ride.timeOcrInitial = item.initial;
       ride.time = recovered;
       ride.planTime = recovered;
       ride.dispoTime = recovered;
       ride.dispo_time = recovered;
       ride.timeRecoveredFromTargetedOcr = true;
-      ride.timeRecoverySource = 'targeted_suspicious_time_cell_consensus';
-    }
+      ride.timeRecoverySource = 'targeted_suspicious_time_column_consensus';
+    });
 
     return out;
   }
