@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P51 · 25.09.2026: OCR SUMMARY DATE-CONFIRM SYNC FIX – synchronisiert ausschließlich die sichtbare OCR-Zusammenfassung nach einer Folgetag-/Datumsentscheidung erneut mit dem bereits neu validierten state.issues-Stand. Dadurch verschwinden erledigte Datumsfehler auch in „OCR-Analyse“ und „Fahrten OCR-geprüft“, während Hinweis-/Fehler-Kacheln, Importfreigabe und Daten bereits vorhandene Logik unverändert verwenden. Keine Änderung an OCR-Erkennung, Folgetag-Zuordnung, Flugnummern, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P49 · 25.09.2026: PRIMARY-WORD TAIL CROP CONSENSUS – verbessert ausschließlich die bereits fail-safe S↔9-Ziffernprobe: statt die komplette Flugzelle erneut als Ziffern zu lesen, werden aus dem Primär-OCR-Wort drei unterschiedlich zugeschnittene Tail-Crops ab der generischen Grenze nach dem zweistelligen Designator erzeugt. Die Zwei-Crop-Konsensschwelle bleibt unverändert; ohne mindestens zwei identische Tail-Lesungen keine Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46/P48-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P48 · 25.09.2026: DEDICATED WORKER DIGIT-PARAMETER FIX – behebt ausschließlich den im P47-Realtest belegten Konfigurationsfehler der S↔9-Ziffernprobe: Tesseract.recognize(image, lang, options) reicht den dritten Parameter bei Tesseract.js v5 als Worker-Erstelloptionen weiter und setzt dadurch tessedit_char_whitelist/pageseg_mode nicht als OCR-Parameter. P48 verwendet für genau diese bereits auffällige Zusatzprobe einen dedizierten Tesseract-Worker, setzt PSM 8 + Ziffern-Whitelist ausdrücklich via worker.setParameters() und beendet den Worker danach. Die bestehende Zwei-Crop-Konsensregel bleibt unverändert; keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P47 · 25.09.2026: S↔9 FLIGHT BOUNDARY DIGIT PROBE – löst ausschließlich den bereits als auffällig erkannten OCR-Grenzfall, bei dem an Position 3 eines vermeintlich 3-buchstabigen Flugpräfixes ein 'S' steht, obwohl die Flugnummer nach einem 2-stelligen Designator mit '9' weitergeht. Eine automatische Korrektur ist nur erlaubt, wenn eine zusätzliche Ziffern-only-OCR der konkreten Flugzelle in mindestens zwei unterschiedlich zugeschnittenen Crops exakt denselben erwarteten Zahlenteil liest; andere Ziffern bleiben unverändert und konkurrierende gleich lange Mehrfach-Evidenz blockiert die Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
@@ -4720,8 +4721,43 @@
       : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
 
     // Technischen Wert maschinenlesbar behalten, ohne ihn als Erfolgsquote auszugeben.
+    const labelText = labels.join(' · ');
     el.dataset.structureConfidence = String(Math.round(shownConfidence * 100));
-    el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${escapeHtml(headline)}</span><small>${escapeHtml(detail)}<br>${escapeHtml(labels.join(' · '))}</small>`;
+    el.dataset.mappingLabels = labelText;
+    el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${escapeHtml(headline)}</span><small>${escapeHtml(detail)}<br>${escapeHtml(labelText)}</small>`;
+  }
+
+  // P51: renderMapping() wird nur beim eigentlichen Analyseaufbau aufgerufen.
+  // Spätere Zustandsänderungen wie die einmalige Folgetag-Bestätigung validieren
+  // state.issues korrekt neu und render() aktualisiert Kacheln/Importstatus, bislang
+  // blieb aber der bereits erzeugte OCR-Kopftext stehen. Diese Funktion aktualisiert
+  // ausschließlich dessen dynamische Hinweis-/Fehlerzahlen und lässt Mapping/Profile
+  // sowie sämtliche Import-/OCR-Entscheidungen unverändert.
+  function refreshImageOcrSummary() {
+    const el = $('planProfileInfo');
+    const imageMode = Boolean(state.file && isImageFile(state.file));
+    if (!el || !imageMode) return;
+
+    const issues = Array.isArray(state.issues) ? state.issues : [];
+    const actionable = issues.filter(issue => issue.kind !== 'flight_check');
+    const errors = actionable.filter(issue => issue.level === 'error').length;
+    const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const rideCount = Array.isArray(state.rides) ? state.rides.length : 0;
+    const clean = rideCount > 0 && errors === 0 && warnings === 0;
+    const headline = clean
+      ? '✓ OCR-Analyse sauber'
+      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+    const detail = rideCount
+      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
+      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+
+    const headlineEl = el.querySelector('span');
+    const detailEl = el.querySelector('small');
+    if (headlineEl) headlineEl.textContent = headline;
+    if (detailEl) {
+      const labelText = cellText(el.dataset.mappingLabels);
+      detailEl.innerHTML = `${escapeHtml(detail)}${labelText ? `<br>${escapeHtml(labelText)}` : ''}`;
+    }
   }
 
   function syncFlightLocationsFromSavedRides() {
@@ -5020,6 +5056,7 @@
     $('planErrorCount').textContent = errors;
     if ($('planFlightCount')) $('planFlightCount').textContent = new Set(rides.map(ride => ride.flightNumber).filter(Boolean)).size;
     if ($('planSheetName')) $('planSheetName').textContent = state.meta.sheetName || '–';
+    refreshImageOcrSummary();
     if ($('flightCheckStatus')) {
       const fs = window.ATMSFlight ? window.ATMSFlight.summary(rides) : { total: 0, withLocation: 0, needsCheck: 0 };
       $('flightCheckStatus').textContent = fs.total ? `${fs.total} Flüge · ${fs.withLocation} Ort aus Liste · ${fs.needsCheck} aktuell zu prüfen` : 'Keine Flugnummern erkannt.';
