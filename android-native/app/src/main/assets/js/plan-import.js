@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P60 · 25.09.2026: PRICE CELL CROP-PARALLEL OCR PERFORMANCE FIX – P59/P54 hat price_targeted_ocr in den jüngsten Realgerät-Läufen wiederholt mit rund 22 s als einen der größten stabilen OCR-Blöcke belegt. P60 startet die drei bereits vorhandenen unveränderten Preiszellen-Crops einer auffälligen Preiszelle parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Crop-Reihenfolge aus.
+// Crop-Geometrie, drei Preis-OCR-Crops, Kandidatenbereinigung, Zwei-Crop-Mindestkonsens, Gleichstandsblockade, Plausibilitätsprüfung und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Zeit-/Fahrer-/Orts-/Flug-OCR, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P59 · 25.09.2026: EARLY-TIME BATCH MODE-PARALLEL OCR PERFORMANCE FIX – P58/P54 hat early_time_batch_ocr in zwei Realgerät-Läufen stabil mit rund 23 s als einen der größten verbleibenden OCR-Blöcke belegt. P59 startet die drei bereits vorhandenen gebündelten DISPO-Zeitspalten-OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Versuch-Reihenfolge aus.
 // Zeitspalten-Crop, PSM4/PSM6/PSM11, Skalierungen, Zeichen-Whitelist, Zwei-Lauf-Mindestkonsens, Gleichstandsblockade, Folgetag-Logik und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Fahrer-/Orts-/Flug-OCR, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P58 · 25.09.2026: DRIVER DEU-COLUMN MODE-PARALLEL OCR PERFORMANCE FIX – P57/P54 hat driver_deu_column_ocr mit rund 23 s als einen der größten verbleibenden OCR-Einzelblöcke belegt. P58 startet die drei bereits vorhandenen deutschen Fahrer-Spalten-OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Versuch-Reihenfolge aus.
@@ -3484,15 +3486,31 @@
       const attempts = [];
 
       try {
-        for (const [x0, cy0, x1, cy1, scale] of regions) {
+        // P60: Die drei bestehenden OCR-Crops derselben unveränderten Preiszelle
+        // werden gleichzeitig gelesen. Promise.allSettled bewahrt die regions-Reihenfolge;
+        // Auswertung, Stimmen, Mindestkonsens und Sicherheitsregeln bleiben identisch.
+        const regionResults = await Promise.allSettled(regions.map(async ([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           const second = await Tesseract.recognize(crop, 'eng');
-          const candidates = priceCandidatesFromOcrResult(second);
+          return priceCandidatesFromOcrResult(second);
+        }));
+
+        let regionFailed = false;
+        for (const result of regionResults) {
+          if (result.status !== 'fulfilled') {
+            regionFailed = true;
+            break;
+          }
+          const candidates = Array.isArray(result.value) ? result.value : [];
           attempts.push(candidates.slice());
           if (candidates.length !== 1) continue;
           const candidate = Number(candidates[0]);
           const key = candidate.toFixed(2);
           votes.set(key, (votes.get(key) || 0) + 1);
+        }
+        if (regionFailed) {
+          ride.priceTargetedOcrAttempts = attempts;
+          continue;
         }
       } catch (_) {
         ride.priceTargetedOcrAttempts = attempts;
