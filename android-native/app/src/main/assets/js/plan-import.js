@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P59 · 25.09.2026: EARLY-TIME BATCH MODE-PARALLEL OCR PERFORMANCE FIX – P58/P54 hat early_time_batch_ocr in zwei Realgerät-Läufen stabil mit rund 23 s als einen der größten verbleibenden OCR-Blöcke belegt. P59 startet die drei bereits vorhandenen gebündelten DISPO-Zeitspalten-OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Versuch-Reihenfolge aus.
+// Zeitspalten-Crop, PSM4/PSM6/PSM11, Skalierungen, Zeichen-Whitelist, Zwei-Lauf-Mindestkonsens, Gleichstandsblockade, Folgetag-Logik und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Fahrer-/Orts-/Flug-OCR, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P58 · 25.09.2026: DRIVER DEU-COLUMN MODE-PARALLEL OCR PERFORMANCE FIX – P57/P54 hat driver_deu_column_ocr mit rund 23 s als einen der größten verbleibenden OCR-Einzelblöcke belegt. P58 startet die drei bereits vorhandenen deutschen Fahrer-Spalten-OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Versuch-Reihenfolge aus.
 // Crop-Geometrie, PSM-Versuche, Drei-Lauf-Stimmen, Zwei-Stimmen-Mindestkonsens, Gleichstandsblockade, Diakritik-/Namenszusatz-Sicherheitsprüfung und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Flugnummern, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P57 · 25.09.2026: MISSING-FLIGHT CROP-PARALLEL OCR PERFORMANCE FIX – P56/P54 hat missing_flight_targeted_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P57 startet die bereits vorhandenen bis zu drei unveränderten Flugzellen-Crops einer fehlenden Flugnummer parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Crop-Reihenfolge aus.
@@ -3672,9 +3674,19 @@
     }
 
     try {
-      for (const attempt of attempts) {
+      // P59: Die drei bereits vorhandenen Batch-OCR-Versuche derselben unveränderten
+      // DISPO-Zeitspalte werden gleichzeitig gestartet. Die Auswertung erfolgt danach
+      // weiterhin strikt in attempts-Reihenfolge; Crops, Stimmen und Konsens bleiben identisch.
+      const attemptJobs = attempts.map(attempt => {
         const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-        const second = await Tesseract.recognize(crop, 'eng', attempt.options);
+        return Tesseract.recognize(crop, 'eng', attempt.options)
+          .then(second => ({ ok: true, attempt, second }))
+          .catch(error => ({ ok: false, attempt, error }));
+      });
+      for (const job of attemptJobs) {
+        const result = await job;
+        if (!result?.ok) break;
+        const { attempt, second } = result;
         const rowCandidates = timeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
 
         rowsWithMeta.forEach(item => {
