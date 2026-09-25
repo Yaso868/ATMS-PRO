@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P53 · 25.09.2026: LONG-PREFIX OCR WORKER-REUSE PERFORMANCE FIX – reduziert ausschließlich den belegten Zeitaufwand der P46/P49-Flugzellen-Gegenprüfung, indem die bereits verwendeten Tesseract-Worker pro OCR-Modus sowie der P48/P49-Ziffern-Worker innerhalb eines Analyse-Laufs wiederverwendet und erst nach Abschluss der gesamten Long-Prefix-Prüfung beendet werden. Crops, OCR-Versuchszahl, Stimmen, Zwei-Crop-Konsens, S↔9-Sicherheitsregel, Placeholder-Fail-safe und sämtliche Übernahmeschwellen bleiben unverändert. Keine Flugnummern-/Airline-/Routen-Hardcodes; P49-EW9040/EW9736/EEA21-Sicherheitsverhalten, Datum, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P51 · 25.09.2026: OCR SUMMARY DATE-CONFIRM SYNC FIX – synchronisiert ausschließlich die sichtbare OCR-Zusammenfassung nach einer Folgetag-/Datumsentscheidung erneut mit dem bereits neu validierten state.issues-Stand. Dadurch verschwinden erledigte Datumsfehler auch in „OCR-Analyse“ und „Fahrten OCR-geprüft“, während Hinweis-/Fehler-Kacheln, Importfreigabe und Daten bereits vorhandene Logik unverändert verwenden. Keine Änderung an OCR-Erkennung, Folgetag-Zuordnung, Flugnummern, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P49 · 25.09.2026: PRIMARY-WORD TAIL CROP CONSENSUS – verbessert ausschließlich die bereits fail-safe S↔9-Ziffernprobe: statt die komplette Flugzelle erneut als Ziffern zu lesen, werden aus dem Primär-OCR-Wort drei unterschiedlich zugeschnittene Tail-Crops ab der generischen Grenze nach dem zweistelligen Designator erzeugt. Die Zwei-Crop-Konsensschwelle bleibt unverändert; ohne mindestens zwei identische Tail-Lesungen keine Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46/P48-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P48 · 25.09.2026: DEDICATED WORKER DIGIT-PARAMETER FIX – behebt ausschließlich den im P47-Realtest belegten Konfigurationsfehler der S↔9-Ziffernprobe: Tesseract.recognize(image, lang, options) reicht den dritten Parameter bei Tesseract.js v5 als Worker-Erstelloptionen weiter und setzt dadurch tessedit_char_whitelist/pageseg_mode nicht als OCR-Parameter. P48 verwendet für genau diese bereits auffällige Zusatzprobe einen dedizierten Tesseract-Worker, setzt PSM 8 + Ziffern-Whitelist ausdrücklich via worker.setParameters() und beendet den Worker danach. Die bestehende Zwei-Crop-Konsensregel bleibt unverändert; keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
@@ -4102,6 +4103,42 @@
     const status = $('importStatus');
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
 
+    // P53: Tesseract.recognize(...) erzeugt intern für jeden Aufruf einen neuen Worker.
+    // Die Long-Prefix-Gegenprüfung benötigt bei drei Crops × drei Modi dadurch sonst
+    // bis zu neun Worker-Starts PRO auffälliger Flugzelle. Die Worker werden hier
+    // ausschließlich über den Umfang dieser Funktion gepoolt. Die drei OCR-Versuche
+    // je Crop bleiben vollständig erhalten und zählen weiterhin exakt wie zuvor.
+    const longPrefixModeWorkers = new Map();
+    let longPrefixDigitWorker = null;
+    const getLongPrefixModeWorker = async mode => {
+      const key = cellText(mode?.name) || 'default';
+      if (longPrefixModeWorkers.has(key)) return longPrefixModeWorkers.get(key);
+      if (typeof Tesseract.createWorker !== 'function') return null;
+      // mode.options wird absichtlich weiterhin als Worker-Option übergeben. Das bildet
+      // den bisherigen Tesseract.recognize(crop,'eng',mode.options)-Pfad nach und ändert
+      // deshalb NICHT nachträglich PSM/Whitelist-Verhalten oder OCR-Entscheidungsregeln.
+      const worker = await Tesseract.createWorker('eng', undefined, mode?.options || {});
+      if (!worker || typeof worker.recognize !== 'function') throw new Error('long_prefix_worker_api_unavailable');
+      longPrefixModeWorkers.set(key, worker);
+      return worker;
+    };
+    const getLongPrefixDigitWorker = async () => {
+      if (longPrefixDigitWorker) return longPrefixDigitWorker;
+      if (typeof Tesseract.createWorker !== 'function') throw new Error('createWorker_unavailable');
+      const worker = await Tesseract.createWorker('eng');
+      if (!worker || typeof worker.setParameters !== 'function' || typeof worker.recognize !== 'function') {
+        if (worker && typeof worker.terminate === 'function') { try { await worker.terminate(); } catch (_) {} }
+        throw new Error('worker_parameter_api_unavailable');
+      }
+      await worker.setParameters({
+        tessedit_pageseg_mode: '8',
+        tessedit_char_whitelist: '0123456789'
+      });
+      longPrefixDigitWorker = worker;
+      return worker;
+    };
+
+    try {
     for (let i = 0; i < out.length; i++) {
       const ride = out[i];
       const initial = normalizeFlightNumber(ride?.flightNumber);
@@ -4145,7 +4182,10 @@
           const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           for (const mode of ocrModes) {
-            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const modeWorker = await getLongPrefixModeWorker(mode);
+            const second = modeWorker
+              ? await modeWorker.recognize(crop)
+              : await Tesseract.recognize(crop, 'eng', mode.options);
             const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
               .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
             // CORE-007D8A1F1D3: Rohtrace bleibt sichtbar. Zusätzlich nutzt diese gezielte
@@ -4199,28 +4239,17 @@
         continue;
       }
 
-      // P48: P47 hat im Realgerät belegt, dass Tesseract.recognize(crop, 'eng', {...})
-      // die tessedit_* Werte hier NICHT als Tesseract-Parameter wirksam setzt. Für
-      // ausschließlich diesen bereits streng eingegrenzten S↔9-Zusatzbeweis wird
-      // daher ein eigener Worker erzeugt, PSM 8 + Ziffern-Whitelist explizit über
-      // worker.setParameters() gesetzt und danach wieder beendet. Die P47-Regel
-      // (mindestens zwei verschiedene Crops, kein gleich starker Konkurrent) bleibt
-      // unverändert. Ohne Worker/Parameterbeweis gilt weiter P46 fail-closed.
+      // P48/P49: Der streng eingegrenzte S↔9-Zusatzbeweis behält PSM 8,
+      // Ziffern-Whitelist, drei Tail-Crops und die Zwei-Crop-Konsensregel unverändert.
+      // P53 ändert nur den Lebenszyklus: derselbe korrekt parametrierte Ziffern-Worker
+      // wird für weitere S↔9-Fälle desselben Analyse-Laufs wiederverwendet und erst
+      // nach Abschluss der gesamten Long-Prefix-Prüfung beendet.
       const sNineProbe = sNineBoundaryDigitProbeSpec(initial);
       if (sNineProbe) {
         const expectedCropSupport = new Set();
         const competingSupport = new Map();
-        let digitWorker = null;
         try {
-          if (typeof Tesseract.createWorker !== 'function') throw new Error('createWorker_unavailable');
-          digitWorker = await Tesseract.createWorker('eng');
-          if (!digitWorker || typeof digitWorker.setParameters !== 'function' || typeof digitWorker.recognize !== 'function') {
-            throw new Error('worker_parameter_api_unavailable');
-          }
-          await digitWorker.setParameters({
-            tessedit_pageseg_mode: '8',
-            tessedit_char_whitelist: '0123456789'
-          });
+          const digitWorker = await getLongPrefixDigitWorker();
 
           const tailRegions = sNineBoundaryTailProbeRegions(imageMeta, rowMeta, colIndex, initial);
           const digitRegions = tailRegions.length >= 2
@@ -4270,10 +4299,6 @@
             candidates: [],
             digitTokens: []
           });
-        } finally {
-          if (digitWorker && typeof digitWorker.terminate === 'function') {
-            try { await digitWorker.terminate(); } catch (_) {}
-          }
         }
 
         const competitorWithMultiCropSupport = [...competingSupport.values()]
@@ -4315,6 +4340,14 @@
         ride.flightLongPrefixOcrUnresolved = true;
         ride.flightNeedsManualCheck = true;
         ride.flightCheckConfidence = 'uncertain';
+      }
+    }
+    } finally {
+      const workers = [...longPrefixModeWorkers.values()];
+      if (longPrefixDigitWorker) workers.push(longPrefixDigitWorker);
+      for (const worker of workers) {
+        if (!worker || typeof worker.terminate !== 'function') continue;
+        try { await worker.terminate(); } catch (_) {}
       }
     }
 
