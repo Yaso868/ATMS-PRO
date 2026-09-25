@@ -1,0 +1,8613 @@
+// CORE-007D8A1F1D8P57 · 25.09.2026: MISSING-FLIGHT CROP-PARALLEL OCR PERFORMANCE FIX – P56/P54 hat missing_flight_targeted_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P57 startet die bereits vorhandenen bis zu drei unveränderten Flugzellen-Crops einer fehlenden Flugnummer parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Crop-Reihenfolge aus.
+// Crop-Geometrie, Kandidatenbereinigung, Ein-Crop-/Zwei-Crop-Stimmenlogik, Sicherheitsgrenzen und manuelle Prüfflags bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
+// CORE-007D8A1F1D8P56 · 25.09.2026: ROUTE DEU-COLUMN MODE-PARALLEL OCR PERFORMANCE FIX – P55/P54 hat route_deu_column_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P56 startet innerhalb jeder unveränderten Routen-Spalte die beiden bereits vorhandenen deutschen OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin in derselben Versuch-Reihenfolge aus.
+// Crop-Geometrie, PSM-Versuche, Zwei-Lauf-Konsens, Diakritik-Sicherheitsprüfung und alle Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Flugnummern, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
+// CORE-007D8A1F1D8P55 · 25.09.2026: LONG-PREFIX MODE-PARALLEL OCR PERFORMANCE FIX – P54 hat long_prefix_flight_ocr mit rund 98 s als größten Einzel-Flaschenhals belegt. P55 führt innerhalb jedes unveränderten Flugzellen-Crops die drei bereits vorhandenen OCR-Modi parallel auf ihren jeweils getrennten, bereits von P53 wiederverwendeten Workern aus. Crop-Geometrie, drei Modi, Stimmen, Crop-Support, P46-Fail-safe, P49-S↔9-Ziffernprobe und sämtliche Übernahmeschwellen bleiben unverändert.
+// Keine Flugnummern-/Airline-/Routen-Hardcodes; P54-Timing-Diagnose bleibt aktiv. Datum, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P54 · 25.09.2026: OCR STAGE TIMING DIAGNOSTIC – misst ausschließlich die Laufzeit der bestehenden Bild-/OCR-Analyseabschnitte (Primär-OCR und nachgelagerte Sicherheitsprüfungen) und hängt die Messwerte sichtbar an den bestehenden Diagnose-Selbstcheck an.
+// Keine OCR-Regel, kein Crop, keine Konsensschwelle, keine Flug-/Datums-/PLAN-/DISPO-/LIVE-/Persistenzlogik wird verändert. Reine Performance-Diagnose als Beweistest vor weiterer Optimierung.
+// CORE-007D8A1F1D8P53 · 25.09.2026: LONG-PREFIX OCR WORKER-REUSE PERFORMANCE FIX – reduziert ausschließlich den belegten Zeitaufwand der P46/P49-Flugzellen-Gegenprüfung, indem die bereits verwendeten Tesseract-Worker pro OCR-Modus sowie der P48/P49-Ziffern-Worker innerhalb eines Analyse-Laufs wiederverwendet und erst nach Abschluss der gesamten Long-Prefix-Prüfung beendet werden. Crops, OCR-Versuchszahl, Stimmen, Zwei-Crop-Konsens, S↔9-Sicherheitsregel, Placeholder-Fail-safe und sämtliche Übernahmeschwellen bleiben unverändert. Keine Flugnummern-/Airline-/Routen-Hardcodes; P49-EW9040/EW9736/EEA21-Sicherheitsverhalten, Datum, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P51 · 25.09.2026: OCR SUMMARY DATE-CONFIRM SYNC FIX – synchronisiert ausschließlich die sichtbare OCR-Zusammenfassung nach einer Folgetag-/Datumsentscheidung erneut mit dem bereits neu validierten state.issues-Stand. Dadurch verschwinden erledigte Datumsfehler auch in „OCR-Analyse“ und „Fahrten OCR-geprüft“, während Hinweis-/Fehler-Kacheln, Importfreigabe und Daten bereits vorhandene Logik unverändert verwenden. Keine Änderung an OCR-Erkennung, Folgetag-Zuordnung, Flugnummern, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
+// CORE-007D8A1F1D8P49 · 25.09.2026: PRIMARY-WORD TAIL CROP CONSENSUS – verbessert ausschließlich die bereits fail-safe S↔9-Ziffernprobe: statt die komplette Flugzelle erneut als Ziffern zu lesen, werden aus dem Primär-OCR-Wort drei unterschiedlich zugeschnittene Tail-Crops ab der generischen Grenze nach dem zweistelligen Designator erzeugt. Die Zwei-Crop-Konsensschwelle bleibt unverändert; ohne mindestens zwei identische Tail-Lesungen keine Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46/P48-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P48 · 25.09.2026: DEDICATED WORKER DIGIT-PARAMETER FIX – behebt ausschließlich den im P47-Realtest belegten Konfigurationsfehler der S↔9-Ziffernprobe: Tesseract.recognize(image, lang, options) reicht den dritten Parameter bei Tesseract.js v5 als Worker-Erstelloptionen weiter und setzt dadurch tessedit_char_whitelist/pageseg_mode nicht als OCR-Parameter. P48 verwendet für genau diese bereits auffällige Zusatzprobe einen dedizierten Tesseract-Worker, setzt PSM 8 + Ziffern-Whitelist ausdrücklich via worker.setParameters() und beendet den Worker danach. Die bestehende Zwei-Crop-Konsensregel bleibt unverändert; keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P47 · 25.09.2026: S↔9 FLIGHT BOUNDARY DIGIT PROBE – löst ausschließlich den bereits als auffällig erkannten OCR-Grenzfall, bei dem an Position 3 eines vermeintlich 3-buchstabigen Flugpräfixes ein 'S' steht, obwohl die Flugnummer nach einem 2-stelligen Designator mit '9' weitergeht. Eine automatische Korrektur ist nur erlaubt, wenn eine zusätzliche Ziffern-only-OCR der konkreten Flugzelle in mindestens zwei unterschiedlich zugeschnittenen Crops exakt denselben erwarteten Zahlenteil liest; andere Ziffern bleiben unverändert und konkurrierende gleich lange Mehrfach-Evidenz blockiert die Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P46 · 25.09.2026: SUSPICIOUS FLIGHT OCR FAIL-SAFE – auffällige 3+ Buchstaben-Präfixe dürfen nach der lokalen Flugzellen-Gegenprüfung nicht mehr still als unauffällige Flugnummer durchgehen. Ein sicher belegter 2-stelliger Alternativkandidat darf jetzt zusätzlich den generischen OCR-Grenzfall 'drittes Präfixzeichen als erste Ziffer' abbilden; ohne sichere Alternative bleibt der Wert sichtbar prüfpflichtig. Zeigt die Primär-Rohzelle nur einen leeren/Strich-Platzhalter und findet auch die lokale Gegenprüfung keinen Flugkandidaten, wird der OCR-Scheinwert verworfen statt importiert. Keine Flugnummern-, Airline- oder Routen-Hardcodes; P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P45 · 25.09.2026: BATCHED EARLY-TIME OCR PERFORMANCE FIX – ersetzt die bisherige serielle 00:00–05:59-Zellprüfung (bis zu 9 Tesseract-Läufe je Fahrt) durch drei gebündelte OCR-Durchläufe über die komplette DISPO-Zeitspalte. Die Ergebnisse werden weiterhin pro Quellzeile getrennt ausgewertet; eine abweichende Uhrzeit wird nur bei mindestens zwei exakt übereinstimmenden unabhängigen Batch-Läufen und eindeutigem Konsens übernommen.
+// Folgetag-Logik, Primär-OCR, Fahrer-/Orts-OCR, Flugprüfung, PLAN/DISPO/LIVE und Persistenz bleiben unverändert; keine Uhrzeit wird geraten oder hart codiert.
+// CORE-007D8A1F1D8P44 · 24.09.2026: NATIVE DUS ACTUAL ARRIVAL WITH DUAL-SOURCE STATUS GATE – Für DUS-Ankünfte darf die offizielle Düsseldorf-Airport-Actual-Zeit operativ als LIVE-Landungszeit verwendet werden, aber ausschließlich wenn Düsseldorf Airport + FlightStats denselben Flug/Tag/Airport/dieselbe Route und den Status landed unabhängig bestätigen. Die exakte Minute wird ausdrücklich NICHT als Zwei-Quellen-minutengenau bestätigt bezeichnet; Flightradar24 bleibt manuelle Zusatzkontrolle. Abflüge, PLAN, DISPO, FLIGHT-008 und manuelle Bestätigungen bleiben unverändert.
+// CORE-007D8A1F1D8P43C · 24.09.2026: P43 NULL-DELTA DIAGNOSTIC FIX – korrigiert ausschließlich die P43-Diagnoseausgabe: fehlende FlightStats-Runway-Zeiten/null dürfen nicht mehr als 0-Minuten-Abweichung gezählt oder als „+0 Min.“ angezeigt werden. HTTP-/Quellenverhalten, PLAN/DISPO/LIVE/Persistenz und sämtliche Bestätigungsregeln bleiben unverändert.
+// CORE-007D8A1F1D8P43 · 24.09.2026: FLIGHTSTATS FLICK RUNWAY-TIME PROBE – rein diagnostischer Folgebeweis nach P42. Liest über die bereits bekannte FlightStats flightId den streng allowlisteten Detail-Endpunkt /api-next/flick/<flightId> und prüft dessen lokale Actual-Runway-/Arrival-Felder gegen die offizielle DUS-Landungszeit. Keine automatische Bestätigung/Übernahme; PLAN/DISPO/LIVE/Persistenz unverändert.
+// CORE-007D8A1F1D8P42 · 24.09.2026: FLIGHTSTATS CURRENT-SCHEMA ARRIVAL TIME PROBE – rein diagnostischer Folgebeweis nach P41. Liest die bereits allowlistete FlightStats-Einzelflug-JSON-Antwort erneut und wertet die tatsächlich vorhandenen current-schema Felder schedule.estimatedActualArrival(+Title/+Runway) sowie arrivalAirport.times.estimatedActual aus. Vergleicht sie mit der offiziellen DUS-Zeit, ohne eine LIVE-Zeit zu bestätigen oder zu übernehmen. Keine Änderung an PLAN/DISPO/LIVE/Persistenz und keine neue Quelle.
+// CORE-007D8A1F1D8P41 · 24.09.2026: FLIGHTSTATS BOARD ARRIVAL TIME-FIELD PROBE – rein diagnostischer Folgebeweis nach P39F1/P40F1. Prüft die bereits vorhandene, registrierungsfreie FlightStats-Airport-Board-Zweitquelle bei eindeutigen DUS-Ankünften auf eigene Estimated-/Actual-/Gate-/Runway-Zeitfelder und zeigt die tatsächlich gelieferten Feldpfade/Werte neben der offiziellen DUS-Zeit. Keine automatische Bestätigung oder Übernahme, keine Änderung an PLAN/DISPO/LIVE/Persistenz und keine neue Quelle.
+// CORE-007D8A1F1D8P40F1 · 24.09.2026: NATIVE LIVE NON-BLOCKING FIX – P40 uses the new async native bridge for DUS + FlightStats so network timeouts no longer block/freeze the Android WebView UI. If the async bridge is unavailable, P40 fails closed instead of falling back to blocking network I/O.
+// CORE-007D8A1F1D8P40 · 24.09.2026: NATIVE LIVE STATUS AUTO-CONFIRM – automatisiert ausschließlich den aktuellen operativen Flugstatus über zwei unabhängige native Quellen (offizielle Düsseldorf-Airport-Livequelle + FlightStats Einzel-Flug). Bestätigung nur bei exakter Flug-/Datums-/Airport-/Richtungs-/Routenidentität und gleichem, im P39/P39F1-Realtest belegtem Status departed/landed/cancelled. scheduled/on_time/delayed bleiben ohne eigene Zweitquellenzeit offen. Estimated/Actual/LIVE-Zeit werden bewusst NICHT bestätigt oder übernommen; PLAN/DISPO bleiben unverändert, manuelle Bestätigungen werden nicht berührt. Keine neue Quelle, Registrierung oder kostenpflichtige API.
+// CORE-007D8A1F1D8P39F2 · 24.09.2026: ANALYSIS RACE GUARD – verhindert überlappende Planlisten-Analyse-/Auto-Pipeline-Läufe derselben Auswahl. Der Analyse-Button bleibt bis zum Ende der laufenden Auto-Pipeline gesperrt; jeder neue echte Analyse-Lauf erhält eine neue Generation und veraltete Native-Flugprüfungen dürfen vor dem Anwenden ihrer Ergebnisse nicht mehr in den aktuellen Staging-State schreiben. Flüchtige Diagnoseanzeigen werden beim neuen Analyse-Lauf zurückgesetzt. Keine Änderung an OCR-, FLIGHT-008-, LIVE-, PLAN- oder DISPO-Regeln.
+// CORE-007D8A1F1D8P39F1 · 24.09.2026: NATIVE LIVE ARRIVAL TIME-FIELD PROBE – erweitert P39 ausschließlich diagnostisch um einen Mehrflug-Test der DUS-Ankünfte aus der analysierten Planliste. Für jede eindeutige Ankunft werden offizielle DUS-LIVE-Felder und die bereits allowlistete FlightStats-Einzelflugquelle getrennt gelesen und Status/Plan/Estimated/Actual nebeneinander angezeigt. Keine automatische Bestätigung, keine Änderung an PLAN/DISPO/LIVE/Persistenz, keine neue Quelle oder Registrierung.
+// CORE-007D8A1F1D8P39 · 24.09.2026: NATIVE LIVE DUAL-SOURCE DIAGNOSTIC – rein diagnostischer Beweistest fuer einen automatisch ausgewaehlten DUS-Flug. Fragt die bestehende offizielle DUS-Livequelle und die bereits allowlistete FlightStats-Zweitquelle nativ ab und zeigt Status/Plan-/Estimated-/Actual-Zeiten sowie beobachtete Abweichungen nebeneinander. Schreibt keinerlei PLAN-, DISPO- oder LIVE-Daten und aendert keine Bestaetigungslogik.
+// CORE-007D8A1F1D8P36F22 · 24.09.2026: NATIVE AIRPORT-CONFLICT USER WARNING – Überführt ausschließlich einen im P36F21-Realtest eindeutig erkannten, datumsspezifischen Fremdrouten-Konflikt aus der Technikdiagnose in sichere Fahrten-Metadaten. Die fremde Route wird NICHT als Flugort übernommen; die Fahrt bleibt manuell offen und erhält nur einen sichtbaren Airport-Konflikt-Hinweis. Keine Route/Airline wird hart codiert.
+// CORE-007D8A1F1D8P36F21 · 24.09.2026: NATIVE FLIGHT NUMBER SPLIT FIX – Behebt den im P36F20-Realtest sichtbar gewordenen generischen Flugnummern-Parserfehler: Bei normalen zweistelligen IATA-Designatoren wie JU422 durfte die greedy 2–3-Zeichen-Regel nicht JU4/22 bilden. Der Parser bevorzugt jetzt strikt einen zweistelligen alphanumerischen IATA-Designator und erlaubt einen dreistelligen Fallback nur als alphabetischen Code. Dadurch wird die Other-Days-Abfrage mit JU/422 statt JU4/22 aufgebaut. Keine Route/Airline wird hart codiert; der unresolved-flight Check bleibt rein diagnostisch, übernimmt keinen Fremdflugort, setzt kein verified/high und entfernt keine Warnung.
+// CORE-007D8A1F1D8P36F20 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT OPERATOR-ALIAS DIAGNOSTIC – Behebt ausschließlich den P36F19-Diagnosefilter für FlightStats-Other-Days-Zeilen, deren kanonische Tracker-URL wegen eines Operating-Carriers einen anderen Carrier-Code, aber dieselbe Flugnummer trägt. Solche Zeilen werden nur dann diagnostisch als Operator-Alias akzeptiert, wenn am exakten Zieltag genau eine Zeile existiert, die Flugnummer identisch ist und genau eine IATA-Route vorliegt. Keine Fremdroute wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Airline-/Routen-Hardcodes.
+// CORE-007D8A1F1D8P36F19 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT TARGET-ROW DIAGNOSTIC – Erweitert ausschließlich den diagnostischen P36F18-Other-Days-Routencheck um Zieltag-Zeilenzaehler und sichere Filterdiagnose (Identitaetsfilter/fehlende IATA-Route). Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
+// CORE-007D8A1F1D8P36F18 · 24.09.2026: NATIVE UNRESOLVED-FLIGHT ROW-DATE PRIORITY FIX – Behebt den im P36F17-Realtest sichtbaren Diagnose-False-Negative: FlightStats-Other-Days liefert neben flugzeilenspezifischen Tagesfeldern auch Day-Group-Rahmendaten fuer mehrere Nachbartage. Fuer den exakten Tagesabgleich haben jetzt ausschliesslich flugzeilenspezifische URL-/Zeit-/Datumsfelder Vorrang; Day-Group-Felder duerfen nur dann als Fallback dienen, wenn sie genau ein Datum ergeben. Keine Fremdroute wird uebernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
+// CORE-007D8A1F1D8P36F17 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT DATE SHAPE FIX – Erweitert ausschließlich den diagnostischen P36F16-Other-Days-Routencheck um robuste, explizite Datumsfelder der FlightStats-Antwort (URL-Query, sortTime/ISO-Felder sowie dayGroup date1/date2 in beiden MMM-DD/DD-MMM-Formen). Keine Route, kein Ort und kein Datum wird geraten; nur exakte 2026-09-23-artige Kandidaten werden ausgewertet. Keine Hochstufung, keine Warnungsentfernung, keine Java-Änderung.
+// CORE-007D8A1F1D8P36F16 · 23.09.2026: NATIVE UNRESOLVED-FLIGHT ROUTE PROBE – Prüft ausschließlich noch offene offizielle Airport-Nichttreffer über die datumsspezifische FlightStats-Other-Days-Webquelle. Eine dort eindeutige Route, die den Fahrt-Airport nicht enthält, wird NUR diagnostisch als Airport-Konflikt sichtbar gemacht; kein Flugort wird übernommen, kein verified/high gesetzt und keine Warnung entfernt. Keine Routen-Hardcodes.
+// CORE-007D8A1F1D8P36F15 · 23.09.2026: NATIVE MULTI-WINDOW SECOND-SOURCE FIX – Behebt den im P36F14-Realtest sichtbaren Sicherheits-False-Negative, bei dem eine exakt passende FlightStats-Airport-Board-Route nicht freigegeben wurde, wenn derselbe konkrete Flug in mehr als einem gueltigen 6-Stunden-Boardfenster derselben unabhaengigen Quelle vorkam. Mehrere Board-URLs derselben FlightStats-Domain gelten weiterhin nur als EINE Zweitquelle; Freigabe bleibt nur bei eindeutiger Route, exakter Flug-/Datums-/Richtungs-/Airportidentitaet und zwei unterschiedlichen Quellenhosts erlaubt. Keine Routen-Hardcodes.
+// CORE-007D8A1F1D8P36F14 · 23.09.2026: NATIVE STRICT DUAL-SOURCE PROMOTION – Nach erfolgreich bestaetigtem P36F13-Realtest werden ausschliesslich exakte, datumsspezifische FlightStats-Airport-Board-Treffer als unabhaengige Quelle 2 mit der bereits vorhandenen offiziellen Airportquelle zusammengefuehrt. verified/high und Entfernen von ⚠ manuell prüfen nur bei identischer Flugnummer + airportEventDate + Richtung + Airport + originIata + destinationIata und mindestens zwei unterschiedlichen dokumentierten Quellenhosts. Alle Abweichungen bleiben source_confirmed/manuell. Keine Routen-Hardcodes.
+// CORE-007D8A1F1D8P36F13 · 23.09.2026: NATIVE FLIGHTSTATS AIRPORT-BOARD SECOND-SOURCE PROBE – Ersetzt den im Realtest zwar erreichbaren, aber datenlosen Einzel-Flug-Endpunkt durch eine rein diagnostische, datumsspezifische FlightStats-Airporttafel-Probe. Abfrage nur fuer bereits durch die offizielle Airportquelle source_confirmed bestaetigte Fluege; exakte Flugnummer + Richtung + Airport + Gegen-IATA muessen uebereinstimmen. Keine Hochstufung auf verified/high und keine Warnungsentfernung.
+// CORE-007D8A1F1D8P36F12 · 23.09.2026: NATIVE SECOND-SOURCE PROBE – Prüft in der Native-App ausschließlich diagnostisch eine unabhängige, registrierungsfreie FlightStats-Webquelle über eine streng freigegebene HTTPS-Route. Keine automatische Hochstufung auf verified/high, keine Warnungsentfernung und keine Änderung an FLIGHT-008; erst ein bestätigter Beweistest darf die spätere Zweitquellen-Automatik freigeben.
+// CORE-007D8A1F1D8P36F11 · 23.09.2026: NATIVE OFFICIAL-AIRPORT PERSISTENT DIAGNOSTIC – Macht die P36F9-Airportdiagnose im eingeklappten Technik-/Diagnosebereich dauerhaft sichtbar, damit ein spaeteres render()/Status-Update sie nicht mehr verdeckt. Reine Diagnoseanzeige; keine Änderung an Flugzuordnung, Quellen, OCR, PLAN/DISPO/LIVE oder Persistenz.
+// CORE-007D8A1F1D8P36F10 · 23.09.2026: NATIVE OFFICIAL-AIRPORT OPEN-COUNT FIX – Behebt den P36F9-ReferenceError durch eine zentrale, eindeutige Zählfunktion für noch offene Flugzuordnungen. Doppelte Fahrten desselben Fluges/Datums/Airports/Richtungskontexts werden nur einmal gezählt; source_confirmed bleibt offen, verified/high wird nicht gezählt. Keine Änderung an Quellen, Routen, OCR, PLAN/DISPO/LIVE oder Persistenz.
+// CORE-007D8A1F1D8P36F9 · 23.09.2026: NATIVE OFFICIAL-AIRPORT DIAGNOSTIC – Zeigt bei der nativen offiziellen Airport-Prüfung die tatsächlichen Provider-Ergebnisse pro offenem Flug (z. B. not_found/ambiguous/technical/unsupported), ohne Flugwerte zu verändern. Zusätzlich wird die Zahl der nach offiziellen Treffern tatsächlich noch offenen Fahrten korrekt berechnet. Reine Diagnose + Zählerkorrektur; keine Lockerung von FLIGHT-008, keine neuen Quellen, keine OCR-/PLAN-/DISPO-/LIVE-/Persistenzänderung.
+// CORE-007D8A1F1D8P36F6 · 23.09.2026: NATIVE OFFICIAL-AIRPORT CONTEXT BRIDGE – Behebt den im P36-Nativetest gefundenen Kontextfehler: frische OCR-Fahrten besitzen vor der Flugprüfung noch kein flightVerification.airportIata. DUS/CGN werden deshalb jetzt ausschließlich aus dem konkreten Airport der Fahrt (Von/Nach/sourcePlanAirportIata + Richtung) abgeleitet und die bestehende offizielle Airportquelle wird VOR Gemini geprüft. Eine einzelne offizielle Quelle darf nur einen bislang leeren Flugort als source_confirmed vorbefüllen; ⚠ manuell prüfen bleibt bestehen. verified/high bleibt strikt mindestens zwei unabhängigen datumsspezifischen Quellen vorbehalten. P36F5 darf die offizielle Airportquelle mit einer unabhängigen routengleichen Webquelle kombinieren. Keine Änderung an OCR, PLAN/DISPO/LIVE, Preisen, Fahrer/Fahrzeug oder Persistenz.
+  // CORE-007D8A1F1D8P36F5 · 23.09.2026: STRICT SEARCH DUAL-SOURCE FALLBACK – Wenn die explizite URL-Context-Prüfung Flightradar24/FlightStats nicht abrufen kann, führt die Auto-Pipeline für genau diese offenen Flüge eine zusätzliche datumsspezifische Google-Search-Prüfung aus. Automatische Übernahme nur bei mindestens zwei unabhängigen geerdeten Webquellen, identischer IATA-Route und exaktem Airport-/Richtungsanker. Keine Lockerung von FLIGHT-008; keine Änderung an OCR, PLAN/DISPO/LIVE oder Persistenz.
+  // CORE-007D8A1F1D8P31F5F6 · 18.09.2026: AUTO-FLIGHT EXPLICIT URL SOURCES – FLIGHT-008 nutzt für die automatische Routenprüfung zwei explizite, datumsspezifische Webquellen (Flightradar24 + FlightStats) via Gemini URL Context. Google Search bleibt nur ergänzend. Keine Lockerung der Zwei-Quellen-Regel.
+  // CORE-007D8A1F1D8P31F5F4 · 18.09.2026: AUTO-FLIGHT RESPONSE NORMALIZATION FIX – Gemini-Antworten werden robust normalisiert: string "false" zählt nicht mehr als Konflikt; für die Route sind die kanonischen IATA-Endpunkte maßgeblich, Stadtnamen sind nur Darstellung.
+  // CORE-007D8A1F1D8P31F5F2 · 18.09.2026: AUTO-FLIGHT DUAL-SOURCE VERIFIER – FLIGHT-008 bleibt strikt. Wenn Google Search in der ersten Prüfung weniger als zwei unabhängige Quellen liefert, fordert ATMS automatisch eine zweite unabhängige Bestätigung an und übernimmt nur übereinstimmende Routen.
+  // CORE-007D8A1F1D8P31F5F1 · 18.09.2026: AUTO-FLIGHT IMPORT AUTHORIZATION FIX
+  // P31F5 remains the AUTO-FLIGHT PIPELINE; P31F5F1 preserves its trusted-click security across the asynchronous flight check.
+  // CORE-007D8A1F1D8P31F5F3 · 18.09.2026: AUTO-FLIGHT IATA CONSENSUS FIX – unabhängige Prüfungen werden anhand der kanonischen IATA-Endpunkte verglichen, nicht anhand lokalisierter Stadtnamen. Airport-Anker wird zusätzlich strikt geprüft.
+  // CORE-007D8A1F1D8P31F5 · 18.09.2026: AUTO-FLIGHT PIPELINE – Nach einer sauberen, vom Nutzer gestarteten Plananalyse wird die bestehende Firebase-AI/Gemini-Flugortprüfung automatisch im Hintergrund geladen und ausgeführt. Danach wird die Liste einmalig automatisch übernommen. Fehlt der Dienst, ist das Gemini-Kontingent erreicht oder bleibt ein Flug unsicher, wird niemals geraten oder ein vorhandener Flugort verschlechtert; der Plan bleibt trotzdem sofort nutzbar. Der manuelle Prüfauftrag bleibt nur als Fallback erhalten. DUS/CGN-Kontext und airportEventDate werden vom Auto-Flight-Modul berücksichtigt. Keine Änderung an OCR-, Preis-, Fahrer-, PLAN/DISPO/LIVE- oder Persistenzlogik.
+  // CORE-007D8A1F1D8P31F4 · 18.09.2026: MORGEN-MODUS. Nach einem echten Nutzer-Klick auf „Planliste analysieren“ werden vollständig saubere OCR-Planlisten (0 Hinweise, 0 Fehler) automatisch übernommen und die Fahrtenansicht geöffnet. Offene Flugprüfungen blockieren den Plan nicht. Unsichere OCR-/Preis-/Datumsfälle bleiben weiterhin manuell. Diagnoseblöcke sind im normalen Import eingeklappt.
+// CORE-007D8A1F1D8P31F2 · 18.09.2026: FLIGHT-LOCATION NOTE GUARD – Freitext wie "Kommt nicht" in der Ort-Spalte wird nicht mehr als Flugort behandelt. Der Originaltext bleibt als Hinweis/Notiz erhalten; bei vorhandener Flugnummer bleibt die Flugortprüfung offen. Keine Änderung an OCR-Geometrie, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugnummern, Preisen oder Persistenz.
+(() => {
+  'use strict';
+
+  const PLAN_IMPORT_SCRIPT_URL = document.currentScript?.src || new URL('./js/plan-import.js', location.href).href;
+  let autoFlightModulePromise = null;
+  let officialFlightProviderModulePromise = null;
+
+  // CORE-007D4 · 12.09.2026: HEADERLESS PRICE ANCHOR RECOVERY. Wenn ein kopfzeilenloser Ausschnitt mehrere sichere Zeitanker, aber zu wenige Preisanker liefert, wird ausschließlich der aus der bekannten 13-Spalten-Geometrie abgeleitete linke Preis-Korridor der betroffenen Zeilen lokal erneut OCR-gelesen. Ein Preisanker wird nur nach eindeutigem Mehrfach-Konsens derselben Dezimalzahl als synthetischer OCR-Anker ergänzt; mindestens zwei Preisanker bleiben fuer die Freigabe Pflicht. Keine Preiswerte oder zeilenspezifischen Daten werden hart codiert.
+
+  // CORE-007D8A · 13.09.2026: OCR CELL RAW DIAGNOSTICS. Reine Diagnose-Erweiterung auf stabilem CORE-007D8: Für Bild-/OCR-Importe werden die unveränderten Primär-OCR-Wörter samt Koordinaten innerhalb und direkt neben den gemappten Von-/Nach-/Flugzellen sichtbar protokolliert. Die Diagnose liest nur bereits vorhandene OCR-Daten; sie korrigiert keinen Wert, ändert keine Spaltengrenze und beeinflusst weder Importfreigabe noch Hinweise/Fehler, Storno, PLAN/DISPO/LIVE, Flugprüfung oder Persistenz.
+  // CORE-007D8A1 · 13.09.2026: OCR DIAGNOSTIC SELF-CHECK. Reine Diagnose auf Basis CORE-007D8A: Der Analysebereich zeigt nun IMMER einen Selbstcheck mit Anzahl Rohwörter, Zellgrenzen, Row-Meta-Schlüsseln, Ride-sourceRows, Mapping-Spalten und Treffern der Rohdiagnose. Wenn die Rohdiagnose leer bleibt, wird ein technischer Grund sichtbar statt den Diagnoseblock still auszublenden. Keine Fahrtdaten, OCR-Werte, Hinweise/Fehler oder Importentscheidungen werden verändert.
+  // CORE-007D8A1F1 · 13.09.2026: DIAGNOSTIC-GUIDED OCR FIX. Auf Basis der D8A1-Rohdiagnose werden Routenwörter, die die rechte Zellgrenze sichtbar überlappen, nur bei wiederholter identischer Geometrie-Evidenz in mindestens zwei Fahrten derselben Route ergänzt. Auffällige Flugnummern mit 3+ Buchstaben vor dem Zahlenteil werden ausschließlich in ihrer eigenen Flugzelle lokal erneut gelesen; eine Verkürzung auf einen 2-stelligen Designator wird nur bei eindeutigem Mehrfach-Konsens aus mindestens zwei verschiedenen Crops und identischem Zahlenteil übernommen. Keine Werte-/Flugnummern-/Orts-Hardcodes; Storno, Preis, Fahrer/Fahrzeug, PLAN/DISPO/LIVE, Flugprüfung und Persistenz bleiben unverändert.
+  // CORE-007D8A1F1D3 · 13.09.2026: FLIGHT OCR CANDIDATE BOUNDARY FIX. Ausschließlich die gezielte Gegenprüfung auffälliger langer Flugpräfixe wertet OCR-data.text und OCR-Wörter getrennt aus, damit identische Doppelrepräsentationen nicht zu einer künstlich zusammengezogenen Zeichenfolge werden. Die bestehenden Mehrfach-Konsens-Schwellen bleiben unverändert; keine Airline-/Flugnummern-Hardcodes.
+  // CORE-007D8 · 12.09.2026: STORNO ROW GUARD. Beim Bild-/OCR-Import werden Zeilen nur dann als sicher storniert ausgeschlossen, wenn ein exakter Storno-/Cancelled-Marker in der Fahrerzelle UND mindestens einem weiteren passenden Status-/Zeit-/Ort-/Notizfeld derselben Zeile vorkommt. Solche Zeilen werden separat als Storno erkannt, aber weder als aktive Fahrt/Fahrer/Flug gezählt noch übernommen. Einzelne oder uneindeutige Marker werden nicht automatisch ausgeschlossen. Keine Uhrzeit, Flugnummer, Route oder Person wird hart codiert; OCR-, PLAN-/DISPO-/LIVE-, Flug- und Persistenzlogik bleiben unverändert.
+  // CORE-007D6 · 12.09.2026: REPEATED TEXT CONSISTENCY. Beim Bildimport werden ausschließlich wiederkehrende Werte in den Spalten Name/Firma konservativ vereinheitlicht, wenn mehrere Zeilen exakt dieselbe Buchstaben-/Ziffernfolge besitzen und sich die Varianten nur durch Leerzeichen/Trennzeichen oder Groß-/Kleinschreibung unterscheiden. Eine eindeutige Mehrheits-Schreibweise muss mindestens zweimal vorkommen; Buchstaben, Umlaute und Inhalte werden niemals ergänzt oder geraten. Struktur-, Flug-, PLAN-/DISPO-/LIVE- und Persistenzlogik bleiben unverändert.
+  // CORE-007D2 · 12.09.2026: Kopfzeilenlose Plan-Ausschnitte koennen ihre Spaltenstruktur jetzt zusaetzlich aus wiederkehrenden X-Positionen mehrerer Datenzeilen bestaetigen. Preis- und Zeitanker duerfen auf unterschiedlichen Zeilen liegen; die 13 Spalten werden erst nach wiederholter Positions-Evidenz freigegeben. Keine Werte-/Namen-/Flugnummern-Hardcodes.
+
+  // CORE-007D1 · 12.09.2026: Kopfzeilenlose ATMS-Ausschnitte behalten den strengen Geometrie-Guard, koennen aber bei wenigen schwachen Kernzellen eine gezielte Zell-Zweit-OCR ausfuehren. Nur eindeutiger Mehrfach-Konsens wird uebernommen; bei zu vielen/weiterhin unklaren Zellen bleibt der sichere Abbruch bestehen. Keine Werte-Hardcodes.
+  // CORE-007D · 12.09.2026: HEADERLESS PLAN SAFE OCR. Bildausschnitte ohne sichtbare Kopfzeile dürfen ausschließlich dann als bekanntes 13-Spalten-ATMS-Preislayout rekonstruiert werden, wenn mehrere Datenzeilen gemeinsam Preis-, DISPO-Zeit-, Routen-, Fahrzeug-/Personen-, Flug- und Fahrer-Geometrie plausibel bestätigen. Die Spaltengrenzen werden aus einer normierten ATMS-Layoutvorlage anhand der im Bild tatsächlich erkannten Preis-/Zeitanker skaliert und anschließend erneut gegen die Datenzeilen validiert. Bei unklarer Struktur bleibt der bisherige sichere Abbruch bestehen. Keine Namen, Flugnummern, Orte oder Zeiten werden hart codiert.
+  // CORE-007B · 12.09.2026: OCR CONFIDENCE DISPLAY. Die interne technische Struktur-Konfidenz bleibt unverändert als Sicherheitswert erhalten, wird bei Bildimport aber nicht mehr missverständlich als allgemeine '% Erkennung' ausgegeben. Sichtbar sind stattdessen der reale OCR-Analysezustand, Anzahl OCR-geprüfter Fahrten sowie offene Hinweise/Fehler. Keine künstliche 100-%-Anzeige.
+  // CORE-007A · 12.09.2026: OCR CLEAN ANALYSIS. Sicher per Mehrfach-Konsens aufgeloeste Zeit-/Fahrer-OCR-Korrekturen bleiben als interne Diagnose-Metadaten erhalten, erscheinen aber nicht mehr als offene Hinweise. Fehlende/noch zu verifizierende Flugorte werden als eigener Bereich 'Flugprüfung offen' geführt und nicht als OCR-Hinweis gezählt. Nur ungelöste OCR-/Datenprobleme bleiben als Hinweis oder Fehler sichtbar. Keine Werte werden geraten oder hart codiert.
+  // CORE-006Z · 12.09.2026: OCR TIME & DRIVER REFERENCE GUARD. Verdächtige 00:00–05:59-DISPO-Zeiten werden vor der Folgetag-Entscheidung ausschließlich in ihrer eigenen Uhrzeitzelle lokal nachgelesen und nur bei eindeutigem Mehrfach-Konsens korrigiert. Die rechte Fahrer-Spalte erhält zusätzlich eine spaltenweite deutsche Zweit-OCR mit konservativer Konsens-/Kompatibilitätsprüfung für Diakritik und optionale einbuchstabige Namenszusätze. 'Taxi' ist in der Fahrerposition ein zulässiger operativer Eintrag. Keine Namen, Zeiten oder Flugnummern werden hart codiert.
+  // CORE-006N · 10.09.2026: Fahrer-Spaltenlogik an reale ATMS-Planlisten gehaertet. Erste Wg-Spalte = Fahrzeug. Fahrer = explizite Fahrer-Spalte, rechte zweite Name-Spalte ODER – bei aktuellen Listen wie 09.09.2026 – die rechte zweite Wg-Spalte nach Ort. Die sichtbare Kopfzeile bleibt geometrisch erhalten; keine Fahrtzeilen gehen durch Umbenennen der letzten Spalte verloren.
+  // CORE-006M · 10.09.2026: Zwischenstand; reine Umbenennung der letzten Wg-Spalte in Name erwies sich bei realen Planlisten mit sichtbarer rechter Wg-Kopfzeile als zu streng und wurde durch CORE-006N ersetzt.
+  // CORE-006L · 10.09.2026: Von-/Nach-Ortszellen erhalten eine rein lokale deutsche Zweit-OCR in wenigen Spalten-Durchläufen. Eine abweichende Schreibweise wird nur bei wiederholtem exaktem Konsens und ausschließlich bei einer kleinen, diakritikbezogenen OCR-Abweichung übernommen; keine Ortsnamen-Hardcodes.
+  // CORE-006J · 09.09.2026: Zeitsemantik Bild-Planliste: erste Uhrzeit neben Preis = DISPO-Zeit; mittlere Uhrzeit vor Flug ang. = gespiegelte DISPO-Zeit; letzte Uhrzeit vor Ort = Flugzeit aus Liste. Alle drei Werte bleiben getrennt gespeichert.
+  // CORE-006H · 09.09.2026: Reine Rand-Satzzeichen an Fahrerwerten werden generisch entfernt, wenn danach ein vollständig gültiger Fahrername übrig bleibt. Kein Namens-Hardcode; unklare/innere OCR-Artefakte bleiben weiterhin in der gezielten Zweit-OCR bzw. manuellen Prüfung.
+  // CORE-006G · 09.09.2026: OCR-auffällige Fahrerwerte (z. B. führende/abschließende Satzzeichen oder andere Nicht-Namenszeichen) werden wie fehlende Fahrer gezielt nur in der konkreten rechten Fahrerzelle erneut gelesen. Automatische Übernahme weiterhin nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
+  // CORE-006F · 09.09.2026: Fehlende Fahrerzellen werden bei Bildimport gezielt nur in der konkreten rechten Fahrerzelle lokal nachgelesen. Automatische Übernahme nur bei eindeutigem Mehrfach-Konsens; keine Fahrer-Hardcodes.
+  // CORE-006D · 09.09.2026: No-Price-Mirror-Fallback nutzt Datenzeilen-Geometrie, wenn die mittlere Uhrzeit in der Kopfzeile vom OCR fehlt; gezielte Flug-OCR entfernt Minutenreste nur bei exakter Übereinstimmung mit der Planzeit. Keine Flugnummern-Hardcodes.
+  // CORE-006C · 09.09.2026: 13-Spalten-Bildschema OHNE Preis mit zusätzlicher gespiegelter Uhrzeit nach Firma; verhindert, dass Minutenreste der Planzeit vor Flugnummern geraten. Bestehende 12-/13-Preis-/14-Preis-Schemata bleiben erhalten.
+  // CORE-006B · 09.09.2026: 14-Spalten-Bildschema mit zusätzlicher mittlerer Uhrzeit zwischen Firma und Flug ang./ausg.; geometrische Zeilenprüfung auf dynamische Spaltenindizes umgestellt. Bestehende 12-/13-Spalten-Layouts bleiben erhalten.
+
+  // CORE-005W1 · 09.09.2026: Mehrdeutige Flugzellen werden zusätzlich mit Single-Line/Single-Word OCR-Modi nachgelesen; weiterhin nur eindeutiger Mehrfach-Konsens.
+  // CORE-005W · 09.09.2026: OCR-mehrdeutige Flugpräfixe (z. B. I/1/L oder O/0) werden bei Bildimport gezielt nur in der konkreten Flugzelle erneut gelesen. Automatische Korrektur nur bei eindeutigem Mehrfach-Konsens; sonst Warnung statt Raten.
+  // CORE-005R · 08.09.2026: Verdächtige/fehlende Preiszellen im Bild-/WhatsApp-Import werden gezielt lokal erneut OCR-gelesen. Nur eindeutiger plausibler Mehrfach-Konsens wird automatisch übernommen; sonst bleibt die bestehende manuelle Preis-Sicherheitsabfrage erhalten. Keine feste Sonderregel für 47,60 €.
+  // CORE-005O · 08.09.2026: Sichere OCR-Ortsnormalisierung: Miinchen/Mienchen/Munchen/Muenchen → München; Rohwert bleibt in sourceFlightLocationRaw erhalten.
+  // CORE-005L · 08.09.2026: Bildimport mit Preis-Spalte auf 13-Spalten-ATMS-Schema gehärtet; fehlend gelesene 'Flug ausg.'-Überschrift wird geometrisch rekonstruiert.
+  // CORE-005J · 07.09.2026: CORE-005I + nachträgliche UI-Korrektur entfernt; app.js/pwa.js rendern Preis und PLAN/DISPO/LIVE direkt an der Quelle.
+  // CORE-005C · 07.09.2026: CORE-005B + physisch fehlende OCR-Zeilen per Zeilenabstand erkennen und gezielt lokal nachlesen.
+  // CORE-004Q · 06.09.2026: Plantag wird sicher aus Dateiname/Listeninhalt erkannt, bevor Flugprüfungen starten.
+  // Bei Gemini/Firebase-429 wird kein weiterer Quota-Aufruf in derselben Sitzung versucht; der sichere manuelle Fallback bleibt aktiv.
+  // CORE-004P · 06.09.2026: Der sichtbare Button „Flugorte automatisch prüfen“ startet jetzt wirklich
+  // window.ATMSAutoFlight (Firebase AI Logic). Der manuelle Gemini-Kopierweg bleibt nur als Fallback.
+  // Frische Prüfergebnisse werden direkt auf die aktuell analysierte Planliste angewendet; unsichere
+  // Ergebnisse überschreiben vorhandene Flugorte niemals.
+  // CORE-004K · 06.09.2026: Null-/fehlende Preise dürfen den Import nicht mehr still als 0,00 € passieren.
+  // Solche Preise müssen vor der Übernahme manuell bestätigt/eingegeben werden. Keine automatische Preiskorrektur.
+  // CORE-004J · 05.09.2026: lokale Flugzellen-Zweit-OCR mit Konsens statt Set-Blockade.
+  // Mehrere lokale Leseversuche stimmen ab; nur eindeutiger Konsens wird übernommen. Flug-/Layout-/Zeitlogik bleibt unverändert.
+  // CORE-004H begrenzte den Flugzellen-Crop korrekt, vergrößerte ihn aber bis 5x ohne Glättung.
+  // Dadurch konnten Ziffern (z. B. 7) als Schrägstrich gelesen werden. Jetzt 1x/2x mit sauberer Glättung.
+
+  // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
+
+  const PROFILE_KEY = 'atms_import_profile_v1';
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
+  const $ = id => document.getElementById(id);
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+  const cellText = value => value === null || value === undefined ? '' : String(value).trim();
+
+  function berlinToday() {
+    try {
+      return new Intl.DateTimeFormat('sv-SE', {
+        timeZone: 'Europe/Berlin',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date());
+    } catch (_) {
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+  }
+
+  function formatPlanDate(value) {
+    const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : String(value || '');
+  }
+
+  function validIsoPlanDate(year, month, day) {
+    const y = Number(year), m = Number(month), d = Number(day);
+    if (y < 2020 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return '';
+    const probe = new Date(Date.UTC(y, m - 1, d));
+    if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m - 1 || probe.getUTCDate() !== d) return '';
+    return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  function extractPlanDateCandidates(value) {
+    const text = String(value || '');
+    const out = [];
+    const add = iso => { if (iso && !out.includes(iso)) out.push(iso); };
+    let match;
+    const ymd = /(?:^|\D)(20\d{2})[.\-_/ ](0?[1-9]|1[0-2])[.\-_/ ](0?[1-9]|[12]\d|3[01])(?:\D|$)/g;
+    while ((match = ymd.exec(text))) add(validIsoPlanDate(match[1], match[2], match[3]));
+    const dmy = /(?:^|\D)(0?[1-9]|[12]\d|3[01])[.\-_/ ](0?[1-9]|1[0-2])[.\-_/ ](20\d{2})(?:\D|$)/g;
+    while ((match = dmy.exec(text))) add(validIsoPlanDate(match[3], match[2], match[1]));
+    const compactYmd = /(?:^|\D)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:\D|$)/g;
+    while ((match = compactYmd.exec(text))) add(validIsoPlanDate(match[1], match[2], match[3]));
+    const compactDmy = /(?:^|\D)(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])(20\d{2})(?:\D|$)/g;
+    while ((match = compactDmy.exec(text))) add(validIsoPlanDate(match[3], match[2], match[1]));
+    return out;
+  }
+
+  function setDetectedPlanDate(date, source = '') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return false;
+    state.planDate = date;
+    const input = $('planDateInput');
+    if (input) input.value = date;
+    const status = $('planDateStatus');
+    if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(date)}${source ? ` · automatisch aus ${source}` : ''}`;
+    return true;
+  }
+
+  function detectPlanDateFromFile(file) {
+    const candidates = extractPlanDateCandidates(file?.name || '');
+    return candidates.length === 1 ? candidates[0] : '';
+  }
+
+  function detectPlanDateFromMatrix(matrix) {
+    const counts = new Map();
+    (Array.isArray(matrix) ? matrix.slice(0, 40) : []).forEach(row => {
+      (Array.isArray(row) ? row : [row]).forEach(cell => {
+        extractPlanDateCandidates(cell).forEach(date => counts.set(date, (counts.get(date) || 0) + 1));
+      });
+    });
+    if (!counts.size) return '';
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    if (ranked.length === 1 || ranked[0][1] > ranked[1][1]) return ranked[0][0];
+    return '';
+  }
+
+  function detectPlanDateFromJsonRows(rows) {
+    const counts = new Map();
+    (Array.isArray(rows) ? rows : []).forEach(ride => {
+      const direct = cellText(ride?.planDate || ride?.date);
+      const dates = /^\d{4}-\d{2}-\d{2}$/.test(direct) ? [direct] : extractPlanDateCandidates(direct);
+      dates.forEach(date => counts.set(date, (counts.get(date) || 0) + 1));
+    });
+    if (!counts.size) return '';
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0];
+  }
+
+
+  function addDaysIso(value, days = 1) {
+    const m = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return value;
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    d.setUTCDate(d.getUTCDate() + Number(days || 0));
+    return d.toISOString().slice(0, 10);
+  }
+
+  function timeToMinutes(value) {
+    const normalized = normalizeTime(value);
+    const m = String(normalized || '').match(/^(\d{2}):(\d{2})$/);
+    if (!m) return null;
+    const h = Number(m[1]), min = Number(m[2]);
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+    return h * 60 + min;
+  }
+
+  // DAY-002 – Plantag und tatsächliches Fahrtdatum
+  // --------------------------------------------------
+  // Die normale/geplante Fahrtzeit wird dynamisch anhand der Kopfzeile und Nachbarspalten erkannt.
+  // Eine zweite Wiederholung derselben Fahrtzeit ist OPTIONAL und darf vollständig fehlen.
+  // Die aktuelle/prognostizierte Flugzeit (Verspätung/früher) wird separat erkannt und
+  // darf das geplante Fahrtdatum NICHT verändern.
+  //
+  // Die Reihenfolge der Planlistenzeilen ist ausdrücklich NICHT chronologisch
+  // und wird deshalb niemals für einen Datumswechsel ausgewertet.
+  // Fahrten von 00:00 bis 05:59 werden als gemeinsamer Folgetag-Kandidat
+  // erkannt und müssen einmal für die ganze Liste bestätigt werden.
+  const NEXT_DAY_CUTOFF_MINUTES = 6 * 60;
+
+  function assignRideDates(rides, options = {}) {
+    const baseDate = currentPlanDate();
+    const nextDate = addDaysIso(baseDate, 1);
+    const preserveExplicit = Boolean(options.preserveExplicit);
+    const candidateIndexes = [];
+
+    const out = (Array.isArray(rides) ? rides : []).map((ride, index) => {
+      const explicitDate = cellText(ride?.date);
+      if (preserveExplicit && /^\d{4}-\d{2}-\d{2}$/.test(explicitDate)) {
+        return {
+          ...ride,
+          planDate: cellText(ride?.planDate) || baseDate,
+          date: explicitDate,
+          dateNeedsManualCheck: false,
+          dateCandidateNextDay: false,
+          dateSource: cellText(ride?.dateSource) || 'explicit'
+        };
+      }
+
+      const mins = timeToMinutes(ride?.time || ride?.planTime);
+      const isNextDayCandidate = mins !== null && mins < NEXT_DAY_CUTOFF_MINUTES;
+      if (isNextDayCandidate) candidateIndexes.push(index);
+
+      return {
+        ...ride,
+        planDate: baseDate,
+        date: baseDate,
+        dateNeedsManualCheck: false,
+        dateCandidateNextDay: isNextDayCandidate,
+        dateSource: isNextDayCandidate ? 'next_day_candidate' : 'plan_date'
+      };
+    });
+
+    const decision = state.dateBoundaryDecision || '';
+    if (candidateIndexes.length && decision === 'next_day') {
+      candidateIndexes.forEach(index => {
+        out[index] = {
+          ...out[index],
+          date: nextDate,
+          dateNeedsManualCheck: false,
+          dateSource: 'next_day_confirmed'
+        };
+      });
+    } else if (candidateIndexes.length && decision === 'same_day') {
+      candidateIndexes.forEach(index => {
+        out[index] = {
+          ...out[index],
+          date: baseDate,
+          dateNeedsManualCheck: false,
+          dateSource: 'same_day_confirmed'
+        };
+      });
+    } else if (candidateIndexes.length) {
+      candidateIndexes.forEach(index => {
+        out[index] = {
+          ...out[index],
+          date: baseDate,
+          dateNeedsManualCheck: true,
+          dateSource: 'next_day_candidate'
+        };
+      });
+    }
+
+    const counts = {};
+    out.forEach(ride => {
+      const date = cellText(ride?.date);
+      if (date) counts[date] = (counts[date] || 0) + 1;
+    });
+
+    state.dateInfo = {
+      baseDate,
+      nextDate,
+      counts,
+      candidateCount: candidateIndexes.length,
+      decision,
+      requiresConfirmation: Boolean(candidateIndexes.length && !decision),
+      cutoff: '06:00'
+    };
+    return out;
+  }
+
+  function resolveDateBoundary(action) {
+    if (action !== 'next_day' && action !== 'same_day') return;
+    state.dateBoundaryDecision = action;
+    state.rides = assignRideDates(state.rides);
+    state.issues = validate(state.rides);
+    render();
+    if (typeof window.showToast === 'function') {
+      const count = state.dateInfo?.candidateCount || 0;
+      const date = action === 'next_day' ? state.dateInfo?.nextDate : state.dateInfo?.baseDate;
+      window.showToast(`${count} Fahrt(en) auf ${formatPlanDate(date)} bestätigt`, 'ok');
+    }
+  }
+
+  function updatePlanDateSummary() {
+    const control = $('planDateControl');
+    if (!control) return;
+    let summary = $('planDateSummary');
+    if (!summary) {
+      summary = document.createElement('div');
+      summary.id = 'planDateSummary';
+      summary.style.cssText = 'font-size:12px;margin-top:8px;line-height:1.45;font-weight:700';
+      control.appendChild(summary);
+    }
+
+    if (!state.rides.length) {
+      summary.textContent = 'Plantag = erster Kalendertag der Liste. Fahrten 00:00–05:59 werden als möglicher Folgetag gemeinsam geprüft.';
+      return;
+    }
+
+    const counts = {};
+    state.rides.forEach(ride => {
+      const date = cellText(ride?.date);
+      if (date) counts[date] = (counts[date] || 0) + 1;
+    });
+    const parts = Object.entries(counts).map(([date, count]) => `${formatPlanDate(date)}: ${count}`);
+    const candidateCount = state.dateInfo?.candidateCount || 0;
+    let suffix = '';
+    if (candidateCount && !state.dateBoundaryDecision) {
+      suffix = ` · ⚠ ${candidateCount} Fahrt(en) 00:00–05:59: Folgetag einmal bestätigen`;
+    } else if (candidateCount && state.dateBoundaryDecision === 'next_day') {
+      suffix = ` · ✓ ${candidateCount} Fahrt(en) dem ${formatPlanDate(state.dateInfo?.nextDate)} zugeordnet`;
+    } else if (candidateCount && state.dateBoundaryDecision === 'same_day') {
+      suffix = ` · ✓ ${candidateCount} Fahrt(en) bewusst beim ${formatPlanDate(state.dateInfo?.baseDate)} belassen`;
+    }
+    summary.textContent = `Fahrtdaten: ${parts.join(' · ')}${suffix}`;
+  }
+
+  function currentPlanDate() {
+    const input = $('planDateInput');
+    const value = cellText(input?.value || state.planDate || berlinToday());
+    state.planDate = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : berlinToday();
+    if (input && input.value !== state.planDate) input.value = state.planDate;
+    return state.planDate;
+  }
+
+  function ensurePlanDateControl() {
+    if ($('planDateControl')) return;
+    const drop = $('planImportDrop');
+    const analyzeBtn = $('analyzePlanBtn');
+    const anchorEl = drop || analyzeBtn;
+    if (!anchorEl) return;
+
+    state.planDate = state.planDate || berlinToday();
+
+    const wrap = document.createElement('div');
+    wrap.id = 'planDateControl';
+    wrap.style.cssText = 'margin:14px 0;padding:14px 16px;border:1px solid rgba(72,156,255,.35);border-radius:14px;background:rgba(7,33,63,.55)';
+    wrap.innerHTML = `
+      <label for="planDateInput" style="display:block;font-weight:800;margin-bottom:6px">📅 Plantag</label>
+      <div style="font-size:12px;opacity:.75;margin-bottom:10px">Plantag = erster Kalendertag der Liste. Fahrten zwischen 00:00 und 05:59 werden als möglicher Folgetag gemeinsam erkannt und einmal bestätigt.</div>
+      <input id="planDateInput" type="date" value="${state.planDate}" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#071a2b;color:#fff;font-size:16px">
+      <div id="planDateStatus" style="font-size:12px;opacity:.8;margin-top:8px">Aktiver Plantag: ${formatPlanDate(state.planDate)}</div>
+    `;
+
+    if (drop) drop.insertAdjacentElement('afterend', wrap);
+    else analyzeBtn.parentElement?.insertBefore(wrap, analyzeBtn);
+
+    $('planDateInput')?.addEventListener('change', event => {
+      state.planDate = event.target.value || berlinToday();
+      event.target.value = state.planDate;
+      const status = $('planDateStatus');
+      if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(state.planDate)}`;
+      if (state.rides.length) {
+        state.dateBoundaryDecision = '';
+        state.rides = assignRideDates(state.rides);
+        state.issues = validate(state.rides);
+        render();
+      }
+    });
+  }
+
+  function normalizeTime(value) {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'number') {
+      if (value >= 0 && value < 1) {
+        const minutes = Math.round(value * 1440) % 1440;
+        return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+      }
+      if (window.XLSX) {
+        try {
+          const parsed = XLSX.SSF.parse_date_code(value);
+          if (parsed) return `${String(parsed.H).padStart(2, '0')}:${String(parsed.M).padStart(2, '0')}`;
+        } catch (_) {}
+      }
+    }
+    const text = cellText(value);
+    const match = text.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?!\d)/);
+    if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+    const compact = text.match(/^\d{3,4}$/);
+    if (compact) {
+      const padded = text.padStart(4, '0');
+      return `${padded.slice(0, 2)}:${padded.slice(2)}`;
+    }
+    return text;
+  }
+
+  function parseNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    const normalized = cellText(value).replace(/[^0-9,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  function pricePlausibility(value) {
+    const price = Number(value) || 0;
+    // CORE-004K: 0/leer ist NICHT automatisch plausibel. Ein fehlender OCR-Preis
+    // muss vor dem Import ausdrücklich eingegeben oder als 0,00 € bestätigt werden.
+    if (price <= 0) return { suspicious: true, suggestion: null, missing: true };
+    if (price >= 1000) {
+      const decimalSuggestion = price / 100;
+      const suggestion = decimalSuggestion >= 10 && decimalSuggestion < 1000 ? decimalSuggestion : null;
+      return { suspicious: true, suggestion, missing: false };
+    }
+    return { suspicious: false, suggestion: null, missing: false };
+  }
+
+  function flightLocationNote(value) {
+    const text = cellText(value).trim();
+    if (!text) return '';
+    const key = cleanKey(text);
+    // P31F2: Eindeutiger Dispo-Freitext in der Ort-Spalte ist kein Flugort.
+    // Bewusst nur bekannte, semantisch klare Notizformeln filtern; Ortsnamen werden nie geraten.
+    if (key === 'kommtnicht') return text;
+    return '';
+  }
+
+  function normalizeFlightLocation(value) {
+    const text = cellText(value).trim();
+    if (!text || /^[-–—~_.\s]+$/.test(text)) return '';
+    if (flightLocationNote(text)) return '';
+    if (/^(miinchen|mienchen|munchen|muenchen)$/i.test(text)) return 'München';
+    if (/^zirich$/i.test(text) || /^zurich$/i.test(text)) return 'Zürich';
+    if (/^milan$/i.test(text)) return 'Mailand';
+    return text;
+  }
+
+  function normalizeFlightNumber(value) {
+    const raw = cellText(value).trim();
+    if (!raw || /^[-–—~_.\s]+$/.test(raw)) return '';
+    let normalized = raw.toUpperCase().replace(/\s+/g, '');
+    // Häufiger OCR-Fehler bei Austrian Airlines: 0S162 -> OS162
+    if (/^0S\d{1,4}[A-Z]?$/.test(normalized)) normalized = 'OS' + normalized.slice(2);
+    // Fahrzeug-/Wagenwerte dürfen niemals als Flugnummer übernommen werden.
+    if (/^(VAN|PKW|BUS|SPRINTER|TAXI|WG)\d*$/.test(normalized)) return '';
+    // CORE-005B: OCR-Reste wie "~~-" oder reine Satzzeichen sind KEINE Flugnummer.
+    // Nur formal plausible Flugnummern mit mindestens einem Buchstaben und einer Ziffer
+    // bleiben erhalten. Dadurch kann die gezielte Flugzellen-Zweit-OCR danach greifen.
+    if (!/[A-Z]/.test(normalized) || !/\d/.test(normalized)) return '';
+    if (!/^[A-Z0-9]{2,4}\d{1,4}[A-Z]?$/.test(normalized)) return '';
+    return normalized;
+  }
+
+  function looksLikeFlight(value) {
+    return /^[A-Z0-9]{2,4}\s?\d{1,4}[A-Z]?$/.test(normalizeFlightNumber(value));
+  }
+
+  // CORE-004F · 05.09.2026: Sicherheitsnetz fuer Flugnummern, die OCR zwar
+  // innerhalb derselben Tabellenzeile liest, aber nicht sauber in "Flug ang./ausg."
+  // einsortiert. Es wird nur ein EINDEUTIGER Kandidat mit mindestens einem
+  // Buchstaben akzeptiert; bei 0 oder mehreren Kandidaten wird nichts geraten.
+  function flightCandidatesFromRow(row) {
+    const found = new Set();
+    (Array.isArray(row) ? row : []).forEach(cell => {
+      const raw = cellText(cell).toUpperCase().replace(/\s+/g, '');
+      if (!raw) return;
+      const tokens = raw.match(/[A-Z0-9]{2,4}\d{1,4}[A-Z]?/g) || [];
+      tokens.forEach(token => {
+        const normalized = normalizeFlightNumber(token);
+        if (!normalized || !/[A-Z]/.test(normalized) || !looksLikeFlight(normalized)) return;
+        found.add(normalized);
+      });
+    });
+    return [...found];
+  }
+
+  function looksLikeTime(value) {
+    return /^\d{1,2}[:.]\d{2}$/.test(cellText(value)) || (typeof value === 'number' && value >= 0 && value < 1);
+  }
+
+  function classifyRide(pickup, destination, arrivalFlight, departureFlight) {
+    const p = cleanKey(pickup), d = cleanKey(destination);
+    const airport = value => /airport|flughafen|vorfeld|terminal/.test(value);
+    if (arrivalFlight || (airport(p) && !airport(d))) return 'arrival';
+    if (departureFlight || (!airport(p) && airport(d))) return 'departure';
+    if (/hotel|marriott|holidayinn|nhnord|adagio|plaza|asahi/.test(p + d)) return 'hotel';
+    return 'transfer';
+  }
+
+  const aliases = {
+    price: ['preis', 'price', 'betrag', 'kosten', 'eur'],
+    time: ['uhrzeit', 'zeit', 'abholzeit', 'pickupzeit', 'pickuptime', 'planzeit', 'startzeit'],
+    pickup: ['von', 'from', 'abholort', 'abholung', 'pickup', 'start'],
+    destination: ['nach', 'to', 'ziel', 'zielort', 'destination', 'dropoff'],
+    customer: ['name', 'kunde', 'customer', 'auftraggeber'],
+    company: ['firma', 'company', 'partner'],
+    arrivalFlight: ['flugang', 'flugankunft', 'ankunftsflug', 'arrivalflight'],
+    departureFlight: ['flugausg', 'flugabflug', 'abflugsflug', 'departureflight'],
+    vehicle: ['wg', 'wagen', 'fahrzeug', 'vehicle', 'klasse'],
+    persons: ['pers', 'personen', 'pax', 'gaeste', 'gaste'],
+    flightTime: ['fluguhrzeit', 'flugzeit', 'scheduledflighttime'],
+    flightLocation: ['ort', 'flugort', 'flugstadt', 'flightlocation', 'herkunft'],
+    driver: ['fahrer', 'driver', 'chauffeur'],
+    notes: ['hinweis', 'hinweise', 'bemerkung', 'notiz', 'notes', 'info']
+  };
+
+  function uniqueHeaders(row) {
+    const counts = new Map();
+    return row.map((value, index) => {
+      let label = cellText(value) || `Spalte ${index + 1}`;
+      const key = cleanKey(label) || `spalte${index + 1}`;
+      const count = (counts.get(key) || 0) + 1;
+      counts.set(key, count);
+      return { label, key, occurrence: count, index };
+    });
+  }
+
+  function scoreHeaderRow(row) {
+    const keys = row.map(cleanKey).filter(Boolean);
+    const expected = ['preis','uhrzeit','von','nach','name','firma','flugang','flugausg','pers','ort','fahrer','wg'];
+    return expected.reduce((score, item) => score + (keys.includes(item) ? 1 : 0), 0);
+  }
+
+  function detectHeader(matrix) {
+    let best = { index: 0, score: -1 };
+    matrix.slice(0, 20).forEach((row, index) => {
+      const score = scoreHeaderRow(row);
+      if (score > best.score) best = { index, score };
+    });
+    return best;
+  }
+
+  function canonicalHeaderField(header) {
+    const key = header.key;
+    if (key === 'wg') return '';
+    if (key === 'uhrzeit' || key === 'zeit') return '';
+    for (const [field, list] of Object.entries(aliases)) {
+      if (field === 'time' || field === 'flightTime' || field === 'driver') continue;
+      if (list.includes(key)) return field;
+    }
+    return '';
+  }
+
+  function nearestHeaderDistance(headers, header, keys) {
+    const wanted = new Set(keys);
+    let best = Infinity;
+    headers.forEach(other => {
+      if (other.index === header.index) return;
+      if (wanted.has(other.key)) best = Math.min(best, Math.abs(other.index - header.index));
+    });
+    return best;
+  }
+
+  function nextRecognizedHeader(headers, header) {
+    return headers
+      .filter(other => other.index > header.index)
+      .sort((a,b) => a.index - b.index)
+      .find(other => other.key && !/^spalte\d+$/.test(other.key)) || null;
+  }
+
+  function previousRecognizedHeader(headers, header) {
+    return headers
+      .filter(other => other.index < header.index)
+      .sort((a,b) => b.index - a.index)
+      .find(other => other.key && !/^spalte\d+$/.test(other.key)) || null;
+  }
+
+  function detectTimeColumns(headers, mapping, ambiguities) {
+    const timeHeaders = headers.filter(h => h.key === 'uhrzeit' || h.key === 'zeit' || aliases.time.includes(h.key));
+    if (!timeHeaders.length) {
+      ambiguities.push('Keine normale Fahrtzeit-Spalte erkannt');
+      return;
+    }
+
+    // Aktuelle/prognostizierte Flugzeit: Uhrzeit direkt/nahe bei "Ort".
+    let flightTimeHeader = null;
+    const locationHeaders = headers.filter(h => aliases.flightLocation.includes(h.key));
+    if (locationHeaders.length) {
+      const candidates = timeHeaders
+        .map(h => ({ h, d: nearestHeaderDistance(headers, h, locationHeaders.map(x => x.key)) }))
+        .filter(x => x.d <= 2)
+        .sort((a,b) => a.d - b.d || b.h.index - a.h.index);
+      if (candidates.length) flightTimeHeader = candidates[0].h;
+    }
+
+    // Wiederholung der Fahrtzeit: Uhrzeit nahe bei Flug ang./Flug ausg.
+    let mirrorHeader = null;
+    const flightHeaderKeys = [
+      ...aliases.arrivalFlight,
+      ...aliases.departureFlight
+    ];
+    const mirrorCandidates = timeHeaders
+      .filter(h => !flightTimeHeader || h.index !== flightTimeHeader.index)
+      .map(h => ({ h, d: nearestHeaderDistance(headers, h, flightHeaderKeys) }))
+      .filter(x => x.d <= 2)
+      .sort((a,b) => a.d - b.d || a.h.index - b.h.index);
+    if (mirrorCandidates.length) mirrorHeader = mirrorCandidates[0].h;
+
+    // Normale Fahrtzeit: Uhrzeit nahe bei Von/Nach/Preis, aber nicht Flugzeit.
+    const rideContextKeys = [
+      ...aliases.price,
+      ...aliases.pickup,
+      ...aliases.destination
+    ];
+    const rideCandidates = timeHeaders
+      .filter(h => (!flightTimeHeader || h.index !== flightTimeHeader.index) && (!mirrorHeader || h.index !== mirrorHeader.index))
+      .map(h => ({ h, d: nearestHeaderDistance(headers, h, rideContextKeys) }))
+      .sort((a,b) => a.d - b.d || a.h.index - b.h.index);
+
+    let rideTimeHeader = rideCandidates[0]?.h || null;
+
+    // Falls die Wiederholung die einzige Nicht-Flugzeit neben einer primären Uhrzeit ist,
+    // muss die primäre Uhrzeit trotzdem erhalten bleiben. Die erste Uhrzeit in der Nähe
+    // von Von/Nach/Preis gewinnt.
+    if (!rideTimeHeader) {
+      const remaining = timeHeaders.filter(h => !flightTimeHeader || h.index !== flightTimeHeader.index);
+      if (remaining.length) {
+        rideTimeHeader = remaining
+          .map(h => ({ h, d: nearestHeaderDistance(headers, h, rideContextKeys) }))
+          .sort((a,b) => a.d - b.d || a.h.index - b.h.index)[0].h;
+        if (mirrorHeader && rideTimeHeader.index === mirrorHeader.index) mirrorHeader = null;
+      }
+    }
+
+    if (rideTimeHeader) mapping.time = rideTimeHeader.index;
+    else ambiguities.push('Normale Fahrtzeit konnte nicht sicher zugeordnet werden');
+
+    if (flightTimeHeader && (!rideTimeHeader || flightTimeHeader.index !== rideTimeHeader.index)) {
+      mapping.flightTime = flightTimeHeader.index;
+    }
+
+    if (mirrorHeader &&
+        (!rideTimeHeader || mirrorHeader.index !== rideTimeHeader.index) &&
+        (!flightTimeHeader || mirrorHeader.index !== flightTimeHeader.index)) {
+      mapping.timeMirror = mirrorHeader.index;
+    }
+
+    // Zusätzliche Uhrzeit-Spalten, die nicht semantisch zugeordnet werden können, sind unsicher.
+    const assigned = new Set([mapping.time, mapping.timeMirror, mapping.flightTime].filter(v => v !== undefined));
+    const unassigned = timeHeaders.filter(h => !assigned.has(h.index));
+    if (unassigned.length) {
+      ambiguities.push(`Zusätzliche Uhrzeit-Spalte(n) nicht eindeutig: ${unassigned.map(h => h.label).join(', ')}`);
+    }
+  }
+
+  function detectAtmsMapping(headers) {
+    const mapping = {};
+    const ambiguities = [];
+
+    // Eindeutige Spalten zuerst dynamisch anhand ihrer Überschrift erkennen.
+    headers.forEach(header => {
+      const field = canonicalHeaderField(header);
+      if (field && mapping[field] === undefined) mapping[field] = header.index;
+    });
+
+    // CORE-006N: Reale ATMS-Planlisten besitzen je nach Quelle rechts entweder
+    // "Name", "Fahrer" ODER erneut "Wg", obwohl die Zellen dort Fahrernamen enthalten.
+    // Deshalb semantisch unterscheiden statt die sichtbare Kopfzeile umzubenennen:
+    // - erste Name-Spalte = Auftrag/Kunde
+    // - erste Wg-Spalte = Fahrzeug
+    // - Fahrer = explizite Fahrer-Spalte, zweite/rechte Name-Spalte oder zweite/rechte
+    //   Wg-Spalte, sofern sie rechts von "Ort" liegt.
+    const nameHeaders = headers.filter(h => h.key === 'name');
+    if (nameHeaders.length) mapping.customer = nameHeaders[0].index;
+
+    const driverHeader = headers.find(h => aliases.driver.includes(h.key));
+    if (driverHeader) mapping.driver = driverHeader.index;
+    else if (nameHeaders.length >= 2) mapping.driver = nameHeaders[nameHeaders.length - 1].index;
+
+    const wgHeaders = headers.filter(h => h.key === 'wg' || aliases.vehicle.includes(h.key));
+    if (mapping.vehicle === undefined && wgHeaders.length) mapping.vehicle = wgHeaders[0].index;
+    if (mapping.driver === undefined && wgHeaders.length >= 2) {
+      const locationHeader = headers.find(h => aliases.flightLocation.includes(h.key));
+      const rightWg = wgHeaders[wgHeaders.length - 1];
+      if (!locationHeader || rightWg.index > locationHeader.index) mapping.driver = rightWg.index;
+    }
+
+    detectTimeColumns(headers, mapping, ambiguities);
+
+    const confidenceFields = ['time','pickup','destination'];
+    const core = confidenceFields.filter(field => mapping[field] !== undefined).length / confidenceFields.length;
+    const confidence = Math.max(0, core - (ambiguities.length ? 0.15 : 0));
+
+    return {
+      mapping,
+      confidence,
+      ambiguities,
+      profile: confidence >= 0.85 ? 'ATMS Flexible Planliste' : 'Automatische Spaltenerkennung'
+    };
+  }
+
+  function genericMapping(headers) {
+    const mapping = {};
+    const ambiguities = [];
+
+    headers.forEach(header => {
+      const field = canonicalHeaderField(header);
+      if (field && mapping[field] === undefined) mapping[field] = header.index;
+    });
+    detectTimeColumns(headers, mapping, ambiguities);
+
+    const nameHeaders = headers.filter(h => h.key === 'name');
+    if (nameHeaders.length) mapping.customer = nameHeaders[0].index;
+
+    const driverHeader = headers.find(h => aliases.driver.includes(h.key));
+    if (driverHeader) mapping.driver = driverHeader.index;
+    else if (nameHeaders.length >= 2) mapping.driver = nameHeaders[nameHeaders.length - 1].index;
+
+    const wgHeaders = headers.filter(h => h.key === 'wg' || aliases.vehicle.includes(h.key));
+    if (mapping.vehicle === undefined && wgHeaders.length) mapping.vehicle = wgHeaders[0].index;
+    if (mapping.driver === undefined && wgHeaders.length >= 2) {
+      const locationHeader = headers.find(h => aliases.flightLocation.includes(h.key));
+      const rightWg = wgHeaders[wgHeaders.length - 1];
+      if (!locationHeader || rightWg.index > locationHeader.index) mapping.driver = rightWg.index;
+    }
+
+    return {
+      mapping,
+      confidence: ['time','pickup','destination'].filter(field => mapping[field] !== undefined).length / 3 - (ambiguities.length ? 0.15 : 0),
+      ambiguities,
+      profile: 'Allgemeiner flexibler Tabellenimport'
+    };
+  }
+
+  function valueAt(row, mapping, field) {
+    const index = mapping[field];
+    return index === undefined ? '' : row[index];
+  }
+
+  function looksLikeDriverName(value) {
+    const text = cellText(value);
+    if (!text) return false;
+    // CORE-006Z: In der rechten Fahrer-/Wg-Spalte ist "Taxi" ein zulässiger
+    // operativer Dispo-Eintrag. Fahrzeugbegriffe bleiben ansonsten ausgeschlossen.
+    if (/^(van|pkw|bus|sprinter)$/i.test(text)) return false;
+    return /^[A-Za-zÄÖÜäöüßÀ-ÿ\- ]{2,}$/.test(text);
+  }
+
+  function getDriverValue(row, mapping) {
+    const mapped = cellText(valueAt(row, mapping, 'driver'));
+    if (mapped) return mapped;
+
+    const last = row[row.length - 1];
+    if (looksLikeDriverName(last)) return cellText(last);
+
+    return '';
+  }
+
+
+
+  function findPriceValue(row, mapping, options = {}) {
+    const mapped = parseNumber(valueAt(row, mapping, 'price'));
+    if (mapped > 0) return mapped;
+
+    // CORE-005A: Bei Bild-/WhatsApp-Planlisten ohne erkannte Preis-Spalte
+    // darf niemals eine Uhrzeit oder irgendeine andere Zelle als Preis dienen.
+    if (options.imageOcr) return 0;
+
+    const first = parseNumber(row[0]);
+    if (first > 0) return first;
+
+    for (const cell of row) {
+      const text = cellText(cell);
+      if (/[0-9]+[,.][0-9]{2}/.test(text)) {
+        const value = parseNumber(text);
+        if (value > 0 && value < 1000) return value;
+      }
+    }
+
+    return 0;
+  }
+
+
+  function getVehicleValue(row, mapping, options = {}) {
+    const mapped = cellText(valueAt(row, mapping, 'vehicle'));
+    if (mapped && !/^\d+(?:[.,]\d+)?$/.test(mapped)) return mapped;
+
+    // CORE-005A: Beim Bildimport keine festen Nachbarspalten als Fallback.
+    // Die sichtbare erste Wg-Spalte ist die einzige Fahrzeugquelle.
+    if (options.imageOcr) return '';
+
+    // Legacy-Fallback nur fuer bereits strukturierte Altimporte.
+    const fixedVehicle = cellText(row[8]);
+    if (fixedVehicle && !/^\d+(?:[.,]\d+)?$/.test(fixedVehicle)) return fixedVehicle;
+    return mapped || 'Pkw';
+  }
+
+  function getPersonsValue(row, mapping, options = {}) {
+    const mapped = parseNumber(valueAt(row, mapping, 'persons'));
+    if (mapped > 0) return mapped;
+
+    // CORE-005A: Beim Bildimport Pers niemals aus einer Nachbarspalte ableiten.
+    if (options.imageOcr) return 0;
+
+    // Legacy-Fallback nur fuer bereits strukturierte Altimporte.
+    const fixedPersons = parseNumber(row[9]);
+    return fixedPersons > 0 ? fixedPersons : 0;
+  }
+
+  function makeRide(row, rowNumber, mapping, fileName, options = {}) {
+    let arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
+    let departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
+    const pickup = cellText(valueAt(row, mapping, 'pickup'));
+    const destination = cellText(valueAt(row, mapping, 'destination'));
+    const customer = cellText(valueAt(row, mapping, 'customer'));
+    const company = cellText(valueAt(row, mapping, 'company')) || customer || 'WT';
+
+    let recoveredFlight = '';
+    let flightRecoveryAmbiguous = false;
+    if (!arrivalFlight && !departureFlight && !options.imageOcr) {
+      const candidates = flightCandidatesFromRow(row);
+      if (candidates.length === 1) {
+        recoveredFlight = candidates[0];
+        const routeType = classifyRide(pickup, destination, '', '');
+        if (routeType === 'arrival') arrivalFlight = recoveredFlight;
+        else if (routeType === 'departure') departureFlight = recoveredFlight;
+      } else if (candidates.length > 1) {
+        flightRecoveryAmbiguous = true;
+      }
+    }
+
+    const flightNumber = arrivalFlight || departureFlight || recoveredFlight;
+    const rideType = classifyRide(pickup, destination, arrivalFlight, departureFlight);
+
+    // CORE-005D: Disponenten tragen mangels Bemerkungsspalte vereinzelt eine
+    // Abholzeit in die Ort-Spalte ein. Eine eindeutige Uhrzeit ist kein Flugort.
+    // Planzeit, Disponentenzeit und spaetere Live-Zeit bleiben getrennte Werte.
+    const sourceFlightLocationRaw = cellText(valueAt(row, mapping, 'flightLocation'));
+    const locationNote = flightLocationNote(sourceFlightLocationRaw);
+    const dispatcherTime = !locationNote && looksLikeTime(sourceFlightLocationRaw)
+      ? normalizeTime(sourceFlightLocationRaw)
+      : '';
+    const flightLocation = (dispatcherTime || locationNote)
+      ? ''
+      : normalizeFlightLocation(sourceFlightLocationRaw);
+    const mappedNotes = cellText(valueAt(row, mapping, 'notes'));
+    const importNotes = [mappedNotes, locationNote].filter(Boolean).filter((value, index, list) => list.indexOf(value) === index).join(' · ');
+
+    // CORE-006J: Verbindliche Zeitsemantik der aktuellen ATMS-Bildlisten.
+    const primaryDispoTime = normalizeTime(valueAt(row, mapping, 'time'));
+    const mirroredDispoTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
+    const dispoTime = primaryDispoTime || mirroredDispoTime;
+    const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
+
+    return {
+      id: `import-${Date.now()}-${rowNumber}`,
+      sourceRow: rowNumber,
+      sourceFile: fileName,
+      planDate: currentPlanDate(),
+      date: currentPlanDate(),
+      // `planTime` bleibt nur als Legacy-Kompatibilitätswert erhalten.
+      // Semantisch ist diese erste Zeit in den aktuellen Bildlisten die DISPO-Zeit.
+      time: dispoTime,
+      planTime: dispoTime,
+      dispoTime,
+      dispo_time: dispoTime,
+      timeMirror: mirroredDispoTime,
+      flightTime: listedFlightTime,
+      timeSemanticSource: 'dispo+mirror+listed-flight-time',
+      pickup,
+      destination,
+      customer,
+      company,
+      partner: customer || company,
+      arrivalFlight,
+      departureFlight,
+      flightNumber,
+      flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
+      flightLocation,
+      dispatcherTime,
+      dispo_abholzeit: dispatcherTime,
+      dispoAbholzeit: dispatcherTime,
+      dispatcherNote: dispatcherTime ? `Disponentenzeit aus Ort-Spalte: ${sourceFlightLocationRaw}` : '',
+      sourceFlightLocationRaw,
+      flightRecoveredFromRow: Boolean(recoveredFlight),
+      flightRecoveryAmbiguous,
+      flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
+      vehicle: getVehicleValue(row, mapping, options),
+      persons: getPersonsValue(row, mapping, options),
+      price: findPriceValue(row, mapping, options),
+      priceRequired: !(options.imageOcr && mapping.price === undefined),
+      priceMissingFromSource: Boolean(options.imageOcr && mapping.price === undefined),
+      sourceImageOcr: Boolean(options.imageOcr),
+      currency: 'EUR',
+      driver: getDriverValue(row, mapping),
+      notes: importNotes,
+      flightLocationNote: locationNote,
+      rideType,
+      importStatus: 'recognized'
+    };
+  }
+
+  function cancellationMarker(value) {
+    const key = cleanKey(value);
+    return ['storno', 'storniert', 'cancelled', 'canceled'].includes(key) ? key : '';
+  }
+
+  function detectCancelledPlanRow(row, mapping) {
+    // CORE-007D8: Ein einzelnes Wort "Storno" darf niemals genügen, weil es
+    // theoretisch auch als Name/Freitext vorkommen könnte. Für den automatischen
+    // Ausschluss verlangen wir zwei unabhängige, exakt gemappte Signale derselben
+    // Zeile: Fahrer = Storno/Cancelled UND mindestens ein zweites Signal in einem
+    // Status-nahen Feld (zweite Uhrzeit/Flugzeit, Ort oder Notiz).
+    const fields = ['driver', 'flightTime', 'timeMirror', 'flightLocation', 'notes'];
+    const hits = [];
+    fields.forEach(field => {
+      const index = mapping?.[field];
+      if (index === undefined || index === null) return;
+      const raw = cellText(row?.[index]);
+      const marker = cancellationMarker(raw);
+      if (marker) hits.push({ field, raw, marker });
+    });
+    const driverHit = hits.find(hit => hit.field === 'driver');
+    const secondaryHits = hits.filter(hit => hit.field !== 'driver');
+    if (!driverHit || secondaryHits.length < 1) return null;
+    return {
+      marker: driverHit.marker,
+      fields: hits.map(hit => hit.field),
+      values: hits.map(hit => hit.raw)
+    };
+  }
+
+  function isDataRow(row, mapping) {
+    const important = ['time','pickup','destination','driver','arrivalFlight','departureFlight'];
+    const values = important.map(field => cellText(valueAt(row, mapping, field)));
+    if (!values.some(Boolean)) return false;
+    if (values.map(cleanKey).some(value => ['uhrzeit','von','nach','fahrer','flugang','flugausg'].includes(value))) return false;
+    return Boolean(values[0] || (values[1] && values[2]));
+  }
+
+  function validate(rides) {
+    const issues = [];
+    const fingerprints = new Set();
+    const missingFlightLocations = new Map();
+    const manualFlightChecks = new Map();
+
+    rides.forEach(ride => {
+      const row = ride.sourceRow;
+      if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
+      // CORE-007A: Eine per eindeutigem Mehrfach-Konsens korrigierte Zeit ist bereits
+      // gelöst. timeOcrInitial/timeRecoveredFromTargetedOcr bleiben als interne Diagnose
+      // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
+      if (ride.dispoTime && ride.timeMirror && normalizeTime(ride.dispoTime) !== normalizeTime(ride.timeMirror)) {
+        issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.dispoTime} und gespiegelte DISPO-Zeit ${ride.timeMirror} weichen ab – Original-Planliste prüfen` });
+      }
+      if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
+      if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
+      if (!ride.driver) {
+        issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      } else if (ride.driverNeedsManualCheck) {
+        // CORE-007A: Nur wirklich ungelöste Fahrer-OCR bleibt sichtbar.
+        // Erfolgreiche Boundary-/Targeted-OCR-Korrekturen sind bereits verifiziert
+        // und bleiben ausschließlich als Diagnose-Metadaten am Ride erhalten.
+        issues.push({ level: 'warning', row, text: `Fahrer „${ride.driver}“ OCR-auffällig – Original-Planliste prüfen` });
+      }
+      if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
+      if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
+        issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
+      }
+      if (ride.flightLongPrefixOcrUnresolved && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          kind: 'flight_ocr',
+          row,
+          text: `Flugnummer ${ride.flightNumber} hat einen auffälligen langen Präfix und konnte lokal nicht sicher bestätigt/korrigiert werden – Original-Planliste prüfen`
+        });
+      }
+      if (ride.flightRejectedSuspiciousOcr && !ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          kind: 'flight_ocr',
+          row,
+          text: `OCR-Scheinwert ${normalizeFlightNumber(ride.flightRejectedSuspiciousOcrInitial)} wurde verworfen, weil die Flugzelle nur leer/Platzhalter zeigte – Original-Planliste prüfen`
+        });
+      }
+
+      // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
+      // Das verhindert genau den heute beobachteten Fall "Palma vorhanden, EW9577 weg".
+      if (!ride.flightNumber && ride.flightLocation) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugort „${normalizeFlightLocation(ride.flightLocation)}“ vorhanden, aber Flugnummer fehlt – Original-Planliste prüfen; Ort bleibt erhalten`
+        });
+      }
+      // CORE-007A: Erfolgreich per lokalem Mehrfach-Konsens wiederhergestellte
+      // Flugnummern werden nicht mehr als OCR-Problem gezählt. Falls der Flugort noch
+      // fehlt/unsicher ist, erscheint das weiter unten separat als 'Flugprüfung offen'.
+      if (ride.flightRecoveredFromRow && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Flugnummer ${ride.flightNumber} außerhalb der erwarteten Flugspalte erkannt und gesichert – bitte einmal prüfen`
+        });
+      } else if (ride.flightRecoveryAmbiguous) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: 'Mehrere mögliche Flugnummern in derselben Zeile erkannt – nicht automatisch zugeordnet'
+        });
+      }
+
+      if (ride.flightNumber && !ride.flightLocation) {
+        const flightNumber = normalizeFlightNumber(ride.flightNumber);
+        const key = [
+          flightNumber,
+          cellText(ride.date),
+          cellText(ride.flightDirection),
+          normalizeTime(ride.flightTime)
+        ].join('|');
+        if (!missingFlightLocations.has(key)) {
+          missingFlightLocations.set(key, { flightNumber, rows: [] });
+        }
+        missingFlightLocations.get(key).rows.push(row);
+      }
+
+      if (ride.flightNumber && ride.flightLocation && (ride.flightNeedsManualCheck || ride.flightCheckConfidence === 'uncertain')) {
+        const flightNumber = normalizeFlightNumber(ride.flightNumber);
+        const key = [
+          flightNumber,
+          cellText(ride.date),
+          cellText(ride.flightDirection),
+          normalizeTime(ride.flightTime)
+        ].join('|');
+        if (!manualFlightChecks.has(key)) {
+          manualFlightChecks.set(key, {
+            flightNumber,
+            location: normalizeFlightLocation(ride.flightLocation),
+            rows: []
+          });
+        }
+        manualFlightChecks.get(key).rows.push(row);
+      }
+
+      if (ride.persons < 0) issues.push({ level: 'warning', row, text: 'Personenzahl ist ungültig' });
+
+      const priceCheck = pricePlausibility(ride.price);
+      const priceDecision = state.priceDecisions[String(ride.id || row)] || '';
+      if (ride.priceRequired !== false && priceCheck.suspicious && !priceDecision) {
+        const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
+        const suggestionText = priceCheck.suggestion !== null
+          ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
+          : '';
+        issues.push({
+          level: 'warning',
+          kind: 'price',
+          missingPrice: Boolean(priceCheck.missing),
+          row,
+          rideId: String(ride.id || row),
+          originalPrice: Number(ride.price) || 0,
+          suggestedPrice: priceCheck.suggestion,
+          text: priceCheck.missing
+            ? 'Preis fehlt oder wurde beim OCR nicht sicher erkannt – bitte mit der Original-Planliste prüfen. Keine automatische Preiskorrektur.'
+            : `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
+        });
+      }
+
+      const fingerprint = [ride.time, cleanKey(ride.pickup), cleanKey(ride.destination), cleanKey(ride.driver), ride.flightNumber].join('|');
+      if (fingerprints.has(fingerprint)) issues.push({ level: 'warning', row, text: 'Mögliche doppelte Fahrt erkannt' });
+      fingerprints.add(fingerprint);
+    });
+
+    const nextDayCandidates = rides.filter(ride => ride.dateNeedsManualCheck && ride.dateCandidateNextDay);
+    if (nextDayCandidates.length) {
+      const times = nextDayCandidates.map(ride => cellText(ride.time)).filter(Boolean).sort();
+      const firstTime = times[0] || '00:00';
+      const lastTime = times[times.length - 1] || '05:59';
+      issues.push({
+        level: 'error',
+        kind: 'date_batch',
+        row: 0,
+        count: nextDayCandidates.length,
+        firstTime,
+        lastTime,
+        baseDate: currentPlanDate(),
+        nextDate: addDaysIso(currentPlanDate(), 1),
+        text: `${nextDayCandidates.length} Fahrt(en) liegen zwischen ${firstTime} und ${lastTime}. Gehören diese Fahrten zum Folgetag ${formatPlanDate(addDaysIso(currentPlanDate(), 1))}?`
+      });
+    }
+
+    manualFlightChecks.forEach(group => {
+      const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
+      issues.push({
+        level: 'info',
+        kind: 'flight_check',
+        row: rows[0],
+        rows,
+        flightNumber: group.flightNumber,
+        text: `Flugort für ${group.flightNumber} bleibt ${group.location || 'vorhanden'} – Flugprüfung noch offen`
+      });
+    });
+
+    missingFlightLocations.forEach(group => {
+      const rows = [...new Set(group.rows)].sort((a, b) => Number(a) - Number(b));
+      issues.push({
+        level: 'info',
+        kind: 'flight_check',
+        row: rows[0],
+        rows,
+        flightNumber: group.flightNumber,
+        text: `Flugort für ${group.flightNumber} fehlt – aktuelle Flugprüfung offen`
+      });
+    });
+
+    issues.sort((a, b) => Number(a.row || 0) - Number(b.row || 0));
+    return issues;
+  }
+
+  function parseDelimited(text, delimiter) {
+    const matrix = [];
+    let row = [], cell = '', quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i], next = text[i + 1];
+      if (char === '"') {
+        if (quoted && next === '"') { cell += '"'; i++; } else quoted = !quoted;
+      } else if (char === delimiter && !quoted) {
+        row.push(cell); cell = '';
+      } else if ((char === '\n' || char === '\r') && !quoted) {
+        if (char === '\r' && next === '\n') i++;
+        row.push(cell);
+        if (row.some(value => cellText(value))) matrix.push(row);
+        row = []; cell = '';
+      } else cell += char;
+    }
+    row.push(cell);
+    if (row.some(value => cellText(value))) matrix.push(row);
+    return matrix;
+  }
+
+
+
+  function isImageFile(file) {
+    return /^image\//i.test(file.type || '') || /\.(jpe?g|png|webp)$/i.test(file.name || '');
+  }
+
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht geöffnet werden.')); };
+      img.src = url;
+    });
+  }
+
+  async function preprocessImage(file) {
+    const img = await loadImage(file);
+    const maxWidth = 3200;
+    const scale = Math.min(3, Math.max(1.6, maxWidth / img.naturalWidth));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = image.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.65 + 128));
+      const value = contrast > 205 ? 255 : contrast < 75 ? 0 : contrast;
+      d[i] = d[i + 1] = d[i + 2] = value;
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  // ATMS Bildimport – Spalten werden aus der sichtbaren Kopfzeile erkannt.
+  // Es gibt KEINE feste flexible Spalten-Annahme mehr.
+  // Die wiederholte Uhrzeit-Spalte ist optional; Spalten dürfen verschoben werden.
+
+  function groupOcrLines(words, minConfidence = 18) {
+    const usable = (words || []).filter(w => {
+      const value = cellText(w.text);
+      const conf = Number(w.confidence ?? w.conf ?? 0);
+      const normalized = value.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const plausibleTime = /^\d{1,2}[:.]\d{2}$/.test(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g, ''));
+      // CORE-005A: Farbige Planzeilen koennen einzelne schwach erkannte Woerter liefern.
+      // Mit fester Tabellenstruktur ist 18 als Grundschwelle sicherer; Zeitanker duerfen
+      // noch etwas schwaecher sein, damit keine komplette Fahrtzeile verschwindet.
+      // CORE-007D darf NUR fuer den bereits geometrisch streng validierten
+      // kopfzeilenlosen Fallback zusaetzlich einen losen Durchlauf mit minConfidence=0
+      // verwenden. Der normale Kopfzeilenpfad bleibt unveraendert streng.
+      const floor = Number.isFinite(Number(minConfidence)) ? Number(minConfidence) : 18;
+      return value && w.bbox && (conf >= floor || (plausibleTime && conf >= Math.min(10, floor)));
+    }).map(w => ({
+      text: cellText(w.text),
+      key: cleanKey(w.text),
+      x0: Number(w.bbox.x0 || 0),
+      x1: Number(w.bbox.x1 || 0),
+      y0: Number(w.bbox.y0 || 0),
+      y1: Number(w.bbox.y1 || 0),
+      cy: (Number(w.bbox.y0 || 0) + Number(w.bbox.y1 || 0)) / 2
+    })).sort((a,b) => a.cy - b.cy || a.x0 - b.x0);
+
+    const heights = usable.map(w => Math.max(1, w.y1 - w.y0)).sort((a,b)=>a-b);
+    const medianH = heights.length ? heights[Math.floor(heights.length / 2)] : 20;
+    const tolerance = Math.max(10, medianH * 0.72);
+    const lines = [];
+
+    usable.forEach(word => {
+      let line = lines.find(item => Math.abs(item.cy - word.cy) <= tolerance);
+      if (!line) {
+        line = { cy: word.cy, words: [] };
+        lines.push(line);
+      }
+      line.words.push(word);
+      line.cy = line.words.reduce((sum,w)=>sum+w.cy,0) / line.words.length;
+    });
+
+    lines.forEach(line => line.words.sort((a,b)=>a.x0-b.x0));
+    return lines.sort((a,b)=>a.cy-b.cy);
+  }
+
+  function canonicalImageHeaderLabel(key) {
+    if (key === 'preis' || key === 'price') return 'Preis';
+    if (key === 'uhrzeit' || key === 'zeit') return 'Uhrzeit';
+    if (key === 'von' || key === 'from') return 'Von';
+    if (key === 'nach' || key === 'to') return 'Nach';
+    if (key === 'name' || key === 'kunde') return 'Name';
+    if (key === 'firma' || key === 'company') return 'Firma';
+    if (key === 'wg' || key === 'wagen') return 'Wg';
+    if (key === 'pers' || key === 'personen' || key === 'pax') return 'Pers';
+    if (key === 'ort' || key === 'flugort') return 'Ort';
+    if (key === 'fahrer' || key === 'driver') return 'Fahrer';
+    return '';
+  }
+
+  function headerAnchorsFromLine(line) {
+    const anchors = [];
+    const words = line.words || [];
+
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const key = cleanKey(word.text);
+
+      if (key === 'flug' && words[i + 1]) {
+        const nextKey = cleanKey(words[i + 1].text);
+        if (/^(ang|ank|ankunft)$/.test(nextKey)) {
+          anchors.push({
+            label: 'Flug ang.',
+            key: 'flugang',
+            x: (word.x0 + words[i + 1].x1) / 2
+          });
+          i++;
+          continue;
+        }
+        if (/^(ausg|aus|abg|abflug)$/.test(nextKey)) {
+          anchors.push({
+            label: 'Flug ausg.',
+            key: 'flugausg',
+            x: (word.x0 + words[i + 1].x1) / 2
+          });
+          i++;
+          continue;
+        }
+      }
+
+      // OCR schreibt gelegentlich "Flugang." / "Flugausg." in ein Wort.
+      if (/^flug(ang|ank|ankunft)$/.test(key)) {
+        anchors.push({ label: 'Flug ang.', key: 'flugang', x: (word.x0 + word.x1) / 2 });
+        continue;
+      }
+      if (/^flug(ausg|aus|abg|abflug)$/.test(key)) {
+        anchors.push({ label: 'Flug ausg.', key: 'flugausg', x: (word.x0 + word.x1) / 2 });
+        continue;
+      }
+
+      const label = canonicalImageHeaderLabel(key);
+      if (label) anchors.push({ label, key: cleanKey(label), x: (word.x0 + word.x1) / 2 });
+    }
+
+    return anchors.sort((a,b)=>a.x-b.x);
+  }
+
+  function scoreImageHeaderAnchors(anchors) {
+    const keys = anchors.map(a => a.key);
+    let score = 0;
+    ['preis','uhrzeit','von','nach','name','firma','flugang','flugausg','pers','ort','fahrer','wg']
+      .forEach(key => { if (keys.includes(key)) score++; });
+    if (keys.includes('von') && keys.includes('nach')) score += 2;
+    if (keys.includes('uhrzeit')) score += 1;
+    return score;
+  }
+
+  function detectImageHeaderLine(lines) {
+    let best = null;
+    lines.slice(0, Math.min(lines.length, 35)).forEach((line, index) => {
+      const anchors = headerAnchorsFromLine(line);
+      const score = scoreImageHeaderAnchors(anchors);
+      if (!best || score > best.score) best = { line, index, anchors, score };
+    });
+    return best;
+  }
+
+  function anchorsToBoundaries(anchors, width) {
+    const sorted = anchors.slice().sort((a,b)=>a.x-b.x);
+    const boundaries = [0];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      boundaries.push((sorted[i].x + sorted[i + 1].x) / 2);
+    }
+    boundaries.push(width);
+    return { sorted, boundaries };
+  }
+
+  // CORE-005A/005L: Bekannte ATMS-Bildformate besitzen 12 Spalten ohne Preis
+  // bzw. 13 Spalten mit Preis. Eine schlecht gelesene Ueberschrift darf nicht mehr
+  // dazu fuehren, dass z. B. 'Flug ausg.' verschwindet und alle folgenden Zellen
+  // in die falsche Spalte rutschen.
+  const ATMS_IMAGE_SCHEMA_12 = [
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  const ATMS_IMAGE_SCHEMA_13_MIRROR = [
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  const ATMS_IMAGE_SCHEMA_13_PRICE = [
+    { label: 'Preis', key: 'preis' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  const ATMS_IMAGE_SCHEMA_14_PRICE = [
+    { label: 'Preis', key: 'preis' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Von', key: 'von' },
+    { label: 'Nach', key: 'nach' },
+    { label: 'Name', key: 'name' },
+    { label: 'Firma', key: 'firma' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Flug ang.', key: 'flugang' },
+    { label: 'Flug ausg.', key: 'flugausg' },
+    { label: 'Wg', key: 'wg' },
+    { label: 'Pers', key: 'pers' },
+    { label: 'Uhrzeit', key: 'uhrzeit' },
+    { label: 'Ort', key: 'ort' },
+    { label: 'Wg', key: 'wg' }
+  ];
+
+  function chooseAtmsImageSchema(observed) {
+    const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
+    const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
+    const timeAnchors = input.filter(anchor => anchor.key === 'uhrzeit' || anchor.key === 'zeit');
+
+    // CORE-006C: Auch Listen OHNE Preis können eine zusätzliche gespiegelte
+    // Planzeit direkt nach "Firma" besitzen. Drei erkannte Uhrzeit-Header sind
+    // dafür ein starkes, layoutunabhängiges Signal.
+    if (!hasPrice && timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_13_MIRROR;
+    if (hasPrice && timeAnchors.length >= 3) return ATMS_IMAGE_SCHEMA_14_PRICE;
+
+    // Falls genau die mittlere "Uhrzeit" vom OCR fehlt, wird nur bei klarer
+    // Kopfzeilen-Geometrie ein Mirror-Schema rekonstruiert.
+    const firma = input.find(anchor => anchor.key === 'firma');
+    const firstFlight = input.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    let mirrorGap = false;
+    if (firma && firstFlight && firstFlight.x > firma.x) {
+      const gaps = [];
+      for (let i = 1; i < input.length; i++) {
+        const gap = Number(input[i].x) - Number(input[i - 1].x);
+        if (Number.isFinite(gap) && gap > 3) gaps.push(gap);
+      }
+      const sorted = gaps.slice().sort((a,b)=>a-b);
+      const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+      // Ohne Preis etwas konservativer, damit echte 12-Spalten-Listen nicht
+      // wegen einer breiten Firma-Spalte fälschlich erweitert werden.
+      const factor = hasPrice ? 1.55 : 1.80;
+      mirrorGap = median > 0 && (firstFlight.x - firma.x) >= median * factor;
+    }
+
+    if (!hasPrice) return mirrorGap ? ATMS_IMAGE_SCHEMA_13_MIRROR : ATMS_IMAGE_SCHEMA_12;
+    return mirrorGap ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_PRICE;
+  }
+
+  function hasNoPriceMirrorDataEvidence(lines, header) {
+    const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
+    if (!anchors.length) return false;
+    if (anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) return false;
+
+    const firma = anchors.find(anchor => anchor.key === 'firma');
+    const firstFlight = anchors.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
+    if (!firma || !firstFlight || !(firstFlight.x > firma.x)) return false;
+
+    const left = Number(firma.x);
+    const right = Number(firstFlight.x);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right - left < 8) return false;
+
+    let evidenceRows = 0;
+    for (const line of (lines || []).slice((header.index || 0) + 1)) {
+      const regionWords = (line.words || []).filter(word => {
+        const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+        return cx > left && cx < right;
+      });
+      if (!regionWords.length) continue;
+
+      const joined = regionWords
+        .map(word => cellText(word.text))
+        .join('')
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il]/g, '1');
+
+      const matches = joined.match(/(?:^|\D)([0-2]?\d[:.]?[0-5]\d)(?!\d)/g) || [];
+      const plausible = matches.some(token => {
+        const digits = token.replace(/\D/g, '');
+        if (digits.length < 3 || digits.length > 4) return false;
+        const padded = digits.padStart(4, '0');
+        const hh = Number(padded.slice(0, 2));
+        const mm = Number(padded.slice(2));
+        return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59;
+      });
+
+      if (plausible) evidenceRows++;
+      if (evidenceRows >= 2) return true;
+    }
+    return false;
+  }
+
+  function completeAtmsImageAnchors(observed, width, forcedSchema = null) {
+    const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
+    const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
+    const schema = forcedSchema || chooseAtmsImageSchema(input);
+    const slots = Array(schema.length).fill(null);
+    let cursor = 0;
+    let matched = 0;
+
+    const compatible = (schemaIndex, anchor) => {
+      const expected = schema[schemaIndex].key;
+      const actual = anchor.key;
+      if (expected === actual) return true;
+      // Die rechte Fahrer-Spalte ist je nach Planquelle als Wg, Name oder Fahrer
+      // beschriftet. Alle drei Varianten sind nur im LETZTEN Schema-Slot kompatibel.
+      if (schemaIndex === schema.length - 1 && (actual === 'fahrer' || actual === 'name')) return true;
+      return false;
+    };
+
+    for (const anchor of input) {
+      let hit = -1;
+      for (let i = cursor; i < schema.length; i++) {
+        if (compatible(i, anchor)) {
+          hit = i;
+          break;
+        }
+      }
+      if (hit < 0) continue;
+
+      const isDriverSlot = hit === schema.length - 1;
+      const preserveDriverHeader = isDriverSlot && (anchor.key === 'name' || anchor.key === 'fahrer');
+      slots[hit] = {
+        ...anchor,
+        label: preserveDriverHeader ? anchor.label : schema[hit].label,
+        key: preserveDriverHeader ? anchor.key : schema[hit].key,
+        synthetic: false
+      };
+      cursor = hit + 1;
+      matched++;
+    }
+
+    // Nur anwenden, wenn die Grundstruktur wirklich erkannt wurde.
+    // Bei Preis-Layout muessen Preis/Von/Nach vorhanden sein; ohne Preis Von/Nach.
+    const pickupIndex = hasPrice ? 2 : 1;
+    const destinationIndex = hasPrice ? 3 : 2;
+    const priceOk = !hasPrice || Boolean(slots[0]);
+    if (matched < 7 || !slots[pickupIndex] || !slots[destinationIndex] || !priceOk) {
+      return { anchors: input, standard: false, syntheticCount: 0 };
+    }
+
+    for (let i = 0; i < slots.length; i++) {
+      if (slots[i]) continue;
+
+      let left = i - 1;
+      while (left >= 0 && !slots[left]) left--;
+      let right = i + 1;
+      while (right < slots.length && !slots[right]) right++;
+
+      let x;
+      if (left >= 0 && right < slots.length) {
+        const ratio = (i - left) / (right - left);
+        x = slots[left].x + (slots[right].x - slots[left].x) * ratio;
+      } else if (right < slots.length) {
+        x = slots[right].x * ((i + 1) / (right + 1));
+      } else if (left >= 0) {
+        x = slots[left].x + (width - slots[left].x) * ((i - left) / (slots.length - left));
+      } else {
+        x = width * ((i + 0.5) / slots.length);
+      }
+
+      slots[i] = {
+        label: schema[i].label,
+        key: schema[i].key,
+        x,
+        synthetic: true
+      };
+    }
+
+    // Monotone X-Positionen erzwingen; niemals Spalten kreuzen.
+    for (let i = 1; i < slots.length; i++) {
+      if (slots[i].x <= slots[i - 1].x + 2) slots[i].x = slots[i - 1].x + 3;
+    }
+
+    return {
+      anchors: slots,
+      standard: true,
+      syntheticCount: slots.filter(anchor => anchor.synthetic).length
+    };
+  }
+
+  function imageSemanticColumns(anchors) {
+    const list = Array.isArray(anchors) ? anchors : [];
+    const indexesOf = key => list.map((anchor,index)=>anchor?.key===key?index:-1).filter(index=>index>=0);
+    const firstOf = key => {
+      const index = list.findIndex(anchor => anchor?.key === key);
+      return index >= 0 ? index : undefined;
+    };
+    const times = indexesOf('uhrzeit');
+    const wg = indexesOf('wg');
+    const names = indexesOf('name');
+    const explicitDriver = firstOf('fahrer');
+    const locationIndex = firstOf('ort');
+    const rightWgDriver = wg.length >= 2
+      ? wg.slice().reverse().find(index => locationIndex === undefined || index > locationIndex)
+      : undefined;
+    return {
+      price: firstOf('preis'),
+      rideTime: times.length ? times[0] : undefined,
+      timeMirror: times.length >= 3 ? times[1] : undefined,
+      flightTime: times.length >= 2 ? times[times.length - 1] : undefined,
+      pickup: firstOf('von'),
+      destination: firstOf('nach'),
+      customer: names.length ? names[0] : undefined,
+      company: firstOf('firma'),
+      arrivalFlight: firstOf('flugang'),
+      departureFlight: firstOf('flugausg'),
+      vehicle: wg.length ? wg[0] : undefined,
+      persons: firstOf('pers'),
+      location: firstOf('ort'),
+      driver: explicitDriver !== undefined
+        ? explicitDriver
+        : (names.length >= 2 ? names[names.length - 1] : rightWgDriver)
+    };
+  }
+
+
+  // CORE-007D: Sicherer Fallback fuer Bildausschnitte ohne Kopfzeile.
+  // Die normierten Grenzen beschreiben ausschließlich das bereits bekannte
+  // 13-Spalten-ATMS-Preislayout. Sie werden NICHT blind verwendet: Zuerst werden
+  // mehrere echte Preis-/Zeitanker aus den OCR-Daten bestimmt, die Vorlage daran
+  // skaliert und anschließend jede erkannte Datenzeile semantisch gegengeprueft.
+  // Bei fehlender/mehrdeutiger Evidenz wird weiterhin abgebrochen.
+  const ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS = [
+    0.0052083333, 0.06640625, 0.1106770833, 0.263671875,
+    0.3984375, 0.48828125, 0.5475260417, 0.611328125,
+    0.671875, 0.7180989583, 0.7584635417, 0.822265625,
+    0.9296875, 0.9954427083
+  ];
+
+  function medianNumber(values) {
+    const list = (values || []).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    if (!list.length) return null;
+    const mid = Math.floor(list.length / 2);
+    return list.length % 2 ? list[mid] : (list[mid - 1] + list[mid]) / 2;
+  }
+
+  function headerlessPriceLike(value) {
+    const text = cellText(value)
+      .replace(/[Oo]/g, '0')
+      .replace(/\s+/g, '')
+      .replace(/€/g, '');
+    return /(?:^|\D)\d{1,4}(?:[.,]\d{3})*[.,]\d{2}(?:\D|$)/.test(text);
+  }
+
+  function headerlessTimeLike(value) {
+    const text = cellText(value).replace(/[Oo]/g, '0').replace(/[Il]/g, '1').trim();
+    // Dezimalpreise wie 65,45 duerfen niemals als 06:54/65:45-Zeitanker dienen.
+    // Kompaktzeit ist nur zulaessig, wenn der komplette OCR-Token wirklich nur
+    // aus 3-4 Ziffern besteht.
+    return looksLikeTime(text) || /^\d{3,4}$/.test(text);
+  }
+
+  function headerlessLineAnchor(line, predicate, minX = -Infinity, maxX = Infinity) {
+    const hits = (line?.words || []).filter(word => {
+      const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+      return cx >= minX && cx <= maxX && predicate(word.text);
+    });
+    if (!hits.length) return null;
+    const first = hits[0];
+    return (Number(first.x0 || 0) + Number(first.x1 || 0)) / 2;
+  }
+
+  function headerlessCellsFromLine(line, boundaries, columnCount) {
+    const cells = Array(columnCount).fill('').map(()=>[]);
+    (line?.words || []).forEach(word => {
+      const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+      let col = boundaries.findIndex((right, i) => i > 0 && cx < right) - 1;
+      if (col < 0) col = 0;
+      if (col >= cells.length) col = cells.length - 1;
+      cells[col].push({ text: cellText(word.text), x0: Number(word.x0 || 0) });
+    });
+    return cells.map(parts => parts.sort((a,b)=>a.x0-b.x0).map(item=>item.text).join(' ').replace(/\s+/g,' ').trim());
+  }
+
+  function headerlessDriverLike(value) {
+    const text = cellText(value)
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ]+|[^A-Za-zÄÖÜäöüßÀ-ÿ]+$/g, '')
+      .trim();
+    if (!text) return false;
+    // In der echten Fahrer-Spalte ist auch der operative Wert "Taxi" erlaubt.
+    if (/^taxi$/i.test(text)) return true;
+    return /^[A-Za-zÄÖÜäöüßÀ-ÿ][A-Za-zÄÖÜäöüßÀ-ÿ\- ]{1,39}$/.test(text);
+  }
+
+  function headerlessTextLike(value, minLetters = 2) {
+    const text = cellText(value).replace(/\s+/g, ' ').trim();
+    if (!text) return false;
+    const letters = (text.match(/[A-Za-zÄÖÜäöüßÀ-ÿ]/g) || []).length;
+    return letters >= minLetters;
+  }
+
+  function headerlessCoreRowCheck(row) {
+    if (!Array.isArray(row) || row.length < ATMS_IMAGE_SCHEMA_13_PRICE.length) {
+      return { ok: false, flight: false, fields: {} };
+    }
+
+    const priceRaw = cellText(row[0]);
+    const timeRaw = cellText(row[1]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const pickup = cellText(row[2]);
+    const destination = cellText(row[3]);
+    const customer = cellText(row[4]);
+    const company = cellText(row[5]);
+    const arrival = normalizeFlightNumber(row[6]);
+    const departure = normalizeFlightNumber(row[7]);
+    const vehicle = cellText(row[8]);
+    const persons = parseNumber(row[9]);
+    const driver = cellText(row[12]);
+
+    const fields = {
+      price: headerlessPriceLike(priceRaw) && parseNumber(priceRaw) > 0,
+      time: headerlessTimeLike(timeRaw) && Boolean(normalizeTime(timeRaw)),
+      pickup: headerlessTextLike(pickup),
+      destination: headerlessTextLike(destination),
+      customer: headerlessTextLike(customer),
+      company: headerlessTextLike(company),
+      vehicle: Boolean(vehicle && !/^\d+(?:[.,]\d+)?$/.test(vehicle) && headerlessTextLike(vehicle, 2)),
+      persons: Number.isFinite(persons) && persons >= 1 && persons <= 99,
+      driver: headerlessDriverLike(driver)
+    };
+    const flight = Boolean(arrival || departure);
+
+    // Falls eine Flugnummer erkannt wurde, darf sie nur in genau einer der beiden
+    // benachbarten Flugspalten stehen. Richtung/Flughafen wird spaeter weiterhin
+    // aus den echten Routendaten bestimmt; hier wird nichts geraten.
+    const flightColumnsOk = !(arrival && departure);
+    const coreOk = Object.values(fields).every(Boolean);
+
+    return {
+      ok: coreOk && flightColumnsOk,
+      flight,
+      flightColumnsOk,
+      fields
+    };
+  }
+
+  function headerlessRecurringColumnEvidence(lines, boundaries) {
+    const columnCount = Math.max(0, (boundaries || []).length - 1);
+    if (!Array.isArray(lines) || lines.length < 2 || columnCount !== ATMS_IMAGE_SCHEMA_13_PRICE.length) {
+      return { safe: false, rowCount: 0, counts: [], stableColumns: 0 };
+    }
+
+    const counts = Array(columnCount).fill(0);
+    let usableRows = 0;
+    let leftAnchoredRows = 0;
+    let routeRows = 0;
+    let rightRows = 0;
+    let flightRows = 0;
+
+    lines.forEach(line => {
+      const words = Array.isArray(line?.words) ? line.words : [];
+      if (words.length < 4) return;
+      const occupied = Array(columnCount).fill(false);
+      words.forEach(word => {
+        const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+        if (!Number.isFinite(cx)) return;
+        let col = boundaries.findIndex((right, index) => index > 0 && cx < right) - 1;
+        if (col < 0) col = 0;
+        if (col >= columnCount) col = columnCount - 1;
+        occupied[col] = true;
+      });
+
+      const occupiedCount = occupied.filter(Boolean).length;
+      if (occupiedCount < 4) return;
+      usableRows++;
+      occupied.forEach((value, index) => { if (value) counts[index]++; });
+
+      if (occupied[0] && occupied[1]) leftAnchoredRows++;
+      if (occupied[2] && occupied[3]) routeRows++;
+      if (occupied[12]) rightRows++;
+      if (occupied[6] || occupied[7]) flightRows++;
+    });
+
+    if (usableRows < 2) return { safe: false, rowCount: usableRows, counts, stableColumns: 0 };
+
+    const majority = Math.max(2, Math.ceil(usableRows * 0.60));
+    const half = Math.max(2, Math.ceil(usableRows * 0.50));
+    const stableColumns = counts.filter(count => count >= half).length;
+
+    // Sicherheitsprinzip: Nicht ein einzelner Wert beweist das Layout, sondern
+    // mehrere Zeilen muessen dieselben X-Korridore wiederholen. Preis+Zeit links,
+    // Von+Nach in der Mitte sowie Fahrer rechts sind dabei Pflicht. Flugspalten
+    // muessen bei mindestens zwei Zeilen belegt sein. Leere Ort-/Spiegelzeit-Zellen
+    // sind ausdruecklich erlaubt und zaehlen nicht gegen das Layout.
+    const safe =
+      leftAnchoredRows >= majority &&
+      routeRows >= majority &&
+      rightRows >= half &&
+      flightRows >= Math.min(2, usableRows) &&
+      counts[4] >= half &&
+      counts[5] >= half &&
+      counts[8] >= half &&
+      stableColumns >= 8;
+
+    return {
+      safe,
+      rowCount: usableRows,
+      counts,
+      stableColumns,
+      majority,
+      leftAnchoredRows,
+      routeRows,
+      rightRows,
+      flightRows
+    };
+  }
+
+  function inferHeaderlessAtmsPriceLayout(lines, width, diagnostics = null) {
+    // CORE-007D3: Reine Diagnoseinstrumentierung. Jede bisherige Ja/Nein-
+    // Entscheidung bleibt unverändert; bei einem Abbruch wird nur dokumentiert,
+    // welche Sicherheitsstufe abgelehnt hat.
+    const diag = diagnostics && typeof diagnostics === 'object' ? diagnostics : {};
+    const reject = (reason, extra = {}) => {
+      Object.assign(diag, extra, { accepted: false, rejectReason: reason });
+      return null;
+    };
+
+    const usableLines = (lines || []).filter(line => (line?.words || []).length >= 4);
+    Object.assign(diag, {
+      inputLines: Array.isArray(lines) ? lines.length : 0,
+      usableLines: usableLines.length,
+      width: Number(width) || 0
+    });
+    if (usableLines.length < 2 || !Number.isFinite(Number(width)) || Number(width) < 500) {
+      return reject('insufficient_usable_lines_or_width');
+    }
+
+    const priceCenters = [];
+    const timeCenters = [];
+    const priceLines = new Set();
+    const timeLines = new Set();
+
+    usableLines.forEach((line, index) => {
+      const priceX = headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16);
+      const timeX = headerlessLineAnchor(line, headerlessTimeLike, 0, width * 0.24);
+      if (Number.isFinite(priceX)) {
+        priceCenters.push(priceX);
+        priceLines.add(index);
+      }
+      if (Number.isFinite(timeX)) {
+        timeCenters.push(timeX);
+        timeLines.add(index);
+      }
+    });
+
+    Object.assign(diag, {
+      priceAnchors: priceCenters.length,
+      timeAnchors: timeCenters.length
+    });
+
+    // CORE-007D2-Entscheidung bleibt unveraendert.
+    if (priceCenters.length < 2 || timeCenters.length < 2) {
+      return reject('insufficient_price_or_time_anchors');
+    }
+
+    const observedPrice = medianNumber(priceCenters);
+    const observedTime = medianNumber(timeCenters);
+    Object.assign(diag, { observedPrice, observedTime });
+    if (!Number.isFinite(observedPrice) || !Number.isFinite(observedTime) || observedTime <= observedPrice) {
+      return reject('invalid_anchor_medians');
+    }
+
+    const templatePriceCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1]) / 2;
+    const templateTimeCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[2]) / 2;
+
+    const scalePx = width;
+    const offsetPx = observedTime - scalePx * templateTimeCenter;
+    const expectedPrice = offsetPx + scalePx * templatePriceCenter;
+    Object.assign(diag, { offsetPx, expectedPrice, priceDeviationPx: Math.abs(observedPrice - expectedPrice) });
+    if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.05) {
+      return reject('template_offset_out_of_range');
+    }
+    if (Math.abs(observedPrice - expectedPrice) > width * 0.04) {
+      return reject('price_anchor_not_matching_template');
+    }
+
+    const boundaries = ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS.map(ratio => offsetPx + scalePx * ratio);
+    if (boundaries.some((value,index) => !Number.isFinite(value) || (index && value <= boundaries[index - 1]))) {
+      return reject('invalid_column_boundaries');
+    }
+    if (boundaries[0] < -width * 0.04 || boundaries[0] > width * 0.07) {
+      return reject('left_boundary_out_of_range', { firstBoundary: boundaries[0] });
+    }
+    if (boundaries[boundaries.length - 1] < width * 0.91 || boundaries[boundaries.length - 1] > width * 1.05) {
+      return reject('right_boundary_out_of_range', { lastBoundary: boundaries[boundaries.length - 1] });
+    }
+
+    // CORE-007D2-Entscheidung bleibt unveraendert.
+    const candidateLines = usableLines.filter((line, index) => {
+      if (!priceLines.has(index) && !timeLines.has(index)) return false;
+      const words = line?.words || [];
+      if (!words.length) return false;
+      const xs0 = words.map(word => Number(word.x0 || 0)).filter(Number.isFinite);
+      const xs1 = words.map(word => Number(word.x1 || 0)).filter(Number.isFinite);
+      if (!xs0.length || !xs1.length) return false;
+      const minX = Math.min(...xs0);
+      const maxX = Math.max(...xs1);
+      return minX <= width * 0.20 && maxX >= width * 0.45;
+    });
+    diag.candidateLines = candidateLines.length;
+    if (candidateLines.length < 2) return reject('insufficient_candidate_lines');
+
+    const semanticRows = [];
+    candidateLines.forEach(line => {
+      const row = headerlessCellsFromLine(line, boundaries, ATMS_IMAGE_SCHEMA_13_PRICE.length);
+      const check = headerlessCoreRowCheck(row);
+      semanticRows.push({ line, row, check });
+    });
+
+    const required = Math.max(2, Math.ceil(candidateLines.length * 0.75));
+    const verifiedRows = semanticRows.filter(item => item.check.ok);
+    const semanticValidated = verifiedRows.length >= required && verifiedRows.some(item => item.check.flight);
+
+    const recurring = headerlessRecurringColumnEvidence(candidateLines, boundaries);
+    Object.assign(diag, {
+      verifiedRows: verifiedRows.length,
+      requiredRows: required,
+      semanticValidated,
+      recurringSafe: Boolean(recurring.safe),
+      recurringRowCount: Number(recurring.rowCount || 0),
+      stableColumns: Number(recurring.stableColumns || 0),
+      leftAnchoredRows: Number(recurring.leftAnchoredRows || 0),
+      routeRows: Number(recurring.routeRows || 0),
+      rightRows: Number(recurring.rightRows || 0),
+      flightRows: Number(recurring.flightRows || 0)
+    });
+    if (!semanticValidated && !recurring.safe) {
+      return reject('semantic_and_recurring_validation_failed');
+    }
+
+    const anchors = ATMS_IMAGE_SCHEMA_13_PRICE.map((slot,index) => ({
+      label: slot.label,
+      key: slot.key,
+      x: (boundaries[index] + boundaries[index + 1]) / 2,
+      synthetic: true,
+      headerless: true
+    }));
+
+    Object.assign(diag, { accepted: true, rejectReason: '' });
+    return {
+      anchors,
+      boundaries,
+      semantic: imageSemanticColumns(anchors),
+      lines: candidateLines,
+      standard: true,
+      syntheticCount: anchors.length,
+      headerlessAtms: true,
+      needsCellRecovery: !semanticValidated,
+      diagnostics: diag,
+      validation: {
+        anchoredRows: candidateLines.length,
+        verifiedRows: verifiedRows.length,
+        requiredRows: required,
+        semanticValidated,
+        recurring
+      }
+    };
+  }
+
+  function formatHeaderlessOcrDiagnostic(diag) {
+    if (!diag || typeof diag !== 'object') return 'CORE-007D5 Diagnose: Grund=unknown';
+    const num = value => Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
+    const parts = [
+      `Grund=${cellText(diag.rejectReason) || 'unknown'}`,
+      `OCR-Zeilen=${num(diag.usableLines)}/${num(diag.inputLines)}`,
+      `Preisanker=${num(diag.priceAnchors)}`,
+      `Zeitanker=${num(diag.timeAnchors)}`
+    ];
+    if (diag.candidateLines !== undefined) parts.push(`Kandidaten=${num(diag.candidateLines)}`);
+    if (diag.verifiedRows !== undefined) parts.push(`Verifiziert=${num(diag.verifiedRows)}/${num(diag.requiredRows)}`);
+    if (diag.stableColumns !== undefined) parts.push(`StabileSpalten=${num(diag.stableColumns)}`);
+    if (diag.recurringRowCount !== undefined) {
+      parts.push(`X=${num(diag.leftAnchoredRows)}/${num(diag.routeRows)}/${num(diag.rightRows)}/${num(diag.flightRows)}`);
+    }
+    if (diag.priceAnchorRecovery) {
+      const rec = diag.priceAnchorRecovery;
+      parts.push(`PreisNachlese=${num(rec.recoveredRows)}/${num(rec.attemptedRows)}`);
+    }
+    return `CORE-007D5 Diagnose: ${parts.join(' · ')}`;
+  }
+
+  let headerlessPriceAnchorRecoveryDiagnostic = null;
+
+  function prepareHeaderlessPriceCrop(sourceCanvas, threshold = null, contrast = 1.0) {
+    if (!sourceCanvas || threshold === null || threshold === undefined || !Number.isFinite(Number(threshold))) return sourceCanvas;
+    const out = document.createElement('canvas');
+    out.width = sourceCanvas.width;
+    out.height = sourceCanvas.height;
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(sourceCanvas, 0, 0);
+    const image = ctx.getImageData(0, 0, out.width, out.height);
+    const data = image.data;
+    const t = Math.max(80, Math.min(235, Number(threshold)));
+    const c = Math.max(0.7, Math.min(1.8, Number(contrast) || 1));
+    for (let i = 0; i < data.length; i += 4) {
+      let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      gray = 128 + (gray - 128) * c;
+      const value = gray < t ? 0 : 255;
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+      data[i + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    return out;
+  }
+
+  async function recoverHeaderlessPriceAnchorsTargeted(words, imageCanvas, width) {
+    headerlessPriceAnchorRecoveryDiagnostic = {
+      attemptedRows: 0,
+      recoveredRows: 0,
+      skipped: '',
+      recovered: [],
+      strategy: 'price_cell_consensus_v2'
+    };
+
+    if (!Array.isArray(words) || !imageCanvas || !window.Tesseract || !Number.isFinite(Number(width)) || Number(width) < 500) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'missing_words_canvas_or_width';
+      return words;
+    }
+
+    const strictLines = groupOcrLines(words);
+    const header = detectImageHeaderLine(strictLines);
+    const hasSafeHeader = Boolean(header && header.score >= 6 && header.anchors.length >= 6);
+    if (hasSafeHeader) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'safe_header_present';
+      return words;
+    }
+
+    const lines = groupOcrLines(words, 0).filter(line => (line?.words || []).length >= 4);
+    if (lines.length < 2) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'insufficient_lines';
+      return words;
+    }
+
+    const existingPriceAnchors = lines.filter(line =>
+      Number.isFinite(headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16))
+    ).length;
+    const timeAnchoredLines = lines.map((line, index) => ({
+      line,
+      index,
+      timeX: headerlessLineAnchor(line, headerlessTimeLike, 0, width * 0.24),
+      hasPrice: Number.isFinite(headerlessLineAnchor(line, headerlessPriceLike, 0, width * 0.16))
+    })).filter(item => Number.isFinite(item.timeX));
+
+    headerlessPriceAnchorRecoveryDiagnostic.existingPriceAnchors = existingPriceAnchors;
+    headerlessPriceAnchorRecoveryDiagnostic.timeAnchors = timeAnchoredLines.length;
+
+    if (existingPriceAnchors >= 2) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'enough_existing_price_anchors';
+      return words;
+    }
+    if (timeAnchoredLines.length < 2) {
+      headerlessPriceAnchorRecoveryDiagnostic.skipped = 'insufficient_time_anchors';
+      return words;
+    }
+
+    const templatePriceCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1]) / 2;
+    const templateTimeCenter = (ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1] + ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[2]) / 2;
+    const augmented = words.slice();
+
+    for (const item of timeAnchoredLines) {
+      if (item.hasPrice) continue;
+
+      const offsetPx = item.timeX - width * templateTimeCenter;
+      if (!Number.isFinite(offsetPx) || Math.abs(offsetPx) > width * 0.05) continue;
+
+      const left = offsetPx + width * ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[0];
+      const right = offsetPx + width * ATMS_HEADERLESS_13_PRICE_BOUNDARY_RATIOS[1];
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+      if (left < -width * 0.04 || right > width * 0.18) continue;
+
+      const lineWords = item.line?.words || [];
+      const y0s = lineWords.map(word => Number(word.y0)).filter(Number.isFinite);
+      const y1s = lineWords.map(word => Number(word.y1)).filter(Number.isFinite);
+      if (!y0s.length || !y1s.length) continue;
+      const rowY0 = Math.min(...y0s);
+      const rowY1 = Math.max(...y1s);
+      const rowHeight = Math.max(12, rowY1 - rowY0);
+      const cellWidth = Math.max(20, right - left);
+
+      // CORE-007D5: mehrere bewusst unterschiedliche Innenausschnitte der
+      // Preiszelle. Zellrahmen/Eurozeichen werden teilweise abgeschnitten und
+      // farbige Schrift wird in mehreren Schwellenvarianten kontrastiert.
+      // Es wird weiterhin NUR ein explizit dezimal erkanntes Ergebnis akzeptiert.
+      const attemptsSpec = [
+        { id: 'raw-wide',     insetL: 0.02, insetR: 0.04, padY: 0.18, scale: 3, mode: '7', threshold: null, contrast: 1.0 },
+        { id: 'raw-inner',    insetL: 0.04, insetR: 0.14, padY: 0.12, scale: 4, mode: '7', threshold: null, contrast: 1.0 },
+        { id: 'bw165-inner',  insetL: 0.04, insetR: 0.14, padY: 0.12, scale: 4, mode: '7', threshold: 165, contrast: 1.15 },
+        { id: 'bw185-inner',  insetL: 0.03, insetR: 0.12, padY: 0.15, scale: 4, mode: '7', threshold: 185, contrast: 1.10 },
+        { id: 'bw205-tight',  insetL: 0.06, insetR: 0.16, padY: 0.08, scale: 5, mode: '7', threshold: 205, contrast: 1.05 },
+        { id: 'bw185-single', insetL: 0.03, insetR: 0.12, padY: 0.12, scale: 4, mode: '13', threshold: 185, contrast: 1.10 }
+      ];
+      const votes = new Map();
+      const attempts = [];
+
+      headerlessPriceAnchorRecoveryDiagnostic.attemptedRows++;
+
+      for (const spec of attemptsSpec) {
+        const x0 = left + cellWidth * spec.insetL;
+        const x1 = right - cellWidth * spec.insetR;
+        const py = rowHeight * spec.padY;
+        if (!(x1 > x0 + 8)) {
+          attempts.push({ id: spec.id, candidate: null, skipped: 'crop_too_narrow' });
+          continue;
+        }
+        const rawCrop = cropCanvasRegion(
+          imageCanvas,
+          Math.max(0, x0),
+          Math.max(0, rowY0 - py),
+          Math.min(imageCanvas.width, x1),
+          Math.min(imageCanvas.height, rowY1 + py),
+          spec.scale
+        );
+        const crop = spec.threshold !== null && spec.threshold !== undefined && Number.isFinite(Number(spec.threshold))
+          ? prepareHeaderlessPriceCrop(rawCrop, spec.threshold, spec.contrast)
+          : rawCrop;
+        try {
+          const result = await Tesseract.recognize(crop, 'eng', {
+            tessedit_pageseg_mode: spec.mode,
+            tessedit_char_whitelist: '0123456789,.'
+          });
+          const candidates = priceCandidatesFromOcrResult(result);
+          const candidate = candidates.length === 1 ? candidates[0] : null;
+          attempts.push({ id: spec.id, candidate });
+          if (!Number.isFinite(candidate)) continue;
+          const key = (Math.round(candidate * 100) / 100).toFixed(2);
+          votes.set(key, (votes.get(key) || 0) + 1);
+        } catch (_) {
+          attempts.push({ id: spec.id, candidate: null, error: true });
+        }
+      }
+
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+      if (!winner || winner[1] < 2 || (runner && runner[1] === winner[1])) {
+        headerlessPriceAnchorRecoveryDiagnostic.recovered.push({ row: item.index, accepted: false, attempts });
+        continue;
+      }
+
+      const value = Number(winner[0]);
+      if (!Number.isFinite(value) || value <= 0 || pricePlausibility(value).suspicious) {
+        headerlessPriceAnchorRecoveryDiagnostic.recovered.push({ row: item.index, accepted: false, attempts });
+        continue;
+      }
+
+      const priceCenter = offsetPx + width * templatePriceCenter;
+      const syntheticWidth = Math.max(20, (right - left) * 0.55);
+      augmented.push({
+        text: `${value.toFixed(2).replace('.', ',')} €`,
+        confidence: 99,
+        bbox: {
+          x0: Math.max(0, priceCenter - syntheticWidth / 2),
+          x1: Math.min(width, priceCenter + syntheticWidth / 2),
+          y0: rowY0,
+          y1: rowY1
+        },
+        _atmsHeaderlessRecoveredPriceAnchor: true,
+        _atmsHeaderlessPriceConsensusVersion: 'CORE-007D5'
+      });
+      headerlessPriceAnchorRecoveryDiagnostic.recoveredRows++;
+      headerlessPriceAnchorRecoveryDiagnostic.recovered.push({
+        row: item.index,
+        accepted: true,
+        value,
+        votes: winner[1],
+        attempts
+      });
+    }
+
+    return augmented;
+  }
+
+  function imageWordsToMatrix(words, width) {
+    const lines = groupOcrLines(words);
+    const header = detectImageHeaderLine(lines);
+    const hasSafeHeader = Boolean(header && header.score >= 6 && header.anchors.length >= 6);
+    // Nur wenn die normale sichere Kopfzeilenerkennung scheitert, wird ein zweiter
+    // OCR-Zeilensatz mit niedrigerer Wort-Konfidenz fuer die Headerless-Geometrie
+    // aufgebaut. Akzeptiert wird er erst nach der strengen Mehrzeilenvalidierung.
+    const headerlessLines = hasSafeHeader ? null : groupOcrLines(words, 0);
+    const headerlessDiagnostic = hasSafeHeader ? null : {
+      version: 'CORE-007D5',
+      headerScore: Number(header?.score || 0),
+      headerAnchors: Number(header?.anchors?.length || 0),
+      wordCount: Array.isArray(words) ? words.length : 0,
+      priceAnchorRecovery: headerlessPriceAnchorRecoveryDiagnostic ? { ...headerlessPriceAnchorRecoveryDiagnostic } : null
+    };
+    const headerlessLayout = hasSafeHeader ? null : inferHeaderlessAtmsPriceLayout(headerlessLines, width, headerlessDiagnostic);
+
+    if (!hasSafeHeader && !headerlessLayout) {
+      throw new Error(`Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden und der Ausschnitt ohne Kopfzeile war geometrisch nicht eindeutig genug. ${formatHeaderlessOcrDiagnostic(headerlessDiagnostic)} Bitte vollständige Kopfzeile mit hochladen.`);
+    }
+
+    const forceNoPriceMirror = hasSafeHeader ? hasNoPriceMirrorDataEvidence(lines, header) : false;
+    const completed = hasSafeHeader
+      ? completeAtmsImageAnchors(
+          header.anchors,
+          width,
+          forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null
+        )
+      : {
+          anchors: headerlessLayout.anchors,
+          standard: true,
+          syntheticCount: headerlessLayout.syntheticCount
+        };
+    const layout = hasSafeHeader
+      ? anchorsToBoundaries(completed.anchors, width)
+      : { sorted: headerlessLayout.anchors, boundaries: headerlessLayout.boundaries };
+    const anchors = layout.sorted;
+    const boundaries = layout.boundaries;
+    const semantic = imageSemanticColumns(anchors);
+    const headerRow = anchors.map(anchor => anchor.label);
+    const rows = [headerRow];
+    const rowMetaByMatrixIndex = {};
+    const dataLines = hasSafeHeader ? lines.slice(header.index + 1) : headerlessLayout.lines;
+
+    dataLines.forEach(line => {
+      const cells = Array(anchors.length).fill('').map(()=>[]);
+      (line.words || []).forEach(word => {
+        const cx = (word.x0 + word.x1) / 2;
+        let col = boundaries.findIndex((right, i) => i > 0 && cx < right) - 1;
+        if (col < 0) col = 0;
+        if (col >= cells.length) col = cells.length - 1;
+        cells[col].push(word.text);
+      });
+
+      const row = cells.map(parts => parts.join(' ').replace(/\s+/g,' ').trim());
+      const nonEmpty = row.filter(Boolean).length;
+
+      const rideTimeIndex = semantic.rideTime;
+      const rideTimeRaw = rideTimeIndex === undefined ? '' : cellText(row[rideTimeIndex]);
+      const rideTimeNormalized = rideTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const rideTimeValid = looksLikeTime(rideTimeNormalized) || /^\d{3,4}$/.test(rideTimeNormalized.replace(/\D/g,''));
+
+      const secondaryTimes = [semantic.timeMirror, semantic.flightTime]
+        .filter(index => index !== undefined && index !== rideTimeIndex);
+      const secondaryTimeValid = secondaryTimes.some(index => {
+        const raw = cellText(row[index]);
+        const normalized = raw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+        return looksLikeTime(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g,''));
+      });
+
+      const hasTime = row.some(value => looksLikeTime(value) || /^\d{3,4}$/.test(cellText(value).replace(/\D/g,'')));
+      const hasFlight = [semantic.arrivalFlight, semantic.departureFlight]
+        .filter(index => index !== undefined)
+        .some(index => looksLikeFlight(row[index]));
+      const hasRoute = Boolean(
+        semantic.pickup !== undefined &&
+        semantic.destination !== undefined &&
+        cellText(row[semantic.pickup]) &&
+        cellText(row[semantic.destination])
+      );
+      const hasIdentity = [semantic.customer, semantic.company, semantic.driver]
+        .filter(index => index !== undefined)
+        .some(index => Boolean(cellText(row[index])));
+      const hasFlightCells = [semantic.arrivalFlight, semantic.departureFlight]
+        .filter(index => index !== undefined)
+        .some(index => Boolean(cellText(row[index])));
+      const strongOrphanRow = hasRoute && hasIdentity && nonEmpty >= 5 &&
+        (secondaryTimeValid || hasFlight || hasFlightCells);
+
+      // CORE-005B/006B: Planzeit dynamisch aus der Kopfzeile bestimmen.
+      // Eine Preis-Spalte vor der Planzeit verändert den Zeilenanker nicht.
+      const keep = completed.standard
+        ? ((rideTimeValid && nonEmpty >= 2) || strongOrphanRow)
+        : (nonEmpty >= 3 && (hasTime || hasFlight));
+
+      if (!keep) return;
+
+      if (completed.standard && rideTimeValid && rideTimeIndex !== undefined &&
+          rideTimeNormalized !== rideTimeRaw) {
+        row[rideTimeIndex] = rideTimeNormalized;
+      }
+
+      rows.push(row);
+      const ys0 = (line.words || []).map(word => Number(word.y0 || 0)).filter(Number.isFinite);
+      const ys1 = (line.words || []).map(word => Number(word.y1 || 0)).filter(Number.isFinite);
+      rowMetaByMatrixIndex[rows.length - 1] = {
+        y0: ys0.length ? Math.min(...ys0) : Math.max(0, Number(line.cy || 0) - 16),
+        y1: ys1.length ? Math.max(...ys1) : Number(line.cy || 0) + 16,
+        cy: Number(line.cy || 0)
+      };
+    });
+
+    // CORE-005C: Wenn Tesseract eine komplette physische Tabellenzeile gar nicht
+    // als brauchbare OCR-Zeile liefert, kann CORE-005B sie nicht als "orphan row"
+    // retten. Deshalb pruefen wir die vertikalen Abstaende der bereits erkannten
+    // Tabellenzeilen. Ein annähernd doppelter Abstand bedeutet sehr wahrscheinlich,
+    // dass dazwischen genau eine physische Zeile fehlt. Diese wird als leere
+    // synthetische Tabellenzeile eingefuegt und anschliessend NUR in diesem schmalen
+    // Bereich lokal erneut OCR-gelesen. Keine feste Fahrtenanzahl und keine
+    // Sonderregel fuer 05:05/EW9782/FreeNow.
+    if (completed.standard && rows.length >= 5) {
+      const records = [];
+      for (let matrixIndex = 1; matrixIndex < rows.length; matrixIndex++) {
+        const meta = rowMetaByMatrixIndex[matrixIndex];
+        if (!meta) continue;
+        records.push({ row: rows[matrixIndex], meta: { ...meta } });
+      }
+
+      const positiveGaps = [];
+      for (let i = 1; i < records.length; i++) {
+        const gap = Number(records[i].meta.cy) - Number(records[i - 1].meta.cy);
+        if (Number.isFinite(gap) && gap > 4) positiveGaps.push(gap);
+      }
+
+      if (positiveGaps.length >= 3) {
+        const sortedGaps = positiveGaps.slice().sort((a, b) => a - b);
+        // Oberes Viertel bewusst ausblenden, damit bereits vorhandene grosse Luecken
+        // die normale Zeilenhoehe nicht nach oben ziehen.
+        const basePool = sortedGaps.slice(0, Math.max(3, Math.ceil(sortedGaps.length * 0.75)));
+        const medianGap = basePool[Math.floor(basePool.length / 2)];
+
+        if (Number.isFinite(medianGap) && medianGap > 6) {
+          const expanded = [];
+          for (let i = 0; i < records.length; i++) {
+            const current = records[i];
+            expanded.push(current);
+            if (i >= records.length - 1) continue;
+
+            const next = records[i + 1];
+            const gap = Number(next.meta.cy) - Number(current.meta.cy);
+            const estimatedMissing = Math.round(gap / medianGap) - 1;
+
+            // Nur klar erkennbare 1-2 fehlende physische Zeilen einsetzen.
+            // So reagieren wir nicht auf kleine OCR-Schwankungen.
+            if (estimatedMissing < 1 || estimatedMissing > 2) continue;
+            const ratio = gap / medianGap;
+            if (ratio < 1.55 || ratio > 3.35) continue;
+
+            for (let missing = 1; missing <= estimatedMissing; missing++) {
+              const cy = Number(current.meta.cy) + (gap * missing) / (estimatedMissing + 1);
+              const halfBand = Math.max(8, medianGap * 0.38);
+              expanded.push({
+                row: Array(anchors.length).fill(''),
+                meta: {
+                  y0: cy - halfBand,
+                  y1: cy + halfBand,
+                  cy,
+                  syntheticGap: true
+                }
+              });
+            }
+          }
+
+          if (expanded.length > records.length) {
+            rows.length = 1;
+            Object.keys(rowMetaByMatrixIndex).forEach(key => delete rowMetaByMatrixIndex[key]);
+            expanded.forEach(record => {
+              rows.push(record.row);
+              rowMetaByMatrixIndex[rows.length - 1] = record.meta;
+            });
+          }
+        }
+      }
+    }
+
+    rows._atmsImageMeta = {
+      anchors,
+      boundaries,
+      semantic,
+      rowMetaByMatrixIndex,
+      width,
+      standardAtms: completed.standard,
+      schemaColumns: anchors.length,
+      forcedNoPriceMirror: Boolean(forceNoPriceMirror),
+      syntheticAnchorCount: completed.syntheticCount,
+      headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
+      headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
+      headerlessValidation: headerlessLayout?.validation || null,
+      headerlessDiagnostic: headerlessLayout?.diagnostics || headerlessDiagnostic || null,
+      // CORE-007D8A: Rohwoerter wurden fuer die sichtbare Diagnose konserviert.
+      // CORE-007D8A1F1 darf daraus ausschließlich wiederholt bestätigte Wörter
+      // zurückgewinnen, deren Bounding-Box die rechte Routen-Zellgrenze selbst überlappt.
+      // Vollständig benachbarte Zellen bleiben ausgeschlossen.
+      rawOcrWords: (Array.isArray(words) ? words : []).filter(word => cellText(word?.text) && word?.bbox).map(word => ({
+        text: cellText(word.text),
+        confidence: Number(word.confidence ?? word.conf ?? 0),
+        x0: Number(word.bbox.x0 || 0),
+        x1: Number(word.bbox.x1 || 0),
+        y0: Number(word.bbox.y0 || 0),
+        y1: Number(word.bbox.y1 || 0)
+      }))
+    };
+    return rows;
+  }
+
+  // CORE-004G · 05.09.2026: zweite, rein lokale OCR nur für die konkrete
+  // Flugzelle, wenn Ort vorhanden ist, aber die erste OCR keine Flugnummer geliefert hat.
+  // Es wird niemals geraten: nur genau EIN formal plausibler Kandidat wird übernommen
+  // und anschließend als manuell/aktuell zu prüfen markiert.
+  function cropCanvasRegion(source, x0, y0, x1, y1, scale = 3) {
+    const sx = Math.max(0, Math.floor(x0));
+    const sy = Math.max(0, Math.floor(y0));
+    const sw = Math.max(1, Math.min(source.width - sx, Math.ceil(x1 - x0)));
+    const sh = Math.max(1, Math.min(source.height - sy, Math.ceil(y1 - y0)));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(sw * scale));
+    out.height = Math.max(1, Math.round(sh * scale));
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = scale > 1;
+    if (scale > 1 && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    return out;
+  }
+
+
+  function headerlessCellFieldForColumn(column) {
+    const map = {
+      0: 'price', 1: 'time', 2: 'pickup', 3: 'destination',
+      4: 'customer', 5: 'company', 6: 'arrivalFlight', 7: 'departureFlight',
+      8: 'vehicle', 9: 'persons', 12: 'driver'
+    };
+    return map[column] || '';
+  }
+
+  function headerlessCellCandidateFromResult(result, field) {
+    const rawText = cellText(result?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    if (field === 'price') {
+      const candidates = priceCandidatesFromOcrResult(result);
+      if (candidates.length !== 1) return '';
+      return `${Number(candidates[0]).toFixed(2).replace('.', ',')} €`;
+    }
+
+    if (field === 'time') {
+      const candidates = rideTimeCandidatesFromOcrResult(result);
+      return candidates.length === 1 ? candidates[0] : '';
+    }
+
+    if (field === 'persons') {
+      const tokens = rawText.replace(/[Oo]/g, '0').match(/\d{1,2}/g) || [];
+      const values = [...new Set(tokens.map(Number).filter(value => Number.isInteger(value) && value >= 1 && value <= 99))];
+      return values.length === 1 ? String(values[0]) : '';
+    }
+
+    if (field === 'arrivalFlight' || field === 'departureFlight') {
+      const candidates = [...new Set(flightCandidatesFromOcrResult(result).map(normalizeFlightNumber).filter(Boolean))];
+      return candidates.length === 1 ? candidates[0] : '';
+    }
+
+    const text = rawText
+      .replace(/^[|:;,.]+/, '')
+      .replace(/[|:;,.]+$/, '')
+      .trim();
+    if (!text) return '';
+
+    if (field === 'driver') return headerlessDriverLike(text) ? text : '';
+    if (field === 'vehicle') {
+      return headerlessTextLike(text, 2) && !/^\d+(?:[.,]\d+)?$/.test(text) ? text : '';
+    }
+    if (['pickup','destination','customer','company'].includes(field)) {
+      return headerlessTextLike(text, 2) ? text : '';
+    }
+    return '';
+  }
+
+  function headerlessCellCandidateKey(value, field) {
+    if (!value) return '';
+    if (field === 'price') return Number(parseNumber(value)).toFixed(2);
+    if (field === 'time') return normalizeTime(value);
+    if (field === 'persons') return String(Math.round(parseNumber(value)));
+    if (field === 'arrivalFlight' || field === 'departureFlight') return normalizeFlightNumber(value);
+    return cleanKey(value);
+  }
+
+  function headerlessOcrOptions(field, mode) {
+    const options = { tessedit_pageseg_mode: mode };
+    if (field === 'time') options.tessedit_char_whitelist = '0123456789:.';
+    if (field === 'persons') options.tessedit_char_whitelist = '0123456789';
+    if (field === 'arrivalFlight' || field === 'departureFlight') options.tessedit_char_whitelist = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    return options;
+  }
+
+  async function recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, column, field) {
+    const boundaries = imageMeta?.boundaries || [];
+    const left = Number(boundaries[column]);
+    const right = Number(boundaries[column + 1]);
+    const y0 = Number(rowMeta?.y0);
+    const y1 = Number(rowMeta?.y1);
+    if (![left, right, y0, y1].every(Number.isFinite) || right <= left || y1 <= y0) {
+      return { value: '', attempts: [] };
+    }
+
+    const rowHeight = Math.max(12, y1 - y0);
+    const cellWidth = Math.max(8, right - left);
+    const padX = Math.max(1, cellWidth * 0.035);
+    const padY = Math.max(1, rowHeight * 0.15);
+    const attemptsSpec = [
+      { scale: 2, mode: '7', inset: 1 },
+      { scale: 3, mode: '7', inset: 0 },
+      { scale: 2, mode: '6', inset: 0 }
+    ];
+    const votes = new Map();
+    const displayByKey = new Map();
+    const attempts = [];
+
+    for (const spec of attemptsSpec) {
+      const extra = spec.inset ? padX : 0;
+      const crop = cropCanvasRegion(
+        imageCanvas,
+        left + padX + extra,
+        y0 - padY,
+        right - padX - extra,
+        y1 + padY,
+        spec.scale
+      );
+      try {
+        const result = await Tesseract.recognize(crop, 'eng', headerlessOcrOptions(field, spec.mode));
+        const candidate = headerlessCellCandidateFromResult(result, field);
+        const key = headerlessCellCandidateKey(candidate, field);
+        attempts.push({ scale: spec.scale, mode: spec.mode, candidate });
+        if (!key) continue;
+        votes.set(key, (votes.get(key) || 0) + 1);
+        if (!displayByKey.has(key)) displayByKey.set(key, candidate);
+      } catch (_) {
+        attempts.push({ scale: spec.scale, mode: spec.mode, candidate: '' });
+      }
+    }
+
+    const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const winner = ranked[0] || null;
+    const runner = ranked[1] || null;
+    if (!winner || winner[1] < 2) return { value: '', attempts };
+    if (runner && winner[1] === runner[1]) return { value: '', attempts };
+    return { value: displayByKey.get(winner[0]) || '', attempts };
+  }
+
+  function headerlessInvalidCoreColumns(row) {
+    const check = headerlessCoreRowCheck(row);
+    const fieldToColumn = {
+      price: 0, time: 1, pickup: 2, destination: 3,
+      customer: 4, company: 5, vehicle: 8, persons: 9, driver: 12
+    };
+    return Object.entries(check.fields || {})
+      .filter(([, ok]) => !ok)
+      .map(([field]) => ({ field, column: fieldToColumn[field] }))
+      .filter(item => item.column !== undefined);
+  }
+
+  async function recoverHeaderlessCellsTargeted(matrix, imageCanvas, imageMeta) {
+    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta?.headerlessAtms || !window.Tesseract) return matrix;
+    const out = matrix.map(row => Array.isArray(row) ? row.slice() : row);
+    const metaByIndex = imageMeta.rowMetaByMatrixIndex || {};
+    const status = $('importStatus');
+    const recoveryLog = [];
+
+    // Sicherheitsbremse: Headerless-Zweit-OCR soll nur wenige schwache Zellen
+    // retten. Sind zu viele Kernzellen unklar, bleibt die Liste abgelehnt statt
+    // einen ganzen Tabelleninhalt aus Einzel-Crops zusammenzuraten.
+    let totalInvalid = 0;
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const invalid = headerlessInvalidCoreColumns(out[matrixIndex]);
+      if (invalid.length > 4) {
+        imageMeta.headerlessCellRecovery = { accepted: false, reason: 'too_many_invalid_cells_in_row', totalInvalid };
+        return out;
+      }
+      totalInvalid += invalid.length;
+    }
+    if (totalInvalid > 12) {
+      imageMeta.headerlessCellRecovery = { accepted: false, reason: 'too_many_invalid_cells', totalInvalid };
+      return out;
+    }
+
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const row = out[matrixIndex];
+      const rowMeta = metaByIndex[matrixIndex];
+      if (!rowMeta) continue;
+
+      const invalid = headerlessInvalidCoreColumns(row);
+      for (const item of invalid) {
+        if (status) status.textContent = `Kopfzeilenloser Ausschnitt: ${item.field}-Zelle in Zeile ${matrixIndex + 1} wird sicher nachgelesen …`;
+        const recovered = await recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, item.column, item.field);
+        recoveryLog.push({ matrixIndex, field: item.field, column: item.column, attempts: recovered.attempts, recovered: recovered.value });
+        if (recovered.value) row[item.column] = recovered.value;
+      }
+
+    }
+
+    // Flugnummern sind fuer einzelne Fahrten optional. Nur wenn im gesamten
+    // kopfzeilenlosen Ausschnitt noch KEIN Flug erkannt wurde, werden die beiden
+    // Flugspalten eng nachgelesen. So bleibt der Fallback schnell und rät keine
+    // Flugnummern in legitime Leerzellen hinein.
+    let hasAnyFlightBeforeRecovery = out.slice(1).some(row =>
+      Boolean(normalizeFlightNumber(row?.[6]) || normalizeFlightNumber(row?.[7]))
+    );
+    if (!hasAnyFlightBeforeRecovery) {
+      for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+        const rowMeta = metaByIndex[matrixIndex];
+        if (!rowMeta) continue;
+        for (const [column, field] of [[6, 'arrivalFlight'], [7, 'departureFlight']]) {
+          const recovered = await recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, column, field);
+          recoveryLog.push({ matrixIndex, field, column, attempts: recovered.attempts, recovered: recovered.value });
+          if (recovered.value) out[matrixIndex][column] = recovered.value;
+        }
+      }
+    }
+
+    const rowChecks = [];
+    let hasFlight = false;
+    let accepted = out.length > 1;
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const check = headerlessCoreRowCheck(out[matrixIndex]);
+      rowChecks.push({ matrixIndex, ok: check.ok, flight: check.flight, fields: check.fields });
+      if (!check.ok) accepted = false;
+      if (check.flight) hasFlight = true;
+    }
+    if (!hasFlight) accepted = false;
+
+    imageMeta.headerlessCellRecovery = {
+      accepted,
+      totalInvalid,
+      recoveredCells: recoveryLog.filter(item => Boolean(item.recovered)).length,
+      rowChecks,
+      recoveryLog
+    };
+    imageMeta.headerlessNeedsCellRecovery = !accepted;
+    out._atmsImageMeta = imageMeta;
+    return out;
+  }
+
+  async function recoverSyntheticImageRowsTargeted(matrix, imageCanvas, imageMeta) {
+    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) return matrix;
+    const boundaries = imageMeta.boundaries || [];
+    const metaByIndex = imageMeta.rowMetaByMatrixIndex || {};
+    if (boundaries.length < 2) return matrix;
+
+    const out = matrix.map(row => Array.isArray(row) ? row.slice() : row);
+    const status = $('importStatus');
+
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const meta = metaByIndex[matrixIndex];
+      if (!meta?.syntheticGap) continue;
+
+      const x0 = Number(boundaries[0]);
+      const x1 = Number(boundaries[boundaries.length - 1]);
+      const y0 = Number(meta.y0);
+      const y1 = Number(meta.y1);
+      if (![x0, x1, y0, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) continue;
+
+      if (status) status.textContent = `Fehlende Tabellenzeile ${matrixIndex + 1} wird lokal nachgelesen …`;
+
+      let bestRow = null;
+      let bestScore = -1;
+
+      for (const scale of [1, 2]) {
+        try {
+          const sx = Math.max(0, Math.floor(x0));
+          const crop = cropCanvasRegion(imageCanvas, x0, y0, x1, y1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const cells = Array(boundaries.length - 1).fill('').map(() => []);
+
+          (second?.data?.words || []).forEach(word => {
+            const value = cellText(word?.text);
+            const conf = Number(word?.confidence ?? word?.conf ?? 0);
+            if (!value || !word?.bbox || conf < 5) return;
+            const localCx = (Number(word.bbox.x0 || 0) + Number(word.bbox.x1 || 0)) / 2;
+            const sourceCx = sx + localCx / scale;
+            let col = boundaries.findIndex((right, i) => i > 0 && sourceCx < right) - 1;
+            if (col < 0) col = 0;
+            if (col >= cells.length) col = cells.length - 1;
+            cells[col].push(value);
+          });
+
+          const candidate = cells.map(parts => parts.join(' ').replace(/\s+/g, ' ').trim());
+          const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+          const rideTimeIndex = semantic.rideTime;
+          const rideTimeRaw = rideTimeIndex === undefined ? '' : cellText(candidate[rideTimeIndex]);
+          const rideTimeNormalized = rideTimeRaw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+          const rideTimeValid = looksLikeTime(rideTimeNormalized) || /^\d{3,4}$/.test(rideTimeNormalized.replace(/\D/g, ''));
+          if (rideTimeValid && rideTimeIndex !== undefined && rideTimeNormalized !== rideTimeRaw) {
+            candidate[rideTimeIndex] = rideTimeNormalized;
+          }
+
+          const nonEmpty = candidate.filter(Boolean).length;
+          const routeScore = [semantic.pickup, semantic.destination]
+            .filter(index => index !== undefined)
+            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+          const identityScore = [semantic.customer, semantic.company, semantic.driver]
+            .filter(index => index !== undefined)
+            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+          const score = nonEmpty + (rideTimeValid ? 8 : 0) + routeScore * 2 + identityScore;
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestRow = candidate;
+          }
+
+          if (rideTimeValid && nonEmpty >= 5 && routeScore >= 1) break;
+        } catch (_) {
+          // Nur Sicherheitsnetz; der naechste Versuch darf weiterlaufen.
+        }
+      }
+
+      if (!bestRow) continue;
+      const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+      const rideTimeIndex = semantic.rideTime;
+      const rideTime = rideTimeIndex === undefined ? '' : cellText(bestRow[rideTimeIndex]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      const rideTimeValid = looksLikeTime(rideTime) || /^\d{3,4}$/.test(rideTime.replace(/\D/g, ''));
+      const nonEmpty = bestRow.filter(Boolean).length;
+
+      // Nur eine wirklich plausibel erneut gelesene Fahrtzeile aktivieren.
+      if (rideTimeValid && nonEmpty >= 4) {
+        bestRow[rideTimeIndex] = rideTime;
+        out[matrixIndex] = bestRow;
+        meta.syntheticGapRecovered = true;
+      }
+    }
+
+    out._atmsImageMeta = imageMeta;
+    return out;
+  }
+
+  function flightCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts.join(' ');
+    return flightCandidatesFromRow([joined]);
+  }
+
+  // CORE-007D8A1F1D3: Für die gezielte Gegenprüfung langer Flugpräfixe werden
+  // data.text und die einzelnen OCR-Wörter getrennt ausgewertet. Der allgemeine
+  // Legacy-Extractor oben bleibt unangetastet. Hintergrund: Bei identischem
+  // data.text + word.text konnte das bisherige Zusammenfügen nach anschließendem
+  // Entfernen der Leerzeichen aus "EW5449 EW5449" fälschlich "EW5449EW5449"
+  // machen und dadurch trotz eindeutigem Roh-OCR keinen gültigen Kandidaten liefern.
+  function flightCandidatesFromOcrResultPreserveBoundaries(result) {
+    const found = new Set();
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    parts.forEach(part => {
+      flightCandidatesFromRow([part]).forEach(candidate => {
+        const normalized = normalizeFlightNumber(candidate);
+        if (normalized) found.add(normalized);
+      });
+    });
+    return [...found];
+  }
+
+  function rideTimeCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts.join(' ').replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const found = new Set();
+    const colonMatches = joined.match(/(?:^|\D)([0-2]?\d[:.]?[0-5]\d)(?!\d)/g) || [];
+    colonMatches.forEach(token => {
+      const digits = token.replace(/\D/g, '');
+      if (digits.length < 3 || digits.length > 4) return;
+      const padded = digits.padStart(4, '0');
+      const hh = Number(padded.slice(0, 2));
+      const mm = Number(padded.slice(2));
+      if (hh <= 23 && mm <= 59) found.add(`${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`);
+    });
+    return [...found];
+  }
+
+  function normalizeDriverCandidate(value) {
+    const text = cellText(value)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ\- ]+|[^A-Za-zÄÖÜäöüßÀ-ÿ\- ]+$/g, '')
+      .trim();
+    if (!text || text.length < 2 || text.length > 40) return '';
+    if (!looksLikeDriverName(text)) return '';
+    if (/^(wg|fahrer|driver|chauffeur|van|pkw|bus|sprinter)$/i.test(text)) return '';
+
+    // CORE-006Z: Ein einzelner letzter Großbuchstabe ist als echter Namenszusatz
+    // zulässig (z. B. Initiale/Kürzel). Einzelbuchstaben an anderer Stelle bleiben
+    // weiterhin gesperrt, damit OCR-Fragmente nicht als Fahrername durchrutschen.
+    const tokens = text.split(/[\s-]+/).filter(Boolean);
+    if (tokens.length > 1) {
+      const badSingle = tokens.some((token, index) => {
+        if (token.length !== 1) return false;
+        return !(index === tokens.length - 1 && /^[A-ZÄÖÜ]$/.test(token));
+      });
+      if (badSingle) return '';
+    }
+
+    return text;
+  }
+
+  function driverCandidatesFromOcrResult(result) {
+    const raw = [];
+    if (result?.data?.text) raw.push(result.data.text);
+    (result?.data?.words || []).forEach(word => {
+      if (word?.text) raw.push(word.text);
+    });
+
+    const found = new Map();
+    raw.forEach(value => {
+      const candidate = normalizeDriverCandidate(value);
+      if (!candidate) return;
+      const key = cleanKey(candidate);
+      if (!key) return;
+      if (!found.has(key)) found.set(key, candidate);
+    });
+    return [...found.values()];
+  }
+
+  function normalizeDriverBoundaryNoise(value) {
+    const raw = cellText(value);
+    if (!raw) return '';
+
+    // Nur Randzeichen entfernen. Buchstaben/Ziffern innerhalb des eigentlichen
+    // OCR-Textes werden niemals verändert oder ergänzt.
+    const trimmed = raw
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ-]+/, '')
+      .replace(/[^A-Za-zÄÖÜäöüßÀ-ÿ-]+$/, '')
+      .trim();
+
+    if (!trimmed || trimmed === raw) return '';
+    const normalized = normalizeDriverCandidate(trimmed);
+    if (!normalized || normalized !== trimmed) return '';
+    return normalized;
+  }
+
+  function driverNeedsTargetedRecovery(value) {
+    const raw = cellText(value);
+    if (!raw) return true;
+
+    // Saubere Namen wie "Rida", "Lana", "Sabrina" bleiben unangetastet.
+    // Führende/abschließende Satzzeichen, OCR-Balken, Ziffern oder sonstige
+    // Nicht-Namenszeichen machen den Primärwert dagegen verdächtig.
+    if (!looksLikeDriverName(raw)) return true;
+
+    const normalized = normalizeDriverCandidate(raw);
+    if (!normalized) return true;
+
+    return normalized !== raw;
+  }
+
+  async function recoverMissingDriversTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const driverCol = mapping?.driver;
+    if (driverCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[driverCol]);
+    const right = Number(boundaries[driverCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const originalDriver = cellText(ride.driver);
+      if (!driverNeedsTargetedRecovery(originalDriver)) continue;
+
+      ride.driverRawOcr = originalDriver;
+
+      // CORE-006H: Wenn ausschließlich offensichtliche Randzeichen den ansonsten
+      // vollständig gültigen Namen verunreinigen, ist keine semantische Korrektur
+      // nötig. Beispielklasse: "‘Name", ": Name |", "Name |".
+      const boundaryNormalized = normalizeDriverBoundaryNoise(originalDriver);
+      if (boundaryNormalized) {
+        ride.driver = boundaryNormalized;
+        ride.driverRecoveredFromBoundaryNormalization = true;
+        ride.driverNeedsManualCheck = false;
+        ride.driverRecoverySource = 'driver_boundary_noise_normalization';
+        continue;
+      }
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(1, cellWidth * 0.04);
+
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 3]
+      ];
+      const ocrModes = [
+        { name: 'default', options: {} },
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8' } }
+      ];
+
+      if (status) status.textContent = `Fahrerzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+
+      const votes = new Map();
+      const displayByKey = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = driverCandidatesFromOcrResult(second);
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+
+            const candidate = candidates[0];
+            const key = cleanKey(candidate);
+            if (!key) continue;
+            displayByKey.set(key, displayByKey.get(key) || candidate);
+            votes.set(key, (votes.get(key) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.driverTargetedOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.driverTargetedOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Sicherheitsregel: kein Einzel-Treffer. Mindestens zwei getrennte enge
+      // OCR-Versuche müssen denselben Namen lesen, und der Kandidat muss eindeutig gewinnen.
+      if (!winner || winner[1] < 2) {
+        if (originalDriver) ride.driverNeedsManualCheck = true;
+        continue;
+      }
+      if (runner && winner[1] === runner[1]) {
+        if (originalDriver) ride.driverNeedsManualCheck = true;
+        continue;
+      }
+
+      const recovered = normalizeDriverCandidate(displayByKey.get(winner[0]) || '');
+      if (!recovered) {
+        if (originalDriver) ride.driverNeedsManualCheck = true;
+        continue;
+      }
+
+      ride.driver = recovered;
+      ride.driverRecoveredFromTargetedOcr = true;
+      ride.driverNeedsManualCheck = false;
+      ride.driverRecoverySource = 'targeted_driver_cell_consensus';
+    }
+
+    return out;
+  }
+
+
+  function driverEditDistance(leftValue, rightValue) {
+    const left = cleanKey(leftValue);
+    const right = cleanKey(rightValue);
+    if (left === right) return 0;
+    if (!left) return right.length;
+    if (!right) return left.length;
+    const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= left.length; i++) {
+      let diagonal = previous[0];
+      previous[0] = i;
+      for (let j = 1; j <= right.length; j++) {
+        const above = previous[j];
+        const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+        previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, diagonal + cost);
+        diagonal = above;
+      }
+    }
+    return previous[right.length];
+  }
+
+  function driverHasLatinDiacritic(value) {
+    return /[ÄÖÜäöüßÀ-ÿ]/.test(cellText(value));
+  }
+
+  function driverTrailingInitialStem(value) {
+    const tokens = cellText(value).split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) return '';
+    const last = tokens[tokens.length - 1];
+    if (!/^[A-ZÄÖÜ]$/.test(last)) return '';
+    return tokens.slice(0, -1).join(' ');
+  }
+
+  function driverConsensusCandidateIsSafe(originalValue, candidateValue) {
+    const original = normalizeDriverCandidate(originalValue);
+    const candidate = normalizeDriverCandidate(candidateValue);
+    if (!original || !candidate || original === candidate) return false;
+
+    const originalKey = cleanKey(original);
+    const candidateKey = cleanKey(candidate);
+    if (!originalKey || !candidateKey) return false;
+
+    // Reine Diakritik-/Großschreibungsverbesserung ist sicher, wenn die Basis gleich ist.
+    if (originalKey === candidateKey) {
+      return driverHasLatinDiacritic(candidate) && !driverHasLatinDiacritic(original);
+    }
+
+    // Ein finaler einbuchstabiger Namenszusatz darf nur dann ergänzt werden, wenn der
+    // eigentliche Name gegenüber dem Primärwert identisch oder höchstens um EIN OCR-Zeichen
+    // verschieden ist. Ohne Mehrfach-Konsens wird diese Regel nie angewendet.
+    const stem = driverTrailingInitialStem(candidate);
+    if (stem) {
+      const stemDistance = driverEditDistance(original, stem);
+      if (stemDistance <= 1) return true;
+    }
+
+    // Deutsche Diakritik kann bei englischer Primär-OCR zugleich einen Buchstaben verschieben.
+    // Ein einziger Zeichenunterschied ist nur bei tatsächlich vorhandener Diakritik erlaubt.
+    if (driverHasLatinDiacritic(candidate) && driverEditDistance(original, candidate) <= 1) return true;
+
+    return false;
+  }
+
+  async function recoverDriverColumnConsensusTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const driverCol = mapping?.driver;
+    if (driverCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[driverCol]);
+    const right = Number(boundaries[driverCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const rowsWithMeta = out.map(ride => {
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const meta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!meta) return null;
+      const y0 = Number(meta.y0), y1 = Number(meta.y1);
+      const cy = Number(meta.cy ?? ((y0 + y1) / 2));
+      if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
+      return { sourceRow: Number(ride.sourceRow), meta: { y0, y1, cy } };
+    }).filter(Boolean);
+    if (!rowsWithMeta.length) return out;
+
+    const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
+    const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
+    const cellWidth = Math.max(8, right - left);
+    const padX = Math.max(1, cellWidth * 0.025);
+    const attempts = [
+      { name: 'deu-driver-psm4', scale: 2, options: { tessedit_pageseg_mode: '4' } },
+      { name: 'deu-driver-psm6', scale: 3, options: { tessedit_pageseg_mode: '6' } },
+      { name: 'deu-driver-psm11', scale: 2, options: { tessedit_pageseg_mode: '11' } }
+    ];
+    const status = $('importStatus');
+    const votesByRow = new Map();
+    const displayByRowKey = new Map();
+    const attemptLogByRow = new Map();
+
+    if (status) status.textContent = 'Fahrer-Spalte wird lokal mit deutscher OCR gegengeprüft …';
+
+    try {
+      for (const attempt of attempts) {
+        const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
+        const second = await Tesseract.recognize(crop, 'deu', attempt.options);
+        const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
+
+        rowsWithMeta.forEach(item => {
+          const rawCandidate = routeOcrText(rowCandidates.get(item.sourceRow) || '');
+          const candidate = normalizeDriverCandidate(rawCandidate);
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          log.push({ mode: attempt.name, candidate });
+          attemptLogByRow.set(item.sourceRow, log);
+          if (!candidate) return;
+
+          const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+          const rowVotes = votesByRow.get(item.sourceRow) || new Map();
+          rowVotes.set(key, (rowVotes.get(key) || 0) + 1);
+          votesByRow.set(item.sourceRow, rowVotes);
+          const displayKey = `${item.sourceRow}|${key}`;
+          if (!displayByRowKey.has(displayKey)) displayByRowKey.set(displayKey, candidate);
+        });
+      }
+    } catch (_) {
+      return out;
+    }
+
+    out.forEach(ride => {
+      const sourceRow = Number(ride.sourceRow);
+      const original = normalizeDriverCandidate(ride.driver);
+      ride.driverGermanColumnOcrAttempts = attemptLogByRow.get(sourceRow) || [];
+      if (!original) return;
+
+      const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+      if (!winner || winner[1] < 2) return;
+      if (runner && winner[1] === runner[1]) return;
+
+      const candidate = normalizeDriverCandidate(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
+      if (!candidate || !driverConsensusCandidateIsSafe(original, candidate)) return;
+
+      ride.driverRawOcr = ride.driverRawOcr || original;
+      ride.driver = candidate;
+      ride.driverRecoverySource = 'driver_german_column_consensus';
+
+      // Reine Diakritikverbesserungen brauchen keinen zusätzlichen Warnhinweis.
+      // Inhaltliche Ergänzungen/Ein-Zeichen-Korrekturen bleiben sichtbar prüfbar.
+      if (cleanKey(original) !== cleanKey(candidate)) {
+        ride.driverRecoveredFromTargetedOcr = true;
+      } else {
+        ride.driverRecoveredFromGermanColumnOcr = true;
+        ride.driverNeedsManualCheck = false;
+      }
+    });
+
+    return out;
+  }
+
+  // CORE-006L: Ortsnamen werden nicht per Wörterbuch oder Sonderfall korrigiert.
+  // Stattdessen werden die beiden Routen-Spalten mit deutscher OCR lokal noch einmal
+  // gelesen. Eine Änderung ist nur erlaubt, wenn zwei unabhängige Spalten-Durchläufe
+  // exakt denselben Kandidaten liefern und sich dieser nur minimal vom Primärwert
+  // unterscheidet, dabei aber eine echte lateinische Diakritik wiederherstellt.
+  function routeOcrText(value) {
+    return cellText(value)
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ0-9]+/, '')
+      .replace(/[^A-Za-zÄÖÜäöüßÀ-ÿ0-9)]+$/, '')
+      .trim();
+  }
+
+  function routeOcrBase(value) {
+    return routeOcrText(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase('de-DE');
+  }
+
+  function routeOcrDistance(leftValue, rightValue) {
+    const left = routeOcrBase(leftValue);
+    const right = routeOcrBase(rightValue);
+    if (left === right) return 0;
+    if (!left) return right.length;
+    if (!right) return left.length;
+
+    const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= left.length; i++) {
+      let diagonal = previous[0];
+      previous[0] = i;
+      for (let j = 1; j <= right.length; j++) {
+        const above = previous[j];
+        const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+        previous[j] = Math.min(
+          previous[j] + 1,
+          previous[j - 1] + 1,
+          diagonal + cost
+        );
+        diagonal = above;
+      }
+    }
+    return previous[right.length];
+  }
+
+  function routeHasLatinDiacritic(value) {
+    return /[ÄÖÜäöüßÀ-ÿ]/.test(routeOcrText(value));
+  }
+
+  function routeChangedDiacriticTokenIsSafe(originalValue, candidateValue) {
+    const original = routeOcrText(originalValue);
+    const candidate = routeOcrText(candidateValue);
+    if (!original || !candidate || original === candidate) return false;
+    if (!routeHasLatinDiacritic(candidate)) return false;
+    if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ0-9 .,'’&()/+\-]+$/.test(candidate)) return false;
+
+    const originalTokens = original.split(/\s+/);
+    const candidateTokens = candidate.split(/\s+/);
+    if (originalTokens.length !== candidateTokens.length) return false;
+    if (Math.abs(original.length - candidate.length) > 1) return false;
+    if (routeOcrDistance(original, candidate) > 1) return false;
+
+    let changedTokens = 0;
+    for (let index = 0; index < originalTokens.length; index++) {
+      const left = originalTokens[index];
+      const right = candidateTokens[index];
+      if (left === right) continue;
+      changedTokens += 1;
+      if (changedTokens > 1) return false;
+      if (right.length < 4) return false;
+      if (!routeHasLatinDiacritic(right)) return false;
+      if (routeOcrDistance(left, right) > 1) return false;
+    }
+    return changedTokens === 1;
+  }
+
+  function routeWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta) {
+    const grouped = new Map();
+    const words = Array.isArray(result?.data?.words) ? result.data.words : [];
+
+    words.forEach(word => {
+      const text = routeOcrText(word?.text);
+      const bbox = word?.bbox || {};
+      const y0 = Number(bbox.y0);
+      const y1 = Number(bbox.y1);
+      const x0 = Number(bbox.x0);
+      const confidence = Number(word?.confidence);
+      if (!text || ![x0, y0, y1].every(Number.isFinite)) return;
+      if (Number.isFinite(confidence) && confidence < 20) return;
+
+      const sourceCy = cropTop + ((y0 + y1) / 2) / cropScale;
+      let best = null;
+      let bestDistance = Infinity;
+      rowsWithMeta.forEach(item => {
+        const meta = item.meta;
+        const rowHeight = Math.max(8, Number(meta.y1) - Number(meta.y0));
+        const pad = Math.max(2, rowHeight * 0.28);
+        if (sourceCy < Number(meta.y0) - pad || sourceCy > Number(meta.y1) + pad) return;
+        const distance = Math.abs(sourceCy - Number(meta.cy));
+        if (distance < bestDistance) {
+          best = item;
+          bestDistance = distance;
+        }
+      });
+      if (!best) return;
+
+      const list = grouped.get(best.sourceRow) || [];
+      list.push({ text, x: x0 / cropScale });
+      grouped.set(best.sourceRow, list);
+    });
+
+    const byRow = new Map();
+    grouped.forEach((items, sourceRow) => {
+      const text = routeOcrText(items.sort((a,b) => a.x - b.x).map(item => item.text).join(' '));
+      if (text) byRow.set(sourceRow, text);
+    });
+    return byRow;
+  }
+
+  // CORE-007D8A1F1: Sichere Rückgewinnung eines Wortes, dessen Bounding-Box
+  // die rechte Zellgrenze sichtbar überlappt. Ein einzelner Randtreffer reicht NIE:
+  // dieselbe Basisroute + dasselbe Randwort müssen in mindestens zwei verschiedenen
+  // Fahrten geometrisch gleich beobachtet werden. Vollständig rechts liegende Wörter
+  // (also echte Nachbarzellen) werden ausdrücklich nicht übernommen.
+  function recoverRouteBoundarySpillover(rides, imageMeta, mapping) {
+    if (!Array.isArray(rides) || !imageMeta || !mapping || !Array.isArray(imageMeta.rawOcrWords)) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const out = rides.map(ride => ({ ...ride }));
+    const evidence = new Map();
+    const descriptors = [
+      { field: 'pickup', label: 'Von' },
+      { field: 'destination', label: 'Nach' }
+    ];
+
+    descriptors.forEach(descriptor => {
+      const column = mapping?.[descriptor.field];
+      const left = Number(boundaries[column]);
+      const right = Number(boundaries[Number(column) + 1]);
+      if (column === undefined || !Number.isFinite(left) || !Number.isFinite(right) || right <= left) return;
+      const cellWidth = Math.max(8, right - left);
+      const maxLeftReach = Math.max(12, Math.min(64, cellWidth * 0.18));
+      const maxRightReach = Math.max(12, Math.min(72, cellWidth * 0.22));
+
+      out.forEach((ride, rideIndex) => {
+        const original = routeOcrText(ride?.[descriptor.field]);
+        if (!original) return;
+        const matrixIndex = Number(ride?.sourceRow || 0) - 1;
+        const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+        if (!rowMeta) return;
+        const y0 = Number(rowMeta.y0 || 0);
+        const y1 = Number(rowMeta.y1 || 0);
+        const rowHeight = Math.max(8, y1 - y0);
+        const cyMin = y0 - rowHeight * 0.22;
+        const cyMax = y1 + rowHeight * 0.22;
+
+        const straddling = imageMeta.rawOcrWords.filter(word => {
+          const text = routeOcrText(word?.text);
+          const confidence = Number(word?.confidence || 0);
+          const x0 = Number(word?.x0);
+          const x1 = Number(word?.x1);
+          const wy0 = Number(word?.y0);
+          const wy1 = Number(word?.y1);
+          if (!text || confidence < 70 || ![x0, x1, wy0, wy1].every(Number.isFinite) || x1 <= x0) return false;
+          if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ0-9][A-Za-zÄÖÜäöüßÀ-ÿ0-9'’\-]{1,23}$/.test(text)) return false;
+          const cy = (wy0 + wy1) / 2;
+          if (cy < cyMin || cy > cyMax) return false;
+          const cx = (x0 + x1) / 2;
+          if (!(x0 < right && x1 > right && cx >= right)) return false;
+          if (x0 < right - maxLeftReach || x1 > right + maxRightReach) return false;
+          const overlapRatio = (right - x0) / Math.max(1, x1 - x0);
+          return overlapRatio >= 0.25;
+        }).sort((a,b) => Number(a.x0 || 0) - Number(b.x0 || 0));
+
+        // Mehrere gleichzeitig überlappende Wörter wären strukturell nicht eindeutig.
+        if (straddling.length !== 1) return;
+        const token = routeOcrText(straddling[0].text);
+        const originalBase = routeOcrBase(original);
+        const tokenBase = routeOcrBase(token);
+        if (!tokenBase || originalBase.split(/\s+/).includes(tokenBase)) return;
+
+        const key = `${descriptor.field}|${originalBase}|${tokenBase}`;
+        if (!evidence.has(key)) evidence.set(key, []);
+        evidence.get(key).push({
+          rideIndex,
+          sourceRow: Number(ride?.sourceRow || 0),
+          field: descriptor.field,
+          original,
+          token,
+          confidence: Number(straddling[0].confidence || 0)
+        });
+      });
+    });
+
+    evidence.forEach(entries => {
+      const distinctRows = new Set(entries.map(item => item.sourceRow));
+      if (distinctRows.size < 2) return;
+      entries.forEach(item => {
+        const ride = out[item.rideIndex];
+        const original = routeOcrText(ride?.[item.field]);
+        if (!original || routeOcrBase(original) !== routeOcrBase(item.original)) return;
+        const recovered = routeOcrText(`${original} ${item.token}`);
+        if (!recovered || recovered === original) return;
+        ride[`${item.field}RawBoundaryOcr`] = original;
+        ride[item.field] = recovered;
+        ride[`${item.field}RecoveredFromBoundaryOcr`] = true;
+        ride[`${item.field}BoundaryRecoverySource`] = 'repeated_right_boundary_overlap';
+        ride[`${item.field}BoundaryRecoveryEvidence`] = distinctRows.size;
+      });
+    });
+
+    return out;
+  }
+
+  async function recoverRouteDiacriticsTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const fields = [
+      { field: 'pickup', label: 'Von' },
+      { field: 'destination', label: 'Nach' }
+    ];
+
+    for (const descriptor of fields) {
+      const column = mapping?.[descriptor.field];
+      if (column === undefined) continue;
+      const left = Number(boundaries[column]);
+      const right = Number(boundaries[column + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const rowsWithMeta = out.map(ride => {
+        const matrixIndex = Number(ride.sourceRow || 0) - 1;
+        const meta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+        if (!meta) return null;
+        const y0 = Number(meta.y0);
+        const y1 = Number(meta.y1);
+        const cy = Number(meta.cy ?? ((y0 + y1) / 2));
+        if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
+        return { sourceRow: Number(ride.sourceRow), meta: { y0, y1, cy } };
+      }).filter(Boolean);
+      if (!rowsWithMeta.length) continue;
+
+      const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
+      const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
+      const cellWidth = Math.max(8, right - left);
+      const padX = Math.max(1, cellWidth * 0.025);
+      const attempts = [
+        { name: 'deu-column-psm4', scale: 2, options: { tessedit_pageseg_mode: '4' } },
+        { name: 'deu-column-psm6', scale: 3, options: { tessedit_pageseg_mode: '6' } }
+      ];
+      const votesByRow = new Map();
+      const displayByRowKey = new Map();
+      const attemptLogByRow = new Map();
+
+      if (status) status.textContent = `${descriptor.label}-Ortszellen werden lokal mit deutscher OCR gegengeprüft …`;
+
+      try {
+        // P56: Beide bestehenden OCR-Versuche derselben unveränderten Spalte werden
+        // gleichzeitig gestartet. Die Auswertung erfolgt danach weiterhin strikt in
+        // attempts-Reihenfolge; Crops, Kandidatenlogik und Konsens bleiben identisch.
+        const attemptJobs = attempts.map(attempt => {
+          const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
+          return Tesseract.recognize(crop, 'deu', attempt.options)
+            .then(second => ({ ok: true, attempt, second }))
+            .catch(error => ({ ok: false, attempt, error }));
+        });
+
+        for (const job of attemptJobs) {
+          const result = await job;
+          if (!result?.ok) break;
+          const { attempt, second } = result;
+          const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
+
+          rowsWithMeta.forEach(item => {
+            const candidate = routeOcrText(rowCandidates.get(item.sourceRow) || '');
+            const log = attemptLogByRow.get(item.sourceRow) || [];
+            log.push({ mode: attempt.name, candidate });
+            attemptLogByRow.set(item.sourceRow, log);
+            if (!candidate) return;
+
+            const key = candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+            const rowVotes = votesByRow.get(item.sourceRow) || new Map();
+            rowVotes.set(key, (rowVotes.get(key) || 0) + 1);
+            votesByRow.set(item.sourceRow, rowVotes);
+            const displayKey = `${item.sourceRow}|${key}`;
+            if (!displayByRowKey.has(displayKey)) displayByRowKey.set(displayKey, candidate);
+          });
+        }
+      } catch (_) {
+        // Fehlende/noch nicht geladene deutsche Sprachdaten dürfen den Bildimport
+        // niemals blockieren. Der sichere Primärwert bleibt dann unverändert.
+      }
+
+      out.forEach(ride => {
+        const sourceRow = Number(ride.sourceRow);
+        const original = routeOcrText(ride[descriptor.field]);
+        ride[`${descriptor.field}TargetedOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
+        if (!original) return;
+
+        const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
+          .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
+        const winner = ranked[0] || null;
+        const runner = ranked[1] || null;
+        if (!winner || winner[1] < 2) return;
+        if (runner && winner[1] === runner[1]) return;
+
+        const candidate = routeOcrText(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
+        if (!routeChangedDiacriticTokenIsSafe(original, candidate)) return;
+
+        ride[`${descriptor.field}RawOcr`] = original;
+        ride[descriptor.field] = candidate;
+        ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
+        ride[`${descriptor.field}RecoverySource`] = 'targeted_route_diacritic_consensus';
+      });
+    }
+
+    return out;
+  }
+
+  // CORE-005R: Preis-Kandidaten werden nur aus expliziten Dezimaldarstellungen
+  // der gezielt ausgeschnittenen Preiszelle gewonnen. Eine verlorene Dezimalstelle
+  // (z. B. reines "4760") wird NICHT erraten oder automatisch verschoben.
+  function priceCandidatesFromOcrResult(result) {
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    const joined = parts
+      .join(' ')
+      .replace(/[Oo]/g, '0')
+      .replace(/([,.])\s+(?=\d{2}(?:\D|$))/g, '$1');
+    const found = new Set();
+    const pattern = /(?:^|[^0-9])(\d{1,4}(?:[.,]\d{3})*[.,]\d{2})(?!\d)/g;
+    let match;
+    while ((match = pattern.exec(joined))) {
+      const token = match[1];
+      const value = parseNumber(token);
+      const check = pricePlausibility(value);
+      if (!Number.isFinite(value) || value <= 0 || check.suspicious) continue;
+      found.add((Math.round(value * 100) / 100).toFixed(2));
+    }
+    return [...found].map(Number);
+  }
+
+  async function recoverSuspiciousPricesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const priceCol = mapping?.price;
+    if (priceCol === undefined) return rides;
+
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[priceCol]);
+    const right = Number(boundaries[priceCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.priceRequired === false) continue;
+      const initialCheck = pricePlausibility(ride.price);
+      if (!initialCheck.suspicious) continue;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(1, cellWidth * 0.04);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 2]
+      ];
+
+      if (status) status.textContent = `Preiszelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      const attempts = [];
+
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = priceCandidatesFromOcrResult(second);
+          attempts.push(candidates.slice());
+          if (candidates.length !== 1) continue;
+          const candidate = Number(candidates[0]);
+          const key = candidate.toFixed(2);
+          votes.set(key, (votes.get(key) || 0) + 1);
+        }
+      } catch (_) {
+        ride.priceTargetedOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.priceTargetedOcrAttempts = attempts;
+      const ranked = [...votes.entries()]
+        .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
+
+      // Sicherheitsregel: mindestens zwei gezielte OCR-Crops muessen denselben
+      // plausiblen Preis liefern. Bei Gleichstand oder Einzel-Treffer bleibt CORE-004K aktiv.
+      if (!ranked.length || ranked[0][1] < 2) continue;
+      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+
+      const recovered = Number(ranked[0][0]);
+      if (pricePlausibility(recovered).suspicious) continue;
+
+      ride.priceOcrInitial = Number(ride.price) || 0;
+      ride.price = recovered;
+      ride.priceRecoveredFromTargetedOcr = true;
+      ride.priceRecoverySource = 'targeted_price_cell_consensus';
+    }
+
+    return out;
+  }
+
+  async function recoverMissingRideTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const timeCol = mapping?.time;
+    if (timeCol === undefined) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[timeCol]);
+    const right = Number(boundaries[timeCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.time) continue;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const cellWidth = Math.max(8, right - left);
+      const padX = Math.max(1, cellWidth * 0.04);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left, y0 - padY, right, y1 + padY, 3]
+      ];
+
+      if (status) status.textContent = `Uhrzeitzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      try {
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = await Tesseract.recognize(crop, 'eng');
+          const candidates = rideTimeCandidatesFromOcrResult(second);
+          if (candidates.length === 1) {
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        continue;
+      }
+
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      if (!ranked.length) continue;
+      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+      const recovered = ranked[0][0];
+      ride.time = recovered;
+      ride.planTime = recovered;
+      ride.timeRecoveredFromTargetedOcr = true;
+    }
+    return out;
+  }
+
+
+  function timeWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta) {
+    const grouped = new Map();
+    const words = Array.isArray(result?.data?.words) ? result.data.words : [];
+
+    words.forEach(word => {
+      const token = cellText(word?.text)
+        .replace(/[Oo]/g, '0')
+        .replace(/[Il]/g, '1')
+        .replace(/[^0-9:.]/g, '');
+      const bbox = word?.bbox || {};
+      const y0 = Number(bbox.y0);
+      const y1 = Number(bbox.y1);
+      const x0 = Number(bbox.x0);
+      const confidence = Number(word?.confidence);
+      if (!token || !/\d/.test(token) || ![x0, y0, y1].every(Number.isFinite)) return;
+      if (Number.isFinite(confidence) && confidence < 20) return;
+
+      const sourceCy = cropTop + ((y0 + y1) / 2) / cropScale;
+      let best = null;
+      let bestDistance = Infinity;
+      rowsWithMeta.forEach(item => {
+        const meta = item.meta;
+        const rowHeight = Math.max(8, Number(meta.y1) - Number(meta.y0));
+        const pad = Math.max(2, rowHeight * 0.28);
+        if (sourceCy < Number(meta.y0) - pad || sourceCy > Number(meta.y1) + pad) return;
+        const distance = Math.abs(sourceCy - Number(meta.cy));
+        if (distance < bestDistance) {
+          best = item;
+          bestDistance = distance;
+        }
+      });
+      if (!best) return;
+
+      const list = grouped.get(best.sourceRow) || [];
+      list.push({ text: token, x: x0 / cropScale });
+      grouped.set(best.sourceRow, list);
+    });
+
+    const byRow = new Map();
+    grouped.forEach((items, sourceRow) => {
+      const joined = items.sort((a,b) => a.x - b.x).map(item => item.text).join('');
+      const candidates = rideTimeCandidatesFromOcrResult({ data: { text: joined, words: [] } });
+      if (candidates.length === 1) byRow.set(sourceRow, normalizeTime(candidates[0]));
+    });
+    return byRow;
+  }
+
+  async function recoverSuspiciousRideTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const timeCol = mapping?.time;
+    if (timeCol === undefined) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[timeCol]);
+    const right = Number(boundaries[timeCol + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const rowsWithMeta = out.map((ride, rideIndex) => {
+      const initial = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
+      const initialMinutes = timeToMinutes(initial);
+      if (initialMinutes === null || initialMinutes >= NEXT_DAY_CUTOFF_MINUTES) return null;
+
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) return null;
+      const y0 = Number(rowMeta.y0);
+      const y1 = Number(rowMeta.y1);
+      const cy = Number(rowMeta.cy ?? ((y0 + y1) / 2));
+      if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
+      return {
+        rideIndex,
+        sourceRow: Number(ride.sourceRow),
+        initial,
+        meta: { y0, y1, cy }
+      };
+    }).filter(Boolean);
+    if (!rowsWithMeta.length) return out;
+
+    const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
+    const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
+    const cellWidth = Math.max(8, right - left);
+    const padX = Math.max(1, cellWidth * 0.035);
+    const attempts = [
+      { name: 'early-time-column-psm4', scale: 2, options: { tessedit_pageseg_mode: '4', tessedit_char_whitelist: '0123456789:.' } },
+      { name: 'early-time-column-psm6', scale: 3, options: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: '0123456789:.' } },
+      { name: 'early-time-column-psm11', scale: 2, options: { tessedit_pageseg_mode: '11', tessedit_char_whitelist: '0123456789:.' } }
+    ];
+    const votesByRow = new Map();
+    const attemptLogByRow = new Map();
+
+    if (status) {
+      status.textContent = `${rowsWithMeta.length} frühe Uhrzeit(en) werden gebündelt lokal gegengeprüft …`;
+    }
+
+    try {
+      for (const attempt of attempts) {
+        const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
+        const second = await Tesseract.recognize(crop, 'eng', attempt.options);
+        const rowCandidates = timeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
+
+        rowsWithMeta.forEach(item => {
+          const candidate = normalizeTime(rowCandidates.get(item.sourceRow) || '');
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          log.push({ mode: attempt.name, scale: attempt.scale, candidates: candidate ? [candidate] : [] });
+          attemptLogByRow.set(item.sourceRow, log);
+          if (timeToMinutes(candidate) === null) return;
+          const rowVotes = votesByRow.get(item.sourceRow) || new Map();
+          rowVotes.set(candidate, (rowVotes.get(candidate) || 0) + 1);
+          votesByRow.set(item.sourceRow, rowVotes);
+        });
+      }
+    } catch (_) {
+      // Der Primär-OCR-Wert bleibt unverändert, wenn die gebündelte Sicherheits-
+      // Gegenprüfung technisch nicht verfügbar ist. Die Analyse darf nicht wieder
+      // in hunderte serielle Zell-OCR-Aufrufe zurückfallen.
+    }
+
+    rowsWithMeta.forEach(item => {
+      const ride = out[item.rideIndex];
+      ride.timeSuspiciousOcrAttempts = attemptLogByRow.get(item.sourceRow) || [];
+      const ranked = [...(votesByRow.get(item.sourceRow) || new Map()).entries()]
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Unverändert streng: Kein Einzel-Treffer korrigiert eine Uhrzeit. Mindestens
+      // zwei getrennte Batch-OCR-Läufe müssen exakt dieselbe Zeit lesen und eindeutig gewinnen.
+      if (!winner || winner[1] < 2) return;
+      if (runner && winner[1] === runner[1]) return;
+      const recovered = normalizeTime(winner[0]);
+      if (!recovered || timeToMinutes(recovered) === null) return;
+
+      ride.timeSuspiciousBatchConfirmed = recovered === item.initial;
+      ride.timeSuspiciousBatchCandidate = recovered;
+      if (recovered === item.initial) return;
+
+      ride.timeOcrInitial = item.initial;
+      ride.time = recovered;
+      ride.planTime = recovered;
+      ride.dispoTime = recovered;
+      ride.dispo_time = recovered;
+      ride.timeRecoveredFromTargetedOcr = true;
+      ride.timeRecoverySource = 'targeted_suspicious_time_column_consensus';
+    });
+
+    return out;
+  }
+
+  function sanitizeTargetedFlightCandidate(candidate, rideTime) {
+    const normalized = normalizeFlightNumber(candidate);
+    const time = normalizeTime(rideTime);
+    if (!normalized || !time) return normalized;
+
+    const minute = time.slice(3, 5);
+    const match = normalized.match(/^(\d{2})([A-Z][A-Z0-9]\d{1,4}[A-Z]?)$/);
+    if (!match || match[1] !== minute) return normalized;
+
+    const remainder = normalizeFlightNumber(match[2]);
+    if (!remainder || !looksLikeFlight(remainder)) return normalized;
+    return remainder;
+  }
+
+  async function recoverMissingFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      if (ride.flightNumber) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, '', '');
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) continue;
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+
+      // CORE-004H: bewusst ENG in Y-Richtung bleiben. CORE-004G nutzte fast eine
+      // ganze Zeilenhöhe als Padding und konnte dadurch Flugnummern der Nachbarzeilen
+      // mitlesen. Dann gab es mehrere Kandidaten und aus Sicherheitsgründen keine Übernahme.
+      const tightPadY = Math.max(2, rowHeight * 0.22);
+      const cellWidth = Math.max(8, right - left);
+      const tightPadX = Math.max(2, cellWidth * 0.03);
+
+      const regions = [
+        // Die vorverarbeitete Planliste ist bereits auf bis zu 3200 px Breite skaliert.
+        // Deshalb zuerst 1x lesen; 2x nur als geglätteten Sicherheitsversuch.
+        [left + tightPadX, y0 - tightPadY, right - tightPadX, y1 + tightPadY, 1],
+        [left - cellWidth * 0.08, y0 - tightPadY, right + cellWidth * 0.08, y1 + tightPadY, 2]
+      ];
+
+      // Als dritter Versuch beide Flugspalten gemeinsam, aber weiterhin nur dieselbe Zeile.
+      const arrivalIndex = mapping?.arrivalFlight;
+      const departureIndex = mapping?.departureFlight;
+      if (arrivalIndex !== undefined && departureIndex !== undefined) {
+        const a0 = Number(boundaries[Math.min(arrivalIndex, departureIndex)]);
+        const a1 = Number(boundaries[Math.max(arrivalIndex, departureIndex) + 1]);
+        if (Number.isFinite(a0) && Number.isFinite(a1) && a1 > a0) {
+          regions.push([a0, y0 - tightPadY, a1, y1 + tightPadY, 1]);
+        }
+      }
+
+      if (status) status.textContent = `Flugzelle Zeile ${ride.sourceRow} wird lokal eng nachgelesen …`;
+      try {
+        // CORE-004J: CORE-004I sammelte alle Varianten in einem Set. Schon ein einzelner
+        // abweichender OCR-Versuch blockierte dadurch einen ansonsten stabil erkannten Flug.
+        // Jetzt zählt jeder Crop höchstens eine Stimme. Übernommen wird nur:
+        // 1) derselbe Kandidat aus mindestens zwei unabhängigen Crops oder
+        // 2) genau ein Kandidat insgesamt, wenn alle übrigen Crops gar keinen Kandidaten liefern.
+        const votes = new Map();
+        const attempts = [];
+        // P57: Die bereits vorhandenen, unabhängigen Crops derselben Flugzelle werden
+        // gleichzeitig OCR-gelesen. Promise.all bewahrt die regions-Reihenfolge, sodass
+        // Kandidaten, Versuchsliste und Stimmenlogik danach exakt wie zuvor ausgewertet werden.
+        const regionResults = await Promise.all(regions.map(([x0, cy0, x1, cy1, scale]) => {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          return Tesseract.recognize(crop, 'eng');
+        }));
+        for (const second of regionResults) {
+          const candidates = [...new Set(
+            flightCandidatesFromOcrResult(second)
+              .map(candidate => sanitizeTargetedFlightCandidate(candidate, ride.planTime || ride.time))
+              .filter(Boolean)
+          )];
+          attempts.push(candidates.slice());
+          if (candidates.length === 1) {
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+
+        const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        let recovered = '';
+        if (ranked.length === 1) {
+          recovered = ranked[0][0];
+        } else if (ranked.length > 1 && ranked[0][1] >= 2 && ranked[0][1] > ranked[1][1]) {
+          recovered = ranked[0][0];
+        }
+        ride.flightTargetedOcrAttempts = attempts;
+        if (!recovered) continue;
+        ride.flightNumber = recovered;
+        if (routeType === 'arrival') ride.arrivalFlight = recovered;
+        if (routeType === 'departure') ride.departureFlight = recovered;
+        ride.flightDirection = routeType;
+        ride.flightRecoveredFromTargetedOcr = true;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      } catch (_) {
+        // Zweit-OCR ist nur Sicherheitsnetz. Bei Fehler bleibt die bestehende Warnung erhalten.
+      }
+    }
+    return out;
+  }
+
+  function hasAmbiguousFlightPrefix(value) {
+    const flight = normalizeFlightNumber(value);
+    if (!flight) return false;
+    // Flugdesignator ist in den ATMS-Listen in der Regel die ersten zwei Zeichen.
+    // Nur 0/1 in diesem Prefix sind OCR-mehrdeutig; andere Ziffern bleiben unangetastet.
+    return /^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(flight) && /[01]/.test(flight.slice(0, 2));
+  }
+
+  function ambiguityEquivalentFlight(a, b) {
+    const left = normalizeFlightNumber(a);
+    const right = normalizeFlightNumber(b);
+    if (!left || !right || left.length !== right.length || left === right) return false;
+    const sameOrAmbiguous = (x, y) => {
+      if (x === y) return true;
+      const group1 = new Set(['I', '1', 'L']);
+      const group0 = new Set(['O', '0']);
+      return (group1.has(x) && group1.has(y)) || (group0.has(x) && group0.has(y));
+    };
+    for (let i = 0; i < left.length; i++) {
+      if (!sameOrAmbiguous(left[i], right[i])) return false;
+    }
+    return true;
+  }
+
+  async function recoverAmbiguousFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeFlightNumber(ride.flightNumber);
+      if (!initial || !hasAmbiguousFlightPrefix(initial)) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) {
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) {
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.18);
+      const padX = Math.max(2, cellWidth * 0.03);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+        [left + cellWidth * 0.08, y0 - rowHeight * 0.12, right - cellWidth * 0.08, y1 + rowHeight * 0.12, 3]
+      ];
+
+      if (status) status.textContent = `Mehrdeutige Flugzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      const votes = new Map();
+      const attempts = [];
+      try {
+        // CORE-005W1: Eine Tabellenzelle wird von Tesseract im Standard-Seitenmodus
+        // bei I/1/L teils stabil falsch gelesen. Deshalb dieselben ENGEN Zell-Crops
+        // zusätzlich als einzelne Textzeile bzw. einzelnes Wort lesen. Die Modi zählen
+        // als getrennte OCR-Versuche; eine Korrektur braucht weiterhin >=2 Stimmen.
+        const ocrModes = [
+          { name: 'default', options: {} },
+          { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
+          { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+        ];
+        for (const [x0, cy0, x1, cy1, scale] of regions) {
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
+            const candidates = flightCandidatesFromOcrResult(second)
+              .filter(candidate => candidate === initial || ambiguityEquivalentFlight(initial, candidate));
+            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          }
+        }
+      } catch (_) {
+        ride.flightAmbiguousOcrAttempts = attempts;
+        ride.flightOcrAmbiguityNeedsReview = true;
+        continue;
+      }
+
+      ride.flightAmbiguousOcrAttempts = attempts;
+      const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = ranked[0] || null;
+      const runner = ranked[1] || null;
+
+      // Nie aufgrund eines Einzel-Treffers korrigieren. Mindestens zwei enge Crops
+      // muessen dieselbe alternative Lesart liefern und sie muss eindeutig gewinnen.
+      if (winner && winner[0] !== initial && winner[1] >= 2 && (!runner || winner[1] > runner[1]) && ambiguityEquivalentFlight(initial, winner[0])) {
+        const recovered = winner[0];
+        ride.flightNumber = recovered;
+        if (routeType === 'arrival') ride.arrivalFlight = recovered;
+        if (routeType === 'departure') ride.departureFlight = recovered;
+        ride.flightDirection = routeType;
+        ride.flightOcrInitialAmbiguous = initial;
+        ride.flightRecoveredFromAmbiguousOcr = true;
+        ride.flightOcrAmbiguityNeedsReview = false;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      } else {
+        ride.flightOcrAmbiguityNeedsReview = true;
+      }
+    }
+    return out;
+  }
+
+  function singleDeletionPrefixMatch(longPrefix, shortPrefix) {
+    if (!longPrefix || !shortPrefix || longPrefix.length !== shortPrefix.length + 1) return false;
+    for (let drop = 0; drop < longPrefix.length; drop++) {
+      if (longPrefix.slice(0, drop) + longPrefix.slice(drop + 1) === shortPrefix) return true;
+    }
+    return false;
+  }
+
+  function longPrefixBoundaryGlyphShiftMatch(initialValue, candidateValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const candidate = normalizeFlightNumber(candidateValue);
+    // P46: Generischer OCR-Grenzfall zwischen Designator und Zahlenteil.
+    // Beispielstruktur (ohne konkrete Flugnummer): ABC123 -> AB9123, wenn nur
+    // das dritte Zeichen Buchstabe/Ziffer verwechselt wurde und ALLE übrigen
+    // Zeichen exakt identisch sind. Eine bloße Heuristik ohne OCR-Kandidat reicht
+    // ausdrücklich nicht; diese Funktion bewertet nur bereits lokal gelesene Kandidaten.
+    if (!/^[A-Z]{3}\d{1,4}[A-Z]?$/.test(initial)) return false;
+    if (!/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(candidate)) return false;
+    if (initial.length !== candidate.length || initial === candidate) return false;
+    if (initial.slice(0, 2) !== candidate.slice(0, 2)) return false;
+    if (!/[A-Z]/.test(initial[2]) || !/\d/.test(candidate[2])) return false;
+    return initial.slice(3) === candidate.slice(3);
+  }
+
+  function safeLongPrefixFlightAlternative(initialValue, candidateValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const candidate = normalizeFlightNumber(candidateValue);
+    const initialMatch = initial.match(/^([A-Z]{3,4})(\d{1,4}[A-Z]?)$/);
+    const candidateMatch = candidate.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
+    if (!initialMatch || !candidateMatch || candidate === initial) return false;
+    if (initialMatch[2] === candidateMatch[2] && singleDeletionPrefixMatch(initialMatch[1], candidateMatch[1])) return true;
+    return longPrefixBoundaryGlyphShiftMatch(initial, candidate);
+  }
+
+  // P47: Nur der konkrete S↔9-Grenzfall wird zusätzlich geprüft. Die Funktion
+  // erzeugt KEINE Korrektur aus einer Flugnummern-/Airline-Liste, sondern nur den
+  // Kandidaten, dessen Zahlenteil anschließend direkt aus der Bildzelle belegt
+  // werden muss. Beispielstruktur: ABS123 -> AB9123; die übrigen Ziffern müssen
+  // exakt erhalten bleiben. Maximal vier Ziffern im resultierenden Zahlenteil.
+  function sNineBoundaryDigitProbeSpec(initialValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const match = initial.match(/^([A-Z]{2})S(\d{1,3})$/);
+    if (!match) return null;
+    const expectedTail = `9${match[2]}`;
+    if (expectedTail.length < 2 || expectedTail.length > 4) return null;
+    const candidate = normalizeFlightNumber(`${match[1]}${expectedTail}`);
+    if (!candidate || candidate === initial || diagnosticFlightPrefixLength(candidate) !== 2) return null;
+    return { candidate, expectedTail };
+  }
+
+  function digitOnlyTokensFromOcrResult(result) {
+    const found = new Set();
+    const parts = [];
+    if (result?.data?.text) parts.push(result.data.text);
+    (result?.data?.words || []).forEach(word => { if (word?.text) parts.push(word.text); });
+    parts.forEach(part => {
+      const matches = cellText(part).match(/\d{1,4}/g) || [];
+      matches.forEach(token => found.add(token));
+    });
+    return [...found];
+  }
+
+
+  // P49: Für den bereits streng eingegrenzten S↔9-Fall werden die Ziffern nicht
+  // mehr aus der kompletten Flugzelle gelesen. Stattdessen wird das Primär-OCR-Wort
+  // mit exakt demselben normalisierten Inhalt lokalisiert und ab der generischen
+  // Grenze NACH dem zweistelligen Designator in drei unterschiedlich zugeschnittenen
+  // Tail-Crops erneut gelesen. Dadurch kann ein Buchstabe, der die Ziffern-OCR links
+  // verfälscht, entfernt werden, ohne irgendeine konkrete Flugnummer zu kennen.
+  function primaryRawFlightWordBounds(imageMeta, rowMeta, columnIndex, initialValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[columnIndex + 1]);
+    if (!initial || !Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return null;
+
+    const rowY0 = Number(rowMeta.y0 || 0);
+    const rowY1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, rowY1 - rowY0);
+    const matches = rawWords.filter(word => {
+      const x0 = Number(word?.x0 || 0);
+      const x1 = Number(word?.x1 || 0);
+      const y0 = Number(word?.y0 || 0);
+      const y1 = Number(word?.y1 || 0);
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      if (!(x1 > x0 && y1 > y0)) return false;
+      if (cx < left || cx >= right) return false;
+      if (cy < rowY0 - rowHeight * 0.25 || cy > rowY1 + rowHeight * 0.25) return false;
+      return normalizeFlightNumber(word?.text) === initial;
+    }).sort((a,b) => {
+      const confidenceDelta = Number(b?.confidence || 0) - Number(a?.confidence || 0);
+      if (confidenceDelta) return confidenceDelta;
+      return (Number(b?.x1 || 0) - Number(b?.x0 || 0)) - (Number(a?.x1 || 0) - Number(a?.x0 || 0));
+    });
+
+    const word = matches[0];
+    if (!word) return null;
+    const x0 = Number(word.x0 || 0);
+    const x1 = Number(word.x1 || 0);
+    const y0 = Number(word.y0 || 0);
+    const y1 = Number(word.y1 || 0);
+    if (!(x1 > x0 && y1 > y0)) return null;
+    return { x0, x1, y0, y1, cellLeft: left, cellRight: right };
+  }
+
+  function sNineBoundaryTailProbeRegions(imageMeta, rowMeta, columnIndex, initialValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const probe = sNineBoundaryDigitProbeSpec(initial);
+    const word = probe ? primaryRawFlightWordBounds(imageMeta, rowMeta, columnIndex, initial) : null;
+    if (!probe || !word || initial.length < 4) return [];
+
+    const width = Math.max(1, word.x1 - word.x0);
+    const height = Math.max(1, word.y1 - word.y0);
+    if (width < 12 || height < 5) return [];
+
+    // Zwei Zeichen gehören zum Designator. Die drei Geometrien schneiden leicht
+    // unterschiedlich um diese rein strukturell bestimmte Grenze. Die Werte sind
+    // absichtlich relativ zur Wortbreite/-höhe und nicht auf eine Flugnummer bezogen.
+    const designatorBoundaryRatio = 2 / initial.length;
+    const specs = [
+      { shift: -0.07, yPad: 0.35, rightPad: 0.08, scale: 4 },
+      { shift: -0.04, yPad: 0.48, rightPad: 0.10, scale: 5 },
+      { shift:  0.05, yPad: 0.65, rightPad: 0.12, scale: 6 }
+    ];
+
+    return specs.map((spec, index) => {
+      const startRatio = Math.max(0.08, Math.min(0.78, designatorBoundaryRatio + spec.shift));
+      const x0 = Math.max(word.cellLeft + 1, word.x0 + width * startRatio);
+      const x1 = Math.min(word.cellRight - 1, word.x1 + width * spec.rightPad);
+      return {
+        x0,
+        y0: word.y0 - height * spec.yPad,
+        x1,
+        y1: word.y1 + height * spec.yPad,
+        scale: spec.scale,
+        crop: index + 1,
+        mode: 'digit-tail-wordcrop-worker-psm8'
+      };
+    }).filter(region => region.x1 - region.x0 >= 6 && region.y1 - region.y0 >= 5);
+  }
+
+  function rawFlightCellHasOnlyPlaceholder(imageMeta, rowMeta, columnIndex) {
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[columnIndex + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return false;
+
+    const y0 = Number(rowMeta.y0 || 0);
+    const y1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, y1 - y0);
+    const words = rawWords.filter(word => {
+      const cx = (Number(word?.x0 || 0) + Number(word?.x1 || 0)) / 2;
+      const cy = (Number(word?.y0 || 0) + Number(word?.y1 || 0)) / 2;
+      return cx >= left && cx < right && cy >= y0 - rowHeight * 0.25 && cy <= y1 + rowHeight * 0.25;
+    }).map(word => cellText(word?.text).trim()).filter(Boolean);
+
+    // Ohne irgendein Primärwort fehlt der positive Platzhalter-Beweis; dann nur warnen.
+    if (!words.length) return false;
+    return words.every(value => /^[-–—~_.]+$/.test(value));
+  }
+
+  // CORE-007D8A1F1/P46: Drei oder mehr Buchstaben vor dem Zahlenteil werden NICHT
+  // pauschal gekürzt. Nur die konkrete Flugzelle wird erneut gelesen. Eine alternative
+  // 2-stellige Lesart braucht mindestens drei Stimmen, Evidenz aus mindestens zwei Crops
+  // und muss stärker als die Primärlesart sein. P46 erlaubt zusätzlich ausschließlich
+  // einen lokal tatsächlich gelesenen Designator/Zahl-Grenzfall; ohne sicheren Sieger
+  // bleibt die Zelle prüfpflichtig bzw. wird nur bei positivem Platzhalterbeweis verworfen.
+  async function recoverSuspiciousLongFlightPrefixesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    // P53: Tesseract.recognize(...) erzeugt intern für jeden Aufruf einen neuen Worker.
+    // Die Long-Prefix-Gegenprüfung benötigt bei drei Crops × drei Modi dadurch sonst
+    // bis zu neun Worker-Starts PRO auffälliger Flugzelle. Die Worker werden hier
+    // ausschließlich über den Umfang dieser Funktion gepoolt. Die drei OCR-Versuche
+    // je Crop bleiben vollständig erhalten und zählen weiterhin exakt wie zuvor.
+    const longPrefixModeWorkers = new Map();
+    let longPrefixDigitWorker = null;
+    const getLongPrefixModeWorker = async mode => {
+      const key = cellText(mode?.name) || 'default';
+      if (longPrefixModeWorkers.has(key)) return longPrefixModeWorkers.get(key);
+      if (typeof Tesseract.createWorker !== 'function') return null;
+      // mode.options wird absichtlich weiterhin als Worker-Option übergeben. Das bildet
+      // den bisherigen Tesseract.recognize(crop,'eng',mode.options)-Pfad nach und ändert
+      // deshalb NICHT nachträglich PSM/Whitelist-Verhalten oder OCR-Entscheidungsregeln.
+      const worker = await Tesseract.createWorker('eng', undefined, mode?.options || {});
+      if (!worker || typeof worker.recognize !== 'function') throw new Error('long_prefix_worker_api_unavailable');
+      longPrefixModeWorkers.set(key, worker);
+      return worker;
+    };
+    const getLongPrefixDigitWorker = async () => {
+      if (longPrefixDigitWorker) return longPrefixDigitWorker;
+      if (typeof Tesseract.createWorker !== 'function') throw new Error('createWorker_unavailable');
+      const worker = await Tesseract.createWorker('eng');
+      if (!worker || typeof worker.setParameters !== 'function' || typeof worker.recognize !== 'function') {
+        if (worker && typeof worker.terminate === 'function') { try { await worker.terminate(); } catch (_) {} }
+        throw new Error('worker_parameter_api_unavailable');
+      }
+      await worker.setParameters({
+        tessedit_pageseg_mode: '8',
+        tessedit_char_whitelist: '0123456789'
+      });
+      longPrefixDigitWorker = worker;
+      return worker;
+    };
+
+    try {
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeFlightNumber(ride?.flightNumber);
+      if (!initial || diagnosticFlightPrefixLength(initial) < 3) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) continue;
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const padY = Math.max(2, rowHeight * 0.16);
+      const padX = Math.max(2, cellWidth * 0.03);
+      const regions = [
+        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
+        [left + cellWidth * 0.04, y0 - rowHeight * 0.12, right - cellWidth * 0.04, y1 + rowHeight * 0.12, 2],
+        [left + cellWidth * 0.10, y0 - rowHeight * 0.08, right - cellWidth * 0.10, y1 + rowHeight * 0.08, 3]
+      ];
+      const ocrModes = [
+        { name: 'default', options: {} },
+        { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
+        { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+      ];
+
+      if (status) status.textContent = `Auffällige Flugzelle Zeile ${ride.sourceRow} wird lokal gegengeprüft …`;
+      const votes = new Map();
+      const cropSupport = new Map();
+      const attempts = [];
+      try {
+        for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
+          const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          // P55: Die drei bestehenden Modi arbeiten auf drei getrennten P53-Workern.
+          // Deshalb können sie für denselben unveränderten Crop parallel laufen, ohne
+          // einen Worker gleichzeitig doppelt zu benutzen. Promise.all bewahrt die
+          // ocrModes-Reihenfolge, sodass Diagnose-/Stimmreihenfolge unverändert bleibt.
+          const modeResults = await Promise.all(ocrModes.map(async mode => {
+            const modeWorker = await getLongPrefixModeWorker(mode);
+            const second = modeWorker
+              ? await modeWorker.recognize(crop)
+              : await Tesseract.recognize(crop, 'eng', mode.options);
+            return { mode, second };
+          }));
+          for (const { mode, second } of modeResults) {
+            const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
+              .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
+            // CORE-007D8A1F1D3: Rohtrace bleibt sichtbar. Zusätzlich nutzt diese gezielte
+            // Flug-Gegenprüfung jetzt den Boundary-erhaltenden Kandidaten-Extractor.
+            // Keine Flugnummern-/Airline-Hardcodes; Stimmen/Recovery-Schwellen bleiben gleich.
+            const rawText = cellText(second?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+            const rawWords = (Array.isArray(second?.data?.words) ? second.data.words : [])
+              .map(word => cellText(word?.text).replace(/\s+/g, ' ').trim())
+              .filter(Boolean)
+              .join(' ')
+              .slice(0, 80);
+            attempts.push({ crop: cropIndex + 1, mode: mode.name, scale, rawText, rawWords, candidates: candidates.slice() });
+            if (candidates.length !== 1) continue;
+            const candidate = candidates[0];
+            votes.set(candidate, (votes.get(candidate) || 0) + 1);
+            if (!cropSupport.has(candidate)) cropSupport.set(candidate, new Set());
+            cropSupport.get(candidate).add(cropIndex);
+          }
+        }
+      } catch (_) {
+        ride.flightLongPrefixOcrAttempts = attempts;
+        continue;
+      }
+
+      ride.flightLongPrefixOcrAttempts = attempts;
+      ride.flightLongPrefixOcrInitial = initial;
+      const alternatives = [...votes.entries()]
+        .filter(([candidate]) => candidate !== initial && safeLongPrefixFlightAlternative(initial, candidate))
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+      const winner = alternatives[0] || null;
+      const runner = alternatives[1] || null;
+      const initialVotes = Number(votes.get(initial) || 0);
+      const supportingCrops = winner ? (cropSupport.get(winner[0])?.size || 0) : 0;
+      const winnerAccepted = Boolean(
+        winner
+        && winner[1] >= 3
+        && supportingCrops >= 2
+        && winner[1] > initialVotes
+        && (!runner || winner[1] > runner[1])
+      );
+
+      if (winnerAccepted) {
+        const recovered = winner[0];
+        ride.flightNumber = recovered;
+        if (routeType === 'arrival') ride.arrivalFlight = recovered;
+        if (routeType === 'departure') ride.departureFlight = recovered;
+        ride.flightDirection = routeType;
+        ride.flightRecoveredFromLongPrefixOcr = true;
+        ride.flightLongPrefixOcrEvidence = { mode: 'full_flight_consensus', votes: winner[1], crops: supportingCrops, initialVotes };
+        ride.flightLongPrefixOcrUnresolved = false;
+        continue;
+      }
+
+      // P48/P49: Der streng eingegrenzte S↔9-Zusatzbeweis behält PSM 8,
+      // Ziffern-Whitelist, drei Tail-Crops und die Zwei-Crop-Konsensregel unverändert.
+      // P53 ändert nur den Lebenszyklus: derselbe korrekt parametrierte Ziffern-Worker
+      // wird für weitere S↔9-Fälle desselben Analyse-Laufs wiederverwendet und erst
+      // nach Abschluss der gesamten Long-Prefix-Prüfung beendet.
+      const sNineProbe = sNineBoundaryDigitProbeSpec(initial);
+      if (sNineProbe) {
+        const expectedCropSupport = new Set();
+        const competingSupport = new Map();
+        try {
+          const digitWorker = await getLongPrefixDigitWorker();
+
+          const tailRegions = sNineBoundaryTailProbeRegions(imageMeta, rowMeta, colIndex, initial);
+          const digitRegions = tailRegions.length >= 2
+            ? tailRegions
+            : regions.map(([x0, y0, x1, y1, scale], index) => ({
+                x0, y0, x1, y1, scale, crop: index + 1, mode: 'digit-tail-worker-psm8-fallback'
+              }));
+
+          for (let cropIndex = 0; cropIndex < digitRegions.length; cropIndex++) {
+            const region = digitRegions[cropIndex];
+            const crop = cropCanvasRegion(imageCanvas, region.x0, region.y0, region.x1, region.y1, region.scale);
+            const second = await digitWorker.recognize(crop);
+            const digitTokens = digitOnlyTokensFromOcrResult(second);
+            const exactExpected = digitTokens.includes(sNineProbe.expectedTail);
+            const sameLengthCompetitors = digitTokens.filter(token =>
+              token.length === sNineProbe.expectedTail.length && token !== sNineProbe.expectedTail
+            );
+            const cropKey = Number(region.crop || cropIndex + 1);
+            if (exactExpected) expectedCropSupport.add(cropKey);
+            sameLengthCompetitors.forEach(token => {
+              if (!competingSupport.has(token)) competingSupport.set(token, new Set());
+              competingSupport.get(token).add(cropKey);
+            });
+            const rawText = cellText(second?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+            const rawWords = (Array.isArray(second?.data?.words) ? second.data.words : [])
+              .map(word => cellText(word?.text).replace(/\s+/g, ' ').trim())
+              .filter(Boolean)
+              .join(' ')
+              .slice(0, 80);
+            attempts.push({
+              crop: cropKey,
+              mode: region.mode || 'digit-tail-worker-psm8',
+              scale: region.scale,
+              rawText,
+              rawWords,
+              candidates: exactExpected ? [sNineProbe.candidate] : [],
+              digitTokens: digitTokens.slice()
+            });
+          }
+        } catch (error) {
+          attempts.push({
+            crop: 0,
+            mode: 'digit-tail-worker-error',
+            scale: 0,
+            rawText: cellText(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 80),
+            rawWords: '',
+            candidates: [],
+            digitTokens: []
+          });
+        }
+
+        const competitorWithMultiCropSupport = [...competingSupport.values()]
+          .some(crops => crops.size >= 2);
+        if (expectedCropSupport.size >= 2 && !competitorWithMultiCropSupport) {
+          const recovered = sNineProbe.candidate;
+          ride.flightNumber = recovered;
+          if (routeType === 'arrival') ride.arrivalFlight = recovered;
+          if (routeType === 'departure') ride.departureFlight = recovered;
+          ride.flightDirection = routeType;
+          ride.flightRecoveredFromLongPrefixOcr = true;
+          ride.flightRecoveredFromS9BoundaryProbe = true;
+          ride.flightLongPrefixOcrEvidence = {
+            mode: 's9_primary_word_tail_crop_consensus',
+            crops: expectedCropSupport.size,
+            expectedTail: sNineProbe.expectedTail,
+            initialVotes
+          };
+          ride.flightLongPrefixOcrUnresolved = false;
+          continue;
+        }
+      }
+
+      // P46 Fail-safe: Ein auffälliger 3+ Buchstaben-Präfix darf nach erfolgloser
+      // Gegenprüfung nicht mehr still "OK" werden. Wenn die Primär-Rohzelle sogar
+      // ausschließlich leer/Platzhalter ist und die lokale OCR keinerlei plausiblen
+      // Flugkandidaten findet, ist der Primärwert ein OCR-Scheinwert und wird verworfen.
+      // Sonst bleibt der Wert erhalten, aber explizit prüfpflichtig – niemals geraten.
+      const anyLocalCandidate = attempts.some(attempt => Array.isArray(attempt?.candidates) && attempt.candidates.length > 0);
+      const placeholderOnly = rawFlightCellHasOnlyPlaceholder(imageMeta, rowMeta, colIndex);
+      if (!anyLocalCandidate && initialVotes === 0 && placeholderOnly) {
+        ride.flightNumber = '';
+        if (routeType === 'arrival') ride.arrivalFlight = '';
+        if (routeType === 'departure') ride.departureFlight = '';
+        ride.flightRejectedSuspiciousOcr = true;
+        ride.flightRejectedSuspiciousOcrInitial = initial;
+        ride.flightLongPrefixOcrUnresolved = false;
+      } else {
+        ride.flightLongPrefixOcrUnresolved = true;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      }
+    }
+    } finally {
+      const workers = [...longPrefixModeWorkers.values()];
+      if (longPrefixDigitWorker) workers.push(longPrefixDigitWorker);
+      for (const worker of workers) {
+        if (!worker || typeof worker.terminate !== 'function') continue;
+        try { await worker.terminate(); } catch (_) {}
+      }
+    }
+
+    return out;
+  }
+
+  // CORE-007D6: Wiederkehrende OCR-Texte nur dann vereinheitlichen, wenn
+  // sich ihre Schreibweisen ausschließlich durch Trenner/Leerzeichen oder Groß-/
+  // Kleinschreibung unterscheiden. Inhaltliche Buchstaben-/Ziffern-Abweichungen,
+  // Diakritik-Abweichungen oder Einzelbeobachtungen bleiben unangetastet.
+  function repeatedTextSignature(value) {
+    const text = cellText(value).normalize('NFC').trim();
+    if (!text) return '';
+    return text
+      .toLocaleLowerCase('de-DE')
+      .replace(/[\s·._\-–—/:\\|]+/g, '');
+  }
+
+  function applyRepeatedTextConsistency(rides) {
+    if (!Array.isArray(rides) || rides.length < 3) return rides;
+
+    const fields = ['customer', 'company'];
+    const out = rides.map(ride => ({ ...ride }));
+
+    fields.forEach(field => {
+      const groups = new Map();
+      out.forEach((ride, index) => {
+        const raw = cellText(ride?.[field]).normalize('NFC').trim();
+        const signature = repeatedTextSignature(raw);
+        // Kurze Codes/Initialen bleiben bewusst unberührt.
+        if (!raw || signature.length < 4) return;
+        if (!groups.has(signature)) groups.set(signature, []);
+        groups.get(signature).push({ index, raw });
+      });
+
+      groups.forEach(entries => {
+        if (entries.length < 3) return;
+        const counts = new Map();
+        entries.forEach(entry => counts.set(entry.raw, (counts.get(entry.raw) || 0) + 1));
+        const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de-DE'));
+        const winner = ranked[0] || null;
+        const runner = ranked[1] || null;
+
+        // Mindestens zwei identische Beobachtungen und eine eindeutige Mehrheit.
+        if (!winner || winner[1] < 2 || (runner && winner[1] <= runner[1])) return;
+
+        entries.forEach(entry => {
+          if (entry.raw === winner[0]) return;
+          // Durch die gemeinsame Signature sind nur Separator-/Case-Varianten erlaubt.
+          out[entry.index][field] = winner[0];
+          out[entry.index].repeatedTextConsistency = {
+            ...(out[entry.index].repeatedTextConsistency || {}),
+            [field]: { from: entry.raw, to: winner[0], evidenceCount: winner[1] }
+          };
+          // Legacy-/UI-Alias nach einer Textvereinheitlichung erneut synchronisieren.
+          out[entry.index].partner = cellText(out[entry.index].customer) || cellText(out[entry.index].company);
+        });
+      });
+    });
+
+    return out;
+  }
+
+  function diagnosticFlightPrefixLength(value) {
+    const flight = normalizeFlightNumber(value);
+    const match = flight.match(/^([A-Z]+)(\d{1,4}[A-Z]?)$/);
+    return match ? match[1].length : 0;
+  }
+
+  function formatRawDiagnosticWords(words) {
+    const list = Array.isArray(words) ? words : [];
+    if (!list.length) return '∅';
+    return list.map(word => {
+      const text = cellText(word?.text).replace(/\s+/g, ' ');
+      const conf = Number.isFinite(Number(word?.confidence)) ? Math.round(Number(word.confidence)) : 0;
+      return `${text}@${Math.round(Number(word?.x0 || 0))}-${Math.round(Number(word?.x1 || 0))}/${conf}`;
+    }).join(' | ');
+  }
+
+  function rawWordsForDiagnosticCell(imageMeta, rowMeta, columnIndex) {
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[columnIndex + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return null;
+
+    const y0 = Number(rowMeta.y0 || 0);
+    const y1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, y1 - y0);
+    const cyMin = y0 - rowHeight * 0.25;
+    const cyMax = y1 + rowHeight * 0.25;
+    const width = Math.max(8, right - left);
+    const spill = Math.max(10, width * 0.32);
+
+    const rowWords = rawWords.filter(word => {
+      const cy = (Number(word.y0 || 0) + Number(word.y1 || 0)) / 2;
+      return cy >= cyMin && cy <= cyMax;
+    });
+    const byX = word => (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
+    const inCell = rowWords.filter(word => {
+      const cx = byX(word);
+      return cx >= left && cx < right;
+    }).sort((a,b) => Number(a.x0||0) - Number(b.x0||0));
+    const leftSpill = rowWords.filter(word => {
+      const cx = byX(word);
+      return cx >= left - spill && cx < left;
+    }).sort((a,b) => Number(a.x0||0) - Number(b.x0||0));
+    const rightSpill = rowWords.filter(word => {
+      const cx = byX(word);
+      return cx >= right && cx <= right + spill;
+    }).sort((a,b) => Number(a.x0||0) - Number(b.x0||0));
+
+    return {
+      left, right, y0, y1,
+      inCell: formatRawDiagnosticWords(inCell),
+      leftSpill: formatRawDiagnosticWords(leftSpill),
+      rightSpill: formatRawDiagnosticWords(rightSpill)
+    };
+  }
+
+  function buildOcrCellRawDiagnostics(rides, imageMeta, mapping) {
+    // CORE-007D8A: Reine Beobachtung. Kein Ride wird hier mutiert.
+    if (!Array.isArray(rides) || !imageMeta || !mapping || !Array.isArray(imageMeta.rawOcrWords)) return [];
+    const diagnostics = [];
+
+    rides.forEach(ride => {
+      const matrixIndex = Number(ride?.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) return;
+
+      ['pickup', 'destination'].forEach(field => {
+        const columnIndex = mapping?.[field];
+        if (columnIndex === undefined || columnIndex === null) return;
+        const raw = rawWordsForDiagnosticCell(imageMeta, rowMeta, columnIndex);
+        if (!raw) return;
+        diagnostics.push({
+          kind: 'route',
+          sourceRow: Number(ride.sourceRow || 0),
+          time: cellText(ride.dispoTime || ride.time),
+          field,
+          value: cellText(ride?.[field]),
+          ...raw
+        });
+      });
+
+      const flight = normalizeFlightNumber(ride?.flightNumber || ride?.flightRejectedSuspiciousOcrInitial);
+      // Drei oder mehr Buchstaben vor dem Zahlenteil sind fuer ATMS auffaellig genug,
+      // um die Rohzelle sichtbar zu machen. Es wird dadurch NICHT gewarnt/korrigiert.
+      if (flight && diagnosticFlightPrefixLength(flight) >= 3) {
+        const field = ride?.arrivalFlight ? 'arrivalFlight' : ride?.departureFlight ? 'departureFlight' : '';
+        const columnIndex = field ? mapping?.[field] : undefined;
+        if (columnIndex !== undefined && columnIndex !== null) {
+          const raw = rawWordsForDiagnosticCell(imageMeta, rowMeta, columnIndex);
+          if (raw) diagnostics.push({
+            kind: 'flight',
+            sourceRow: Number(ride.sourceRow || 0),
+            time: cellText(ride.dispoTime || ride.time),
+            field,
+            value: flight,
+            ...raw
+          });
+        }
+      }
+    });
+
+    return diagnostics;
+  }
+
+  function buildOcrDiagnosticSelfCheck(rides, imageMeta, mapping, diagnostics) {
+    // CORE-007D8A1: Ausschließlich Beobachtung. Keine Eingabedaten werden mutiert.
+    const rideList = Array.isArray(rides) ? rides : [];
+    const rawWords = Array.isArray(imageMeta?.rawOcrWords) ? imageMeta.rawOcrWords : [];
+    const boundaries = Array.isArray(imageMeta?.boundaries) ? imageMeta.boundaries : [];
+    const rowMeta = imageMeta?.rowMetaByMatrixIndex && typeof imageMeta.rowMetaByMatrixIndex === 'object'
+      ? imageMeta.rowMetaByMatrixIndex
+      : {};
+    const rowMetaKeys = Object.keys(rowMeta).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+    const sourceRows = rideList.map(ride => Number(ride?.sourceRow || 0)).filter(Number.isFinite);
+    const matrixIndexes = sourceRows.map(row => row - 1);
+    const matchedMatrixIndexes = matrixIndexes.filter(index => Boolean(rowMeta[index]));
+    const mappingSnapshot = ['pickup','destination','arrivalFlight','departureFlight','time','flightTime','driver']
+      .map(field => `${field}=${mapping?.[field] ?? '–'}`).join(', ');
+    const diagList = Array.isArray(diagnostics) ? diagnostics : [];
+    const routeDiagnostics = diagList.filter(item => item?.kind === 'route').length;
+    const flightDiagnostics = diagList.filter(item => item?.kind === 'flight').length;
+    const suspiciousFlights = rideList.filter(ride => {
+      const flight = normalizeFlightNumber(ride?.flightNumber);
+      return flight && diagnosticFlightPrefixLength(flight) >= 3;
+    }).map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightNumber)}`);
+    const routeBoundaryRecoveries = [];
+    rideList.forEach(ride => {
+      ['pickup', 'destination'].forEach(field => {
+        if (!ride?.[`${field}RecoveredFromBoundaryOcr`]) return;
+        routeBoundaryRecoveries.push(`${Number(ride?.sourceRow || 0)}:${field}=${cellText(ride?.[field])}`);
+      });
+    });
+    const flightPrefixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromLongPrefixOcr)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
+    const flightPrefixRejects = rideList.filter(ride => ride?.flightRejectedSuspiciousOcr)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightRejectedSuspiciousOcrInitial)}→∅`);
+    const unresolvedSuspiciousFlights = rideList.filter(ride => ride?.flightLongPrefixOcrUnresolved && ride?.flightNumber)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightNumber)}`);
+
+    // CORE-007D8A1F1D3: Diagnose der lokalen
+    // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
+    // irgendeinen OCR-Wert oder eine Importentscheidung zu verändern.
+    const flightOcrTraces = rideList.filter(ride => {
+      const initial = normalizeFlightNumber(ride?.flightLongPrefixOcrInitial || ride?.flightNumber || ride?.flightRejectedSuspiciousOcrInitial);
+      return initial && diagnosticFlightPrefixLength(initial) >= 3 && Array.isArray(ride?.flightLongPrefixOcrAttempts);
+    }).map(ride => {
+      const initial = normalizeFlightNumber(ride?.flightLongPrefixOcrInitial || ride?.flightNumber);
+      const attempts = Array.isArray(ride?.flightLongPrefixOcrAttempts) ? ride.flightLongPrefixOcrAttempts : [];
+      const votes = new Map();
+      const cropSupport = new Map();
+      attempts.forEach(attempt => {
+        const crop = Number(attempt?.crop || 0);
+        (Array.isArray(attempt?.candidates) ? attempt.candidates : []).forEach(candidateRaw => {
+          const candidate = normalizeFlightNumber(candidateRaw);
+          if (!candidate) return;
+          votes.set(candidate, (votes.get(candidate) || 0) + 1);
+          if (!cropSupport.has(candidate)) cropSupport.set(candidate, new Set());
+          if (crop) cropSupport.get(candidate).add(crop);
+        });
+      });
+      const voteText = [...votes.entries()]
+        .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([candidate, count]) => `${candidate}:${count}/${cropSupport.get(candidate)?.size || 0}c`)
+        .join(',') || '∅';
+      const attemptText = attempts.map(attempt => {
+        const candidates = Array.isArray(attempt?.candidates) && attempt.candidates.length
+          ? attempt.candidates.map(normalizeFlightNumber).filter(Boolean).join('/')
+          : '∅';
+        const rawText = cellText(attempt?.rawText).replace(/\s+/g, ' ').trim() || '∅';
+        const rawWords = cellText(attempt?.rawWords).replace(/\s+/g, ' ').trim() || '∅';
+        return `c${Number(attempt?.crop || 0)}-${cellText(attempt?.mode) || '?'}={raw:${rawText}; words:${rawWords}; cand:${candidates}}`;
+      }).join(',') || '∅';
+      return `${Number(ride?.sourceRow || 0)}:${initial}{votes=${voteText}; ${attemptText}}`;
+    });
+
+    let reason = 'ok';
+    if (!imageMeta) reason = 'image_meta_missing';
+    else if (!rawWords.length) reason = 'raw_ocr_words_missing';
+    else if (boundaries.length < 2) reason = 'cell_boundaries_missing';
+    else if (!rowMetaKeys.length) reason = 'row_meta_missing';
+    else if (!mapping || mapping.pickup === undefined || mapping.destination === undefined) reason = 'route_mapping_missing';
+    else if (rideList.length && !matchedMatrixIndexes.length) reason = 'source_row_to_row_meta_mismatch';
+    else if (rideList.length && routeDiagnostics === 0) reason = 'route_diagnostics_empty_despite_targets';
+    else if (suspiciousFlights.length && flightDiagnostics === 0) reason = 'suspicious_flight_diagnostic_missing';
+    else if (unresolvedSuspiciousFlights.length) reason = 'suspicious_flight_unresolved';
+
+    const status = reason === 'ok'
+      ? 'OK'
+      : reason === 'suspicious_flight_unresolved'
+        ? 'PRÜFUNG OFFEN'
+        : 'DIAGNOSE BLOCKIERT';
+    return {
+      version: 'CORE-007D8A1F1D8P49',
+      status,
+      reason,
+      rides: rideList.length,
+      rawWords: rawWords.length,
+      boundaries: boundaries.length,
+      rowMetaKeys,
+      sourceRows,
+      matrixIndexes,
+      matchedMatrixIndexes,
+      mappingSnapshot,
+      routeDiagnostics,
+      flightDiagnostics,
+      suspiciousFlights,
+      unresolvedSuspiciousFlights,
+      routeBoundaryRecoveries,
+      flightPrefixRecoveries,
+      flightPrefixRejects,
+      flightOcrTraces,
+      diagnosticItems: diagList.length
+    };
+  }
+
+  function formatOcrPerformanceDiagnostic(perf) {
+    if (!perf || !Array.isArray(perf.stages)) return '∅';
+    const ms = value => `${Math.round(Number(value || 0))}ms`;
+    const stages = perf.stages.map(item => `${cellText(item?.name) || '?'}=${ms(item?.ms)}`).join(', ');
+    return `gesamt=${ms(perf.totalMs)}${stages ? `; ${stages}` : ''}`;
+  }
+
+  function formatOcrDiagnosticSelfCheck(check) {
+    if (!check) return 'Selbstcheck nicht ausgeführt';
+    const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
+    return [
+      `Status=${check.status}`,
+      `Grund=${check.reason}`,
+      `Rides=${check.rides}`,
+      `Rohwörter=${check.rawWords}`,
+      `Grenzen=${check.boundaries}`,
+      `RowMetaKeys=[${list(check.rowMetaKeys)}]`,
+      `sourceRows=[${list(check.sourceRows)}]`,
+      `matrixIndex=[${list(check.matrixIndexes)}]`,
+      `matched=[${list(check.matchedMatrixIndexes)}]`,
+      `RouteDiag=${check.routeDiagnostics}`,
+      `FlightDiag=${check.flightDiagnostics}`,
+      `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
+      `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
+      `FlightPrefixReject=[${list(check.flightPrefixRejects)}]`,
+      `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
+      `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
+      `Ungeklärt=[${list(check.unresolvedSuspiciousFlights)}]`,
+      `Mapping={${check.mappingSnapshot || '∅'}}`,
+      `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`
+    ].join(' · ');
+  }
+
+  async function readImagePlan(file) {
+    if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
+    const perfStartedAt = performance.now();
+    const perfStages = [];
+    const measureAsync = async (name, task) => {
+      const started = performance.now();
+      const value = await task();
+      perfStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+    const measureSync = (name, task) => {
+      const started = performance.now();
+      const value = task();
+      perfStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+
+    const canvas = await measureAsync('preprocess_image', () => preprocessImage(file));
+    const status = $('importStatus');
+    const result = await measureAsync('primary_ocr', () => Tesseract.recognize(canvas, 'eng', {
+      logger: message => {
+        if (!status) return;
+        if (message.status === 'recognizing text') {
+          status.textContent = `Bild wird gelesen … ${Math.round((message.progress || 0) * 100)} %`;
+        } else if (message.status) {
+          status.textContent = `Bildanalyse: ${message.status}`;
+        }
+      }
+    }));
+    let words = result?.data?.words || [];
+    // CORE-007D4: Nur wenn kein sicherer Header vorhanden ist und die erste OCR
+    // trotz mehrerer Zeitanker zu wenige Preisanker liefert, wird der linke
+    // Preiskorridor zeilenweise gezielt nachgelesen. Das Ergebnis wird lediglich
+    // als OCR-Anker ergänzt; die unveränderten Headerless-Sicherheitsguards
+    // entscheiden anschließend weiterhin über Annahme oder Abbruch.
+    words = await measureAsync('headerless_price_anchor_check', () => recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width));
+    let matrix = measureSync('image_words_to_matrix', () => imageWordsToMatrix(words, canvas.width));
+    if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
+    if (matrix._atmsImageMeta) {
+      matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
+      if (matrix._atmsImageMeta?.headerlessAtms) {
+        matrix = await measureAsync('headerless_cell_recovery', () => recoverHeaderlessCellsTargeted(matrix, canvas, matrix._atmsImageMeta));
+        const recovery = matrix._atmsImageMeta?.headerlessCellRecovery;
+        if (!recovery?.accepted) {
+          const reason = cellText(recovery?.reason) || 'cell_recovery_not_accepted';
+          const totalInvalid = Number(recovery?.totalInvalid || 0);
+          const recoveredCells = Number(recovery?.recoveredCells || 0);
+          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. CORE-007D4 Diagnose: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells}. Bitte vollständige Kopfzeile mit hochladen.`);
+        }
+      }
+    }
+    try {
+      window.ATMSP54ReadImageTiming = {
+        version: 'CORE-007D8A1F1D8P54',
+        totalMs: performance.now() - perfStartedAt,
+        stages: perfStages.map(item => ({ ...item }))
+      };
+    } catch (_) {}
+    return {
+      kind: 'matrix',
+      matrix,
+      sheetName: 'Bild / WhatsApp',
+      imageOcr: true,
+      imageCanvas: canvas,
+      imageMeta: matrix._atmsImageMeta || null
+    };
+  }
+
+  async function readFile(file) {
+    if (isImageFile(file)) return readImagePlan(file);
+    const extension = file.name.toLowerCase().split('.').pop();
+    if (extension === 'json') {
+      const object = JSON.parse(await file.text());
+      return { kind: 'json', rows: Array.isArray(object) ? object : (object.rides || []) };
+    }
+    if (extension === 'csv' || extension === 'tsv') {
+      const text = await file.text();
+      const firstLine = text.split(/\r?\n/, 1)[0] || '';
+      const delimiter = extension === 'tsv' ? '\t' : ((firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',');
+      return { kind: 'matrix', matrix: parseDelimited(text, delimiter), sheetName: 'CSV' };
+    }
+    if (extension === 'xlsx' || extension === 'xls') {
+      if (!window.XLSX) throw new Error('Excel-Modul konnte nicht geladen werden. Bitte App einmal mit Internet öffnen und danach erneut versuchen.');
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false, raw: true });
+      const sheetName = workbook.SheetNames.find(name => {
+        const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '', raw: true });
+        return detectHeader(matrix).score >= 3;
+      }) || workbook.SheetNames[0];
+      if (!sheetName) throw new Error('Keine Tabelle in der Excel-Datei gefunden.');
+      const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: true, blankrows: false });
+      return { kind: 'matrix', matrix, sheetName };
+    }
+    throw new Error('Dateiformat nicht unterstützt. Bitte Bild, Excel, CSV, TSV oder JSON verwenden.');
+  }
+
+  function renderMapping(headers, mappingInfo) {
+    const labels = Object.entries(mappingInfo.mapping).map(([field, index]) => `${field}: ${headers[index]?.label || `Spalte ${index + 1}`}`);
+    const el = $('planProfileInfo');
+    const imageMode = Boolean(state.file && isImageFile(state.file));
+    // CORE-005A/007B: Mapping-Konfidenz ist eine technische Struktur-Sicherheit,
+    // keine belegte Trefferquote aller Fahrtdaten. Sie bleibt intern erhalten,
+    // wird beim Bildimport aber nicht mehr als allgemeine '% Erkennung' angezeigt.
+    const shownConfidence = imageMode ? Math.min(Number(mappingInfo.confidence || 0), 0.99) : Number(mappingInfo.confidence || 0);
+    if (!el) return;
+
+    if (!imageMode) {
+      el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${Math.round(shownConfidence * 100)} % Struktur-Sicherheit</span><small>${escapeHtml(labels.join(' · '))}</small>`;
+      return;
+    }
+
+    const issues = Array.isArray(state.issues) ? state.issues : [];
+    const actionable = issues.filter(issue => issue.kind !== 'flight_check');
+    const errors = actionable.filter(issue => issue.level === 'error').length;
+    const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const rideCount = Array.isArray(state.rides) ? state.rides.length : 0;
+    const clean = rideCount > 0 && errors === 0 && warnings === 0;
+    const headline = clean
+      ? '✓ OCR-Analyse sauber'
+      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+    const detail = rideCount
+      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
+      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+
+    // Technischen Wert maschinenlesbar behalten, ohne ihn als Erfolgsquote auszugeben.
+    const labelText = labels.join(' · ');
+    el.dataset.structureConfidence = String(Math.round(shownConfidence * 100));
+    el.dataset.mappingLabels = labelText;
+    el.innerHTML = `<b>${escapeHtml(mappingInfo.profile)}</b><span>${escapeHtml(headline)}</span><small>${escapeHtml(detail)}<br>${escapeHtml(labelText)}</small>`;
+  }
+
+  // P51: renderMapping() wird nur beim eigentlichen Analyseaufbau aufgerufen.
+  // Spätere Zustandsänderungen wie die einmalige Folgetag-Bestätigung validieren
+  // state.issues korrekt neu und render() aktualisiert Kacheln/Importstatus, bislang
+  // blieb aber der bereits erzeugte OCR-Kopftext stehen. Diese Funktion aktualisiert
+  // ausschließlich dessen dynamische Hinweis-/Fehlerzahlen und lässt Mapping/Profile
+  // sowie sämtliche Import-/OCR-Entscheidungen unverändert.
+  function refreshImageOcrSummary() {
+    const el = $('planProfileInfo');
+    const imageMode = Boolean(state.file && isImageFile(state.file));
+    if (!el || !imageMode) return;
+
+    const issues = Array.isArray(state.issues) ? state.issues : [];
+    const actionable = issues.filter(issue => issue.kind !== 'flight_check');
+    const errors = actionable.filter(issue => issue.level === 'error').length;
+    const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const rideCount = Array.isArray(state.rides) ? state.rides.length : 0;
+    const clean = rideCount > 0 && errors === 0 && warnings === 0;
+    const headline = clean
+      ? '✓ OCR-Analyse sauber'
+      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+    const detail = rideCount
+      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
+      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+
+    const headlineEl = el.querySelector('span');
+    const detailEl = el.querySelector('small');
+    if (headlineEl) headlineEl.textContent = headline;
+    if (detailEl) {
+      const labelText = cellText(el.dataset.mappingLabels);
+      detailEl.innerHTML = `${escapeHtml(detail)}${labelText ? `<br>${escapeHtml(labelText)}` : ''}`;
+    }
+  }
+
+  function syncFlightLocationsFromSavedRides() {
+    if (!state.rides.length) return 0;
+    let saved = [];
+    try {
+      const parsed = JSON.parse(localStorage.getItem('atms_beta_14_3_1_rides') || '[]');
+      if (Array.isArray(parsed)) saved = parsed;
+    } catch (_) {}
+    if (!saved.length) return 0;
+
+    const normalizeFlight = value => {
+      let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+      if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
+      return v;
+    };
+    const keyText = value => String(value || '').trim().toLowerCase();
+
+    let changed = 0;
+    state.rides = state.rides.map(ride => {
+      const flight = normalizeFlight(ride.flightNumber);
+      if (!flight) return ride;
+
+      const rideDate = cellText(ride.date);
+      const candidates = saved.filter(item => {
+        if (normalizeFlight(item.flightNumber) !== flight) return false;
+        if (!item.flightLocation || item.flightLocation === 'Flugort prüfen') return false;
+        const savedDate = cellText(item.date);
+        if (rideDate) return savedDate === rideDate;
+        return !savedDate;
+      });
+      if (!candidates.length) return ride;
+
+      let hit = candidates.find(item =>
+        ride.sourceRow && item.sourceRow && Number(item.sourceRow) === Number(ride.sourceRow)
+      );
+      if (!hit) hit = candidates.find(item =>
+        keyText(item.time || item.planTime) === keyText(ride.time || ride.planTime) &&
+        keyText(item.pickup) === keyText(ride.pickup) &&
+        keyText(item.destination) === keyText(ride.destination)
+      );
+      if (!hit) hit = candidates[0];
+
+      if (!ride.flightLocation || ride.flightLocation === 'Flugort prüfen' || ride.flightLocation !== hit.flightLocation) changed++;
+      return {
+        ...ride,
+        flightLocation: normalizeFlightLocation(hit.flightLocation),
+        iata: hit.iata || ride.iata || '',
+        flightCheckConfidence: hit.flightCheckConfidence || 'verified',
+        flightNeedsManualCheck: Boolean(hit.flightNeedsManualCheck || hit.flightCheckConfidence === 'uncertain'),
+        flightCheckSourceNote: hit.flightCheckSourceNote || ride.flightCheckSourceNote || '',
+        flightCheckedAt: hit.flightCheckedAt || ride.flightCheckedAt || ''
+      };
+    });
+    return changed;
+  }
+
+  function normalizeFlightForCurrentCheck(value) {
+    let v = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+    if (/^0S\d{1,4}[A-Z]?$/.test(v)) v = 'OS' + v.slice(2);
+    return v;
+  }
+
+  function stagedFlightDirection(ride) {
+    const explicit = String(ride?.flightDirection || '').trim().toLowerCase();
+    if (explicit === 'arrival' || explicit === 'departure') return explicit;
+    if (ride?.arrivalFlight) return 'arrival';
+    if (ride?.departureFlight) return 'departure';
+    const inferred = classifyRide(ride?.pickup, ride?.destination, ride?.arrivalFlight, ride?.departureFlight);
+    return inferred === 'arrival' || inferred === 'departure' ? inferred : 'unknown';
+  }
+
+  function stagedAirportEventDateContext(ride) {
+    try {
+      const context = window.ATMSAirportEventDateContextForRide?.(ride);
+      if (context?.airportEventDate) {
+        return { airportEventDate: cellText(context.airportEventDate), derived: Boolean(context.derived) };
+      }
+    } catch (_) {}
+    return { airportEventDate: cellText(ride?.date), derived: false };
+  }
+
+  function airportIataFromPlanPlace(value) {
+    const raw = cellText(value);
+    if (!raw) return '';
+    const upper = raw.toUpperCase();
+    const key = cleanKey(raw);
+    if ((/\bDUS\b/.test(upper) && /(AIRPORT|FLUGHAFEN|TERMINAL)/.test(upper)) || /dusseldorf(?:airport|flughafen)|flughafendusseldorf/.test(key)) return 'DUS';
+    if ((/\bCGN\b/.test(upper) && /(AIRPORT|FLUGHAFEN|TERMINAL|VORFELD)/.test(upper)) || /kolnbonn(?:airport|flughafen)|colognebonnairport|flughafenkolnbonn/.test(key)) return 'CGN';
+    return '';
+  }
+
+  function stagedAirportIata(ride) {
+    const verified = String(ride?.flightVerification?.airportIata || '').trim().toUpperCase();
+    if (/^[A-Z]{3}$/.test(verified)) return verified;
+    const source = String(ride?.sourcePlanAirportIata || '').trim().toUpperCase();
+    const direction = stagedFlightDirection(ride);
+    const pickup = airportIataFromPlanPlace(ride?.pickup || ride?.abholort);
+    const destination = airportIataFromPlanPlace(ride?.destination || ride?.zielort || ride?.ziel);
+    let derived = '';
+    if (direction === 'arrival') derived = pickup;
+    else if (direction === 'departure') derived = destination;
+    else if (pickup && !destination) derived = pickup;
+    else if (destination && !pickup) derived = destination;
+    if (/^[A-Z]{3}$/.test(source) && derived && source !== derived) return '';
+    return derived || (/^[A-Z]{3}$/.test(source) ? source : '');
+  }
+
+  function checkedSourceCount(item) {
+    const sources = Array.isArray(item?.sources) ? item.sources : [];
+    const keys = new Set(sources.map(source => {
+      if (typeof source === 'string') return source.trim().toLowerCase();
+      return String(source?.url || source?.name || '').trim().toLowerCase();
+    }).filter(Boolean));
+    const actual = keys.size;
+    const declared = Number(item?.sourceCount);
+    // P36F6: Wenn eine offizielle Airportquelle in die Pipeline eingebunden wurde,
+    // zaehlen die tatsaechlich dokumentierten, unabhaengigen Quellen. Ein alter
+    // explicitSourceCount=0 aus der URL-Context-Stufe darf die echte Airportquelle
+    // nicht wieder auf 0 zurueckstufen. Fuer alle anderen Ergebnisse bleibt das
+    // bisherige strikte F5/F5F6-Verhalten unveraendert.
+    if (item?.officialAirportEvidence === true) {
+      return Math.max(actual, Number.isFinite(declared) && declared >= 0 ? declared : 0);
+    }
+    const explicitDeclared = Number(item?.explicitSourceCount);
+    if (Number.isFinite(explicitDeclared) && explicitDeclared >= 0) return explicitDeclared;
+    if (Number.isFinite(declared) && declared >= 0) return declared;
+    return actual;
+  }
+
+  function findCheckedFlightForRide(ride, checked) {
+    const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
+    if (!flight) return null;
+    const date = cellText(ride?.date);
+    const airportEventDate = stagedAirportEventDateContext(ride).airportEventDate;
+    const direction = stagedFlightDirection(ride);
+    const airportIata = stagedAirportIata(ride);
+    const flightTime = normalizeTime(ride?.flightTime);
+    const candidates = (Array.isArray(checked) ? checked : []).filter(item => {
+      if (normalizeFlightForCurrentCheck(item?.flightNumber) !== flight) return false;
+      const checkedDate = cellText(item?.date);
+      if (date ? checkedDate !== date : Boolean(checkedDate)) return false;
+      const checkedAirportEventDate = cellText(item?.airportEventDate);
+      if (airportEventDate ? checkedAirportEventDate !== airportEventDate : Boolean(checkedAirportEventDate)) return false;
+      const checkedDirection = String(item?.direction || 'unknown').trim().toLowerCase();
+      if (direction !== 'unknown' ? checkedDirection !== direction : checkedDirection !== 'unknown') return false;
+      const checkedAirportIata = String(item?.airportIata || '').trim().toUpperCase();
+      if (airportIata ? checkedAirportIata !== airportIata : Boolean(checkedAirportIata)) return false;
+      return true;
+    });
+    if (!candidates.length) return null;
+    if (flightTime) {
+      const exact = candidates.filter(item => normalizeTime(item?.flightTime) === flightTime);
+      if (exact.length === 1) return exact[0];
+      if (exact.length > 1) return null;
+      if (candidates.length === 1 && !normalizeTime(candidates[0]?.flightTime)) return candidates[0];
+      return null;
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  function unresolvedFlightRideCount() {
+    const unresolved = new Set();
+    for (const ride of Array.isArray(state.rides) ? state.rides : []) {
+      const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
+      if (!flightNumber) continue;
+      const location = cellText(ride?.flightLocation);
+      const confidence = String(ride?.flightCheckConfidence || ride?.flightConfidence || '').trim().toLowerCase();
+      const verificationStatus = String(ride?.flightVerificationStatus || '').trim().toLowerCase();
+      const fullyVerified = Boolean(location)
+        && ride?.flightNeedsManualCheck !== true
+        && (ride?.flightVerified === true || confidence === 'verified' || (verificationStatus === 'verified' && confidence === 'high'));
+      if (fullyVerified) continue;
+      const eventContext = stagedAirportEventDateContext(ride);
+      const key = [
+        flightNumber,
+        cellText(ride?.date),
+        cellText(eventContext?.airportEventDate || ride?.date),
+        stagedFlightDirection(ride),
+        stagedAirportIata(ride),
+        normalizeTime(ride?.flightTime) || ''
+      ].join('|');
+      unresolved.add(key);
+    }
+    return unresolved.size;
+  }
+
+  function stagedPlanIsActive() {
+    return Boolean(state.rides.length && $('planAnalysis') && !$('planAnalysis').classList.contains('hidden'));
+  }
+
+  function applyGeminiResultsToStagedPlan(checked, appliedAt = new Date().toISOString()) {
+    if (!Array.isArray(checked) || !checked.length || !state.rides.length) {
+      return { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 };
+    }
+    let matchedRides = 0, verifiedRides = 0, sourceConfirmedRides = 0, uncertainRides = 0;
+    state.rides = state.rides.map(ride => {
+      const hit = findCheckedFlightForRide(ride, checked);
+      if (!hit) return ride;
+      matchedRides++;
+      const location = cellText(hit?.flightLocation || hit?.relevantLocation);
+      const iata = String(hit?.iata || hit?.relevantIata || '').trim().toUpperCase();
+      const confidence = String(hit?.confidence || '').trim().toLowerCase();
+      const status = String(hit?.status || '').trim().toLowerCase();
+      let sourceConflict = Boolean(hit?.conflict);
+      const existingLocation = cellText(ride?.flightLocation);
+      const existingIata = String(ride?.iata || '').trim().toUpperCase();
+      if (!sourceConflict && hit?.officialAirportEvidence === true && location) {
+        if (/^[A-Z]{3}$/.test(existingIata) && /^[A-Z]{3}$/.test(iata) && existingIata !== iata) {
+          sourceConflict = true;
+        } else if (existingLocation && existingLocation !== 'Flugort prüfen' && existingLocation !== 'Flugort nicht verfügbar') {
+          sourceConflict = cleanKey(normalizeFlightLocation(existingLocation)) !== cleanKey(normalizeFlightLocation(location));
+        }
+      }
+      const verified = status === 'verified' && (confidence === 'verified' || confidence === 'high') && Boolean(location) && /^[A-Z]{3}$/.test(iata) && !sourceConflict && checkedSourceCount(hit) >= 2;
+      const sourceConfirmed = !verified && hit?.officialAirportEvidence === true && Boolean(location) && /^[A-Z]{3}$/.test(iata) && !sourceConflict && checkedSourceCount(hit) >= 1;
+      if (verified) verifiedRides++;
+      else {
+        uncertainRides++;
+        if (sourceConfirmed) sourceConfirmedRides++;
+      }
+      const mayFillFromOfficial = sourceConfirmed && (!existingLocation || existingLocation === 'Flugort prüfen' || existingLocation === 'Flugort nicht verfügbar');
+      return {
+        ...ride,
+        // Eine einzelne offizielle Airportquelle darf nur einen LEEREN Flugort vorbefuellen.
+        // Sie entfernt bewusst NICHT den manuellen FLIGHT-008-Hinweis.
+        flightLocation: verified ? normalizeFlightLocation(location) : (mayFillFromOfficial ? normalizeFlightLocation(location) : ride.flightLocation),
+        iata: (verified || mayFillFromOfficial) && /^[A-Z]{3}$/.test(iata) ? iata : (ride.iata || ''),
+        flightCheckConfidence: verified ? 'verified' : (sourceConfirmed ? 'source_confirmed' : 'uncertain'),
+        flightNeedsManualCheck: !verified,
+        flightSourceConfirmed: Boolean(sourceConfirmed),
+        flightCheckSourceNote: cellText(hit?.sourceNote) || ride.flightCheckSourceNote || '',
+        flightCheckedAt: appliedAt,
+        flightAutoModel: cellText(hit?.modelUsed)
+      };
+    });
+    state.issues = validate(state.rides);
+    render();
+    return { matchedRides, verifiedRides, sourceConfirmedRides, uncertainRides };
+  }
+
+  window.ATMSPlanImportHasStagedRides = stagedPlanIsActive;
+  window.ATMSPlanImportApplyGeminiFlightResults = applyGeminiResultsToStagedPlan;
+
+  function refreshIssuesAfterFlightSync() {
+    // CORE-004P: Bei einem neuen Import keine alten gespeicherten Flugorte automatisch
+    // als aktuelle Wahrheit zurück in die Planliste schreiben. Jede neue Liste wird neu geprüft.
+    state.issues = validate(state.rides);
+  }
+
+
+  function resolvePriceIssue(rideId, action, priceValue) {
+    const ride = state.rides.find(item => String(item.id) === String(rideId));
+    if (!ride) return;
+
+    if (action === 'suggestion' || action === 'manual') {
+      const value = Number(priceValue);
+      if (!Number.isFinite(value) || value <= 0) {
+        if (typeof window.showToast === 'function') window.showToast('Bitte einen gültigen Preis eingeben', 'warn');
+        return;
+      }
+      ride.price = value;
+      state.priceDecisions[String(rideId)] = action;
+      if (typeof window.ATMSPersistPriceOverride === 'function') {
+        window.ATMSPersistPriceOverride(ride, value);
+      }
+      if (typeof window.showToast === 'function') {
+        window.showToast(`${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(value)} übernommen`, 'ok');
+      }
+    } else if (action === 'zero') {
+      ride.price = 0;
+      state.priceDecisions[String(rideId)] = 'zero';
+      if (typeof window.showToast === 'function') window.showToast('0,00 € als korrekt bestätigt', 'ok');
+    } else if (action === 'original') {
+      state.priceDecisions[String(rideId)] = 'original';
+      if (typeof window.showToast === 'function') window.showToast('Originalpreis bestätigt', 'ok');
+    }
+
+    state.issues = validate(state.rides);
+    render();
+  }
+
+  function render() {
+    refreshIssuesAfterFlightSync();
+    const rides = state.rides, issues = state.issues;
+    const cancelledRows = Array.isArray(state.cancelledRows) ? state.cancelledRows : [];
+    const flightChecks = issues.filter(issue => issue.kind === 'flight_check');
+    const actionableIssues = issues.filter(issue => issue.kind !== 'flight_check');
+    const errors = actionableIssues.filter(issue => issue.level === 'error').length;
+    const warnings = actionableIssues.filter(issue => issue.level === 'warning').length;
+    $('planAnalysis').classList.remove('hidden');
+    updatePlanDateSummary();
+    $('planRideCount').textContent = rides.length;
+    $('planDriverCount').textContent = new Set(rides.map(ride => ride.driver).filter(Boolean)).size;
+    $('planWarningCount').textContent = warnings;
+    $('planErrorCount').textContent = errors;
+    if ($('planFlightCount')) $('planFlightCount').textContent = new Set(rides.map(ride => ride.flightNumber).filter(Boolean)).size;
+    if ($('planSheetName')) $('planSheetName').textContent = state.meta.sheetName || '–';
+    refreshImageOcrSummary();
+    if ($('flightCheckStatus')) {
+      const fs = window.ATMSFlight ? window.ATMSFlight.summary(rides) : { total: 0, withLocation: 0, needsCheck: 0 };
+      $('flightCheckStatus').textContent = fs.total ? `${fs.total} Flüge · ${fs.withLocation} Ort aus Liste · ${fs.needsCheck} aktuell zu prüfen` : 'Keine Flugnummern erkannt.';
+    }
+    if ($('copyFlightCheckBtn')) $('copyFlightCheckBtn').disabled = !rides.some(ride => ride.flightNumber);
+
+    const actionableHtml = actionableIssues.length
+      ? actionableIssues.slice(0, 20).map(issue => {
+          const rows = Array.isArray(issue.rows) && issue.rows.length ? issue.rows : [issue.row];
+          const rowLabel = rows.length === 1
+            ? `Zeile ${rows[0]}`
+            : `Zeilen ${rows.slice(0, -1).join(', ')} und ${rows[rows.length - 1]}`;
+
+          if (issue.kind === 'date_batch') {
+            return `<div class="plan-issue error" style="padding-bottom:12px">
+              <div><b>Datumsprüfung</b> · ${escapeHtml(issue.text)}</div>
+              <div style="font-size:12px;opacity:.82;margin-top:7px">Maßgeblich ist die normale Fahrtzeit aus Spalte 2/7. Die aktuelle Flugzeit aus Spalte 12 verändert das geplante Fahrtdatum nicht.</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                <button type="button" class="date-boundary-btn" data-date-action="next_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(String(issue.count))} Fahrt(en) → ${escapeHtml(formatPlanDate(issue.nextDate))}</button>
+                <button type="button" class="date-boundary-btn" data-date-action="same_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">Alle bleiben ${escapeHtml(formatPlanDate(issue.baseDate))}</button>
+              </div>
+            </div>`;
+          }
+
+          if (issue.kind === 'price') {
+            const suggestion = Number(issue.suggestedPrice);
+            const suggestionLabel = Number.isFinite(suggestion) && suggestion > 0
+              ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(suggestion)
+              : '';
+            const originalLabel = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(Number(issue.originalPrice) || 0);
+            if (issue.missingPrice) {
+              return `<div class="plan-issue ${issue.level}" style="padding-bottom:12px">
+                <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+                <input type="text" inputmode="decimal" class="price-manual-input" data-ride-id="${escapeHtml(issue.rideId)}" placeholder="Preis z. B. 47,60" style="width:100%;box-sizing:border-box;margin-top:10px;padding:11px;border-radius:10px">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                  <button type="button" class="price-review-btn" data-price-action="manual" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">Preis übernehmen</button>
+                  <button type="button" class="price-review-btn" data-price-action="zero" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">0,00 € ist korrekt</button>
+                </div>
+              </div>`;
+            }
+            return `<div class="plan-issue ${issue.level}" style="padding-bottom:12px">
+              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                ${suggestionLabel ? `<button type="button" class="price-review-btn" data-price-action="suggestion" data-ride-id="${escapeHtml(issue.rideId)}" data-suggested-price="${suggestion}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(suggestionLabel)} übernehmen</button>` : ''}
+                <button type="button" class="price-review-btn" data-price-action="original" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">Original ${escapeHtml(originalLabel)} ist korrekt</button>
+              </div>
+            </div>`;
+          }
+
+          return `<div class="plan-issue ${issue.level}"><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>`;
+        }).join('')
+      : '<div class="plan-issue ok">✓ OCR-Analyse sauber: Keine ungelösten OCR-Hinweise.</div>';
+
+    const flightCheckHtml = flightChecks.length
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(72,156,255,.45);background:rgba(7,33,63,.45)">
+          <div><b>✈ Flugprüfung offen: ${escapeHtml(String(flightChecks.length))}</b></div>
+          <div style="font-size:12px;opacity:.82;margin-top:5px">Diese Punkte stammen aus fehlenden oder noch nicht verifizierten Flugorten und zählen nicht als OCR-Fehler.</div>
+          <div style="font-size:12px;line-height:1.5;margin-top:7px">${flightChecks.map(issue => escapeHtml(issue.flightNumber || '')).filter(Boolean).join(' · ')}</div>
+        </div>`
+      : '<div class="plan-issue ok" style="margin-top:10px">✓ Keine Flugprüfung offen.</div>';
+
+    const cancelledHtml = cancelledRows.length
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(255,118,118,.45);background:rgba(70,18,18,.32)">
+          <div><b>⛔ Storno erkannt: ${escapeHtml(String(cancelledRows.length))}</b></div>
+          <div style="font-size:12px;opacity:.84;margin-top:5px">Diese Zeile${cancelledRows.length === 1 ? '' : 'n'} wurde${cancelledRows.length === 1 ? '' : 'n'} sicher als Storno erkannt und nicht als aktive Fahrt, Fahrer oder Flug übernommen.</div>
+          <div style="font-size:12px;line-height:1.5;margin-top:7px">${cancelledRows.map(item => escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''}${item.flightNumber ? ` · ${item.flightNumber}` : ''}`)).join(' · ')}</div>
+        </div>`
+      : '';
+
+    const rawDiagnostics = Array.isArray(state.ocrCellDiagnostics) ? state.ocrCellDiagnostics : [];
+    const selfCheck = state.ocrDiagnosticSelfCheck;
+    const selfCheckHtml = selfCheck
+      ? `<div class="plan-issue" style="margin-top:10px;border-color:${selfCheck.reason === 'ok' ? 'rgba(84,226,15,.38)' : 'rgba(255,190,70,.55)'};background:rgba(10,42,62,.38)">
+          <div><b>🧪 CORE-007D8A1F1D3 Diagnose-Selbstcheck</b></div>
+          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${escapeHtml(formatOcrDiagnosticSelfCheck(selfCheck))}</div>
+        </div>`
+      : '';
+    const rawDiagnosticHtml = `<div class="plan-issue" style="margin-top:10px;border-color:rgba(69,180,255,.42);background:rgba(10,42,62,.38)">
+          <div><b>🧪 CORE-007D8A OCR-Rohdiagnose</b></div>
+          <div style="font-size:12px;opacity:.84;margin-top:5px">Nur Diagnose: Primär-OCR-Wörter und aktuelle Zellgrenzen. Keine Korrektur, keine Änderung der Importentscheidung.</div>
+          <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${rawDiagnostics.length ? rawDiagnostics.map(item => {
+            const label = item.kind === 'flight' ? 'Flug' : item.field === 'pickup' ? 'Von' : 'Nach';
+            return escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''} · ${label}="${item.value || '–'}" · X=${Math.round(item.left)}-${Math.round(item.right)} · IN=[${item.inCell}] · L=[${item.leftSpill}] · R=[${item.rightSpill}]`);
+          }).join('<br>') : escapeHtml('Keine Rohdiagnose-Einträge erzeugt – technischen Grund im Diagnose-Selbstcheck oben prüfen.')}</div>
+        </div>`;
+
+    const airportDiag = (() => {
+      try { return window.ATMSOfficialAirportLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const airportDiagHtml = airportDiag ? (() => {
+      const summaryText = cellText(airportDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const checked = Array.isArray(airportDiag?.checked) ? airportDiag.checked : [];
+      const rows = Array.isArray(airportDiag?.rows) ? airportDiag.rows : [];
+      const nativeState = airportDiag?.nativeState && typeof airportDiag.nativeState === 'object' ? airportDiag.nativeState : null;
+      const checkedText = checked.length
+        ? checked.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const location = cellText(item?.relevantLocation) || '–';
+            const iata = String(item?.relevantIata || '').trim().toUpperCase();
+            return `${escapeHtml(flight)} → ${escapeHtml(location)}${iata ? ` (${escapeHtml(iata)})` : ''}`;
+          }).join('<br>')
+        : 'Keine offiziellen Treffer gespeichert.';
+      const failureText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const reason = cellText(item?.reason) || 'unknown';
+            const message = cellText(item?.message);
+            return `${escapeHtml(flight)} · ${escapeHtml(reason)}${message ? ` · ${escapeHtml(message)}` : ''}`;
+          }).join('<br>')
+        : 'Keine Provider-Fehler/Unsupported-Einträge gespeichert.';
+      const bridgeText = nativeState
+        ? `Native Bridge: ${nativeState.available ? 'verfügbar' : 'nicht verfügbar'}${Object.prototype.hasOwnProperty.call(nativeState, 'compatible') ? ` · kompatibel: ${nativeState.compatible ? 'ja' : 'nein'}` : ''}`
+        : 'Native Bridge: kein Status gespeichert';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,193,7,.35);border-radius:10px">`
+        + `<b>📡 Airport-Diagnose · P36F11</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>${escapeHtml(bridgeText)}</small>`
+        + `<div style="margin-top:8px"><b>Treffer</b><br><small>${checkedText}</small></div>`
+        + `<div style="margin-top:8px"><b>Fehler / nicht unterstützt</b><br><small>${failureText}</small></div>`
+        + `</div>`;
+    })() : '';
+    const secondSourceDiag = (() => {
+      try { return window.ATMSNativeSecondSourceLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const secondSourceDiagHtml = secondSourceDiag ? (() => {
+      const summaryText = cellText(secondSourceDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const rows = Array.isArray(secondSourceDiag?.rows) ? secondSourceDiag.rows : [];
+      const rowText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const stateLabel = item?.routeMatch === true ? 'Route stimmt überein' : (item?.reachable === true ? 'erreichbar, keine sichere Übereinstimmung' : 'nicht erreichbar');
+            const route = item?.originIata && item?.destinationIata ? ` · ${item.originIata}→${item.destinationIata}` : '';
+            const reason = cellText(item?.reason);
+            return `${escapeHtml(flight)} · ${escapeHtml(stateLabel)}${escapeHtml(route)}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
+          }).join('<br>')
+        : 'Keine Zweitquellen-Probe gespeichert.';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(92,196,255,.35);border-radius:10px">`
+        + `<b>🔎 Zweitquellen-Probe · P36F12</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose – ändert weder verified/high noch ⚠ manuell prüfen.</small>`
+        + `<div style="margin-top:8px"><small>${rowText}</small></div>`
+        + `</div>`;
+    })() : '';
+    const secondSourceBoardDiag = (() => {
+      try { return window.ATMSNativeSecondSourceBoardLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const secondSourceBoardDiagHtml = secondSourceBoardDiag ? (() => {
+      const summaryText = cellText(secondSourceBoardDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const rows = Array.isArray(secondSourceBoardDiag?.rows) ? secondSourceBoardDiag.rows : [];
+      const contexts = Array.isArray(secondSourceBoardDiag?.contexts) ? secondSourceBoardDiag.contexts : [];
+      const promoted = Number(secondSourceBoardDiag?.promotedFlights || 0);
+      const promotionText = promoted > 0
+        ? `${promoted} Flug/Flüge mit zwei unabhängigen datumsspezifischen Quellen auf verified/high freigegeben.`
+        : 'Keine Zweitquellen-Freigabe erfolgt.';
+      const contextText = contexts.length
+        ? contexts.map(item => `${escapeHtml(item?.direction || '?')} ${escapeHtml(item?.airportIata || '?')} ${escapeHtml(item?.date || '?')} · ${Number(item?.segmentsReachable || 0)}/${Number(item?.segmentsAttempted || 0)} Zeitfenster erreichbar · ${Number(item?.flightRows || 0)} Flugzeilen`).join('<br>')
+        : 'Keine Airport-Board-Kontexte gespeichert.';
+      const rowText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const stateLabel = item?.routeMatch === true ? 'Route stimmt überein' : (item?.reachable === true ? 'erreichbar, keine sichere Übereinstimmung' : 'nicht erreichbar');
+            const route = item?.originIata && item?.destinationIata ? ` · ${item.originIata}→${item.destinationIata}` : '';
+            const reason = cellText(item?.reason);
+            const windowCount = Number(item?.sourceWindowCount || 0);
+            const windowText = windowCount > 1 ? ` · ${windowCount} Boardfenster derselben Quelle` : '';
+            return `${escapeHtml(flight)} · ${escapeHtml(stateLabel)}${escapeHtml(route)}${escapeHtml(windowText)}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
+          }).join('<br>')
+        : 'Keine Airport-Board-Zweitquellen-Probe gespeichert.';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(121,229,157,.35);border-radius:10px">`
+        + `<b>🔎 Airport-Board-Zweitquelle · P36F15</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>${escapeHtml(promotionText)}<br>FLIGHT-008 bleibt strikt: Freigabe nur bei exakter Identität/Route und zwei unterschiedlichen dokumentierten Quellen.</small>`
+        + `<div style="margin-top:8px"><b>Board-Kontexte</b><br><small>${contextText}</small></div>`
+        + `<div style="margin-top:8px"><b>Flugabgleich</b><br><small>${rowText}</small></div>`
+        + `</div>`;
+    })() : '';
+    const p39LiveDiag = (() => {
+      try { return window.ATMSP39NativeLiveLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const p39LiveDiagHtml = (() => {
+      const button = `<button type="button" id="p39NativeLiveDiagBtn" style="width:100%;padding:10px;border-radius:10px;font-weight:800;margin-top:8px">🧪 P39 Native-LIVE-Diagnose starten</button>`;
+      const note = `<div style="font-size:11px;opacity:.78;line-height:1.45;margin-top:6px">Nur Beweistest: liest DUS + FlightStats. Ändert weder PLAN noch DISPO noch LIVE.</div>`;
+      if (!p39LiveDiag) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(190,145,255,.42);border-radius:10px"><b>🧪 Native LIVE-Zweitquellen-Diagnose · P39</b>${note}${button}<div id="p39NativeLiveDiagStatus" style="font-size:11px;margin-top:7px;opacity:.82">Noch nicht gestartet.</div></div>`;
+      if (p39LiveDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 Native LIVE-Zweitquellen-Diagnose · P39</b>${note}${button}<div id="p39NativeLiveDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p39LiveDiag.error)}</div></div>`;
+      const selected = p39LiveDiag.selected || {}, official = p39LiveDiag.official || {}, fs = p39LiveDiag.flightStats || {}, second = fs.selected || {}, cmp = p39LiveDiag.comparison || {};
+      const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
+      const deltaLabel = value => Number.isFinite(Number(value)) ? `${Number(value) >= 0 ? '+' : ''}${Number(value)} Min.` : '–';
+      const agreement = cmp.statusAgreement === true ? 'ja' : (cmp.statusAgreement === false ? 'nein' : 'nicht vergleichbar');
+      const secondLabel = fs.selectedMode === 'single_flight' ? 'FlightStats Einzel-Flug' : 'FlightStats Airport Board';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(190,145,255,.42);border-radius:10px">`
+        + `<b>🧪 Native LIVE-Zweitquellen-Diagnose · P39</b>${note}${button}`
+        + `<div id="p39NativeLiveDiagStatus" style="font-size:11px;margin-top:7px"><b>${escapeHtml(selected.flightNumber || '?')}</b> · ${escapeHtml(selected.direction || '?')} · ${escapeHtml(selected.originIata || '?')}→${escapeHtml(selected.destinationIata || '?')} · ${escapeHtml(selected.airportEventDate || selected.date || '?')}</div>`
+        + `<div style="margin-top:8px"><b>Quelle 1 · Düsseldorf Airport</b><br><small>Status ${escapeHtml(official.status || 'unknown')} · Plan ${clockOrDash(official.scheduled)} · Estimated ${clockOrDash(official.estimated)} · Actual ${clockOrDash(official.actual)} · Delay ${escapeHtml(deltaLabel(official.delayMinutes))}</small></div>`
+        + `<div style="margin-top:8px"><b>Quelle 2 · ${escapeHtml(secondLabel)}</b><br><small>${second?.reachable === false ? 'nicht erreichbar' : 'erreichbar'} · Route ${second?.routeMatch ? 'passt' : 'nicht sicher'} · Status ${escapeHtml(second?.status || 'unknown')} · Plan/Anzeige ${clockOrDash(second?.scheduled)} · Estimated ${clockOrDash(second?.estimated)} · Actual ${clockOrDash(second?.actual)} · Grund ${escapeHtml(second?.reason || '–')}</small></div>`
+        + `<div style="margin-top:8px"><b>Beobachteter Vergleich</b><br><small>Status gleich: ${escapeHtml(agreement)} · Planzeit-Abweichung ${escapeHtml(deltaLabel(cmp.scheduledDeltaMinutes))} · aktuelle Zeit-Abweichung ${escapeHtml(deltaLabel(cmp.currentDeltaMinutes))} · zweite Quelle mit eigenem LIVE-Signal: ${cmp.secondHasLiveSignal ? 'ja' : 'nein'}.</small></div>`
+        + `<div style="font-size:11px;opacity:.76;margin-top:7px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
+        + `</div>`;
+    })();
+    const p39ArrivalTimeDiag = (() => {
+      try { return window.ATMSP39ArrivalTimeFieldDiagnostic || null; } catch (_) { return null; }
+    })();
+    const p39ArrivalTimeDiagHtml = (() => {
+      const button = `<button type="button" id="p39ArrivalTimeDiagBtn" style="width:100%;padding:10px;border-radius:10px;font-weight:800;margin-top:8px">🧪 P39F1 Ankunfts-Zeitfelder prüfen</button>`;
+      const note = `<div style="font-size:11px;opacity:.78;line-height:1.45;margin-top:6px">Nur Diagnose: prüft die eindeutigen DUS-Ankünfte der aktuellen Planliste gegen Düsseldorf Airport + FlightStats Einzel-Flug. Gesucht werden ausdrücklich eigene Estimated-/Actual-Zeitfelder der Zweitquelle. Keine Übernahme.</div>`;
+      if (!p39ArrivalTimeDiag) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(190,145,255,.42);border-radius:10px"><b>🧪 FlightStats Ankunfts-Zeitfeld-Scan · P39F1</b>${note}${button}<div id="p39ArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px;opacity:.82">Noch nicht gestartet.</div></div>`;
+      if (p39ArrivalTimeDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 FlightStats Ankunfts-Zeitfeld-Scan · P39F1</b>${note}${button}<div id="p39ArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p39ArrivalTimeDiag.error)}</div></div>`;
+      const rows = Array.isArray(p39ArrivalTimeDiag.rows) ? p39ArrivalTimeDiag.rows : [];
+      const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
+      const rowHtml = rows.length ? rows.map(row => {
+        const official = row?.official || {}, fs = row?.flightStats || {};
+        const route = row?.originIata && row?.destinationIata ? `${row.originIata}→${row.destinationIata}` : '?→DUS';
+        const ownTime = Boolean(fs?.estimated || fs?.actual);
+        return `<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">`
+          + `<b>${escapeHtml(row?.flightNumber || '?')}</b> · ${escapeHtml(route)} · ${escapeHtml(row?.airportEventDate || row?.date || '?')}<br>`
+          + `<small>DUS: Status ${escapeHtml(official?.status || 'unknown')} · Plan ${clockOrDash(official?.scheduled)} · Estimated ${clockOrDash(official?.estimated)} · Actual ${clockOrDash(official?.actual)}<br>`
+          + `FlightStats: ${fs?.reachable === false ? 'nicht erreichbar' : 'erreichbar'} · Route ${fs?.routeMatch ? 'passt' : 'nicht sicher'} · Status ${escapeHtml(fs?.status || 'unknown')} · Plan ${clockOrDash(fs?.scheduled)} · Estimated ${clockOrDash(fs?.estimated)} · Actual ${clockOrDash(fs?.actual)} · eigenes Estimated/Actual: ${ownTime ? 'JA' : 'nein'} · Grund ${escapeHtml(fs?.reason || '–')}</small>`
+          + `</div>`;
+      }).join('') : '<div style="font-size:11px;margin-top:8px">Keine geeigneten DUS-Ankünfte gefunden.</div>';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(190,145,255,.42);border-radius:10px">`
+        + `<b>🧪 FlightStats Ankunfts-Zeitfeld-Scan · P39F1</b>${note}${button}`
+        + `<div id="p39ArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px"><b>${Number(p39ArrivalTimeDiag.attempted || 0)} geprüft · ${Number(p39ArrivalTimeDiag.routeMatches || 0)} Route passend · ${Number(p39ArrivalTimeDiag.withOwnTimeField || 0)} mit eigenem Estimated/Actual-Feld</b></div>`
+        + rowHtml
+        + `<div style="font-size:11px;opacity:.76;margin-top:8px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
+        + `</div>`;
+    })();
+    const p41BoardArrivalTimeDiag = (() => {
+      try { return window.ATMSP41BoardArrivalTimeFieldDiagnostic || null; } catch (_) { return null; }
+    })();
+    const p41BoardArrivalTimeDiagHtml = (() => {
+      const button = `<button type="button" id="p41BoardArrivalTimeDiagBtn" style="width:100%;padding:10px;border-radius:10px;font-weight:800;margin-top:8px">🧪 P41 Board-Ankunfts-Zeitfelder prüfen</button>`;
+      const note = `<div style="font-size:11px;opacity:.78;line-height:1.45;margin-top:6px">Nur Diagnose: prüft die eindeutigen DUS-Ankünfte gegen die bereits vorhandene FlightStats-Airport-Board-Zweitquelle und listet deren eigene zeitbezogene Feldpfade/Werte. Keine Übernahme.</div>`;
+      if (!p41BoardArrivalTimeDiag) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,205,90,.42);border-radius:10px"><b>🧪 FlightStats Board Ankunfts-Zeitfeld-Scan · P41</b>${note}${button}<div id="p41BoardArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px;opacity:.82">Noch nicht gestartet.</div></div>`;
+      if (p41BoardArrivalTimeDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 FlightStats Board Ankunfts-Zeitfeld-Scan · P41</b>${note}${button}<div id="p41BoardArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p41BoardArrivalTimeDiag.error)}</div></div>`;
+      const rows = Array.isArray(p41BoardArrivalTimeDiag.rows) ? p41BoardArrivalTimeDiag.rows : [];
+      const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
+      const rowHtml = rows.length ? rows.map(row => {
+        const official = row?.official || {}, board = row?.flightStatsBoard || {};
+        const route = row?.originIata && row?.destinationIata ? `${row.originIata}→${row.destinationIata}` : '?→DUS';
+        const candidates = Array.isArray(board?.timeCandidates) ? board.timeCandidates : [];
+        const candidateText = candidates.length ? candidates.map(item => {
+          const suffix = item?.clock ? ` [${item.clock}]` : '';
+          return `${escapeHtml(item?.path || '?')}=${escapeHtml(item?.value || '–')}${escapeHtml(suffix)}`;
+        }).join('<br>') : 'Keine zusätzlichen zeitbezogenen Board-Felder erkannt.';
+        return `<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">`
+          + `<b>${escapeHtml(row?.flightNumber || '?')}</b> · ${escapeHtml(route)} · ${escapeHtml(row?.airportEventDate || row?.date || '?')}<br>`
+          + `<small>DUS: Status ${escapeHtml(official?.status || 'unknown')} · Plan ${clockOrDash(official?.scheduled)} · Estimated ${clockOrDash(official?.estimated)} · Actual ${clockOrDash(official?.actual)}<br>`
+          + `FlightStats Board: ${board?.reachable === false ? 'nicht erreichbar' : 'erreichbar'} · Route ${board?.routeMatch ? 'passt' : 'nicht sicher'} · Treffer ${Number(board?.matchCount || 0)} · Estimated-Key ${board?.hasEstimatedKey ? 'JA' : 'nein'} · Actual-Key ${board?.hasActualKey ? 'JA' : 'nein'} · Grund ${escapeHtml(board?.reason || '–')}<br>`
+          + `<span style="opacity:.8">Board-Zeitfelder:</span><br>${candidateText}</small>`
+          + `</div>`;
+      }).join('') : '<div style="font-size:11px;margin-top:8px">Keine geeigneten DUS-Ankünfte gefunden.</div>';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,205,90,.42);border-radius:10px">`
+        + `<b>🧪 FlightStats Board Ankunfts-Zeitfeld-Scan · P41</b>${note}${button}`
+        + `<div id="p41BoardArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px"><b>${Number(p41BoardArrivalTimeDiag.attempted || 0)} geprüft · ${Number(p41BoardArrivalTimeDiag.routeMatches || 0)} Route passend · ${Number(p41BoardArrivalTimeDiag.withEstimatedKey || 0)} mit Estimated-Key · ${Number(p41BoardArrivalTimeDiag.withActualKey || 0)} mit Actual-Key</b></div>`
+        + rowHtml
+        + `<div style="font-size:11px;opacity:.76;margin-top:8px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
+        + `</div>`;
+    })();
+    const p42CurrentSchemaTimeDiag = (() => {
+      try { return window.ATMSP42CurrentSchemaTimeDiagnostic || null; } catch (_) { return null; }
+    })();
+    const p42CurrentSchemaTimeDiagHtml = (() => {
+      const button = `<button type="button" id="p42CurrentSchemaTimeDiagBtn" style="width:100%;padding:10px;border-radius:10px;font-weight:800;margin-top:8px">🧪 P42 FlightStats Current-Schema-Zeitfelder prüfen</button>`;
+      const note = `<div style="font-size:11px;opacity:.78;line-height:1.45;margin-top:6px">Nur Diagnose: prüft die eindeutigen DUS-Ankünfte gegen die bereits allowlistete FlightStats-Einzelflugquelle und liest deren aktuelle Estimated/Actual-Schemafelder inklusive Runway-Kennzeichen. Keine Übernahme.</div>`;
+      if (!p42CurrentSchemaTimeDiag) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(126,214,255,.42);border-radius:10px"><b>🧪 FlightStats Current-Schema Ankunfts-Zeitprobe · P42</b>${note}${button}<div id="p42CurrentSchemaTimeDiagStatus" style="font-size:11px;margin-top:7px;opacity:.82">Noch nicht gestartet.</div></div>`;
+      if (p42CurrentSchemaTimeDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 FlightStats Current-Schema Ankunfts-Zeitprobe · P42</b>${note}${button}<div id="p42CurrentSchemaTimeDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p42CurrentSchemaTimeDiag.error)}</div></div>`;
+      const rows = Array.isArray(p42CurrentSchemaTimeDiag.rows) ? p42CurrentSchemaTimeDiag.rows : [];
+      const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
+      const deltaText = value => Number.isFinite(Number(value)) ? `${Number(value) >= 0 ? '+' : ''}${Number(value)} Min.` : '–';
+      const rowHtml = rows.length ? rows.map(row => {
+        const official = row?.official || {}, fs = row?.flightStats || {};
+        const route = row?.originIata && row?.destinationIata ? `${row.originIata}→${row.destinationIata}` : '?→DUS';
+        return `<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">`
+          + `<b>${escapeHtml(row?.flightNumber || '?')}</b> · ${escapeHtml(route)} · ${escapeHtml(row?.airportEventDate || row?.date || '?')}<br>`
+          + `<small>DUS: Status ${escapeHtml(official?.status || 'unknown')} · Plan ${clockOrDash(official?.scheduled)} · Estimated ${clockOrDash(official?.estimated)} · Actual ${clockOrDash(official?.actual)}<br>`
+          + `FlightStats: ${fs?.reachable === false ? 'nicht erreichbar' : 'erreichbar'} · Route ${fs?.routeMatch ? 'passt' : 'nicht sicher'} · Status ${escapeHtml(fs?.status || 'unknown')} · Plan ${clockOrDash(fs?.scheduled)} · Titel ${escapeHtml(fs?.currentTitle || '–')} · Current ${clockOrDash(fs?.current)} · Runway ${fs?.currentRunway === true ? 'JA' : (fs?.currentRunway === false ? 'nein' : '–')} · schedule.landing ${clockOrDash(fs?.scheduleLanding)} · DUS↔FS ${escapeHtml(deltaText(fs?.deltaMinutes))}<br>`
+          + `arrivalAirport.times.estimatedActual: ${escapeHtml(fs?.airportCurrentTitle || '–')} ${clockOrDash(fs?.airportCurrent)} · Runway ${fs?.airportCurrentRunway === true ? 'JA' : (fs?.airportCurrentRunway === false ? 'nein' : '–')} · Grund ${escapeHtml(fs?.reason || '–')}</small>`
+          + `</div>`;
+      }).join('') : '<div style="font-size:11px;margin-top:8px">Keine geeigneten DUS-Ankünfte gefunden.</div>';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(126,214,255,.42);border-radius:10px">`
+        + `<b>🧪 FlightStats Current-Schema Ankunfts-Zeitprobe · P42</b>${note}${button}`
+        + `<div id="p42CurrentSchemaTimeDiagStatus" style="font-size:11px;margin-top:7px"><b>${Number(p42CurrentSchemaTimeDiag.attempted || 0)} geprüft · ${Number(p42CurrentSchemaTimeDiag.routeMatches || 0)} Route passend · ${Number(p42CurrentSchemaTimeDiag.withCurrentField || 0)} mit Current-Feld · ${Number(p42CurrentSchemaTimeDiag.sameMinute || 0)} minutengenau gleich · ${Number(p42CurrentSchemaTimeDiag.withinOneMinute || 0)} innerhalb ±1 Min.</b></div>`
+        + rowHtml
+        + `<div style="font-size:11px;opacity:.76;margin-top:8px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
+        + `</div>`;
+    })();
+    const p43FlickArrivalTimeDiag = (() => {
+      try { return window.ATMSP43FlickArrivalTimeDiagnostic || null; } catch (_) { return null; }
+    })();
+    const p43FlickArrivalTimeDiagHtml = (() => {
+      const button = `<button type="button" id="p43FlickArrivalTimeDiagBtn" style="width:100%;padding:10px;border-radius:10px;font-weight:800;margin-top:8px">🧪 P43 FlightStats Detail-/Runway-Zeit prüfen</button>`;
+      const note = `<div style="font-size:11px;opacity:.78;line-height:1.45;margin-top:6px">Nur Diagnose: ermittelt zuerst die eindeutige FlightStats-flightId und liest danach den streng allowlisteten Detail-Endpunkt auf tatsächliche Arrival-/Runway-Zeitfelder. Vergleich nur mit der offiziellen DUS-Landungszeit; keine Übernahme.</div>`;
+      if (!p43FlickArrivalTimeDiag) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(126,255,178,.42);border-radius:10px"><b>🧪 FlightStats Detail-/Runway-Ankunftszeit · P43</b>${note}${button}<div id="p43FlickArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px;opacity:.82">Noch nicht gestartet.</div></div>`;
+      if (p43FlickArrivalTimeDiag?.error) return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.45);border-radius:10px"><b>🧪 FlightStats Detail-/Runway-Ankunftszeit · P43</b>${note}${button}<div id="p43FlickArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px">Fehler: ${escapeHtml(p43FlickArrivalTimeDiag.error)}</div></div>`;
+      const rows = Array.isArray(p43FlickArrivalTimeDiag.rows) ? p43FlickArrivalTimeDiag.rows : [];
+      const clockOrDash = value => escapeHtml(p39Clock(value) || '–');
+      const deltaText = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? `${Number(value) >= 0 ? '+' : ''}${Number(value)} Min.` : '–';
+      const rowHtml = rows.length ? rows.map(row => {
+        const official = row?.official || {}, fs = row?.flightStatsDetail || {};
+        const route = row?.originIata && row?.destinationIata ? `${row.originIata}→${row.destinationIata}` : '?→DUS';
+        return `<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.12)">`
+          + `<b>${escapeHtml(row?.flightNumber || '?')}</b> · ${escapeHtml(route)} · ${escapeHtml(row?.airportEventDate || row?.date || '?')} · flightId ${escapeHtml(String(fs?.flightId || '–'))}<br>`
+          + `<small>DUS: Status ${escapeHtml(official?.status || 'unknown')} · Estimated ${clockOrDash(official?.estimated)} · Actual ${clockOrDash(official?.actual)}<br>`
+          + `FlightStats Detail: ${fs?.reachable === false ? 'nicht erreichbar' : 'erreichbar'} · Route ${fs?.routeMatch ? 'passt' : 'nicht sicher'} · Status ${escapeHtml(fs?.status || 'unknown')} · Arrival ${clockOrDash(fs?.arrival)} · isActualArrival ${fs?.isActualArrival === true ? 'JA' : (fs?.isActualArrival === false ? 'nein' : '–')}<br>`
+          + `Actual Runway Arrival ${clockOrDash(fs?.actualRunwayArrival)} · DUS↔Runway ${escapeHtml(deltaText(fs?.runwayDeltaMinutes))} · MiniTracker Arrival ${clockOrDash(fs?.miniArrival)} · MiniTracker actual ${fs?.miniIsActualArrival === true ? 'JA' : (fs?.miniIsActualArrival === false ? 'nein' : '–')} · Grund ${escapeHtml(fs?.reason || '–')}</small>`
+          + `</div>`;
+      }).join('') : '<div style="font-size:11px;margin-top:8px">Keine geeigneten DUS-Ankünfte gefunden.</div>';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(126,255,178,.42);border-radius:10px">`
+        + `<b>🧪 FlightStats Detail-/Runway-Ankunftszeit · P43</b>${note}${button}`
+        + `<div id="p43FlickArrivalTimeDiagStatus" style="font-size:11px;margin-top:7px"><b>${Number(p43FlickArrivalTimeDiag.attempted || 0)} geprüft · ${Number(p43FlickArrivalTimeDiag.detailReachable || 0)} Detail erreichbar · ${Number(p43FlickArrivalTimeDiag.routeMatches || 0)} Route passend · ${Number(p43FlickArrivalTimeDiag.withActualRunway || 0)} mit Actual-Runway · ${Number(p43FlickArrivalTimeDiag.sameMinute || 0)} minutengenau gleich · ${Number(p43FlickArrivalTimeDiag.withinOneMinute || 0)} innerhalb ±1 Min.</b></div>`
+        + rowHtml
+        + `<div style="font-size:11px;opacity:.76;margin-top:8px">diagnosticOnly=true · noMutation=true · keine automatische Bestätigung/Übernahme.</div>`
+        + `</div>`;
+    })();
+    const unresolvedFlightRouteDiag = (() => {
+      try { return window.ATMSNativeUnresolvedFlightRouteLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const unresolvedFlightRouteDiagHtml = unresolvedFlightRouteDiag ? (() => {
+      const summaryText = cellText(unresolvedFlightRouteDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const rows = Array.isArray(unresolvedFlightRouteDiag?.rows) ? unresolvedFlightRouteDiag.rows : [];
+      const rowText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const route = item?.originIata && item?.destinationIata ? `${item.originIata}→${item.destinationIata}` : 'keine eindeutige Route';
+            const airport = String(item?.airportIata || '').trim().toUpperCase();
+            const label = item?.airportConflict === true ? `passt nicht zum Fahrt-Airport ${airport || '?'}` : (item?.exactDateFound === true ? `enthält Fahrt-Airport ${airport || '?'}` : 'kein exakter Tagesdatensatz');
+            const reason = cellText(item?.reason);
+            const dateCandidates = Array.isArray(item?.observedDateCandidates) && item.observedDateCandidates.length
+              ? ` · Datumsfelder: ${item.observedDateCandidates.map(value => cellText(value)).filter(Boolean).join(', ')}`
+              : '';
+            const filterStats = Number.isFinite(Number(item?.exactDateRows))
+              ? ` · Zieltag-Zeilen: ${Number(item.exactDateRows)} · Identität verworfen: ${Number(item?.identityRejectedRows || 0)} · Operator-Alias: ${Number(item?.operatorAliasRows || 0)} · Route fehlt: ${Number(item?.routeMissingRows || 0)}`
+              : '';
+            const samples = Array.isArray(item?.targetRowSamples) && item.targetRowSamples.length
+              ? ` · Zieltag-Samples: ${item.targetRowSamples.map(sample => {
+                  const sampleRoute = sample?.originIata && sample?.destinationIata ? `${sample.originIata}→${sample.destinationIata}` : '–';
+                  const samplePath = cellText(sample?.urlPath);
+                  return `${sampleRoute}/${cellText(sample?.verdict) || '?'}${samplePath ? `@${samplePath}` : ''}`;
+                }).join(' | ')}`
+              : '';
+            return `${escapeHtml(flight)} · ${escapeHtml(route)} · ${escapeHtml(label)}${reason ? ` · ${escapeHtml(reason)}` : ''}${escapeHtml(dateCandidates)}${escapeHtml(filterStats)}${escapeHtml(samples)}`;
+          }).join('<br>')
+        : 'Keine offenen Flugnummern für den Routencheck.';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(255,111,97,.4);border-radius:10px">`
+        + `<b>🚫 Offener Flug-Routencheck · P36F22</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>Nur Diagnose: Fremdrouten werden niemals als Flugort übernommen und entfernen keine Warnung.</small>`
+        + `<div style="margin-top:8px"><small>${rowText}</small></div>`
+        + `</div>`;
+    })() : '';
+    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag || p42CurrentSchemaTimeDiag || p43FlickArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${p42CurrentSchemaTimeDiagHtml}${p43FlickArrivalTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
+    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
+
+    $('p39NativeLiveDiagBtn')?.addEventListener('click', runP39NativeLiveDiagnostic);
+    $('p39ArrivalTimeDiagBtn')?.addEventListener('click', runP39ArrivalTimeFieldDiagnostic);
+    $('p41BoardArrivalTimeDiagBtn')?.addEventListener('click', runP41BoardArrivalTimeFieldDiagnostic);
+    $('p42CurrentSchemaTimeDiagBtn')?.addEventListener('click', runP42CurrentSchemaTimeDiagnostic);
+    $('p43FlickArrivalTimeDiagBtn')?.addEventListener('click', runP43FlickArrivalTimeDiagnostic);
+
+    $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        resolveDateBoundary(button.dataset.dateAction);
+      });
+    });
+
+    $('planIssues').querySelectorAll('.price-review-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        let value = button.dataset.suggestedPrice;
+        if (button.dataset.priceAction === 'manual') {
+          const input = Array.from($('planIssues').querySelectorAll('.price-manual-input'))
+            .find(item => String(item.dataset.rideId) === String(button.dataset.rideId));
+          value = parseNumber(input?.value || '');
+        }
+        resolvePriceIssue(
+          button.dataset.rideId,
+          button.dataset.priceAction,
+          value
+        );
+      });
+    });
+
+    $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
+      const rowIssues = actionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
+      const status = rowIssues.some(issue => issue.level === 'error') ? 'Fehler' : rowIssues.length ? 'Prüfen' : 'OK';
+      const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
+      return `<tr>
+        <td>${escapeHtml(ride.time || '–')}<div style="font-size:11px;opacity:.72;margin-top:3px">${escapeHtml(formatPlanDate(ride.date))}</div></td>
+        <td>${escapeHtml(ride.driver || 'Offen')}</td>
+        <td>${escapeHtml(ride.pickup || '–')}</td>
+        <td>${escapeHtml(ride.destination || '–')}</td>
+        <td>${escapeHtml(ride.flightNumber || '–')}</td>
+        <td>${escapeHtml(ride.flightLocation || '–')}</td>
+        <td>${escapeHtml(typeLabels[ride.rideType] || ride.rideType)}</td>
+        <td>${ride.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
+        <td><span class="plan-status ${status === 'OK' ? 'ok' : status === 'Fehler' ? 'error' : 'warning'}">${status}</span></td>
+      </tr>`;
+    }).join('');
+
+    $('importPlanBtn').disabled = rides.length === 0 || errors > 0 || actionableIssues.some(issue => issue.kind === 'price');
+    const unresolvedPriceIssues = actionableIssues.filter(issue => issue.kind === 'price').length;
+    const cancelledSuffix = cancelledRows.length
+      ? ` ${cancelledRows.length} Storno-Zeile${cancelledRows.length === 1 ? '' : 'n'} sicher ausgeschlossen.`
+      : '';
+    $('importStatus').textContent = (errors
+      ? `${rides.length} Fahrten erkannt. ${errors} Fehler müssen vor dem Import behoben werden.`
+      : unresolvedPriceIssues
+        ? `${rides.length} Fahrten erkannt. ${unresolvedPriceIssues} auffälliger Preis muss vor der Übernahme bestätigt werden.`
+        : flightChecks.length
+          ? `${rides.length} Fahrten erkannt und OCR-geprüft. ${flightChecks.length} Flugprüfung(en) offen. Bereit zur Übernahme.`
+          : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
+  }
+
+  function releaseAnalysisRunGuard(generation = state.pipelineGeneration) {
+    if (generation !== state.pipelineGeneration) return;
+    state.analysisRunInProgress = false;
+    const analyzeButton = $('analyzePlanBtn');
+    if (analyzeButton) analyzeButton.disabled = !state.file;
+  }
+
+  function resetTransientFlightDiagnosticsForAnalysis() {
+    try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
+    try { window.ATMSP41BoardArrivalTimeFieldDiagnostic = null; } catch (_) {}
+    try { window.ATMSP42CurrentSchemaTimeDiagnostic = null; } catch (_) {}
+  }
+
+  async function analyze() {
+    if (!state.file || state.analysisRunInProgress || state.autoPipelineInProgress) return;
+    const p54AnalyzeStartedAt = performance.now();
+    const p54AnalyzeStages = [];
+    const p54MeasureAsync = async (name, task) => {
+      const started = performance.now();
+      const value = await task();
+      p54AnalyzeStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+    const p54MeasureSync = (name, task) => {
+      const started = performance.now();
+      const value = task();
+      p54AnalyzeStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+    state.ocrPerformanceDiagnostic = null;
+    try { window.ATMSP54ReadImageTiming = null; } catch (_) {}
+    state.analysisRunInProgress = true;
+    state.pipelineGeneration += 1;
+    const generation = state.pipelineGeneration;
+    const analyzeButton = $('analyzePlanBtn');
+    if (analyzeButton) analyzeButton.disabled = true;
+    resetTransientFlightDiagnosticsForAnalysis();
+    let pipelineStarted = false;
+    try {
+      currentPlanDate();
+      $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
+      const result = await p54MeasureAsync('read_file_total', () => readFile(state.file));
+      if (generation !== state.pipelineGeneration) return;
+      if (result.kind === 'json') {
+        const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
+        if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
+        const planDate = currentPlanDate();
+        state.cancelledRows = [];
+        state.ocrCellDiagnostics = [];
+        state.ocrDiagnosticSelfCheck = null;
+        state.rides = result.rows.map((ride, index) => {
+          const withDate = { ...ride, planDate: cellText(ride?.planDate) || planDate, date: cellText(ride?.date) || planDate };
+          return window.norm ? window.norm(withDate, index) : withDate;
+        });
+        state.rides = assignRideDates(state.rides, { preserveExplicit: true });
+        if (window.ATMSFlight) state.rides = window.ATMSFlight.prepareRides(state.rides);
+        state.meta = { sheetName: 'JSON', profile: 'ATMS JSON' };
+        state.issues = validate(state.rides.map((ride, index) => ({ ...ride, sourceRow: index + 1 })));
+        if ($('planProfileInfo')) $('planProfileInfo').innerHTML = '<b>ATMS JSON</b><span>100 % Erkennung</span><small>Bestehende ATMS-Datenstruktur erkannt.</small>';
+        render();
+        pipelineStarted = maybeAutoImportCleanPlan();
+        if (!pipelineStarted) releaseAnalysisRunGuard(generation);
+        return;
+      }
+
+      const matrix = result.matrix || [];
+      if (!matrix.length) throw new Error('Keine Datenzeilen gefunden.');
+      const detectedMatrixDate = detectPlanDateFromMatrix(matrix);
+      if (detectedMatrixDate) setDetectedPlanDate(detectedMatrixDate, result.imageOcr ? 'Bildinhalt' : 'Planliste');
+      const headerDetection = detectHeader(matrix);
+      if (headerDetection.score < 3) throw new Error('Die Überschriften der Planliste wurden nicht eindeutig erkannt. Erwartet werden unter anderem Uhrzeit, Von und Nach.');
+      const headers = uniqueHeaders(matrix[headerDetection.index]);
+      let mappingInfo = detectAtmsMapping(headers);
+      if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
+      if (result.imageOcr) {
+        const syntheticCount = Number(result.imageMeta?.syntheticAnchorCount || 0);
+        const headerlessAtms = Boolean(result.imageMeta?.headerlessAtms);
+        // Kopfzeilenlose Ausschnitte bleiben intern bewusst konservativer bewertet.
+        // Die Prozentzahl wird seit CORE-007B nicht als Erfolgsquote angezeigt.
+        const structuralCap = headerlessAtms
+          ? 0.82
+          : (syntheticCount ? Math.max(0.80, 0.98 - syntheticCount * 0.03) : 0.99);
+        mappingInfo = {
+          ...mappingInfo,
+          confidence: Math.min(Number(mappingInfo.confidence || 0), structuralCap),
+          profile: headerlessAtms
+            ? 'ATMS Bildimport Flex · Kopfzeile sicher rekonstruiert'
+            : (mappingInfo.confidence >= 0.85 ? 'ATMS Bildimport Flex' : 'ATMS Bildimport – Prüfung nötig')
+        };
+      }
+      const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
+      if (missing.length) throw new Error(`Pflichtspalten nicht erkannt: ${missing.join(', ')}.`);
+      if (Array.isArray(mappingInfo.ambiguities) && mappingInfo.ambiguities.length) {
+        throw new Error(`Spaltenzuordnung nicht eindeutig: ${mappingInfo.ambiguities.join(' · ')}. Bitte Planliste prüfen; ATMS rät nicht.`);
+      }
+
+      const dataRows = matrix.slice(headerDetection.index + 1);
+      const rides = [];
+      const cancelledRows = [];
+      dataRows.forEach((row, offset) => {
+        const sourceRow = headerDetection.index + offset + 2;
+        if (!isDataRow(row, mappingInfo.mapping)) return;
+
+        // CORE-007D8 gilt bewusst nur für Bild-/OCR-Planlisten. Eine Zeile wird
+        // nur bei doppeltem, semantisch passendem Storno-Signal ausgeschlossen.
+        if (result.imageOcr) {
+          const cancelled = detectCancelledPlanRow(row, mappingInfo.mapping);
+          if (cancelled) {
+            const preview = makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: true });
+            cancelledRows.push({
+              sourceRow,
+              time: preview.dispoTime || preview.time || normalizeTime(valueAt(row, mappingInfo.mapping, 'time')),
+              flightNumber: preview.flightNumber || '',
+              pickup: preview.pickup || '',
+              destination: preview.destination || '',
+              marker: cancelled.marker,
+              markerFields: cancelled.fields
+            });
+            return;
+          }
+        }
+
+        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: Boolean(result.imageOcr) }));
+      });
+      state.cancelledRows = cancelledRows;
+      if (!rides.length) throw new Error(cancelledRows.length
+        ? 'Alle erkannten Datenzeilen sind sicher als Storno markiert; es gibt keine aktive Fahrt zur Übernahme.'
+        : 'Unterhalb der Überschriften wurden keine Fahrten erkannt.');
+
+      let preparedRides = rides;
+      if (result.imageOcr && result.imageCanvas && result.imageMeta) {
+        preparedRides = await p54MeasureAsync('recover_missing_times', () => recoverMissingRideTimesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('early_time_batch_ocr', () => recoverSuspiciousRideTimesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('price_targeted_ocr', () => recoverSuspiciousPricesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = p54MeasureSync('route_boundary_spillover', () => recoverRouteBoundarySpillover(
+          preparedRides,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('route_deu_column_ocr', () => recoverRouteDiacriticsTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('missing_driver_targeted_ocr', () => recoverMissingDriversTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('driver_deu_column_ocr', () => recoverDriverColumnConsensusTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('missing_flight_targeted_ocr', () => recoverMissingFlightNumbersTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('ambiguous_flight_targeted_ocr', () => recoverAmbiguousFlightNumbersTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('long_prefix_flight_ocr', () => recoverSuspiciousLongFlightPrefixesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
+        state.ocrCellDiagnostics = p54MeasureSync('build_raw_diagnostics', () => buildOcrCellRawDiagnostics(
+          preparedRides,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        const readPerf = (() => { try { return window.ATMSP54ReadImageTiming || null; } catch (_) { return null; } })();
+        state.ocrPerformanceDiagnostic = {
+          version: 'CORE-007D8A1F1D8P54',
+          totalMs: performance.now() - p54AnalyzeStartedAt,
+          stages: [
+            ...(Array.isArray(readPerf?.stages) ? readPerf.stages.map(item => ({ name: `read:${item.name}`, ms: Number(item?.ms || 0) })) : []),
+            ...p54AnalyzeStages.map(item => ({ ...item }))
+          ]
+        };
+        state.ocrDiagnosticSelfCheck = p54MeasureSync('build_self_check', () => buildOcrDiagnosticSelfCheck(
+          preparedRides,
+          result.imageMeta,
+          mappingInfo.mapping,
+          state.ocrCellDiagnostics
+        ));
+        state.ocrPerformanceDiagnostic.totalMs = performance.now() - p54AnalyzeStartedAt;
+        state.ocrPerformanceDiagnostic.stages = [
+          ...(Array.isArray(readPerf?.stages) ? readPerf.stages.map(item => ({ name: `read:${item.name}`, ms: Number(item?.ms || 0) })) : []),
+          ...p54AnalyzeStages.map(item => ({ ...item }))
+        ];
+        state.ocrDiagnosticSelfCheck.performance = state.ocrPerformanceDiagnostic;
+        try { window.ATMSP54OcrPerformanceDiagnostic = JSON.parse(JSON.stringify(state.ocrPerformanceDiagnostic)); } catch (_) {}
+        try { window.ATMSCore007D8A1DiagnosticSelfCheck = { ...state.ocrDiagnosticSelfCheck }; } catch (_) {}
+      } else {
+        state.ocrCellDiagnostics = [];
+        state.ocrDiagnosticSelfCheck = null;
+      }
+
+      if (generation !== state.pipelineGeneration) return;
+      state.matrix = matrix;
+      state.rides = assignRideDates(preparedRides);
+      state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
+      state.mapping = mappingInfo.mapping;
+      state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
+      state.issues = validate(state.rides);
+      localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
+      renderMapping(headers, mappingInfo);
+      render();
+      pipelineStarted = maybeAutoImportCleanPlan();
+      if (!pipelineStarted) releaseAnalysisRunGuard(generation);
+    } catch (error) {
+      $('importStatus').textContent = `Fehler: ${error.message}`;
+      $('planAnalysis').classList.add('hidden');
+      $('importPlanBtn').disabled = true;
+      releaseAnalysisRunGuard(generation);
+    }
+  }
+
+  function selectFile(file) {
+    state.file = file;
+    state.matrix = [];
+    state.rides = [];
+    state.cancelledRows = [];
+    state.ocrCellDiagnostics = [];
+    state.ocrDiagnosticSelfCheck = null;
+    state.ocrPerformanceDiagnostic = null;
+    state.issues = [];
+    state.meta = {};
+    state.pipelineGeneration += 1;
+    state.autoPipelineInProgress = false;
+    state.analysisRunInProgress = false;
+    state.autoImportCompleted = false;
+    state.autoFlightSummary = null;
+    try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
+    try { window.ATMSP41BoardArrivalTimeFieldDiagnostic = null; } catch (_) {}
+    try { window.ATMSP42CurrentSchemaTimeDiagnostic = null; } catch (_) {}
+    if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
+    state.priceDecisions = {};
+    state.dateBoundaryDecision = '';
+    state.dateInfo = {};
+    if (file) {
+      const detectedFileDate = detectPlanDateFromFile(file);
+      if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
+    }
+    $('analyzePlanBtn').disabled = !file;
+    $('importPlanBtn').disabled = true;
+    $('planAnalysis').classList.add('hidden');
+    const planDate = currentPlanDate();
+    $('importStatus').textContent = file ? `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
+  }
+
+  window.addEventListener('atms:gemini-flight-result', event => {
+    if (!state.rides.length) return;
+    if (event?.detail?.scope === 'staged-auto') return;
+    try {
+      const checked = event?.detail?.checked;
+      if (Array.isArray(checked) && checked.length) {
+        applyGeminiResultsToStagedPlan(checked, new Date().toISOString());
+      } else {
+        state.issues = validate(state.rides);
+        render();
+      }
+    } catch (_) {}
+  });
+
+  function importRides(options = {}) {
+    if (!state.rides.length) return false;
+    const auto = Boolean(options && options.auto);
+    try {
+      const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
+      if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
+      localStorage.removeItem('atms_beta_14_3_1_rides');
+       localStorage.removeItem('atms_beta_14_3_1_done');
+
+       const result = window.applyImportedRides(normalized);
+      if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
+      $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
+      $('importStatus').textContent = auto
+        ? `${result.count} Fahrten automatisch übernommen · Morgen-Modus aktiv.`
+        : (result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`);
+      if (auto && $('importPlanBtn')) {
+        $('importPlanBtn').disabled = true;
+        $('importPlanBtn').textContent = '✓ Fahrten automatisch übernommen';
+      }
+      if (typeof window.showToast === 'function') window.showToast(auto ? `${result.count} Fahrten automatisch übernommen` : `${result.count} Fahrten importiert`, 'ok');
+      if (typeof window.render === 'function') window.render();
+      return true;
+    } catch (error) {
+      if (auto) state.autoImportCompleted = false;
+      $('importStatus').textContent = `Importfehler: ${error.message}`;
+      return false;
+    }
+  }
+
+  async function runCleanPlanAutoPipeline(generation) {
+    const status = $('importStatus');
+    let flightSummary = null;
+    try {
+      if (generation !== state.pipelineGeneration) return false;
+      if (status) status.textContent = 'Plan sauber · Automatik startet …';
+
+      if (state.rides.some(ride => cellText(ride?.flightNumber))) {
+        flightSummary = await runAutomaticFlightCheck({
+          automaticPipeline: true,
+          expectedGeneration: generation
+        });
+      }
+
+      if (generation !== state.pipelineGeneration) return false;
+      state.autoFlightSummary = flightSummary;
+
+      // P31F5F1: Die vom echten Analyse-Klick stammende Pipeline-Freigabe wird
+      // erst JETZT in die kurzlebige Import-Freigabe umgewandelt. Dadurch darf
+      // die Gemini/Web-Pruefung laenger als 5 Sekunden dauern, ohne den
+      // Sicherheitsblock fuer fremde/programmgesteuerte Imports zu lockern.
+      if (typeof window.ATMSAuthorizeFinalCleanPlanAutoImport !== 'function') {
+        throw new Error('Finale Morgen-Modus-Importfreigabe ist nicht verfügbar.');
+      }
+      const finalGate = window.ATMSAuthorizeFinalCleanPlanAutoImport();
+      if (!finalGate || finalGate.ok !== true) {
+        throw new Error('Sicherheitsblock: Die automatische Importfreigabe ist abgelaufen. Bitte die Planliste erneut analysieren.');
+      }
+
+      const imported = importRides({ auto: true });
+      if (!imported) return false;
+
+      if (status) {
+        const parts = ['Fahrten automatisch übernommen', 'Morgen-Modus aktiv'];
+        if (flightSummary?.verifiedRides > 0) {
+          parts.push(`${flightSummary.verifiedRides} Fahrt(en) mit Flugort automatisch geprüft`);
+        }
+        if (flightSummary?.sourceConfirmedRides > 0) {
+          parts.push(`${flightSummary.sourceConfirmedRides} Flugzuordnung(en) aus offizieller Airportquelle erkannt (Zweitquelle noch offen)`);
+        }
+        if (flightSummary?.uncertainRides > 0) {
+          parts.push(`${flightSummary.uncertainRides} Flugzuordnung(en) bleiben sicher offen`);
+        }
+        if (flightSummary?.quotaBlocked) {
+          parts.push('Gemini-Kontingent derzeit erreicht');
+        } else if (flightSummary?.serviceUnavailable) {
+          parts.push('Flugort-Automatik derzeit nicht verfügbar');
+        } else if (Number(flightSummary?.technicalFailureCount || 0) > 0) {
+          parts.push(`${flightSummary.technicalFailureCount} technische Flugprüfung(en) fehlgeschlagen`);
+          if (flightSummary?.firstTechnicalError) parts.push(`Technik: ${cellText(flightSummary.firstTechnicalError).slice(0, 120)}`);
+        } else if (Number(flightSummary?.conflictFlights || 0) > 0) {
+          parts.push(`${flightSummary.conflictFlights} Flug/Flüge mit Quellenkonflikt`);
+        } else if (Number(flightSummary?.noGroundingFlights || 0) > 0) {
+          parts.push(`${flightSummary.noGroundingFlights} Flug/Flüge ohne abrufbare Webquelle`);
+        } else if (Number(flightSummary?.singleSourceFlights || 0) > 0) {
+          parts.push(`${flightSummary.singleSourceFlights} Flug/Flüge nur mit einer unabhängigen Quelle`);
+        } else if (flightSummary && flightSummary.ok === false && !flightSummary.verifiedRides) {
+          parts.push('Flugort-Automatik ohne sichere Änderung');
+        }
+        if (flightSummary?.nativeOfficialOnly && flightSummary?.officialProviderDiagnostic) {
+          parts.push(`Airport-Diagnose: ${cellText(flightSummary.officialProviderDiagnostic)}`);
+        }
+        status.textContent = `${parts.join(' · ')}.`;
+      }
+      return true;
+    } finally {
+      if (generation === state.pipelineGeneration) {
+        state.autoPipelineInProgress = false;
+        releaseAnalysisRunGuard(generation);
+      }
+    }
+  }
+
+  function maybeAutoImportCleanPlan() {
+    if (state.autoImportCompleted || state.autoPipelineInProgress || !state.rides.length) return false;
+    const actionable = (Array.isArray(state.issues) ? state.issues : []).filter(issue => issue.kind !== 'flight_check');
+    const errors = actionable.filter(issue => issue.level === 'error').length;
+    const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const priceIssues = actionable.filter(issue => issue.kind === 'price').length;
+    if (errors || warnings || priceIssues) return false;
+    if (typeof window.ATMSAuthorizeCleanPlanAutoImport !== 'function') return false;
+    const gate = window.ATMSAuthorizeCleanPlanAutoImport();
+    if (!gate || gate.ok !== true) return false;
+
+    state.autoImportCompleted = true;
+    state.autoPipelineInProgress = true;
+    const generation = state.pipelineGeneration;
+    void runCleanPlanAutoPipeline(generation);
+    return true;
+  }
+
+  async function ensureAutoFlightService() {
+    if (window.ATMSAutoFlight && typeof window.ATMSAutoFlight.verifyFlights === 'function') {
+      return window.ATMSAutoFlight;
+    }
+    if (!autoFlightModulePromise) {
+      const moduleUrl = new URL('./firebase-ai.js?v=CORE-007D8A1F1D8P31F5F6', PLAN_IMPORT_SCRIPT_URL).href;
+      autoFlightModulePromise = import(moduleUrl).then(() => {
+        const service = window.ATMSAutoFlight;
+        if (!service || typeof service.verifyFlights !== 'function') {
+          throw new Error('ATMS Auto-Flight-Modul wurde geladen, stellt aber keine Flugprüfung bereit.');
+        }
+        return service;
+      }).catch(error => {
+        autoFlightModulePromise = null;
+        throw error;
+      });
+    }
+    return autoFlightModulePromise;
+  }
+
+  async function ensureOfficialFlightProvider() {
+    if (window.ATMSOfficialFlightProvider && typeof window.ATMSOfficialFlightProvider.fetchLive === 'function') {
+      return window.ATMSOfficialFlightProvider;
+    }
+    if (!officialFlightProviderModulePromise) {
+      // Bewusst als klassisches Script laden: funktioniert sowohl unter GitHub Pages
+      // als auch in der Android-WebView mit file:///android_asset/.
+      officialFlightProviderModulePromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = new URL('./flight-data-provider.js?v=CORE-007D8A1F1D8P36F6', PLAN_IMPORT_SCRIPT_URL).href;
+        script.async = true;
+        script.onload = () => {
+          const provider = window.ATMSOfficialFlightProvider;
+          if (!provider || typeof provider.fetchLive !== 'function') {
+            reject(new Error('Official-Airport-Provider wurde geladen, stellt aber keine Flugabfrage bereit.'));
+            return;
+          }
+          resolve(provider);
+        };
+        script.onerror = () => reject(new Error('Official-Airport-Provider konnte nicht geladen werden.'));
+        document.head.appendChild(script);
+      }).catch(error => {
+        officialFlightProviderModulePromise = null;
+        throw error;
+      });
+    }
+    return officialFlightProviderModulePromise;
+  }
+
+  function officialFlightBaseIdentity(item) {
+    return [
+      normalizeFlightForCurrentCheck(item?.flightNumber),
+      cellText(item?.date),
+      cellText(item?.airportEventDate || item?.date),
+      String(item?.direction || 'unknown').trim().toLowerCase(),
+      String(item?.airportIata || '').trim().toUpperCase()
+    ].join('|');
+  }
+
+  function mergeDocumentedFlightSources(...groups) {
+    const out = [], seen = new Set();
+    for (const group of groups) {
+      for (const source of Array.isArray(group) ? group : []) {
+        const url = cellText(typeof source === 'string' ? source : source?.url);
+        const name = cellText(typeof source === 'string' ? source : source?.name);
+        let host = '';
+        try { host = new URL(url).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) {}
+        const key = host ? `host:${host}` : `${name}|${url}`.toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(typeof source === 'string' ? { name: source, url: source } : source);
+      }
+    }
+    return out.slice(0, 12);
+  }
+
+  function officialProviderItemsFromRides(rides = state.rides) {
+    const map = new Map();
+    for (const ride of Array.isArray(rides) ? rides : []) {
+      const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
+      const date = cellText(ride?.date);
+      const eventContext = stagedAirportEventDateContext(ride);
+      const airportEventDate = cellText(eventContext.airportEventDate || date);
+      const direction = stagedFlightDirection(ride);
+      const airportIata = stagedAirportIata(ride);
+      const flightTime = cellText(ride?.flightTime);
+      if (!flightNumber || !date || !airportEventDate || !['arrival', 'departure'].includes(direction)) continue;
+      if (!['DUS', 'CGN'].includes(airportIata)) continue;
+      const item = { flightNumber, date, airportEventDate, airportEventDateDerived: Boolean(eventContext.derived), direction, airportIata, flightTime: flightTime || null };
+      const key = officialFlightBaseIdentity(item);
+      if (!map.has(key)) map.set(key, item);
+    }
+    return [...map.values()];
+  }
+
+  function officialEvidenceFromProviderFlight(providerFlight, inputItem) {
+    const direction = String(providerFlight?.direction || inputItem?.direction || '').trim().toLowerCase();
+    const airportIata = String(providerFlight?.airportIata || inputItem?.airportIata || '').trim().toUpperCase();
+    const relevantIata = String(providerFlight?.route?.iata || '').trim().toUpperCase();
+    const relevantLocation = cellText(providerFlight?.route?.location);
+    if (!['arrival', 'departure'].includes(direction) || !/^[A-Z]{3}$/.test(airportIata) || !/^[A-Z]{3}$/.test(relevantIata) || !relevantLocation) return null;
+    const originIata = direction === 'arrival' ? relevantIata : airportIata;
+    const destinationIata = direction === 'arrival' ? airportIata : relevantIata;
+    const sources = mergeDocumentedFlightSources(providerFlight?.sources || []);
+    if (!sources.length) return null;
+    return {
+      flightNumber: normalizeFlightForCurrentCheck(providerFlight?.flightNumber || inputItem?.flightNumber),
+      date: cellText(providerFlight?.date || inputItem?.date),
+      airportEventDate: cellText(providerFlight?.airportEventDate || inputItem?.airportEventDate || inputItem?.date),
+      airportEventDateDerived: Boolean(providerFlight?.airportEventDateDerived || inputItem?.airportEventDateDerived),
+      dateAssumed: false,
+      // Der Provider selbst hat den Flug am Datum eindeutig gefunden. Ohne flightTime
+      // kann derselbe Nachweis auch auf gebuendelte Planzeilen derselben Fahrt passen.
+      flightTime: '',
+      direction,
+      airportIata,
+      flightLocation: relevantLocation,
+      relevantLocation,
+      iata: relevantIata,
+      relevantIata,
+      confidence: 'source_confirmed',
+      status: 'needs_manual_check',
+      conflict: false,
+      sources,
+      sourceCount: sources.length,
+      explicitSourceCount: undefined,
+      sourceNote: `Offizielle Airportquelle bestaetigt datumsspezifisch ${originIata} -> ${destinationIata}. Fuer verified/high fehlt weiterhin mindestens eine unabhaengige zweite Quelle.`,
+      modelUsed: 'Official Airport Provider',
+      officialAirportEvidence: true,
+      officialOriginIata: originIata,
+      officialDestinationIata: destinationIata,
+      officialRelevantIata: relevantIata,
+      officialRelevantLocation: relevantLocation,
+      officialProviderCheckedAt: new Date().toISOString()
+    };
+  }
+
+  async function runOfficialAirportEvidence(rides = state.rides, options = {}) {
+    const items = officialProviderItemsFromRides(rides);
+    if (!items.length) {
+      return { checked: [], attempted: 0, matched: 0, unsupported: [], failures: [], nativeState: null, providerUnavailable: false };
+    }
+    let provider;
+    try {
+      provider = await ensureOfficialFlightProvider();
+    } catch (error) {
+      return { checked: [], attempted: items.length, matched: 0, unsupported: [], failures: [{ reason: 'provider_unavailable', message: cellText(error?.message) || String(error || '') }], nativeState: null, providerUnavailable: true };
+    }
+    let nativeState = null;
+    try { nativeState = typeof provider.getNativeRuntimeState === 'function' ? provider.getNativeRuntimeState() : null; } catch (_) {}
+    let result;
+    try {
+      result = await provider.fetchLive(items, { onProgress: progress => options?.onProgress?.(progress) });
+    } catch (error) {
+      return { checked: [], attempted: items.length, matched: 0, unsupported: [], failures: [{ reason: 'technical', message: cellText(error?.message) || String(error || '') }], nativeState, providerUnavailable: false };
+    }
+    const inputByKey = new Map(items.map(item => [officialFlightBaseIdentity(item), item]));
+    const checked = [];
+    for (const providerFlight of Array.isArray(result?.flights) ? result.flights : []) {
+      const key = officialFlightBaseIdentity(providerFlight);
+      const inputItem = inputByKey.get(key);
+      if (!inputItem) continue;
+      const evidence = officialEvidenceFromProviderFlight(providerFlight, inputItem);
+      if (evidence) checked.push(evidence);
+    }
+    return {
+      checked,
+      attempted: items.length,
+      matched: checked.length,
+      unsupported: Array.isArray(result?.unsupported) ? result.unsupported : [],
+      failures: Array.isArray(result?.failures) ? result.failures : [],
+      nativeState,
+      providerUnavailable: false,
+      capabilities: Array.isArray(result?.capabilities) ? result.capabilities : []
+    };
+  }
+
+  function officialAirportDiagnosticSummary(summary) {
+    const failures = Array.isArray(summary?.failures) ? summary.failures : [];
+    const unsupported = Array.isArray(summary?.unsupported) ? summary.unsupported : [];
+    const rows = [...failures, ...unsupported].map(item => {
+      const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+      const reason = cellText(item?.reason) || 'unknown';
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      const airport = String(item?.airportIata || '').trim().toUpperCase();
+      const date = cellText(item?.airportEventDate || item?.date);
+      const message = cellText(item?.message);
+      return { flightNumber: flight, reason, direction, airportIata: airport, airportEventDate: date, message };
+    });
+    const attempted = Number(summary?.attempted || 0);
+    const matched = Number(summary?.matched || 0);
+    const failureCount = failures.length;
+    const unsupportedCount = unsupported.length;
+    const parts = [`${attempted} geprüft`, `${matched} Treffer`];
+    if (failureCount) parts.push(`${failureCount} Fehler`);
+    if (unsupportedCount) parts.push(`${unsupportedCount} nicht unterstützt`);
+    if (rows.length) {
+      parts.push(rows.map(row => `${row.flightNumber}:${row.reason}${row.message ? `(${row.message.slice(0, 80)})` : ''}`).join(', '));
+    }
+    return { text: parts.join(' · '), rows, attempted, matched, failureCount, unsupportedCount };
+  }
+
+  function mergeOfficialEvidenceIntoChecked(primaryChecked, officialChecked) {
+    const primary = Array.isArray(primaryChecked) ? primaryChecked : [];
+    const official = Array.isArray(officialChecked) ? officialChecked : [];
+    if (!official.length) return primary;
+    const officialByKey = new Map(official.map(item => [officialFlightBaseIdentity(item), item]));
+    const consumed = new Set();
+    const merged = primary.map(item => {
+      const key = officialFlightBaseIdentity(item);
+      const evidence = officialByKey.get(key);
+      if (!evidence) return item;
+      consumed.add(key);
+      const alreadyVerified = String(item?.status || '').trim().toLowerCase() === 'verified' && !Boolean(item?.conflict) && checkedSourceCount(item) >= 2;
+      if (alreadyVerified || Boolean(item?.conflict)) return item;
+      // Unsichere/technisch fehlgeschlagene Gemini-Zwischenwerte werden NICHT als
+      // zweite Quelle mitgezaehlt. Die offizielle Airportquelle startet sauber als Quelle 1.
+      return { ...item, ...evidence, technicalFailure: false, technicalErrorCode: '', technicalErrorMessage: '' };
+    });
+    for (const evidence of official) {
+      const key = officialFlightBaseIdentity(evidence);
+      if (!consumed.has(key)) merged.push(evidence);
+    }
+    return merged;
+  }
+
+
+  // CORE-007D8A1F1D8P36F5: Search-only fallback for flights whose explicit
+  // URL-Context sources could not be retrieved. FLIGHT-008 stays strict:
+  // two independent grounded sources + identical canonical IATA route are mandatory.
+  let strictSearchFallbackModelsPromise = null;
+
+  function autoFlightSearchSourceIdentity(source) {
+    const url = cellText(source?.url || source?.uri);
+    const title = cellText(source?.name || source?.title);
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) {}
+    const googleRedirect = /(?:^|\.)(?:google\.com|googleapis\.com|cloud\.google\.com|vertexaisearch\.cloud\.google\.com)$/.test(host);
+    if (host && !googleRedirect) return `host:${host}`;
+    const titleKey = title.toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+    return titleKey ? `title:${titleKey}` : (url ? `url:${url}` : '');
+  }
+
+  function uniqueAutoFlightSearchSources(sources) {
+    const out = [], seen = new Set();
+    for (const source of Array.isArray(sources) ? sources : []) {
+      const key = autoFlightSearchSourceIdentity(source);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(source);
+    }
+    return out.slice(0, 12);
+  }
+
+  function parseAutoFlightSearchJson(raw) {
+    const source = cellText(raw);
+    if (!source) return {};
+    const attempts = [source, source.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()];
+    const first = source.indexOf('{'), last = source.lastIndexOf('}');
+    if (first >= 0 && last > first) attempts.push(source.slice(first, last + 1));
+    for (const candidate of attempts) {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  function autoFlightSearchBoolean(value) {
+    if (value === true || value === false) return value;
+    const normalized = cellText(value).toLowerCase();
+    if (['true', '1', 'yes', 'ja', 'y'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'nein', 'n', ''].includes(normalized)) return false;
+    return false;
+  }
+
+  function extractAutoFlightSearchGrounding(response) {
+    const metadata = response?.candidates?.[0]?.groundingMetadata || null;
+    const chunks = Array.isArray(metadata?.groundingChunks) ? metadata.groundingChunks : [];
+    const sources = [];
+    for (const chunk of chunks) {
+      const web = chunk?.web;
+      const url = cellText(web?.uri), name = cellText(web?.title);
+      if (!url || !name) continue;
+      sources.push({ name, url, kind: 'google_search_fallback' });
+    }
+    const renderedContent = cellText(metadata?.searchEntryPoint?.renderedContent);
+    return {
+      renderedContent,
+      renderedContents: renderedContent ? [renderedContent] : [],
+      sources: uniqueAutoFlightSearchSources(sources),
+      webSearchQueries: Array.isArray(metadata?.webSearchQueries) ? metadata.webSearchQueries.map(cellText).filter(Boolean) : []
+    };
+  }
+
+  async function ensureStrictSearchFallbackModels() {
+    if (strictSearchFallbackModelsPromise) return strictSearchFallbackModelsPromise;
+    strictSearchFallbackModelsPromise = (async () => {
+      const [appSdk, aiSdk] = await Promise.all([
+        import('https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js'),
+        import('https://www.gstatic.com/firebasejs/12.16.0/firebase-ai.js')
+      ]);
+      if (!appSdk.getApps().length) throw new Error('Firebase-App für die strikte Web-Fallback-Prüfung ist noch nicht initialisiert.');
+      const ai = aiSdk.getAI(appSdk.getApp(), { backend: new aiSdk.GoogleAIBackend() });
+      const options = { tools: [{ googleSearch: {} }] };
+      return {
+        primary: aiSdk.getGenerativeModel(ai, { model: 'gemini-3.8-flash', ...options }),
+        fallback: aiSdk.getGenerativeModel(ai, { model: 'gemini-3.5-flash', ...options })
+      };
+    })().catch(error => { strictSearchFallbackModelsPromise = null; throw error; });
+    return strictSearchFallbackModelsPromise;
+  }
+
+  function buildStrictSearchFallbackPrompt(item) {
+    const hasOfficialEvidence = item?.officialAirportEvidence === true && /^[A-Z]{3}$/.test(String(item?.officialOriginIata || '')) && /^[A-Z]{3}$/.test(String(item?.officialDestinationIata || ''));
+    const payload = {
+      flightNumber: cellText(item?.flightNumber), date: cellText(item?.date),
+      airportEventDate: cellText(item?.airportEventDate || item?.date),
+      direction: cellText(item?.direction), airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+      flightTime: cellText(item?.flightTime) || null,
+      locationFromPlan: cellText(item?.flightLocation || item?.relevantLocation) || null,
+      officialAirportEvidence: hasOfficialEvidence ? {
+        originIata: String(item.officialOriginIata).trim().toUpperCase(),
+        destinationIata: String(item.officialDestinationIata).trim().toUpperCase(),
+        relevantLocation: cellText(item?.officialRelevantLocation || item?.flightLocation || item?.relevantLocation),
+        relevantIata: String(item?.officialRelevantIata || item?.iata || '').trim().toUpperCase(),
+        sourceName: cellText(item?.sources?.[0]?.name) || 'Offizielle Airportquelle',
+        sourceUrl: cellText(item?.sources?.[0]?.url) || null
+      } : null
+    };
+    const sourceRule = hasOfficialEvidence
+      ? `1. ATMS hat bereits EINE datumsspezifische offizielle Airportquelle als Quelle 1 gelesen (officialAirportEvidence). Nutze Google Search, um mindestens EINE davon unabhaengige zweite oeffentliche Quelle zu finden. Die zweite Quelle darf nicht nur dieselbe Airport-Domain spiegeln.\n2. Die unabhaengige Suchquelle muss die konkrete Flugnummer am airportEventDate und EXAKT dieselbe originIata + destinationIata wie officialAirportEvidence bestaetigen. Wenn das nicht eindeutig gelingt: needs_manual_check.\n`
+      : `1. Nutze mindestens ZWEI voneinander unabhaengige, datumsspezifische oeffentliche Quellen. Bevorzugt: Airline, offizieller Airport, Flightradar24, FlightStats oder FlightAware.\n2. Beide Quellen muessen die konkrete Flugnummer am airportEventDate und DIESELBE Route (originIata + destinationIata) bestaetigen.\n`;
+    return `ATMS PRO – FLIGHT-008 strikte datumsspezifische Zwei-Quellen-Webpruefung.\n\n` +
+`Die direkte URL-Context-Pruefung war technisch nicht vollstaendig abrufbar. Pruefe deshalb GENAU DIESEN EINEN Flug ueber Google Search neu.\n\n` +
+`VERBINDLICHE REGELN:\n` + sourceRule +
+`3. Historische/typische Routen, allgemeine Flugplanseiten ohne Datum oder eine einzige Quelle reichen NICHT.\n` +
+`4. airportIata ist verbindlicher Airport-Anker.\n` +
+`5. direction=arrival: airportIata muss destinationIata sein; relevantLocation ist der HERKUNFTSORT.\n` +
+`6. direction=departure: airportIata muss originIata sein; relevantLocation ist der ZIELORT.\n` +
+`7. flightTime ist nur ein Unterscheidungsmerkmal. Bei Mehrdeutigkeit: needs_manual_check.\n` +
+`8. locationFromPlan ist nur Vergleichswert und niemals Beweis. officialAirportEvidence ist dagegen bereits gelesene Quelle 1, falls vorhanden.\n` +
+`9. Bei Widerspruch zwischen Quellen conflict=true und needs_manual_check.\n` +
+`10. confirmedByTwoIndependentSources=true NUR wenn insgesamt mindestens zwei unabhaengige aktuelle Quellen dieselbe konkrete Route datumsspezifisch bestaetigen. Bei officialAirportEvidence genuegt dafuer die offizielle Airportquelle + mindestens eine wirklich unabhaengige Suchquelle.\n` +
+`11. Erfinde keine Route, Stadt, IATA-Codes, Quelle oder Zeit.\n` +
+`12. Antworte ausschliesslich mit genau einem JSON-Objekt ohne Markdown. Felder: originCity, originIata, destinationCity, destinationIata, relevantLocation, relevantIata, status, confidence, conflict, confirmedByTwoIndependentSources, sourceNote.\n` +
+`status: candidate|needs_manual_check. confidence: high|medium|low.\n\nPruefdaten:\n${JSON.stringify(payload, null, 2)}`;
+  }
+
+  function isStrictSearchModelAvailabilityError(error) {
+    const message = `${cellText(error?.code)} ${cellText(error?.message)}`.toLowerCase();
+    return /model|not.?found|not.?available|unsupported|deprecated|retired|404|410/.test(message);
+  }
+
+  async function generateStrictSearchFallback(prompt) {
+    const models = await ensureStrictSearchFallbackModels();
+    try { return { result: await models.primary.generateContent(prompt), modelUsed: 'gemini-3.8-flash', fallbackUsed: false }; }
+    catch (primaryError) {
+      if (!isStrictSearchModelAvailabilityError(primaryError) || !models.fallback) throw primaryError;
+      return { result: await models.fallback.generateContent(prompt), modelUsed: 'gemini-3.5-flash', fallbackUsed: true };
+    }
+  }
+
+  function checkedFlightIdentity(item) {
+    return [normalizeFlightForCurrentCheck(item?.flightNumber), cellText(item?.date), String(item?.direction || 'unknown').trim().toLowerCase(), cellText(item?.flightTime)].join('|');
+  }
+
+  function parseStrictSearchFallbackResult(item, generated) {
+    const response = generated?.result?.response;
+    const grounding = extractAutoFlightSearchGrounding(response);
+    const parsed = parseAutoFlightSearchJson(response?.text?.() || '');
+    const originCity = cellText(parsed?.originCity), destinationCity = cellText(parsed?.destinationCity);
+    const originIata = String(parsed?.originIata || '').trim().toUpperCase();
+    const destinationIata = String(parsed?.destinationIata || '').trim().toUpperCase();
+    const relevantIata = String((item?.direction === 'arrival' ? originIata : destinationIata) || parsed?.relevantIata || '').trim().toUpperCase();
+    const relevantLocation = cellText((item?.direction === 'arrival' ? originCity : destinationCity) || parsed?.relevantLocation);
+    const routeComplete = /^[A-Z]{3}$/.test(originIata) && /^[A-Z]{3}$/.test(destinationIata);
+    const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+    const airportAnchored = item?.direction === 'arrival' ? destinationIata === airportIata : item?.direction === 'departure' ? originIata === airportIata : false;
+    const declaredRelevantIata = String(parsed?.relevantIata || '').trim().toUpperCase();
+    const semanticMismatch = Boolean(declaredRelevantIata && relevantIata && declaredRelevantIata !== relevantIata);
+    const hasOfficialEvidence = item?.officialAirportEvidence === true && /^[A-Z]{3}$/.test(String(item?.officialOriginIata || '')) && /^[A-Z]{3}$/.test(String(item?.officialDestinationIata || ''));
+    const officialRouteMatches = !hasOfficialEvidence || (
+      originIata === String(item.officialOriginIata).trim().toUpperCase() &&
+      destinationIata === String(item.officialDestinationIata).trim().toUpperCase()
+    );
+    const conflict = autoFlightSearchBoolean(parsed?.conflict) || semanticMismatch || (routeComplete && !airportAnchored) || (routeComplete && !officialRouteMatches);
+    const confirmed = autoFlightSearchBoolean(parsed?.confirmedByTwoIndependentSources);
+    const searchSources = uniqueAutoFlightSearchSources(grounding.sources);
+    const combinedSources = hasOfficialEvidence
+      ? uniqueAutoFlightSearchSources([...(Array.isArray(item?.sources) ? item.sources : []), ...searchSources])
+      : searchSources;
+    const sourceCount = combinedSources.length;
+    const enoughIndependentSources = hasOfficialEvidence ? (searchSources.length >= 1 && sourceCount >= 2) : sourceCount >= 2;
+    const candidate = Boolean(routeComplete && airportAnchored && relevantLocation && /^[A-Z]{3}$/.test(relevantIata) && !conflict && confirmed && officialRouteMatches && enoughIndependentSources && cellText(parsed?.status).toLowerCase() !== 'needs_manual_check');
+    const modelName = generated?.fallbackUsed ? `${generated.modelUsed} (Fallback)` : generated?.modelUsed;
+    const noteBase = candidate
+      ? (hasOfficialEvidence
+          ? `FLIGHT-008 bestaetigt: offizielle Airportquelle + ${Math.max(1, sourceCount - 1)} unabhaengige Webquelle(n) bestaetigen dieselbe Route.`
+          : `Strikte Web-Fallback-Pruefung: ${sourceCount} unabhaengige datumsspezifische Quellen bestaetigen dieselbe Route.`)
+      : sourceCount < 2
+        ? `Strikte Web-Fallback-Pruefung: insgesamt nur ${sourceCount} unabhaengige Quelle(n) – FLIGHT-008 bleibt offen.`
+        : conflict
+          ? 'Strikte Web-Fallback-Pruefung: Quellen-/Airport-Konflikt – FLIGHT-008 bleibt offen.'
+          : hasOfficialEvidence && !officialRouteMatches
+            ? 'Strikte Web-Fallback-Pruefung widerspricht der offiziellen Airportroute – FLIGHT-008 bleibt offen.'
+            : 'Strikte Web-Fallback-Pruefung konnte die Route nicht mit zwei unabhaengigen Quellen sicher bestaetigen.';
+    const modelNote = cellText(parsed?.sourceNote);
+    const sourceNote = `${noteBase}${modelNote ? ` · ${modelNote}` : ''} · Modell: ${modelName}`;
+    return {
+      checked: {
+        flightNumber: cellText(item?.flightNumber), date: cellText(item?.date), airportEventDate: cellText(item?.airportEventDate || item?.date), airportEventDateDerived: Boolean(item?.airportEventDateDerived), dateAssumed: false, flightTime: cellText(item?.flightTime), direction: cellText(item?.direction) || 'unknown', airportIata: airportIata || null,
+        flightLocation: candidate ? relevantLocation : cellText(item?.flightLocation || item?.relevantLocation), relevantLocation: candidate ? relevantLocation : cellText(item?.flightLocation || item?.relevantLocation), iata: candidate ? relevantIata : String(item?.iata || item?.relevantIata || '').trim().toUpperCase(), confidence: candidate ? 'verified' : (hasOfficialEvidence ? 'source_confirmed' : 'uncertain'), status: candidate ? 'verified' : 'needs_manual_check', conflict,
+        sources: combinedSources, sourceCount, sourceNote, geminiReportedCheckedAt: new Date().toISOString(), verificationDowngraded: !candidate, modelUsed: modelName, verificationPasses: 1, searchFallback: true,
+        officialAirportEvidence: hasOfficialEvidence,
+        officialOriginIata: hasOfficialEvidence ? String(item.officialOriginIata).trim().toUpperCase() : '',
+        officialDestinationIata: hasOfficialEvidence ? String(item.officialDestinationIata).trim().toUpperCase() : '',
+        officialRelevantIata: hasOfficialEvidence ? String(item?.officialRelevantIata || item?.iata || '').trim().toUpperCase() : '',
+        officialRelevantLocation: hasOfficialEvidence ? cellText(item?.officialRelevantLocation || item?.flightLocation || item?.relevantLocation) : ''
+      },
+      grounding: { ...grounding, sources: combinedSources, flightNumber: cellText(item?.flightNumber), date: cellText(item?.date), airportEventDate: cellText(item?.airportEventDate || item?.date), airportIata: airportIata || null, direction: cellText(item?.direction), verificationPasses: 1, searchFallback: true, officialAirportEvidence: hasOfficialEvidence }
+    };
+  }
+
+  async function runStrictSearchFallback(primaryChecked, options = {}) {
+    const unresolved = (Array.isArray(primaryChecked) ? primaryChecked : []).filter(item => !item?.technicalFailure && !Boolean(item?.conflict) && checkedSourceCount(item) < 2 && normalizeFlightForCurrentCheck(item?.flightNumber) && cellText(item?.date) && ['arrival', 'departure'].includes(String(item?.direction || '').trim().toLowerCase()) && String(item?.airportIata || '').trim());
+    if (!unresolved.length) return { checked: primaryChecked, grounding: [], attempted: 0, verified: 0, technicalFailures: 0, firstTechnicalError: '', quotaBlocked: false };
+    const replacements = new Map(), grounding = [];
+    let technicalFailures = 0, firstTechnicalError = '', quotaBlocked = false;
+    for (let i = 0; i < unresolved.length; i++) {
+      const item = unresolved[i];
+      options?.onProgress?.({ current: i + 1, total: unresolved.length, flightNumber: item.flightNumber });
+      try {
+        const generated = await generateStrictSearchFallback(buildStrictSearchFallbackPrompt(item));
+        const parsed = parseStrictSearchFallbackResult(item, generated);
+        replacements.set(checkedFlightIdentity(item), parsed.checked);
+        grounding.push(parsed.grounding);
+      } catch (error) {
+        technicalFailures++;
+        const message = cellText(error?.message) || 'unbekannter Fehler';
+        if (!firstTechnicalError) firstTechnicalError = message;
+        if (/(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(message)) { quotaBlocked = true; break; }
+      }
+    }
+    const checked = (Array.isArray(primaryChecked) ? primaryChecked : []).map(item => {
+      const replacement = replacements.get(checkedFlightIdentity(item));
+      if (!replacement) return item;
+      const replacementSources = checkedSourceCount(replacement), originalSources = checkedSourceCount(item);
+      const replacementVerified = String(replacement?.status || '').toLowerCase() === 'verified' && replacementSources >= 2;
+      return replacementVerified || replacementSources > originalSources ? replacement : item;
+    });
+    const verified = checked.filter(item => Boolean(item?.searchFallback) && String(item?.status || '').toLowerCase() === 'verified' && checkedSourceCount(item) >= 2).length;
+    return { checked, grounding, attempted: unresolved.length, verified, technicalFailures, firstTechnicalError, quotaBlocked };
+  }
+
+
+  // CORE-007D8A1F1D8P36F12: Diagnostic-only independent second-source probe.
+  // This intentionally does NOT promote any flight to verified/high and never clears manual review.
+  function splitFlightNumberForSecondSource(value) {
+    const flightNumber = normalizeFlightForCurrentCheck(value);
+    // P36F21: Prefer a 2-character IATA designator. The previous greedy 2–3
+    // character carrier group could swallow the first flight-number digit
+    // (e.g. JU422 -> JU4/22). A 3-character fallback is accepted only when
+    // all three carrier characters are letters, avoiding that ambiguity.
+    let match = flightNumber.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
+    if (!match) match = flightNumber.match(/^([A-Z]{3})(\d{1,4}[A-Z]?)$/);
+    return match ? { flightNumber, carrier: match[1], number: match[2] } : null;
+  }
+
+  function nativeSecondSourceProbeUrl(item) {
+    const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+    const date = cellText(item?.airportEventDate || item?.date);
+    const dm = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!parts || !dm) return '';
+    return `https://www.flightstats.com/v2/api-next/flight-tracker/${encodeURIComponent(parts.carrier)}/${encodeURIComponent(parts.number)}/${dm[1]}/${Number(dm[2])}/${Number(dm[3])}`;
+  }
+
+  function nativeSecondSourceBridgeHost() {
+    try {
+      // P40F1: prefer the JS wrapper because only it exposes the Promise-based async bridge safely.
+      if (window.ATMSNativeFlightBridge && typeof window.ATMSNativeFlightBridge.requestJsonString === 'function') return window.ATMSNativeFlightBridge;
+      if (window.ATMSNativeFlightBridgeHost && typeof window.ATMSNativeFlightBridgeHost.requestJsonString === 'function') return window.ATMSNativeFlightBridgeHost;
+    } catch (_) {}
+    return null;
+  }
+  async function nativeSecondSourceRequestJsonString(bridge, request) {
+    if (!bridge) return '';
+    const payload = typeof request === 'string' ? request : JSON.stringify(request);
+    if (typeof bridge.requestJsonStringAsync === 'function') {
+      return await bridge.requestJsonStringAsync(payload);
+    }
+    // Legacy diagnostic fallback only. P40 itself refuses to run without the async bridge.
+    if (typeof bridge.requestJsonString === 'function') return bridge.requestJsonString(payload);
+    return '';
+  }
+
+  function nativeSecondSourceIata(point) {
+    if (!point) return '';
+    if (typeof point === 'string') return String(point).trim().toUpperCase();
+    return String(point?.iata || point?.fs || '').trim().toUpperCase();
+  }
+
+  function parseNativeSecondSourceProbe(item, payload) {
+    const data = payload && typeof payload === 'object' ? payload.data : null;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { reachable: true, routeMatch: false, reason: 'no_data', originIata: '', destinationIata: '' };
+    }
+    const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+    const reportedCarrier = String(data?.resultHeader?.carrier?.fs || data?.ticketHeader?.carrier?.fs || '').trim().toUpperCase();
+    const reportedNumber = String(data?.resultHeader?.flightNumber || data?.ticketHeader?.flightNumber || '').trim().toUpperCase();
+    const originIata = nativeSecondSourceIata(data?.departureAirport) || String(data?.resultHeader?.departureAirportFS || data?.positional?.departureAirportCode || '').trim().toUpperCase();
+    const destinationIata = nativeSecondSourceIata(data?.arrivalAirport) || String(data?.resultHeader?.arrivalAirportFS || data?.positional?.arrivalAirportCode || '').trim().toUpperCase();
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const scheduledDeparture = cellText(data?.schedule?.scheduledDeparture || data?.departureAirport?.date);
+    const queriedDate = cellText(item?.airportEventDate || item?.date);
+    const identityMatch = Boolean(parts)
+      && (!reportedCarrier || reportedCarrier === parts.carrier)
+      && (!reportedNumber || reportedNumber === parts.number);
+    const dateMatch = !scheduledDeparture || !queriedDate || scheduledDeparture.slice(0, 10) === queriedDate;
+    const routeMatch = identityMatch && dateMatch && /^[A-Z]{3}$/.test(originIata) && /^[A-Z]{3}$/.test(destinationIata)
+      && originIata === expectedOrigin && destinationIata === expectedDestination;
+    let reason = routeMatch ? 'route_match' : 'route_or_date_mismatch';
+    if (!originIata || !destinationIata) reason = 'route_missing';
+    else if (!identityMatch) reason = 'flight_identity_mismatch';
+    else if (!dateMatch) reason = 'date_mismatch';
+    return { reachable: true, routeMatch, reason, originIata, destinationIata, scheduledDeparture: scheduledDeparture || null };
+  }
+
+  async function runNativeSecondSourceProbe(officialChecked = [], options = {}) {
+    const bridge = nativeSecondSourceBridgeHost();
+    const eligible = (Array.isArray(officialChecked) ? officialChecked : []).filter(item => item?.officialAirportEvidence === true && /^[A-Z]{3}$/.test(String(item?.officialOriginIata || '').trim().toUpperCase()) && /^[A-Z]{3}$/.test(String(item?.officialDestinationIata || '').trim().toUpperCase()));
+    const rows = [];
+    if (!eligible.length) return { attempted: 0, reachable: 0, routeMatches: 0, rows, unavailable: false, text: '0 geprüft · 0 erreichbar · 0 Routenübereinstimmungen' };
+    if (!bridge) {
+      for (const item of eligible) rows.push({ flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber), reachable: false, routeMatch: false, reason: 'native_bridge_unavailable' });
+      return { attempted: eligible.length, reachable: 0, routeMatches: 0, rows, unavailable: true, text: `${eligible.length} geprüft · Native Bridge nicht verfügbar` };
+    }
+    for (let i = 0; i < eligible.length; i++) {
+      const item = eligible[i];
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      options?.onProgress?.({ current: i + 1, total: eligible.length, flightNumber });
+      const url = nativeSecondSourceProbeUrl(item);
+      if (!url) {
+        rows.push({ flightNumber, reachable: false, routeMatch: false, reason: 'invalid_probe_url' });
+        continue;
+      }
+      try {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+          purpose: 'flightstats_probe',
+          airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+          method: 'GET',
+          url,
+          timeoutMs: 15000
+        });
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          rows.push({ flightNumber, reachable: false, routeMatch: false, reason: message ? `transport:${message.slice(0, 180)}` : 'empty_response' });
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) {
+          rows.push({ flightNumber, reachable: true, routeMatch: false, reason: 'invalid_json' });
+          continue;
+        }
+        rows.push({ flightNumber, ...parseNativeSecondSourceProbe(item, payload) });
+      } catch (error) {
+        rows.push({ flightNumber, reachable: false, routeMatch: false, reason: `technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0, 220) });
+      }
+    }
+    const reachable = rows.filter(item => item.reachable === true).length;
+    const routeMatches = rows.filter(item => item.routeMatch === true).length;
+    return { attempted: eligible.length, reachable, routeMatches, rows, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} Routenübereinstimmung(en)` };
+  }
+
+
+  // CORE-007D8A1F1D8P39: Native LIVE dual-source proof diagnostic.
+  // Safety invariant: this code only reads network sources and stores a transient diagnostic
+  // object on window. It never mutates state.rides and never writes PLAN/DISPO/LIVE storage.
+  function p39Clock(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') {
+      for (const key of ['time24','local','dateLocal','date','time','value']) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const hit = p39Clock(value[key]);
+          if (hit) return hit;
+        }
+      }
+      return '';
+    }
+    const raw = String(value).trim();
+    if (!raw) return '';
+    const iso = raw.match(/(?:T|\s)([01]\d|2[0-3]):([0-5]\d)/);
+    if (iso) return `${iso[1]}:${iso[2]}`;
+    const direct = raw.match(/(?:^|\D)([01]?\d|2[0-3]):([0-5]\d)(?:\D|$)/);
+    return direct ? `${String(Number(direct[1])).padStart(2,'0')}:${direct[2]}` : '';
+  }
+
+  function p39MinuteDelta(from, to) {
+    const a = p39Clock(from), b = p39Clock(to);
+    if (!a || !b) return null;
+    const [ah, am] = a.split(':').map(Number), [bh, bm] = b.split(':').map(Number);
+    let d = (bh * 60 + bm) - (ah * 60 + am);
+    if (d < -720) d += 1440;
+    if (d > 720) d -= 1440;
+    return d;
+  }
+
+  function p39NormalizeStatus(value) {
+    const raw = cellText(value).toLowerCase();
+    if (!raw) return 'unknown';
+    if (/annull|cancel/.test(raw)) return 'cancelled';
+    if (/landed|gelandet|arrived|angekommen/.test(raw)) return 'landed';
+    if (/departed|abgeflogen|gestartet|take.?off/.test(raw)) return 'departed';
+    if (/delay|verspät|verspaet/.test(raw)) return 'delayed';
+    if (/on.?time|pünkt|puenkt/.test(raw)) return 'on_time';
+    if (/sched|geplant/.test(raw)) return 'scheduled';
+    return 'unknown';
+  }
+
+  function p39StatusFromFlightStats(data, direction, scheduled, estimated, actual) {
+    const note = data?.flightNote && typeof data.flightNote === 'object' ? data.flightNote : {};
+    if (note.canceled === true) return 'cancelled';
+    if (direction === 'arrival' && (note.landed === true || data?.isLanded === true)) return 'landed';
+    if (direction === 'departure' && (note.hasDepartedRunway === true || note.hasDepartedGate === true)) return 'departed';
+    const labels = [
+      data?.status?.statusDescription, data?.status?.status, data?.status,
+      note?.message, note?.phase, data?.flightStatus, data?.recordStatus
+    ].map(cellText).filter(Boolean);
+    for (const label of labels) {
+      const normalized = p39NormalizeStatus(label);
+      if (normalized !== 'unknown') return normalized;
+    }
+    const current = actual || estimated;
+    const delta = scheduled && current ? p39MinuteDelta(scheduled, current) : null;
+    if (Number.isFinite(delta) && delta > 0) return 'delayed';
+    return scheduled ? 'scheduled' : 'unknown';
+  }
+
+  function p39FlightStatsSingleLive(item, payload) {
+    const rawData = payload && typeof payload === 'object' ? payload.data : null;
+    const data = Array.isArray(rawData) ? (rawData[0] || null) : rawData;
+    if (!data || typeof data !== 'object') {
+      return { reachable: true, usable: false, reason: 'no_data', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '' };
+    }
+    const route = parseNativeSecondSourceProbe(item, payload);
+    const direction = String(item?.direction || '').trim().toLowerCase();
+    const schedule = data?.schedule && typeof data.schedule === 'object' ? data.schedule : {};
+    const sideTimes = direction === 'arrival'
+      ? (data?.arrivalTimes && typeof data.arrivalTimes === 'object' ? data.arrivalTimes : {})
+      : (data?.departureTimes && typeof data.departureTimes === 'object' ? data.departureTimes : {});
+    const scheduled = p39Clock(direction === 'arrival'
+      ? (schedule.scheduledArrival || schedule.scheduledGateArrival || data?.scheduledGateArrival || sideTimes?.scheduledGate || data?.arrivalTime)
+      : (schedule.scheduledDeparture || schedule.scheduledGateDeparture || data?.scheduledGateDeparture || sideTimes?.scheduledGate || data?.departureTime));
+    const estimated = p39Clock(direction === 'arrival'
+      ? (schedule.estimatedGateArrival || schedule.estimatedRunwayArrival || data?.estimatedGateArrival || data?.estimatedRunwayArrival || sideTimes?.estimatedGate || sideTimes?.estimatedRunway)
+      : (schedule.estimatedGateDeparture || schedule.estimatedRunwayDeparture || data?.estimatedGateDeparture || data?.estimatedRunwayDeparture || sideTimes?.estimatedGate || sideTimes?.estimatedRunway));
+    const actual = p39Clock(direction === 'arrival'
+      ? (schedule.actualGateArrival || schedule.actualRunwayArrival || data?.actualGateArrival || data?.actualRunwayArrival || sideTimes?.actualGate || sideTimes?.actualRunway)
+      : (schedule.actualGateDeparture || schedule.actualRunwayDeparture || data?.actualGateDeparture || data?.actualRunwayDeparture || sideTimes?.actualGate || sideTimes?.actualRunway));
+    const status = p39StatusFromFlightStats(data, direction, scheduled, estimated, actual);
+    const usable = Boolean(route?.routeMatch && (scheduled || estimated || actual || status !== 'unknown'));
+    return {
+      reachable: true,
+      usable,
+      reason: usable ? 'live_fields_available' : (route?.reason || 'live_fields_missing'),
+      routeMatch: Boolean(route?.routeMatch),
+      originIata: route?.originIata || '',
+      destinationIata: route?.destinationIata || '',
+      status,
+      scheduled,
+      estimated,
+      actual,
+      delayMinutes: scheduled && (actual || estimated) ? p39MinuteDelta(scheduled, actual || estimated) : null
+    };
+  }
+
+  function p39BoardStatus(row, direction, scheduled) {
+    const labels = [row?.status?.statusDescription, row?.status?.status, row?.status, row?.flightStatus, row?.statusDescription]
+      .map(cellText).filter(Boolean);
+    for (const label of labels) {
+      const normalized = p39NormalizeStatus(label);
+      if (normalized !== 'unknown') return normalized;
+    }
+    return scheduled ? 'scheduled' : 'unknown';
+  }
+
+  async function p39FlightStatsBoardLive(item) {
+    const bridge = nativeSecondSourceBridgeHost();
+    if (!bridge) return { reachable: false, usable: false, reason: 'native_bridge_unavailable', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '', sourceUrls: [] };
+    const group = {
+      airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+      direction: String(item?.direction || '').trim().toLowerCase(),
+      date: cellText(item?.airportEventDate || item?.date)
+    };
+    const matches = [], sourceUrls = [], errors = [];
+    for (const hour of [0,6,12,18]) {
+      const url = nativeSecondSourceBoardProbeUrl(group, hour);
+      if (!url) continue;
+      try {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+          purpose: 'flightstats_board_probe',
+          airportIata: group.airportIata,
+          method: 'GET',
+          url,
+          timeoutMs: 15000
+        });
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          errors.push(`${hour}:${message || 'empty_response'}`);
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) { errors.push(`${hour}:invalid_json`); continue; }
+        const parsed = parseNativeSecondSourceBoardSegment(payload);
+        if (!parsed.ok) { errors.push(`${hour}:${parsed.reason}`); continue; }
+        for (const row of parsed.flights) {
+          if (boardFlightIdentity(row) !== normalizeFlightForCurrentCheck(item?.flightNumber)) continue;
+          matches.push({ ...row, __atmsBoardSourceUrl: url });
+          sourceUrls.push(url);
+        }
+      } catch (error) {
+        errors.push(`${hour}:technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180));
+      }
+    }
+    if (!matches.length) return { reachable: sourceUrls.length > 0 || errors.length < 4, usable: false, reason: 'flight_not_found_on_board', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '', sourceUrls: [...new Set(sourceUrls)], errors };
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const routePairs = [...new Set(matches.map(row => {
+      const opposite = boardOppositeAirportIata(row);
+      if (!/^[A-Z]{3}$/.test(opposite)) return '';
+      return group.direction === 'arrival' ? `${opposite}>${group.airportIata}` : `${group.airportIata}>${opposite}`;
+    }).filter(Boolean))];
+    const routePair = routePairs.length === 1 ? routePairs[0] : '';
+    const [originIata, destinationIata] = routePair ? routePair.split('>') : ['', ''];
+    const routeMatch = Boolean(routePair && originIata === expectedOrigin && destinationIata === expectedDestination);
+    const eventKey = group.direction === 'arrival' ? 'arrivalTime' : 'departureTime';
+    const clocks = matches.map(row => p39Clock(row?.[eventKey])).filter(Boolean);
+    const distinctClocks = [...new Set(clocks)];
+    const scheduled = distinctClocks.length === 1 ? distinctClocks[0] : '';
+    const statuses = [...new Set(matches.map(row => p39BoardStatus(row, group.direction, p39Clock(row?.[eventKey]))).filter(status => status !== 'unknown'))];
+    const status = statuses.length === 1 ? statuses[0] : (statuses.length ? 'ambiguous' : 'unknown');
+    return {
+      reachable: true,
+      usable: Boolean(routeMatch && (scheduled || status !== 'unknown')),
+      reason: routeMatch ? (distinctClocks.length > 1 ? 'ambiguous_board_times' : 'board_fields_available') : (routePairs.length > 1 ? 'ambiguous_routes' : 'route_mismatch'),
+      routeMatch,
+      originIata,
+      destinationIata,
+      status,
+      scheduled,
+      estimated: '',
+      actual: '',
+      delayMinutes: null,
+      sourceUrls: [...new Set(matches.map(row => cellText(row?.__atmsBoardSourceUrl)).filter(Boolean))],
+      matchCount: matches.length,
+      errors
+    };
+  }
+
+  function p39LocalRideScore(item) {
+    let score = 0;
+    const key = officialFlightBaseIdentity(item);
+    for (const ride of state.rides) {
+      const rideItem = officialProviderItemsFromRides([ride])[0];
+      if (!rideItem || officialFlightBaseIdentity(rideItem) !== key) continue;
+      if (ride?.liveManualConfirmed === true) score += 100;
+      if (cellText(ride?.liveFlightActualTime || ride?.actualDepartureTime || ride?.actualLandingTime)) score += 80;
+      if (cellText(ride?.liveFlightEstimatedTime)) score += 50;
+      if (['departed','landed','delayed','cancelled'].includes(String(ride?.flightStatus || ride?.liveFlightStatus || '').toLowerCase())) score += 30;
+      const hhmm = p39Clock(ride?.flightTime || ride?.time);
+      if (hhmm) score += Number(hhmm.replace(':','')) / 100000;
+    }
+    return score;
+  }
+
+  async function runP39NativeLiveDiagnostic() {
+    const button = $('p39NativeLiveDiagBtn');
+    const statusBox = $('p39NativeLiveDiagStatus');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); }
+    if (statusBox) statusBox.textContent = 'P39 Diagnose läuft: offizielle DUS-Livequelle …';
+    try {
+      const items = officialProviderItemsFromRides(state.rides).filter(item => String(item?.airportIata || '').trim().toUpperCase() === 'DUS');
+      if (!items.length) throw new Error('Keine geeigneten DUS-Flüge in der analysierten Planliste gefunden.');
+      const ranked = [...items].sort((a,b) => p39LocalRideScore(b) - p39LocalRideScore(a));
+      const selected = ranked[0];
+      const provider = await ensureOfficialFlightProvider();
+      const officialBatch = await provider.fetchLive([selected]);
+      const official = Array.isArray(officialBatch?.flights) ? officialBatch.flights[0] : null;
+      if (!official) {
+        const failure = (Array.isArray(officialBatch?.failures) ? officialBatch.failures[0] : null) || (Array.isArray(officialBatch?.unsupported) ? officialBatch.unsupported[0] : null);
+        throw new Error(`Offizielle DUS-Livequelle ohne Treffer${failure?.reason ? ` (${failure.reason})` : ''}.`);
+      }
+      const direction = String(selected.direction || '').toLowerCase();
+      const routeIata = String(official?.route?.iata || '').trim().toUpperCase();
+      const officialOriginIata = direction === 'arrival' ? routeIata : 'DUS';
+      const officialDestinationIata = direction === 'arrival' ? 'DUS' : routeIata;
+      const secondItem = { ...selected, officialAirportEvidence: true, officialOriginIata, officialDestinationIata };
+
+      if (statusBox) statusBox.textContent = 'P39 Diagnose läuft: FlightStats Einzel-Flugquelle …';
+      const bridge = nativeSecondSourceBridgeHost();
+      let single = { reachable: false, usable: false, reason: 'native_bridge_unavailable', routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '' };
+      const singleUrl = nativeSecondSourceProbeUrl(secondItem);
+      if (bridge && singleUrl) {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1', purpose: 'flightstats_probe', airportIata: 'DUS', method: 'GET', url: singleUrl, timeoutMs: 15000
+        });
+        if (raw) {
+          try { single = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl: singleUrl }; }
+          catch (_) { single = { ...single, reachable: true, reason: 'invalid_json', sourceUrl: singleUrl }; }
+        } else {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          single = { ...single, reason: message ? `transport:${message.slice(0,180)}` : 'empty_response', sourceUrl: singleUrl };
+        }
+      }
+
+      if (statusBox) statusBox.textContent = 'P39 Diagnose läuft: FlightStats Airport-Board …';
+      const board = await p39FlightStatsBoardLive(secondItem);
+      const second = single.usable ? single : board;
+      const officialCurrent = p39Clock(official?.airportActualTime || official?.airportEstimatedTime);
+      const secondCurrent = p39Clock(second?.actual || second?.estimated);
+      const comparison = {
+        routeMatch: Boolean(second?.routeMatch),
+        statusAgreement: second?.status && second.status !== 'unknown' && second.status !== 'ambiguous' ? String(official?.status || 'unknown') === String(second.status) : null,
+        scheduledDeltaMinutes: official?.airportScheduledTime && second?.scheduled ? p39MinuteDelta(official.airportScheduledTime, second.scheduled) : null,
+        currentDeltaMinutes: officialCurrent && secondCurrent ? p39MinuteDelta(officialCurrent, secondCurrent) : null,
+        secondHasLiveSignal: Boolean(second?.actual || second?.estimated || (second?.status && !['unknown','scheduled','ambiguous'].includes(second.status)))
+      };
+      window.ATMSP39NativeLiveLastDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P39',
+        checkedAt: new Date().toISOString(),
+        diagnosticOnly: true,
+        noMutation: true,
+        selected: { flightNumber: selected.flightNumber, date: selected.date, airportEventDate: selected.airportEventDate, direction, airportIata: 'DUS', originIata: officialOriginIata, destinationIata: officialDestinationIata },
+        official: {
+          source: 'Düsseldorf Airport',
+          status: official?.status || 'unknown',
+          scheduled: p39Clock(official?.airportScheduledTime),
+          estimated: p39Clock(official?.airportEstimatedTime),
+          actual: p39Clock(official?.airportActualTime),
+          delayMinutes: Number.isFinite(Number(official?.delayMinutes)) ? Number(official.delayMinutes) : null,
+          routeIata,
+          sourceUrl: Array.isArray(official?.sources) ? cellText(official.sources[0]?.url) : ''
+        },
+        flightStats: { selectedMode: single.usable ? 'single_flight' : 'airport_board', single, board, selected: second },
+        comparison
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P39 Native-LIVE-Diagnose abgeschlossen', 'ok');
+    } catch (error) {
+      window.ATMSP39NativeLiveLastDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P39', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        error: cellText(error?.message) || String(error || 'Unbekannter Fehler')
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P39 Diagnose nicht vollständig', 'warn');
+    } finally {
+      const freshButton = $('p39NativeLiveDiagBtn');
+      if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
+    }
+  }
+
+
+
+  // CORE-007D8A1F1D8P39F1: Arrival-only multi-flight LIVE time-field proof.
+  // Reads only; diagnostic state is transient on window and never enters ride/storage state.
+  async function runP39ArrivalTimeFieldDiagnostic() {
+    const button = $('p39ArrivalTimeDiagBtn');
+    const statusBox = $('p39ArrivalTimeDiagStatus');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); }
+    if (statusBox) statusBox.textContent = 'P39F1 prüft DUS-Ankünfte …';
+    try {
+      const all = officialProviderItemsFromRides(state.rides)
+        .filter(item => String(item?.airportIata || '').trim().toUpperCase() === 'DUS')
+        .filter(item => String(item?.direction || '').trim().toLowerCase() === 'arrival');
+      const seen = new Set();
+      const items = [];
+      for (const item of all) {
+        const key = officialFlightBaseIdentity(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        items.push(item);
+      }
+      if (!items.length) throw new Error('Keine eindeutigen DUS-Ankünfte in der analysierten Planliste gefunden.');
+
+      const provider = await ensureOfficialFlightProvider();
+      const bridge = nativeSecondSourceBridgeHost();
+      if (!bridge) throw new Error('Native Flight Bridge nicht verfügbar.');
+
+      const rows = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+        if (statusBox) statusBox.textContent = `P39F1 ${i + 1}/${items.length}: ${flightNumber} …`;
+
+        let official = null, officialFailure = '';
+        try {
+          const officialBatch = await provider.fetchLive([item]);
+          official = Array.isArray(officialBatch?.flights) ? officialBatch.flights[0] : null;
+          if (!official) {
+            const failure = (Array.isArray(officialBatch?.failures) ? officialBatch.failures[0] : null)
+              || (Array.isArray(officialBatch?.unsupported) ? officialBatch.unsupported[0] : null);
+            officialFailure = cellText(failure?.reason) || 'official_not_found';
+          }
+        } catch (error) {
+          officialFailure = `official_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180);
+        }
+
+        const routeIata = String(official?.route?.iata || '').trim().toUpperCase();
+        const officialOriginIata = routeIata;
+        const officialDestinationIata = 'DUS';
+        const secondItem = { ...item, officialAirportEvidence: Boolean(official), officialOriginIata, officialDestinationIata };
+        let single = { reachable: false, usable: false, reason: official ? 'not_requested' : officialFailure, routeMatch: false, status: 'unknown', scheduled: '', estimated: '', actual: '' };
+
+        if (official && /^[A-Z]{3}$/.test(routeIata)) {
+          const singleUrl = nativeSecondSourceProbeUrl(secondItem);
+          if (!singleUrl) {
+            single = { ...single, reason: 'invalid_probe_url' };
+          } else {
+            try {
+              const raw = await nativeSecondSourceRequestJsonString(bridge, {
+                contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+                purpose: 'flightstats_probe',
+                airportIata: 'DUS',
+                method: 'GET',
+                url: singleUrl,
+                timeoutMs: 15000
+              });
+              if (raw) {
+                try { single = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl: singleUrl }; }
+                catch (_) { single = { ...single, reachable: true, reason: 'invalid_json', sourceUrl: singleUrl }; }
+              } else {
+                let message = '';
+                try { message = cellText(bridge.lastError?.()); } catch (_) {}
+                single = { ...single, reason: message ? `transport:${message.slice(0,180)}` : 'empty_response', sourceUrl: singleUrl };
+              }
+            } catch (error) {
+              single = { ...single, reason: `technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180) };
+            }
+          }
+        }
+
+        rows.push({
+          flightNumber,
+          date: cellText(item?.date),
+          airportEventDate: cellText(item?.airportEventDate || item?.date),
+          direction: 'arrival',
+          airportIata: 'DUS',
+          originIata: officialOriginIata,
+          destinationIata: officialDestinationIata,
+          official: official ? {
+            status: official?.status || 'unknown',
+            scheduled: p39Clock(official?.airportScheduledTime),
+            estimated: p39Clock(official?.airportEstimatedTime),
+            actual: p39Clock(official?.airportActualTime),
+            delayMinutes: Number.isFinite(Number(official?.delayMinutes)) ? Number(official.delayMinutes) : null
+          } : {
+            status: 'unknown', scheduled: '', estimated: '', actual: '', delayMinutes: null, reason: officialFailure
+          },
+          flightStats: single
+        });
+      }
+
+      window.ATMSP39ArrivalTimeFieldDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P39F1',
+        checkedAt: new Date().toISOString(),
+        diagnosticOnly: true,
+        noMutation: true,
+        attempted: rows.length,
+        routeMatches: rows.filter(row => row?.flightStats?.routeMatch === true).length,
+        withOwnTimeField: rows.filter(row => Boolean(row?.flightStats?.estimated || row?.flightStats?.actual)).length,
+        rows
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P39F1 Ankunfts-Zeitfeld-Scan abgeschlossen', 'ok');
+    } catch (error) {
+      window.ATMSP39ArrivalTimeFieldDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P39F1',
+        checkedAt: new Date().toISOString(),
+        diagnosticOnly: true,
+        noMutation: true,
+        error: cellText(error?.message) || String(error || 'Unbekannter Fehler')
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P39F1 Diagnose nicht vollständig', 'warn');
+    } finally {
+      const freshButton = $('p39ArrivalTimeDiagBtn');
+      if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
+    }
+  }
+
+
+
+  // CORE-007D8A1F1D8P41: Diagnostic-only FlightStats Airport-Board arrival time-field probe.
+  // The board is already the proven independent second source from P36F15. This probe only
+  // exposes time-like fields that are actually present in exact flight rows; it never mutates rides.
+  function p41CollectBoardTimeFields(value, path = '', out = [], depth = 0) {
+    if (depth > 6 || out.length >= 36 || value === null || value === undefined) return out;
+    if (Array.isArray(value)) {
+      for (let i = 0; i < Math.min(value.length, 8) && out.length < 36; i++) p41CollectBoardTimeFields(value[i], `${path}[${i}]`, out, depth + 1);
+      return out;
+    }
+    if (typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        if (out.length >= 36) break;
+        const childPath = path ? `${path}.${key}` : key;
+        p41CollectBoardTimeFields(child, childPath, out, depth + 1);
+      }
+      return out;
+    }
+    const lower = String(path || '').toLowerCase();
+    if (!/(time|date|sched|estim|actual|gate|runway|status|delay)/.test(lower)) return out;
+    const raw = cellText(value);
+    if (!raw) return out;
+    const clock = p39Clock(value);
+    out.push({ path: String(path || '?'), value: raw.slice(0, 120), clock });
+    return out;
+  }
+
+  async function p41FlightStatsBoardArrivalTimeProbe(item) {
+    const bridge = nativeSecondSourceBridgeHost();
+    if (!bridge) return { reachable: false, routeMatch: false, reason: 'native_bridge_unavailable', matchCount: 0, timeCandidates: [], hasEstimatedKey: false, hasActualKey: false, errors: [] };
+    const group = {
+      airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+      direction: 'arrival',
+      date: cellText(item?.airportEventDate || item?.date)
+    };
+    const matches = [], sourceUrls = [], errors = [];
+    for (const hour of [0,6,12,18]) {
+      const url = nativeSecondSourceBoardProbeUrl(group, hour);
+      if (!url) continue;
+      try {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1', purpose: 'flightstats_board_probe', airportIata: group.airportIata,
+          method: 'GET', url, timeoutMs: 15000
+        });
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          errors.push(`${hour}:${message || 'empty_response'}`);
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) { errors.push(`${hour}:invalid_json`); continue; }
+        const parsed = parseNativeSecondSourceBoardSegment(payload);
+        if (!parsed.ok) { errors.push(`${hour}:${parsed.reason}`); continue; }
+        for (const row of parsed.flights) {
+          if (boardFlightIdentity(row) !== normalizeFlightForCurrentCheck(item?.flightNumber)) continue;
+          matches.push(row);
+          sourceUrls.push(url);
+        }
+      } catch (error) {
+        errors.push(`${hour}:technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0, 180));
+      }
+    }
+    if (!matches.length) return { reachable: errors.length < 4, routeMatch: false, reason: 'flight_not_found_on_board', matchCount: 0, timeCandidates: [], hasEstimatedKey: false, hasActualKey: false, sourceUrls: [...new Set(sourceUrls)], errors };
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const routePairs = [...new Set(matches.map(row => {
+      const opposite = boardOppositeAirportIata(row);
+      return /^[A-Z]{3}$/.test(opposite) ? `${opposite}>${group.airportIata}` : '';
+    }).filter(Boolean))];
+    const routePair = routePairs.length === 1 ? routePairs[0] : '';
+    const [originIata, destinationIata] = routePair ? routePair.split('>') : ['', ''];
+    const routeMatch = Boolean(routePair && originIata === expectedOrigin && destinationIata === expectedDestination);
+    const candidateMap = new Map();
+    for (const row of matches) {
+      const fields = p41CollectBoardTimeFields(row);
+      for (const field of fields) {
+        const key = `${field.path}|${field.value}`;
+        if (!candidateMap.has(key)) candidateMap.set(key, field);
+      }
+    }
+    const timeCandidates = [...candidateMap.values()].slice(0, 36);
+    const hasEstimatedKey = timeCandidates.some(field => /estim/i.test(field.path));
+    const hasActualKey = timeCandidates.some(field => /actual/i.test(field.path));
+    return {
+      reachable: true,
+      routeMatch,
+      reason: routeMatch ? 'board_time_fields_exposed' : (routePairs.length > 1 ? 'ambiguous_routes' : 'route_mismatch'),
+      originIata, destinationIata,
+      matchCount: matches.length,
+      timeCandidates,
+      hasEstimatedKey,
+      hasActualKey,
+      sourceUrls: [...new Set(sourceUrls)],
+      errors
+    };
+  }
+
+  async function runP41BoardArrivalTimeFieldDiagnostic() {
+    const button = $('p41BoardArrivalTimeDiagBtn');
+    const statusBox = $('p41BoardArrivalTimeDiagStatus');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); }
+    if (statusBox) statusBox.textContent = 'P41 prüft FlightStats-Board-Zeitfelder der DUS-Ankünfte …';
+    try {
+      const all = officialProviderItemsFromRides(state.rides)
+        .filter(item => String(item?.airportIata || '').trim().toUpperCase() === 'DUS')
+        .filter(item => String(item?.direction || '').trim().toLowerCase() === 'arrival');
+      const seen = new Set(), items = [];
+      for (const item of all) {
+        const key = officialFlightBaseIdentity(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key); items.push(item);
+      }
+      if (!items.length) throw new Error('Keine eindeutigen DUS-Ankünfte in der analysierten Planliste gefunden.');
+      const provider = await ensureOfficialFlightProvider();
+      const rows = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+        if (statusBox) statusBox.textContent = `P41 ${i + 1}/${items.length}: ${flightNumber} …`;
+        let official = null, officialFailure = '';
+        try {
+          const officialBatch = await provider.fetchLive([item]);
+          official = Array.isArray(officialBatch?.flights) ? officialBatch.flights[0] : null;
+          if (!official) {
+            const failure = (Array.isArray(officialBatch?.failures) ? officialBatch.failures[0] : null)
+              || (Array.isArray(officialBatch?.unsupported) ? officialBatch.unsupported[0] : null);
+            officialFailure = cellText(failure?.reason) || 'official_not_found';
+          }
+        } catch (error) {
+          officialFailure = `official_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0, 180);
+        }
+        const originIata = String(official?.route?.iata || '').trim().toUpperCase();
+        const secondItem = { ...item, officialAirportEvidence: Boolean(official), officialOriginIata: originIata, officialDestinationIata: 'DUS' };
+        const board = official && /^[A-Z]{3}$/.test(originIata)
+          ? await p41FlightStatsBoardArrivalTimeProbe(secondItem)
+          : { reachable: false, routeMatch: false, reason: officialFailure || 'official_route_missing', matchCount: 0, timeCandidates: [], hasEstimatedKey: false, hasActualKey: false, errors: [] };
+        rows.push({
+          flightNumber,
+          date: cellText(item?.date),
+          airportEventDate: cellText(item?.airportEventDate || item?.date),
+          direction: 'arrival', airportIata: 'DUS', originIata, destinationIata: 'DUS',
+          official: official ? {
+            status: official?.status || 'unknown',
+            scheduled: p39Clock(official?.airportScheduledTime),
+            estimated: p39Clock(official?.airportEstimatedTime),
+            actual: p39Clock(official?.airportActualTime),
+            delayMinutes: Number.isFinite(Number(official?.delayMinutes)) ? Number(official.delayMinutes) : null
+          } : { status: 'unknown', scheduled: '', estimated: '', actual: '', delayMinutes: null, reason: officialFailure },
+          flightStatsBoard: board
+        });
+      }
+      window.ATMSP41BoardArrivalTimeFieldDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P41', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        attempted: rows.length,
+        routeMatches: rows.filter(row => row?.flightStatsBoard?.routeMatch === true).length,
+        withEstimatedKey: rows.filter(row => row?.flightStatsBoard?.hasEstimatedKey === true).length,
+        withActualKey: rows.filter(row => row?.flightStatsBoard?.hasActualKey === true).length,
+        rows
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P41 Board-Ankunfts-Zeitfeld-Scan abgeschlossen', 'ok');
+    } catch (error) {
+      window.ATMSP41BoardArrivalTimeFieldDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P41', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        error: cellText(error?.message) || String(error || 'Unbekannter Fehler')
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P41 Diagnose nicht vollständig', 'warn');
+    } finally {
+      const freshButton = $('p41BoardArrivalTimeDiagBtn');
+      if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
+    }
+  }
+
+
+  // CORE-007D8A1F1D8P42: Diagnostic-only current FlightStats single-flight time schema probe.
+  // P39F1 looked for legacy actualGate/estimatedGate keys. The current endpoint can expose
+  // schedule.estimatedActualArrival(+Title/+Runway) and arrivalAirport.times.estimatedActual.
+  // This code only displays those fields and their delta to the official DUS value.
+  function p42FlightStatsCurrentSchemaArrival(item, payload, officialCurrent) {
+    const rawData = payload && typeof payload === 'object' ? payload.data : null;
+    const data = Array.isArray(rawData) ? (rawData[0] || null) : rawData;
+    if (!data || typeof data !== 'object') {
+      return { reachable: true, routeMatch: false, reason: 'no_data', status: 'unknown', scheduled: '', currentTitle: '', current: '', currentRunway: null, airportCurrentTitle: '', airportCurrent: '', airportCurrentRunway: null, scheduleLanding: '', deltaMinutes: null };
+    }
+    const route = parseNativeSecondSourceProbe(item, payload);
+    const schedule = data?.schedule && typeof data.schedule === 'object' ? data.schedule : {};
+    const airportTimes = data?.arrivalAirport?.times && typeof data.arrivalAirport.times === 'object' ? data.arrivalAirport.times : {};
+    const airportCurrentObj = airportTimes?.estimatedActual && typeof airportTimes.estimatedActual === 'object' ? airportTimes.estimatedActual : {};
+    const scheduled = p39Clock(schedule?.scheduledArrival || airportTimes?.scheduled?.time24 || data?.arrivalAirport?.date);
+    const currentTitle = cellText(schedule?.estimatedActualArrivalTitle || airportCurrentObj?.title);
+    const current = p39Clock(schedule?.estimatedActualArrival || airportCurrentObj?.time24);
+    const currentRunway = typeof schedule?.estimatedActualArrivalRunway === 'boolean'
+      ? schedule.estimatedActualArrivalRunway
+      : (typeof airportCurrentObj?.runway === 'boolean' ? airportCurrentObj.runway : null);
+    const airportCurrentTitle = cellText(airportCurrentObj?.title);
+    const airportCurrent = p39Clock(airportCurrentObj?.time24 || airportCurrentObj?.time);
+    const airportCurrentRunway = typeof airportCurrentObj?.runway === 'boolean' ? airportCurrentObj.runway : null;
+    const scheduleLanding = p39Clock(schedule?.landing);
+    const status = p39StatusFromFlightStats(data, 'arrival', scheduled,
+      /estim/i.test(currentTitle) ? current : '', /actual/i.test(currentTitle) ? current : '');
+    return {
+      reachable: true,
+      routeMatch: Boolean(route?.routeMatch),
+      reason: route?.routeMatch ? (current ? 'current_schema_time_exposed' : 'current_schema_time_missing') : (route?.reason || 'route_mismatch'),
+      originIata: route?.originIata || '',
+      destinationIata: route?.destinationIata || '',
+      status, scheduled, currentTitle, current, currentRunway,
+      airportCurrentTitle, airportCurrent, airportCurrentRunway,
+      scheduleLanding,
+      flightId: Number.isFinite(Number(data?.flightId)) ? Number(data.flightId) : null,
+      flightState: cellText(data?.flightState),
+      noteLanded: data?.flightNote?.landed === true,
+      deltaMinutes: officialCurrent && current ? p39MinuteDelta(officialCurrent, current) : null
+    };
+  }
+
+  async function runP42CurrentSchemaTimeDiagnostic() {
+    const button = $('p42CurrentSchemaTimeDiagBtn');
+    const statusBox = $('p42CurrentSchemaTimeDiagStatus');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); }
+    if (statusBox) statusBox.textContent = 'P42 prüft das aktuelle FlightStats-Einzelflug-Zeitschema der DUS-Ankünfte …';
+    try {
+      const all = officialProviderItemsFromRides(state.rides)
+        .filter(item => String(item?.airportIata || '').trim().toUpperCase() === 'DUS')
+        .filter(item => String(item?.direction || '').trim().toLowerCase() === 'arrival');
+      const seen = new Set(), items = [];
+      for (const item of all) {
+        const key = officialFlightBaseIdentity(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key); items.push(item);
+      }
+      if (!items.length) throw new Error('Keine eindeutigen DUS-Ankünfte in der analysierten Planliste gefunden.');
+      const provider = await ensureOfficialFlightProvider();
+      const bridge = nativeSecondSourceBridgeHost();
+      if (!bridge) throw new Error('Native Flight Bridge nicht verfügbar.');
+      const rows = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+        if (statusBox) statusBox.textContent = `P42 ${i + 1}/${items.length}: ${flightNumber} …`;
+        let official = null, officialFailure = '';
+        try {
+          const officialBatch = await provider.fetchLive([item]);
+          official = Array.isArray(officialBatch?.flights) ? officialBatch.flights[0] : null;
+          if (!official) {
+            const failure = (Array.isArray(officialBatch?.failures) ? officialBatch.failures[0] : null)
+              || (Array.isArray(officialBatch?.unsupported) ? officialBatch.unsupported[0] : null);
+            officialFailure = cellText(failure?.reason) || 'official_not_found';
+          }
+        } catch (error) {
+          officialFailure = `official_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180);
+        }
+        const originIata = String(official?.route?.iata || '').trim().toUpperCase();
+        const secondItem = { ...item, officialAirportEvidence: Boolean(official), officialOriginIata: originIata, officialDestinationIata: 'DUS' };
+        let single = { reachable: false, routeMatch: false, reason: officialFailure || 'official_route_missing', status: 'unknown', scheduled: '', currentTitle: '', current: '', currentRunway: null, airportCurrentTitle: '', airportCurrent: '', airportCurrentRunway: null, scheduleLanding: '', deltaMinutes: null };
+        if (official && /^[A-Z]{3}$/.test(originIata)) {
+          const url = nativeSecondSourceProbeUrl(secondItem);
+          if (!url) {
+            single.reason = 'invalid_probe_url';
+          } else {
+            try {
+              const raw = await nativeSecondSourceRequestJsonString(bridge, {
+                contractVersion: 'ATMS-FLIGHT-NATIVE-1', purpose: 'flightstats_probe', airportIata: 'DUS',
+                method: 'GET', url, timeoutMs: 15000
+              });
+              if (raw) {
+                try {
+                  const officialCurrent = p39Clock(official?.airportActualTime || official?.airportEstimatedTime);
+                  single = { ...p42FlightStatsCurrentSchemaArrival(secondItem, JSON.parse(String(raw)), officialCurrent), sourceUrl: url };
+                } catch (_) {
+                  single = { ...single, reachable: true, reason: 'invalid_json', sourceUrl: url };
+                }
+              } else {
+                let message = '';
+                try { message = cellText(bridge.lastError?.()); } catch (_) {}
+                single = { ...single, reason: message ? `transport:${message.slice(0,180)}` : 'empty_response', sourceUrl: url };
+              }
+            } catch (error) {
+              single = { ...single, reason: `technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180) };
+            }
+          }
+        }
+        rows.push({
+          flightNumber,
+          date: cellText(item?.date), airportEventDate: cellText(item?.airportEventDate || item?.date),
+          direction: 'arrival', airportIata: 'DUS', originIata, destinationIata: 'DUS',
+          official: official ? {
+            status: official?.status || 'unknown', scheduled: p39Clock(official?.airportScheduledTime),
+            estimated: p39Clock(official?.airportEstimatedTime), actual: p39Clock(official?.airportActualTime),
+            delayMinutes: Number.isFinite(Number(official?.delayMinutes)) ? Number(official.delayMinutes) : null
+          } : { status: 'unknown', scheduled: '', estimated: '', actual: '', delayMinutes: null, reason: officialFailure },
+          flightStats: single
+        });
+      }
+      window.ATMSP42CurrentSchemaTimeDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P42', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        attempted: rows.length,
+        routeMatches: rows.filter(row => row?.flightStats?.routeMatch === true).length,
+        withCurrentField: rows.filter(row => Boolean(row?.flightStats?.current)).length,
+        sameMinute: rows.filter(row => row?.flightStats?.deltaMinutes !== null && row?.flightStats?.deltaMinutes !== undefined && Number.isFinite(Number(row.flightStats.deltaMinutes)) && Number(row.flightStats.deltaMinutes) === 0).length,
+        withinOneMinute: rows.filter(row => row?.flightStats?.deltaMinutes !== null && row?.flightStats?.deltaMinutes !== undefined && Number.isFinite(Number(row.flightStats.deltaMinutes)) && Math.abs(Number(row.flightStats.deltaMinutes)) <= 1).length,
+        rows
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P42 Current-Schema-Zeitprobe abgeschlossen', 'ok');
+    } catch (error) {
+      window.ATMSP42CurrentSchemaTimeDiagnostic = {
+        patch: 'CORE-007D8A1F1D8P42', checkedAt: new Date().toISOString(), diagnosticOnly: true, noMutation: true,
+        error: cellText(error?.message) || String(error || 'Unbekannter Fehler')
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P42 Diagnose nicht vollständig', 'warn');
+    } finally {
+      const freshButton = $('p42CurrentSchemaTimeDiagBtn');
+      if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
+    }
+  }
+
+
+  // CORE-007D8A1F1D8P43: diagnostic-only FlightStats flightId detail probe.
+  // The P43 detail endpoint is the same independent FlightStats source already used by ATMS;
+  // it is queried only after exact route identity has been established by the single-flight endpoint.
+  function p43FlickProbeUrl(flightId) {
+    const id = String(flightId ?? '').trim();
+    if (!/^\d{1,20}$/.test(id)) return '';
+    return `https://www.flightstats.com/v2/api-next/flick/${id}?guid=atmspro&rqid=atmspro`;
+  }
+
+  function p43ParseFlickArrival(item, payload, flightId, officialActual) {
+    const data = payload && typeof payload === 'object' ? payload.data : null;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { reachable:true, routeMatch:false, reason:'no_data', flightId, status:'unknown', arrival:'', actualRunwayArrival:'', miniArrival:'', isActualArrival:null, miniIsActualArrival:null, runwayDeltaMinutes:null };
+    }
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const originIata = String(data?.airports?.departure?.fsCode || data?.miniTracker?.departureAirport || '').trim().toUpperCase();
+    const destinationIata = String(data?.airports?.arrival?.fsCode || data?.miniTracker?.arrivalAirport || '').trim().toUpperCase();
+    const routeMatch = Boolean(/^[A-Z]{3}$/.test(originIata) && /^[A-Z]{3}$/.test(destinationIata)
+      && originIata === expectedOrigin && destinationIata === expectedDestination);
+    const local = data?.operationalTimes?.local && typeof data.operationalTimes.local === 'object' ? data.operationalTimes.local : {};
+    const mini = data?.miniTracker && typeof data.miniTracker === 'object' ? data.miniTracker : {};
+    const arrival = p39Clock(local?.arrivalTimeString);
+    const actualRunwayArrival = p39Clock(local?.actualRunwayArrivalTimeString);
+    const miniArrival = p39Clock(mini?.localArrivalTimeString);
+    const isActualArrival = typeof data?.operationalTimes?.isActualArrival === 'boolean' ? data.operationalTimes.isActualArrival : null;
+    const miniIsActualArrival = typeof mini?.isActualArrivalTime === 'boolean' ? mini.isActualArrivalTime : null;
+    const status = p39NormalizeStatus(data?.statusName || mini?.statusName || data?.statusCode || data?.flightStatus);
+    return {
+      reachable:true, routeMatch,
+      reason: routeMatch ? (actualRunwayArrival ? 'actual_runway_arrival_exposed' : (arrival ? 'arrival_detail_without_actual_runway' : 'detail_time_missing')) : 'route_mismatch',
+      flightId: Number.isFinite(Number(data?.flightId)) ? Number(data.flightId) : flightId,
+      originIata, destinationIata, status,
+      arrival, actualRunwayArrival, miniArrival, isActualArrival, miniIsActualArrival,
+      runwayDeltaMinutes: officialActual && actualRunwayArrival ? p39MinuteDelta(officialActual, actualRunwayArrival) : null
+    };
+  }
+
+  async function runP43FlickArrivalTimeDiagnostic() {
+    const button = $('p43FlickArrivalTimeDiagBtn');
+    const statusBox = $('p43FlickArrivalTimeDiagStatus');
+    if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); }
+    if (statusBox) statusBox.textContent = 'P43 prüft FlightStats flightId-Details der DUS-Ankünfte …';
+    try {
+      const all = officialProviderItemsFromRides(state.rides)
+        .filter(item => String(item?.airportIata || '').trim().toUpperCase() === 'DUS')
+        .filter(item => String(item?.direction || '').trim().toLowerCase() === 'arrival');
+      const seen = new Set(), items = [];
+      for (const item of all) {
+        const key = officialFlightBaseIdentity(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key); items.push(item);
+      }
+      if (!items.length) throw new Error('Keine eindeutigen DUS-Ankünfte in der analysierten Planliste gefunden.');
+      const provider = await ensureOfficialFlightProvider();
+      const bridge = nativeSecondSourceBridgeHost();
+      if (!bridge || typeof bridge.requestJsonStringAsync !== 'function') throw new Error('Asynchrone Native Flight Bridge nicht verfügbar.');
+      const rows = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+        if (statusBox) statusBox.textContent = `P43 ${i + 1}/${items.length}: ${flightNumber} · DUS + flightId …`;
+        let official = null, officialFailure = '';
+        try {
+          const officialBatch = await provider.fetchLive([item]);
+          official = Array.isArray(officialBatch?.flights) ? officialBatch.flights[0] : null;
+          if (!official) {
+            const failure = (Array.isArray(officialBatch?.failures) ? officialBatch.failures[0] : null)
+              || (Array.isArray(officialBatch?.unsupported) ? officialBatch.unsupported[0] : null);
+            officialFailure = cellText(failure?.reason) || 'official_not_found';
+          }
+        } catch (error) {
+          officialFailure = `official_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180);
+        }
+        const originIata = String(official?.route?.iata || '').trim().toUpperCase();
+        const secondItem = { ...item, officialAirportEvidence:Boolean(official), officialOriginIata:originIata, officialDestinationIata:'DUS' };
+        let detail = { reachable:false, routeMatch:false, reason:officialFailure || 'official_route_missing', flightId:null, status:'unknown', arrival:'', actualRunwayArrival:'', miniArrival:'', isActualArrival:null, miniIsActualArrival:null, runwayDeltaMinutes:null };
+        if (official && /^[A-Z]{3}$/.test(originIata)) {
+          const singleUrl = nativeSecondSourceProbeUrl(secondItem);
+          if (!singleUrl) {
+            detail.reason = 'invalid_single_probe_url';
+          } else {
+            let singlePayload = null, singleParsed = null;
+            try {
+              const rawSingle = await nativeSecondSourceRequestJsonString(bridge, {
+                contractVersion:'ATMS-FLIGHT-NATIVE-1', purpose:'flightstats_probe', airportIata:'DUS', method:'GET', url:singleUrl, timeoutMs:15000
+              });
+              if (rawSingle) {
+                singlePayload = JSON.parse(String(rawSingle));
+                singleParsed = p42FlightStatsCurrentSchemaArrival(secondItem, singlePayload, p39Clock(official?.airportActualTime || official?.airportEstimatedTime));
+              } else {
+                let message=''; try { message=cellText(bridge.lastError?.()); } catch (_) {}
+                detail.reason = message ? `single_transport:${message.slice(0,160)}` : 'single_empty_response';
+              }
+            } catch (error) {
+              detail.reason = `single_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,190);
+            }
+            const flightId = Number.isFinite(Number(singleParsed?.flightId)) ? Number(singleParsed.flightId) : null;
+            if (singleParsed?.routeMatch === true && flightId) {
+              const detailUrl = p43FlickProbeUrl(flightId);
+              if (!detailUrl) {
+                detail = { ...detail, routeMatch:true, flightId, reason:'invalid_flick_url' };
+              } else {
+                if (statusBox) statusBox.textContent = `P43 ${i + 1}/${items.length}: ${flightNumber} · FlightStats Detail …`;
+                try {
+                  const rawDetail = await nativeSecondSourceRequestJsonString(bridge, {
+                    contractVersion:'ATMS-FLIGHT-NATIVE-1', purpose:'flightstats_flick_probe', airportIata:'DUS', method:'GET', url:detailUrl, timeoutMs:15000
+                  });
+                  if (rawDetail) {
+                    detail = { ...p43ParseFlickArrival(secondItem, JSON.parse(String(rawDetail)), flightId, p39Clock(official?.airportActualTime)), sourceUrl:detailUrl };
+                  } else {
+                    let message=''; try { message=cellText(bridge.lastError?.()); } catch (_) {}
+                    detail = { ...detail, routeMatch:true, flightId, reason:message ? `detail_transport:${message.slice(0,160)}` : 'detail_empty_response', sourceUrl:detailUrl };
+                  }
+                } catch (error) {
+                  detail = { ...detail, routeMatch:true, flightId, reason:`detail_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,190), sourceUrl:detailUrl };
+                }
+              }
+            } else if (singleParsed) {
+              detail = { ...detail, reachable:singleParsed.reachable !== false, routeMatch:false, flightId, reason:singleParsed.routeMatch ? 'flight_id_missing' : (singleParsed.reason || 'single_route_mismatch') };
+            }
+          }
+        }
+        rows.push({
+          flightNumber, date:cellText(item?.date), airportEventDate:cellText(item?.airportEventDate || item?.date),
+          direction:'arrival', airportIata:'DUS', originIata, destinationIata:'DUS',
+          official: official ? {
+            status:official?.status || 'unknown', scheduled:p39Clock(official?.airportScheduledTime),
+            estimated:p39Clock(official?.airportEstimatedTime), actual:p39Clock(official?.airportActualTime)
+          } : { status:'unknown', scheduled:'', estimated:'', actual:'', reason:officialFailure },
+          flightStatsDetail:detail
+        });
+      }
+      window.ATMSP43FlickArrivalTimeDiagnostic = {
+        patch:'CORE-007D8A1F1D8P43', checkedAt:new Date().toISOString(), diagnosticOnly:true, noMutation:true,
+        attempted:rows.length,
+        detailReachable:rows.filter(row => row?.flightStatsDetail?.reachable === true).length,
+        routeMatches:rows.filter(row => row?.flightStatsDetail?.routeMatch === true).length,
+        withActualRunway:rows.filter(row => Boolean(row?.flightStatsDetail?.actualRunwayArrival)).length,
+        sameMinute:rows.filter(row => row?.flightStatsDetail?.runwayDeltaMinutes !== null && row?.flightStatsDetail?.runwayDeltaMinutes !== undefined && Number.isFinite(Number(row.flightStatsDetail.runwayDeltaMinutes)) && Number(row.flightStatsDetail.runwayDeltaMinutes) === 0).length,
+        withinOneMinute:rows.filter(row => row?.flightStatsDetail?.runwayDeltaMinutes !== null && row?.flightStatsDetail?.runwayDeltaMinutes !== undefined && Number.isFinite(Number(row.flightStatsDetail.runwayDeltaMinutes)) && Math.abs(Number(row.flightStatsDetail.runwayDeltaMinutes)) <= 1).length,
+        rows
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P43 Detail-/Runway-Zeitprobe abgeschlossen', 'ok');
+    } catch (error) {
+      window.ATMSP43FlickArrivalTimeDiagnostic = {
+        patch:'CORE-007D8A1F1D8P43', checkedAt:new Date().toISOString(), diagnosticOnly:true, noMutation:true,
+        error:cellText(error?.message) || String(error || 'Unbekannter Fehler')
+      };
+      render();
+      if (typeof window.showToast === 'function') window.showToast('P43 Diagnose nicht vollständig', 'warn');
+    } finally {
+      const freshButton = $('p43FlickArrivalTimeDiagBtn');
+      if (freshButton) { freshButton.disabled = false; freshButton.removeAttribute('aria-busy'); }
+    }
+  }
+
+  // CORE-007D8A1F1D8P40: Native two-source status-only check for app.js.
+  // Returns evidence only. It never mutates staged rides, PLAN, DISPO, LIVE storage or persistence.
+  function p40SourceHost(value) {
+    try { return new URL(String(value || '').trim()).hostname.replace(/^www\./i, '').toLowerCase(); }
+    catch (_) { return ''; }
+  }
+
+  function p40SafeStatus(value) {
+    const status = p39NormalizeStatus(value);
+    return ['scheduled','on_time','delayed','departed','landed','cancelled'].includes(status) ? status : 'unknown';
+  }
+
+  function p40NormalizedInputItem(raw) {
+    const flightNumber = normalizeFlightForCurrentCheck(raw?.flightNumber);
+    const date = cellText(raw?.date);
+    const airportEventDate = cellText(raw?.airportEventDate || raw?.date);
+    const direction = String(raw?.direction || '').trim().toLowerCase();
+    const airportIata = String(raw?.airportIata || '').trim().toUpperCase();
+    if (!flightNumber || !date || !airportEventDate || !['arrival','departure'].includes(direction) || !/^[A-Z]{3}$/.test(airportIata)) return null;
+    return {
+      flightNumber, date, airportEventDate,
+      airportEventDateDerived: Boolean(raw?.airportEventDateDerived),
+      direction, airportIata,
+      flightTime: cellText(raw?.flightTime) || null
+    };
+  }
+
+  async function p40NativeLiveStatusCheck(inputItems = []) {
+    const checkedAt = new Date().toISOString();
+    const dedup = new Map();
+    for (const raw of Array.isArray(inputItems) ? inputItems : []) {
+      const item = p40NormalizedInputItem(raw);
+      if (!item) continue;
+      const key = officialFlightBaseIdentity(item);
+      if (!dedup.has(key)) dedup.set(key, item);
+    }
+    const items = [...dedup.values()];
+    const flights = [];
+    if (!items.length) return { patch:'CORE-007D8A1F1D8P40F1', checkedAt, statusOnly:true, timeFieldsConfirmed:false, asyncBridge:true, flights, attempted:0, confirmed:0 };
+
+    let provider = null;
+    let providerError = '';
+    try { provider = await ensureOfficialFlightProvider(); }
+    catch (error) { providerError = cellText(error?.message) || String(error || 'official_provider_unavailable'); }
+    const bridge = nativeSecondSourceBridgeHost();
+    const asyncBridgeReady = Boolean(bridge && typeof bridge.requestJsonStringAsync === 'function');
+    if (!asyncBridgeReady) {
+      for (const item of items) {
+        flights.push({
+          flightNumber:item.flightNumber, date:item.date, airportEventDate:item.airportEventDate,
+          airportEventDateDerived:Boolean(item.airportEventDateDerived), direction:item.direction,
+          airportIata:item.airportIata, status:'unknown', confirmed:false, statusConfirmed:false,
+          timeConfirmed:false, timeMinuteDualSourceConfirmed:false,
+          officialActualOperationallyAccepted:false, officialActualTime:null,
+          airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
+          delayMinutes:null, sources:[], sourceConflict:false, resolutionMode:'unconfirmed',
+          sourceNote:'P40F1: asynchrone Native Flight Bridge nicht verfügbar; keine blockierende LIVE-Prüfung gestartet.'
+        });
+      }
+      return {
+        patch:'CORE-007D8A1F1D8P40F1', checkedAt, statusOnly:true, timeFieldsConfirmed:false,
+        asyncBridge:false, attempted:flights.length, confirmed:0, flights
+      };
+    }
+    if (provider && typeof provider.registerTransport === 'function') {
+      try {
+        provider.registerTransport('DUS', async request => {
+          const raw = await bridge.requestJsonStringAsync(JSON.stringify(request));
+          if (!raw) {
+            let message = '';
+            try { message = cellText(bridge.lastError?.()); } catch (_) {}
+            throw new Error(message || 'Native async DUS transport returned empty response');
+          }
+          try { return JSON.parse(String(raw)); }
+          catch (_) { throw new Error('Native async DUS transport returned invalid JSON'); }
+        });
+      } catch (_) {}
+    }
+
+    for (const item of items) {
+      const base = {
+        flightNumber:item.flightNumber, date:item.date, airportEventDate:item.airportEventDate,
+        airportEventDateDerived:Boolean(item.airportEventDateDerived), direction:item.direction,
+        airportIata:item.airportIata, status:'unknown', confirmed:false, statusConfirmed:false,
+        timeConfirmed:false, timeMinuteDualSourceConfirmed:false,
+        officialActualOperationallyAccepted:false, officialActualTime:null,
+        airportScheduledTime:null, airportEstimatedTime:null, airportActualTime:null,
+        delayMinutes:null, sources:[], sourceConflict:false, resolutionMode:'unconfirmed', sourceNote:''
+      };
+
+      if (item.airportIata !== 'DUS') {
+        flights.push({ ...base, sourceNote:'P40 Status-Automatik ist im Beweistest ausschließlich für DUS freigegeben.' });
+        continue;
+      }
+      if (!provider) {
+        flights.push({ ...base, sourceNote:`Offizielle DUS-Quelle nicht verfügbar: ${providerError || 'unknown'}` });
+        continue;
+      }
+      if (!bridge) {
+        flights.push({ ...base, sourceNote:'Native Flight Bridge für FlightStats nicht verfügbar.' });
+        continue;
+      }
+
+      let official = null;
+      let officialFailure = '';
+      try {
+        const batch = await provider.fetchLive([item]);
+        official = Array.isArray(batch?.flights) ? batch.flights[0] : null;
+        if (!official) {
+          const failure = (Array.isArray(batch?.failures) ? batch.failures[0] : null)
+            || (Array.isArray(batch?.unsupported) ? batch.unsupported[0] : null);
+          officialFailure = cellText(failure?.reason) || 'official_not_found';
+        }
+      } catch (error) {
+        officialFailure = `official_technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180);
+      }
+      if (!official) {
+        flights.push({ ...base, sourceNote:`Offizielle DUS-Quelle ohne eindeutigen Treffer: ${officialFailure || 'unknown'}` });
+        continue;
+      }
+
+      const officialFlight = normalizeFlightForCurrentCheck(official?.flightNumber || item.flightNumber);
+      const officialDate = cellText(official?.date || item.date);
+      const officialEventDate = cellText(official?.airportEventDate || item.airportEventDate || item.date);
+      const officialDirection = String(official?.direction || item.direction).trim().toLowerCase();
+      const officialAirport = String(official?.airportIata || item.airportIata).trim().toUpperCase();
+      const identityOk = officialFlight === item.flightNumber
+        && officialDate === item.date
+        && officialEventDate === item.airportEventDate
+        && officialDirection === item.direction
+        && officialAirport === item.airportIata;
+      if (!identityOk) {
+        flights.push({ ...base, sourceNote:'Offizielle DUS-Quelle passt nicht exakt zu Flug/Datum/Ereignistag/Richtung/Airport.' });
+        continue;
+      }
+
+      const relevantIata = String(official?.route?.iata || '').trim().toUpperCase();
+      if (!/^[A-Z]{3}$/.test(relevantIata)) {
+        flights.push({ ...base, sourceNote:'Offizielle DUS-Quelle liefert keine eindeutige Gegen-IATA.' });
+        continue;
+      }
+      const officialOriginIata = item.direction === 'arrival' ? relevantIata : item.airportIata;
+      const officialDestinationIata = item.direction === 'arrival' ? item.airportIata : relevantIata;
+      const officialStatus = p40SafeStatus(official?.status);
+      const secondItem = { ...item, officialAirportEvidence:true, officialOriginIata, officialDestinationIata };
+      const singleUrl = nativeSecondSourceProbeUrl(secondItem);
+      if (!singleUrl) {
+        flights.push({ ...base, sourceNote:'FlightStats Einzel-Flug-URL konnte nicht sicher gebildet werden.' });
+        continue;
+      }
+
+      let second = { reachable:false, usable:false, reason:'not_requested', routeMatch:false, status:'unknown', scheduled:'', estimated:'', actual:'', sourceUrl:singleUrl };
+      try {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion:'ATMS-FLIGHT-NATIVE-1', purpose:'flightstats_probe', airportIata:'DUS',
+          method:'GET', url:singleUrl, timeoutMs:15000
+        });
+        if (raw) {
+          try { second = { ...p39FlightStatsSingleLive(secondItem, JSON.parse(String(raw))), sourceUrl:singleUrl }; }
+          catch (_) { second = { ...second, reachable:true, reason:'invalid_json' }; }
+        } else {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          second = { ...second, reason:message ? `transport:${message.slice(0,180)}` : 'empty_response' };
+        }
+      } catch (error) {
+        second = { ...second, reason:`technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180) };
+      }
+
+      const secondStatus = p40SafeStatus(second?.status);
+      const officialSources = mergeDocumentedFlightSources(official?.sources || []);
+      const sources = mergeDocumentedFlightSources(officialSources, [{ name:'FlightStats Einzel-Flug', url:singleUrl }]);
+      const hosts = [...new Set(sources.map(source => p40SourceHost(source?.url)).filter(Boolean))];
+      const officialHostPresent = officialSources.some(source => {
+        const host = p40SourceHost(source?.url);
+        return host && !/(^|\.)flightstats\.com$/i.test(host);
+      });
+      const flightStatsHostPresent = hosts.some(host => /(^|\.)flightstats\.com$/i.test(host));
+      const statusAgreement = officialStatus !== 'unknown' && officialStatus === secondStatus;
+      // P40 deliberately promotes only statuses proven by the P39/P39F1 real-device evidence.
+      // scheduled/on_time/delayed stay unconfirmed here because FlightStats may derive them
+      // without an independent Estimated/Actual timestamp.
+      const provenStatus = ['departed','landed','cancelled'].includes(officialStatus);
+      const confirmed = Boolean(
+        second?.reachable !== false
+        && second?.routeMatch === true
+        && second?.originIata === officialOriginIata
+        && second?.destinationIata === officialDestinationIata
+        && statusAgreement
+        && provenStatus
+        && officialHostPresent
+        && flightStatsHostPresent
+        && hosts.length >= 2
+      );
+
+      const statusText = confirmed ? officialStatus : 'unknown';
+      const officialActual = p39Clock(official?.airportActualTime) || null;
+      // P44: the exact minute remains a one-source timestamp. It may only become an
+      // operational LIVE arrival after the independent FlightStats source has confirmed
+      // the exact flight identity/route and the same terminal status "landed".
+      const officialActualOperationallyAccepted = Boolean(
+        confirmed
+        && item.direction === 'arrival'
+        && officialStatus === 'landed'
+        && officialActual
+      );
+      const reason = officialActualOperationallyAccepted
+        ? `Status landed und Route ${officialOriginIata}→${officialDestinationIata} durch Düsseldorf Airport + FlightStats bestätigt. Operative LIVE-Landungszeit ${officialActual} stammt aus der offiziellen Düsseldorf-Airport-Actual-Zeit. Die exakte Minute ist NICHT durch FlightStats minutengenau bestätigt; Flightradar24 bleibt manuelle Zusatzkontrolle.`
+        : confirmed
+          ? `Status ${officialStatus} durch Düsseldorf Airport + FlightStats für ${officialOriginIata}→${officialDestinationIata} bestätigt. Exakte Estimated-/Actual-Zeit bleibt ohne P44-Ankunftsfreigabe unbestätigt und wird nicht übernommen.`
+          : `Keine automatische Statusfreigabe: DUS=${officialStatus}, FlightStats=${secondStatus}, routeMatch=${second?.routeMatch === true ? 'ja' : 'nein'}, provenStatus=${provenStatus ? 'ja' : 'nein'}, reason=${cellText(second?.reason) || 'unknown'}.`;
+      flights.push({
+        ...base,
+        status:statusText,
+        confirmed,
+        statusConfirmed:confirmed,
+        // Deliberately false: P44 does not claim a two-source exact-minute match.
+        timeConfirmed:false,
+        timeMinuteDualSourceConfirmed:false,
+        officialActualOperationallyAccepted,
+        officialActualTime:officialActualOperationallyAccepted ? officialActual : null,
+        originIata:officialOriginIata,
+        destinationIata:officialDestinationIata,
+        observedOfficialStatus:officialStatus,
+        observedFlightStatsStatus:secondStatus,
+        observedOfficialScheduledTime:p39Clock(official?.airportScheduledTime) || null,
+        observedOfficialEstimatedTime:p39Clock(official?.airportEstimatedTime) || null,
+        observedOfficialActualTime:officialActual,
+        sources,
+        sourceConflict:!confirmed && officialStatus !== 'unknown' && secondStatus !== 'unknown' && officialStatus !== secondStatus,
+        resolutionMode:officialActualOperationallyAccepted ? 'native_arrival_official_actual_dual_status' : (confirmed ? 'native_status_consensus' : 'unconfirmed'),
+        sourceNote:reason
+      });
+    }
+
+    return {
+      patch:'CORE-007D8A1F1D8P44', checkedAt,
+      statusOnly:false,
+      timeFieldsConfirmed:false,
+      exactMinuteDualSourceConfirmed:false,
+      officialActualOperationalPolicy:'DUS arrival actual allowed only after independent FlightStats identity/route + landed-status confirmation',
+      asyncBridge:true,
+      attempted:flights.length,
+      confirmed:flights.filter(row => row.confirmed === true).length,
+      operationalArrivalTimes:flights.filter(row => row.officialActualOperationallyAccepted === true && Boolean(row.officialActualTime)).length,
+      flights
+    };
+  }
+
+  window.ATMSNativeLiveStatusCheck = p40NativeLiveStatusCheck;
+
+
+  // CORE-007D8A1F1D8P36F16: Diagnostic-only unresolved-flight route probe.
+  // Only official-airport not_found/unsupported rows are eligible. A foreign route is
+  // never imported as a flight location; it only proves that the listed flight number
+  // does not belong to the ride's relevant airport on the exact event date.
+  function nativeUnresolvedFlightOtherDaysUrl(item) {
+    const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+    if (!parts) return '';
+    return `https://www.flightstats.com/v2/api-next/flight-tracker/other-days/${encodeURIComponent(parts.carrier)}/${encodeURIComponent(parts.number)}`;
+  }
+
+  function flightStatsOtherDaysDateEvidence(dayGroup, flight) {
+    const rowSpecific = [], groupScoped = [];
+    const addTo = (bucket, value) => {
+      const iso = cellText(value);
+      if (/^20\d{2}-\d{2}-\d{2}$/.test(iso) && !bucket.includes(iso)) bucket.push(iso);
+    };
+    const addIsoPrefixTo = (bucket, value) => {
+      const m = cellText(value).match(/^(20\d{2})-(\d{1,2})-(\d{1,2})(?:T|\s|$)/);
+      if (m) addTo(bucket, validIsoPlanDate(m[1], m[2], m[3]));
+    };
+
+    // P36F18: row-specific evidence has priority. Day-group fields can describe
+    // neighbouring days around the row and must not make a concrete flight row
+    // artificially ambiguous.
+    const rawUrl = cellText(flight?.url);
+    if (rawUrl) {
+      try {
+        const url = new URL(rawUrl, 'https://www.flightstats.com');
+        addTo(rowSpecific, validIsoPlanDate(url.searchParams.get('year'), url.searchParams.get('month'), url.searchParams.get('date')));
+      } catch (_) {}
+    }
+    [flight?.sortTime, flight?.date, flight?.dateLocal, flight?.departureDate, flight?.scheduledDeparture,
+      flight?.departureTimeLocal, flight?.publishedDeparture]
+      .forEach(value => addIsoPrefixTo(rowSpecific, value));
+
+    [dayGroup?.isoDate, dayGroup?.dateIso, dayGroup?.date]
+      .forEach(value => addIsoPrefixTo(groupScoped, value));
+
+    const year = String(dayGroup?.year || '').trim();
+    if (/^\d{4}$/.test(year)) {
+      const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12 };
+      for (const raw of [dayGroup?.date1, dayGroup?.date2]) {
+        const text = cellText(raw).replace(/[.,]/g, '').replace(/[\s_/]+/g, '-').replace(/-+/g, '-');
+        let m = text.match(/^([A-Za-z]{3,4})-(\d{1,2})$/);
+        if (m) {
+          const month = months[m[1].toLowerCase()];
+          if (month) addTo(groupScoped, validIsoPlanDate(year, month, m[2]));
+          continue;
+        }
+        m = text.match(/^(\d{1,2})-([A-Za-z]{3,4})$/);
+        if (m) {
+          const month = months[m[2].toLowerCase()];
+          if (month) addTo(groupScoped, validIsoPlanDate(year, month, m[1]));
+        }
+      }
+    }
+
+    const observed = [...new Set([...rowSpecific, ...groupScoped])];
+    return { rowSpecific, groupScoped, observed };
+  }
+
+  function flightStatsOtherDaysDateCandidates(dayGroup, flight) {
+    return flightStatsOtherDaysDateEvidence(dayGroup, flight).observed;
+  }
+
+  function exactDateFromFlightStatsOtherDaysRow(dayGroup, flight) {
+    const evidence = flightStatsOtherDaysDateEvidence(dayGroup, flight);
+    if (evidence.rowSpecific.length === 1) return evidence.rowSpecific[0];
+    if (evidence.rowSpecific.length > 1) return '';
+    return evidence.groupScoped.length === 1 ? evidence.groupScoped[0] : '';
+  }
+
+  function parseNativeUnresolvedFlightOtherDays(item, payload) {
+    const data = payload && typeof payload === 'object' ? payload.data : null;
+    if (!Array.isArray(data)) return { reachable: true, exactDateFound: false, airportConflict: false, reason: 'no_other_days_data', routes: [] };
+    const targetDate = cellText(item?.airportEventDate || item?.date);
+    const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+    const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+    const routes = [];
+    const operatorAliasRoutes = [];
+    const observedDateCandidates = [];
+    let exactDateRows = 0, identityRejectedRows = 0, routeMissingRows = 0, operatorAliasRows = 0;
+    const targetRowSamples = [];
+    const addSample = sample => {
+      if (targetRowSamples.length < 6) targetRowSamples.push(sample);
+    };
+    for (const dayGroup of data) {
+      for (const flight of Array.isArray(dayGroup?.flights) ? dayGroup.flights : []) {
+        const dateEvidence = flightStatsOtherDaysDateEvidence(dayGroup, flight);
+        for (const candidate of dateEvidence.observed) if (!observedDateCandidates.includes(candidate)) observedDateCandidates.push(candidate);
+        const exactDate = exactDateFromFlightStatsOtherDaysRow(dayGroup, flight);
+        if (!exactDate || exactDate !== targetDate) continue;
+        exactDateRows++;
+        const rawUrl = cellText(flight?.url);
+        let identityOk = true;
+        let operatorAlias = false;
+        let urlPath = '';
+        let trackerCarrier = '';
+        let trackerNumber = '';
+        if (rawUrl && parts) {
+          try {
+            const url = new URL(rawUrl, 'https://www.flightstats.com');
+            urlPath = cellText(url.pathname);
+            const trackerMatch = url.pathname.toUpperCase().match(/^\/FLIGHT-TRACKER\/([A-Z0-9]{2,3})\/(\d{1,4}[A-Z]?)\/?$/);
+            if (trackerMatch) {
+              trackerCarrier = trackerMatch[1];
+              trackerNumber = trackerMatch[2];
+              if (trackerCarrier === parts.carrier && trackerNumber === parts.number) {
+                identityOk = true;
+              } else if (trackerCarrier !== parts.carrier && trackerNumber === parts.number) {
+                // P36F20: FlightStats may canonicalize a marketed flight to the operating carrier.
+                // This is accepted ONLY as a diagnostic candidate. The endpoint itself is still
+                // scoped to the requested flight, and final use below additionally requires exactly
+                // one target-date row and one unique IATA route. No flight location is imported.
+                identityOk = true;
+                operatorAlias = true;
+              } else {
+                identityOk = false;
+              }
+            } else if (!url.pathname.toUpperCase().includes(`/FLIGHT-TRACKER/${parts.carrier}/${parts.number}`)) {
+              identityOk = false;
+            }
+          } catch (_) {}
+        }
+        const originIata = nativeSecondSourceIata(flight?.departureAirport);
+        const destinationIata = nativeSecondSourceIata(flight?.arrivalAirport);
+        if (!identityOk) {
+          identityRejectedRows++;
+          addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'identity_rejected' });
+          continue;
+        }
+        if (!/^[A-Z]{3}$/.test(originIata) || !/^[A-Z]{3}$/.test(destinationIata)) {
+          routeMissingRows++;
+          addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'route_missing' });
+          continue;
+        }
+        if (operatorAlias) {
+          operatorAliasRows++;
+          addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'operator_alias_candidate' });
+          operatorAliasRoutes.push({ originIata, destinationIata, exactDate, trackerCarrier, trackerNumber, operatorAlias: true });
+          continue;
+        }
+        addSample({ exactDate, originIata, destinationIata, urlPath, trackerCarrier, trackerNumber, verdict: 'route_candidate' });
+        routes.push({ originIata, destinationIata, exactDate, operatorAlias: false });
+      }
+    }
+    const uniqueRoutes = [...new Map(routes.map(route => [`${route.originIata}>${route.destinationIata}`, route])).values()];
+    const uniqueOperatorAliasRoutes = [...new Map(operatorAliasRoutes.map(route => [`${route.originIata}>${route.destinationIata}`, route])).values()];
+    const diagnosticBase = {
+      observedDateCandidates: observedDateCandidates.slice(0, 12),
+      exactDateRows,
+      identityRejectedRows,
+      routeMissingRows,
+      operatorAliasRows,
+      targetRowSamples
+    };
+    let resolvedRoutes = uniqueRoutes;
+    let resolvedViaOperatorAlias = false;
+    // P36F20 safety gate: an operating-carrier URL is diagnostic evidence only when
+    // there is exactly one row for the exact target date and that row yields one route.
+    // Multiple rows, multiple routes or mixed identity evidence stay unresolved.
+    if (!resolvedRoutes.length && exactDateRows === 1 && identityRejectedRows === 0 && routeMissingRows === 0
+      && operatorAliasRows === 1 && uniqueOperatorAliasRoutes.length === 1) {
+      resolvedRoutes = uniqueOperatorAliasRoutes;
+      resolvedViaOperatorAlias = true;
+    }
+    if (!resolvedRoutes.length) {
+      let reason = 'exact_date_not_found';
+      if (operatorAliasRows > 0) reason = 'operator_alias_ambiguous';
+      else if (exactDateRows > 0 && identityRejectedRows === exactDateRows) reason = 'exact_date_identity_rejected';
+      else if (exactDateRows > 0 && routeMissingRows > 0 && identityRejectedRows + routeMissingRows >= exactDateRows) reason = 'exact_date_route_missing';
+      else if (exactDateRows > 0) reason = 'exact_date_filtered_without_route';
+      return { reachable: true, exactDateFound: exactDateRows > 0, airportConflict: false, reason, routes: [], ...diagnosticBase };
+    }
+    if (resolvedRoutes.length !== 1) return { reachable: true, exactDateFound: true, airportConflict: false, reason: 'ambiguous_routes', routes: resolvedRoutes, ...diagnosticBase };
+    const route = resolvedRoutes[0];
+    const includesExpectedAirport = route.originIata === airportIata || route.destinationIata === airportIata;
+    return {
+      reachable: true,
+      exactDateFound: true,
+      airportConflict: !includesExpectedAirport,
+      reason: resolvedViaOperatorAlias
+        ? (includesExpectedAirport ? 'operator_alias_route_includes_expected_airport' : 'operator_alias_airport_conflict')
+        : (includesExpectedAirport ? 'route_includes_expected_airport' : 'airport_conflict'),
+      originIata: route.originIata,
+      destinationIata: route.destinationIata,
+      airportIata,
+      airportEventDate: targetDate,
+      operatorAlias: resolvedViaOperatorAlias,
+      trackerCarrier: cellText(route?.trackerCarrier),
+      trackerNumber: cellText(route?.trackerNumber),
+      routes: resolvedRoutes,
+      ...diagnosticBase
+    };
+  }
+
+  async function runNativeUnresolvedFlightRouteProbe(officialDiagnosticRows = [], options = {}) {
+    const bridge = nativeSecondSourceBridgeHost();
+    const eligibleMap = new Map();
+    for (const item of Array.isArray(officialDiagnosticRows) ? officialDiagnosticRows : []) {
+      const reason = String(item?.reason || '').trim().toLowerCase();
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+      const airportEventDate = cellText(item?.airportEventDate || item?.date);
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      if (!flightNumber || !['not_found','unsupported'].includes(reason) || !/^[A-Z]{3}$/.test(airportIata)
+        || !/^\d{4}-\d{2}-\d{2}$/.test(airportEventDate) || !['arrival','departure'].includes(direction)) continue;
+      const key = `${flightNumber}|${airportEventDate}|${airportIata}|${direction}`;
+      if (!eligibleMap.has(key)) eligibleMap.set(key, { flightNumber, airportIata, airportEventDate, direction, officialReason: reason });
+    }
+    const eligible = [...eligibleMap.values()];
+    const rows = [];
+    if (!eligible.length) return { attempted: 0, reachable: 0, conflicts: 0, rows, unavailable: false, text: '0 geprüft · 0 erreichbar · 0 Airport-Konflikte' };
+    if (!bridge) {
+      for (const item of eligible) rows.push({ ...item, reachable: false, exactDateFound: false, airportConflict: false, reason: 'native_bridge_unavailable' });
+      return { attempted: eligible.length, reachable: 0, conflicts: 0, rows, unavailable: true, text: `${eligible.length} geprüft · Native Bridge nicht verfügbar` };
+    }
+    for (let i = 0; i < eligible.length; i++) {
+      const item = eligible[i];
+      options?.onProgress?.({ current: i + 1, total: eligible.length, flightNumber: item.flightNumber });
+      const url = nativeUnresolvedFlightOtherDaysUrl(item);
+      if (!url) {
+        rows.push({ ...item, reachable: false, exactDateFound: false, airportConflict: false, reason: 'invalid_probe_url' });
+        continue;
+      }
+      try {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+          purpose: 'flightstats_other_days_probe',
+          airportIata: item.airportIata,
+          method: 'GET',
+          url,
+          timeoutMs: 15000
+        });
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          rows.push({ ...item, reachable: false, exactDateFound: false, airportConflict: false, reason: message ? `transport:${message.slice(0, 180)}` : 'empty_response' });
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) {
+          rows.push({ ...item, reachable: true, exactDateFound: false, airportConflict: false, reason: 'invalid_json' });
+          continue;
+        }
+        rows.push({ ...item, sourceUrl: url, ...parseNativeUnresolvedFlightOtherDays(item, payload) });
+      } catch (error) {
+        rows.push({ ...item, reachable: false, exactDateFound: false, airportConflict: false, reason: `technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0, 220) });
+      }
+    }
+    const reachable = rows.filter(item => item.reachable === true).length;
+    const conflicts = rows.filter(item => item.airportConflict === true).length;
+    return { attempted: eligible.length, reachable, conflicts, rows, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${conflicts} Airport-Konflikt(e)` };
+  }
+
+  function applyNativeAirportConflictWarningsToStagedPlan(probe, appliedAt = new Date().toISOString()) {
+    const conflictRows = (Array.isArray(probe?.rows) ? probe.rows : []).filter(item => {
+      const origin = String(item?.originIata || '').trim().toUpperCase();
+      const destination = String(item?.destinationIata || '').trim().toUpperCase();
+      const airport = String(item?.airportIata || '').trim().toUpperCase();
+      return item?.reachable === true && item?.exactDateFound === true && item?.airportConflict === true
+        && /^[A-Z]{3}$/.test(origin) && /^[A-Z]{3}$/.test(destination) && /^[A-Z]{3}$/.test(airport);
+    });
+    if (!conflictRows.length || !state.rides.length) return { matchedRides: 0, conflictFlights: conflictRows.length };
+
+    const conflictMap = new Map();
+    for (const item of conflictRows) {
+      const key = [
+        normalizeFlightForCurrentCheck(item?.flightNumber),
+        cellText(item?.airportEventDate),
+        String(item?.airportIata || '').trim().toUpperCase(),
+        String(item?.direction || '').trim().toLowerCase()
+      ].join('|');
+      if (!conflictMap.has(key)) conflictMap.set(key, item);
+    }
+
+    let matchedRides = 0;
+    state.rides = state.rides.map(ride => {
+      const flight = normalizeFlightForCurrentCheck(ride?.flightNumber);
+      if (!flight) return ride;
+      const key = [
+        flight,
+        stagedAirportEventDateContext(ride).airportEventDate,
+        stagedAirportIata(ride),
+        stagedFlightDirection(ride)
+      ].join('|');
+      const hit = conflictMap.get(key);
+      if (!hit) return ride;
+      matchedRides++;
+      const origin = String(hit.originIata || '').trim().toUpperCase();
+      const destination = String(hit.destinationIata || '').trim().toUpperCase();
+      const airport = String(hit.airportIata || '').trim().toUpperCase();
+      return {
+        ...ride,
+        flightNeedsManualCheck: true,
+        flightAirportConflict: true,
+        flightAirportConflictReason: cellText(hit.reason) || 'airport_conflict',
+        flightAirportConflictAirportIata: airport,
+        flightAirportConflictOriginIata: origin,
+        flightAirportConflictDestinationIata: destination,
+        flightAirportConflictCheckedAt: appliedAt,
+        flightAirportConflictSourceUrl: cellText(hit.sourceUrl),
+        flightCheckSourceNote: `Datumsspezifischer Airport-Konflikt: Zweitquelle fuehrt ${flight} als ${origin}→${destination}; Fahrt-Airport ${airport} ist nicht Teil der Route. Fremdroute wird nicht als Flugort uebernommen; manuell pruefen.`
+      };
+    });
+    state.issues = validate(state.rides);
+    render();
+    return { matchedRides, conflictFlights: conflictMap.size };
+  }
+
+  // CORE-007D8A1F1D8P36F13: Diagnostic-only FlightStats airport-board second-source probe.
+  // The direct per-flight P36F12 endpoint returned reachable JSON without usable data in the real native test.
+  // This probe instead uses date-specific arrival/departure board windows and still never promotes verification.
+  function nativeSecondSourceBoardProbeUrl(context, hour) {
+    const airportIata = String(context?.airportIata || '').trim().toUpperCase();
+    const direction = String(context?.direction || '').trim().toLowerCase();
+    const date = cellText(context?.date);
+    const dm = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!/^[A-Z]{3}$/.test(airportIata) || !['arrival','departure'].includes(direction) || !dm || ![0,6,12,18].includes(Number(hour))) return '';
+    const boardType = direction === 'arrival' ? 'arr' : 'dep';
+    return `https://www.flightstats.com/v2/api-next/flight-tracker/${boardType}/${airportIata}/${dm[1]}/${Number(dm[2])}/${Number(dm[3])}/${Number(hour)}?carrierCode=&numHours=6`;
+  }
+
+  function parseNativeSecondSourceBoardSegment(payload) {
+    const data = payload && typeof payload === 'object' ? payload.data : null;
+    const flights = Array.isArray(data?.flights) ? data.flights : null;
+    if (!flights) return { ok: false, reason: 'no_board_data', flights: [] };
+    return { ok: true, reason: flights.length ? 'ok' : 'empty_board', flights };
+  }
+
+  function boardFlightIdentity(row) {
+    const carrier = String(row?.carrier?.fs || row?.carrier?.iata || '').trim().toUpperCase();
+    const number = String(row?.carrier?.flightNumber || row?.flightNumber || '').trim().toUpperCase();
+    return carrier && number ? `${carrier}${number}` : '';
+  }
+
+  function boardOppositeAirportIata(row) {
+    return String(row?.airport?.fs || row?.airport?.iata || '').trim().toUpperCase();
+  }
+
+  async function runNativeSecondSourceBoardProbe(officialChecked = [], options = {}) {
+    const bridge = nativeSecondSourceBridgeHost();
+    const eligible = (Array.isArray(officialChecked) ? officialChecked : []).filter(item => item?.officialAirportEvidence === true
+      && /^[A-Z]{3}$/.test(String(item?.airportIata || '').trim().toUpperCase())
+      && /^[A-Z]{3}$/.test(String(item?.officialOriginIata || '').trim().toUpperCase())
+      && /^[A-Z]{3}$/.test(String(item?.officialDestinationIata || '').trim().toUpperCase())
+      && ['arrival','departure'].includes(String(item?.direction || '').trim().toLowerCase()));
+    const rows = [], contexts = [];
+    if (!eligible.length) return { attempted: 0, reachable: 0, routeMatches: 0, rows, contexts, unavailable: false, text: '0 geprüft · 0 erreichbar · 0 Routenübereinstimmungen' };
+    if (!bridge) {
+      for (const item of eligible) rows.push({ flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber), reachable: false, routeMatch: false, reason: 'native_bridge_unavailable' });
+      return { attempted: eligible.length, reachable: 0, routeMatches: 0, rows, contexts, unavailable: true, text: `${eligible.length} geprüft · Native Bridge nicht verfügbar` };
+    }
+
+    const groups = new Map();
+    for (const item of eligible) {
+      const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      const date = cellText(item?.airportEventDate || item?.date);
+      const key = `${direction}|${airportIata}|${date}`;
+      if (!groups.has(key)) groups.set(key, { airportIata, direction, date, items: [], flights: [], segmentsAttempted: 0, segmentsReachable: 0, segmentReasons: [] });
+      groups.get(key).items.push(item);
+    }
+
+    let segmentIndex = 0;
+    const totalSegments = groups.size * 4;
+    for (const group of groups.values()) {
+      for (const hour of [0,6,12,18]) {
+        segmentIndex++;
+        group.segmentsAttempted++;
+        options?.onProgress?.({ current: segmentIndex, total: totalSegments, label: `${group.direction} ${group.airportIata} ${String(hour).padStart(2,'0')}:00` });
+        const url = nativeSecondSourceBoardProbeUrl(group, hour);
+        if (!url) { group.segmentReasons.push(`${hour}:invalid_url`); continue; }
+        try {
+          const raw = await nativeSecondSourceRequestJsonString(bridge, {
+            contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+            purpose: 'flightstats_board_probe',
+            airportIata: group.airportIata,
+            method: 'GET',
+            url,
+            timeoutMs: 15000
+          });
+          if (!raw) {
+            let message = '';
+            try { message = cellText(bridge.lastError?.()); } catch (_) {}
+            group.segmentReasons.push(`${hour}:${message ? `transport:${message.slice(0,120)}` : 'empty_response'}`);
+            continue;
+          }
+          let payload;
+          try { payload = JSON.parse(String(raw)); } catch (_) {
+            group.segmentReasons.push(`${hour}:invalid_json`);
+            continue;
+          }
+          const parsed = parseNativeSecondSourceBoardSegment(payload);
+          if (!parsed.ok) {
+            group.segmentsReachable++;
+            group.segmentReasons.push(`${hour}:${parsed.reason}`);
+            continue;
+          }
+          group.segmentsReachable++;
+          group.flights.push(...parsed.flights.map(row => ({ ...row, __atmsBoardSourceUrl: url })));
+        } catch (error) {
+          group.segmentReasons.push(`${hour}:technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,180));
+        }
+      }
+      contexts.push({
+        airportIata: group.airportIata,
+        direction: group.direction,
+        date: group.date,
+        segmentsAttempted: group.segmentsAttempted,
+        segmentsReachable: group.segmentsReachable,
+        flightRows: group.flights.length,
+        reasons: group.segmentReasons
+      });
+
+      for (const item of group.items) {
+        const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+        const matches = group.flights.filter(row => boardFlightIdentity(row) === flightNumber);
+        if (!matches.length) {
+          rows.push({ flightNumber, reachable: group.segmentsReachable > 0, routeMatch: false, reason: group.segmentsReachable > 0 ? 'flight_not_found_on_board' : 'board_unreachable' });
+          continue;
+        }
+        const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+        const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+        const routePairs = [...new Set(matches.map(row => {
+          const opposite = boardOppositeAirportIata(row);
+          if (!/^[A-Z]{3}$/.test(opposite)) return '';
+          return group.direction === 'arrival' ? `${opposite}>${group.airportIata}` : `${group.airportIata}>${opposite}`;
+        }).filter(Boolean))];
+        if (!routePairs.length) {
+          rows.push({ flightNumber, reachable: true, routeMatch: false, reason: 'opposite_airport_missing' });
+          continue;
+        }
+        if (routePairs.length > 1) {
+          rows.push({ flightNumber, reachable: true, routeMatch: false, reason: `ambiguous_routes:${routePairs.join(',')}`.slice(0,180) });
+          continue;
+        }
+        const [originIata, destinationIata] = routePairs[0].split('>');
+        const routeMatch = originIata === expectedOrigin && destinationIata === expectedDestination;
+        const sourceUrls = [...new Set(matches.map(row => cellText(row?.__atmsBoardSourceUrl)).filter(Boolean))];
+        const safeSourceUrls = sourceUrls.map(url => safeFlightStatsBoardSourceUrl(url)).filter(Boolean).sort();
+        const safeSourceHosts = new Set(safeSourceUrls.map(url => {
+          try { return new URL(url).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) { return ''; }
+        }).filter(Boolean));
+        // P36F15: Ein Flug kann an der Grenze zweier 6h-Boardfenster in beiden Antworten vorkommen.
+        // Das sind NICHT zwei Quellen, sondern zwei URLs derselben FlightStats-Quelle. Solange alle
+        // gefundenen Board-URLs gueltig sind, derselben Domain entstammen und die Route eindeutig ist,
+        // darf eine kanonische URL als dokumentierter Nachweis fuer Quelle 2 verwendet werden.
+        const canonicalSourceUrl = sourceUrls.length > 0
+          && safeSourceUrls.length === sourceUrls.length
+          && safeSourceHosts.size === 1
+          ? safeSourceUrls[0]
+          : '';
+        rows.push({
+          flightNumber,
+          reachable: true,
+          routeMatch,
+          reason: routeMatch ? 'route_match' : 'route_mismatch',
+          originIata,
+          destinationIata,
+          airportIata: group.airportIata,
+          airportEventDate: group.date,
+          direction: group.direction,
+          sourceUrl: canonicalSourceUrl,
+          sourceUrls: safeSourceUrls,
+          sourceWindowCount: safeSourceUrls.length
+        });
+      }
+    }
+    const reachable = rows.filter(item => item.reachable === true).length;
+    const routeMatches = rows.filter(item => item.routeMatch === true).length;
+    return { attempted: eligible.length, reachable, routeMatches, rows, contexts, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} Routenübereinstimmung(en)` };
+  }
+
+  function safeFlightStatsBoardSourceUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'www.flightstats.com') return '';
+      if (!/^\/v2\/api-next\/flight-tracker\/(?:arr|dep)\/[A-Z]{3}\/\d{4}\/\d{1,2}\/\d{1,2}\/(?:0|6|12|18)$/.test(url.pathname)) return '';
+      if (url.searchParams.get('numHours') !== '6') return '';
+      return url.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function promoteOfficialEvidenceWithNativeBoard(officialChecked = [], secondSourceProbe = null) {
+    const rows = Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : [];
+    let promotedFlights = 0;
+    const promotions = [];
+    const checked = (Array.isArray(officialChecked) ? officialChecked : []).map(item => {
+      if (item?.officialAirportEvidence !== true) return item;
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+      const airportEventDate = cellText(item?.airportEventDate || item?.date);
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+      const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+      if (!flightNumber || !/^[A-Z]{3}$/.test(airportIata) || !/^\d{4}-\d{2}-\d{2}$/.test(airportEventDate)
+        || !['arrival','departure'].includes(direction) || !/^[A-Z]{3}$/.test(expectedOrigin) || !/^[A-Z]{3}$/.test(expectedDestination)) return item;
+
+      const candidates = rows.filter(row => row?.routeMatch === true
+        && cellText(row?.reason) === 'route_match'
+        && normalizeFlightForCurrentCheck(row?.flightNumber) === flightNumber
+        && String(row?.airportIata || '').trim().toUpperCase() === airportIata
+        && cellText(row?.airportEventDate) === airportEventDate
+        && String(row?.direction || '').trim().toLowerCase() === direction
+        && String(row?.originIata || '').trim().toUpperCase() === expectedOrigin
+        && String(row?.destinationIata || '').trim().toUpperCase() === expectedDestination
+        && Boolean(safeFlightStatsBoardSourceUrl(row?.sourceUrl)));
+      if (candidates.length !== 1) return item;
+
+      const boardSourceUrl = safeFlightStatsBoardSourceUrl(candidates[0]?.sourceUrl);
+      const sources = mergeDocumentedFlightSources([
+        ...(Array.isArray(item?.sources) ? item.sources : []),
+        { name: 'FlightStats Airport Board', url: boardSourceUrl }
+      ]);
+      const sourceHosts = new Set(sources.map(source => {
+        try { return new URL(String(source?.url || '')).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) { return ''; }
+      }).filter(Boolean));
+      if (sources.length < 2 || sourceHosts.size < 2) return item;
+
+      promotedFlights++;
+      promotions.push({ flightNumber, airportEventDate, direction, airportIata, originIata: expectedOrigin, destinationIata: expectedDestination });
+      return {
+        ...item,
+        confidence: 'high',
+        status: 'verified',
+        conflict: false,
+        sources,
+        sourceCount: sources.length,
+        explicitSourceCount: sources.length,
+        sourceNote: `Zwei unabhängige datumsspezifische Quellen bestätigen ${flightNumber} am ${airportEventDate}: offizielle Airportquelle + FlightStats Airport Board · ${expectedOrigin} -> ${expectedDestination}.`,
+        modelUsed: 'Official Airport Provider + FlightStats Airport Board',
+        nativeSecondSourceEvidence: true,
+        nativeSecondSourceCheckedAt: new Date().toISOString()
+      };
+    });
+    return {
+      checked,
+      promotedFlights,
+      remainingSingleSourceFlights: checked.filter(item => item?.officialAirportEvidence === true && !(String(item?.status || '').toLowerCase() === 'verified' && ['high','verified'].includes(String(item?.confidence || '').toLowerCase()))).length,
+      promotions
+    };
+  }
+
+  async function runAutomaticFlightCheck(options = {}) {
+    if (!state.rides.length) return;
+    const status = $('importStatus');
+    const button = $('copyFlightCheckBtn');
+    const fallbackButton = $('copyFlightCheckFallbackBtn');
+    const quotaSessionKey = 'atms_auto_flight_quota_blocked_session';
+    const automaticPipeline = Boolean(options?.automaticPipeline);
+    const expectedGeneration = Number.isFinite(Number(options?.expectedGeneration)) ? Number(options.expectedGeneration) : null;
+
+    if (button) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+    }
+
+    let officialSummary = { checked: [], attempted: 0, matched: 0, unsupported: [], failures: [], nativeState: null, providerUnavailable: false };
+    try {
+      // P36F6: Offizielle Airportquelle zuerst. Damit funktioniert DUS in der Native-App
+      // auch dann, wenn Firebase/App-Check unter file:// nicht verfuegbar ist.
+      if (status) status.textContent = 'Offizielle Airportquelle wird datumsspezifisch geprüft …';
+      officialSummary = await runOfficialAirportEvidence(state.rides, {
+        onProgress: progress => {
+          if (!status) return;
+          const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
+          status.textContent = `Offizielle Airportquelle ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+        }
+      });
+      if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) return { ok: false, stale: true, technicalFailureCount: 0 };
+      const officialChecked = Array.isArray(officialSummary?.checked) ? officialSummary.checked : [];
+      const officialDiagnostic = officialAirportDiagnosticSummary(officialSummary);
+      try {
+        window.ATMSOfficialAirportLastDiagnostic = {
+          patch: 'CORE-007D8A1F1D8P36F9',
+          checkedAt: new Date().toISOString(),
+          ...officialDiagnostic,
+          checked: officialChecked.map(item => ({
+            flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber),
+            direction: String(item?.direction || '').trim().toLowerCase(),
+            airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+            airportEventDate: cellText(item?.airportEventDate || item?.date),
+            relevantLocation: cellText(item?.relevantLocation || item?.flightLocation),
+            relevantIata: String(item?.relevantIata || item?.iata || '').trim().toUpperCase()
+          })),
+          nativeState: officialSummary?.nativeState || null
+        };
+      } catch (_) {}
+      const officialTechnicalFailures = (Array.isArray(officialSummary?.failures) ? officialSummary.failures : []).filter(item => ['technical', 'provider_unavailable'].includes(String(item?.reason || '').trim().toLowerCase()));
+      const officialFailureCount = officialTechnicalFailures.length;
+      const officialFirstTechnicalError = cellText(officialTechnicalFailures[0]?.message);
+
+      // CORE-007D8A1F1D8P38 · 24.09.2026: NATIVE APPASSETS ORIGIN FLIGHT-CHECK RESTORE –
+      // P37 wechselte die Android-WebView fuer GPS von file:// auf den sicheren WebViewAssetLoader-Origin
+      // https://appassets.androidplatform.net/. Die Native-Flugpruefung muss beide legitimen lokalen
+      // Urspruenge erkennen, damit die bereits bestaetigte P36F15-FlightStats-Zweitquelle weiterlaeuft.
+      // Keine Lockerung von FLIGHT-008, keine neue Quelle und keine Cloud-/Kostenabhaengigkeit.
+      const nativeOfficialOnly = typeof location !== 'undefined' && (
+        location.protocol === 'file:' ||
+        (location.protocol === 'https:' && location.hostname === 'appassets.androidplatform.net')
+      );
+      if (nativeOfficialOnly) {
+        const secondSourceProbe = await runNativeSecondSourceBoardProbe(officialChecked, {
+          onProgress: progress => {
+            if (!status) return;
+            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), label = cellText(progress?.label);
+            status.textContent = `Airport-Board-Zweitquelle ${current}/${total}${label ? ` · ${label}` : ''} …`;
+          }
+        });
+        const dualSource = promoteOfficialEvidenceWithNativeBoard(officialChecked, secondSourceProbe);
+        const unresolvedFlightRouteProbe = await runNativeUnresolvedFlightRouteProbe(officialDiagnostic.rows, {
+          onProgress: progress => {
+            if (!status) return;
+            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
+            status.textContent = `Offener Flug-Routencheck ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+          }
+        });
+        if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) {
+          return { ok: false, stale: true, technicalFailureCount: 0 };
+        }
+        try {
+          window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = {
+            patch: 'CORE-007D8A1F1D8P36F22',
+            checkedAt: new Date().toISOString(),
+            ...unresolvedFlightRouteProbe
+          };
+        } catch (_) {}
+        try {
+          window.ATMSNativeSecondSourceLastDiagnostic = null;
+          window.ATMSNativeSecondSourceBoardLastDiagnostic = {
+            patch: 'CORE-007D8A1F1D8P36F15',
+            checkedAt: new Date().toISOString(),
+            ...secondSourceProbe,
+            promotedFlights: dualSource.promotedFlights,
+            remainingSingleSourceFlights: dualSource.remainingSingleSourceFlights,
+            promotions: dualSource.promotions
+          };
+        } catch (_) {}
+        const appliedAt = new Date().toISOString();
+        const applied = applyGeminiResultsToStagedPlan(dualSource.checked, appliedAt);
+        const airportConflictApplied = applyNativeAirportConflictWarningsToStagedPlan(unresolvedFlightRouteProbe, appliedAt);
+        const openRideCount = unresolvedFlightRideCount();
+        if (fallbackButton) fallbackButton.style.display = '';
+        if (status) status.textContent = dualSource.promotedFlights > 0
+          ? `${dualSource.promotedFlights} Flug/Flüge durch zwei unabhängige datumsspezifische Quellen verifiziert · ${openRideCount} Flugprüfung(en) bleiben offen.`
+          : (applied.sourceConfirmedRides > 0
+            ? `${applied.sourceConfirmedRides} Fahrt(en) aus offizieller Airportquelle erkannt; FLIGHT-008-Zweitquelle bleibt offen.`
+            : 'Offizielle Airportprüfung abgeschlossen, aber keine sichere Flugzuordnung gefunden.');
+        return {
+          ok: officialFailureCount === 0,
+          nativeOfficialOnly: true,
+          checkedCount: officialChecked.length,
+          verifiedRides: applied.verifiedRides,
+          sourceConfirmedRides: applied.sourceConfirmedRides,
+          uncertainRides: openRideCount,
+          matchedRides: applied.matchedRides,
+          technicalFailureCount: officialFailureCount,
+          firstTechnicalError: officialFirstTechnicalError,
+          noGroundingFlights: 0,
+          singleSourceFlights: dualSource.remainingSingleSourceFlights,
+          conflictFlights: 0,
+          officialProviderAttempted: Number(officialSummary?.attempted || 0),
+          officialProviderMatched: Number(officialSummary?.matched || 0),
+          officialProviderUnsupported: Array.isArray(officialSummary?.unsupported) ? officialSummary.unsupported.length : 0,
+          officialProviderFailures: Array.isArray(officialSummary?.failures) ? officialSummary.failures.length : 0,
+          officialProviderUnavailable: Boolean(officialSummary?.providerUnavailable),
+          nativeBridgeAvailable: Boolean(officialSummary?.nativeState?.available),
+          nativeBridgeCompatible: officialSummary?.nativeState ? Boolean(officialSummary.nativeState.compatible) : null,
+          officialProviderDiagnostic: officialDiagnostic.text,
+          officialProviderDiagnosticRows: officialDiagnostic.rows,
+          secondSourceProbeAttempted: Number(secondSourceProbe?.attempted || 0),
+          secondSourceProbeReachable: Number(secondSourceProbe?.reachable || 0),
+          secondSourceProbeRouteMatches: Number(secondSourceProbe?.routeMatches || 0),
+          secondSourceProbePromoted: Number(dualSource.promotedFlights || 0),
+          secondSourceProbeDiagnostic: cellText(secondSourceProbe?.text),
+          secondSourceProbeRows: Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : [],
+          secondSourceProbeContexts: Array.isArray(secondSourceProbe?.contexts) ? secondSourceProbe.contexts : [],
+          unresolvedFlightRouteProbeAttempted: Number(unresolvedFlightRouteProbe?.attempted || 0),
+          unresolvedFlightRouteProbeReachable: Number(unresolvedFlightRouteProbe?.reachable || 0),
+          unresolvedFlightRouteProbeConflicts: Number(unresolvedFlightRouteProbe?.conflicts || 0),
+          unresolvedFlightRouteProbeDiagnostic: cellText(unresolvedFlightRouteProbe?.text),
+          unresolvedFlightRouteProbeRows: Array.isArray(unresolvedFlightRouteProbe?.rows) ? unresolvedFlightRouteProbe.rows : [],
+          airportConflictWarningFlights: Number(airportConflictApplied?.conflictFlights || 0),
+          airportConflictWarningRides: Number(airportConflictApplied?.matchedRides || 0)
+        };
+      }
+
+      // Ein bereits gesetzter Quota-Block stoppt nur weitere Gemini-Aufrufe, niemals
+      // die kostenlose/offizielle Airportquelle.
+      if (sessionStorage.getItem(quotaSessionKey) === '1') {
+        const applied = applyGeminiResultsToStagedPlan(officialChecked, new Date().toISOString());
+        if (fallbackButton) fallbackButton.style.display = '';
+        if (status) status.textContent = applied.sourceConfirmedRides > 0
+          ? `${applied.sourceConfirmedRides} Fahrt(en) aus offizieller Airportquelle erkannt; Zweitquelle bleibt wegen erreichtem Gemini-Kontingent offen.`
+          : (automaticPipeline ? 'Plan ist sauber. Flugort-Automatik pausiert wegen erreichtem Gemini-Kontingent; die Fahrten werden trotzdem automatisch übernommen.' : 'Automatische Flugprüfung ist in dieser Sitzung wegen erreichtem Gemini-Kontingent pausiert. Bitte „Fallback: Prüfauftrag kopieren“ verwenden.');
+        return {
+          ok: officialFailureCount === 0 && applied.sourceConfirmedRides > 0,
+          quotaBlocked: true,
+          checkedCount: officialChecked.length,
+          verifiedRides: applied.verifiedRides,
+          sourceConfirmedRides: applied.sourceConfirmedRides,
+          uncertainRides: applied.uncertainRides,
+          matchedRides: applied.matchedRides,
+          technicalFailureCount: officialFailureCount,
+          firstTechnicalError: officialFirstTechnicalError,
+          noGroundingFlights: 0,
+          singleSourceFlights: officialChecked.length,
+          conflictFlights: 0,
+          officialProviderAttempted: Number(officialSummary?.attempted || 0),
+          officialProviderMatched: Number(officialSummary?.matched || 0),
+          nativeBridgeAvailable: Boolean(officialSummary?.nativeState?.available),
+          nativeBridgeCompatible: officialSummary?.nativeState ? Boolean(officialSummary.nativeState.compatible) : null
+        };
+      }
+
+      let service = null;
+      try {
+        service = await ensureAutoFlightService();
+      } catch (error) {
+        const applied = applyGeminiResultsToStagedPlan(officialChecked, new Date().toISOString());
+        if (fallbackButton) fallbackButton.style.display = '';
+        const message = cellText(error?.message) || 'Auto-Flight-Modul konnte nicht geladen werden.';
+        if (status) status.textContent = applied.sourceConfirmedRides > 0
+          ? `${applied.sourceConfirmedRides} Fahrt(en) aus offizieller Airportquelle erkannt; Zweitquelle bleibt offen (${message}).`
+          : (automaticPipeline ? `Plan ist sauber. Flugort-Automatik derzeit nicht verfügbar (${message}); die Fahrten werden trotzdem automatisch übernommen.` : `Automatische Flugprüfung ist noch nicht verfügbar: ${message}. Der manuelle Prüfauftrag bleibt als Fallback verfügbar.`);
+        if (!automaticPipeline && typeof window.showToast === 'function') window.showToast(applied.sourceConfirmedRides > 0 ? 'Offizielle Airportquelle erkannt · Zweitquelle offen' : 'Automatische Flugprüfung nicht verfügbar', applied.sourceConfirmedRides > 0 ? 'warn' : 'warn');
+        return {
+          ok: officialFailureCount === 0 && applied.sourceConfirmedRides > 0,
+          serviceUnavailable: true,
+          errorMessage: message,
+          checkedCount: officialChecked.length,
+          verifiedRides: applied.verifiedRides,
+          sourceConfirmedRides: applied.sourceConfirmedRides,
+          uncertainRides: applied.uncertainRides,
+          matchedRides: applied.matchedRides,
+          technicalFailureCount: officialFailureCount,
+          firstTechnicalError: officialFirstTechnicalError,
+          noGroundingFlights: 0,
+          singleSourceFlights: officialChecked.length,
+          conflictFlights: 0,
+          officialProviderAttempted: Number(officialSummary?.attempted || 0),
+          officialProviderMatched: Number(officialSummary?.matched || 0),
+          nativeBridgeAvailable: Boolean(officialSummary?.nativeState?.available),
+          nativeBridgeCompatible: officialSummary?.nativeState ? Boolean(officialSummary.nativeState.compatible) : null
+        };
+      }
+
+      if (fallbackButton) fallbackButton.style.display = 'none';
+      if (status) status.textContent = automaticPipeline ? 'Plan sauber · zusätzliche aktuelle Webquellen werden geprüft …' : 'Automatische aktuelle Flugprüfung wird gestartet …';
+      const result = await service.verifyFlights(state.rides, {
+        onProgress: progress => {
+          if (!status) return;
+          const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
+          status.textContent = `Aktuelle Flugprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+        }
+      });
+
+      let checked = Array.isArray(result?.checked) ? result.checked : [];
+      if (!checked.length && !officialChecked.length) throw new Error('Die automatische Flugprüfung hat kein auswertbares Ergebnis zurückgegeben.');
+      checked = mergeOfficialEvidenceIntoChecked(checked, officialChecked);
+      if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) return { ok: false, stale: true, technicalFailureCount: 0 };
+
+      let groundingRecords = Array.isArray(result?.grounding) ? result.grounding : [];
+      let strictSearchSummary = { attempted: 0, verified: 0, technicalFailures: 0, firstTechnicalError: '', quotaBlocked: false, grounding: [] };
+      const needsStrictSearchFallback = checked.some(item => !item?.technicalFailure && !Boolean(item?.conflict) && checkedSourceCount(item) < 2);
+      if (needsStrictSearchFallback) {
+        if (status) status.textContent = 'Offene Flüge · strikte Zwei-Quellen-Webprüfung läuft …';
+        strictSearchSummary = await runStrictSearchFallback(checked, {
+          onProgress: progress => {
+            if (!status) return;
+            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
+            status.textContent = `Strikte Zwei-Quellen-Webprüfung ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+          }
+        });
+        checked = Array.isArray(strictSearchSummary?.checked) ? strictSearchSummary.checked : checked;
+        groundingRecords = [...groundingRecords, ...(Array.isArray(strictSearchSummary?.grounding) ? strictSearchSummary.grounding : [])];
+        if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) return { ok: false, stale: true, technicalFailureCount: 0 };
+      }
+
+      const applied = applyGeminiResultsToStagedPlan(checked, cellText(result?.completedAt) || new Date().toISOString());
+      if (typeof service.renderGrounding === 'function') service.renderGrounding(groundingRecords);
+
+      const primaryTechnicalFailures = Number(result?.technicalFailureCount || 0);
+      const fallbackTechnicalFailures = Number(strictSearchSummary?.technicalFailures || 0);
+      const technicalFailures = officialFailureCount + primaryTechnicalFailures + fallbackTechnicalFailures;
+      const firstTechnicalError = officialFirstTechnicalError || cellText(result?.firstTechnicalError) || cellText(strictSearchSummary?.firstTechnicalError);
+      const quotaFailure = Boolean(strictSearchSummary?.quotaBlocked) || (primaryTechnicalFailures + fallbackTechnicalFailures > 0 && /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(cellText(result?.firstTechnicalError) || cellText(strictSearchSummary?.firstTechnicalError)));
+      if (technicalFailures > 0) {
+        if (fallbackButton) fallbackButton.style.display = '';
+        if (quotaFailure) sessionStorage.setItem(quotaSessionKey, '1');
+      }
+
+      const noGroundingFlights = checked.filter(item => !item?.technicalFailure && checkedSourceCount(item) === 0).length;
+      const singleSourceFlights = checked.filter(item => !item?.technicalFailure && checkedSourceCount(item) === 1).length;
+      const conflictFlights = checked.filter(item => !item?.technicalFailure && Boolean(item?.conflict)).length;
+      try { window.dispatchEvent(new CustomEvent('atms:gemini-flight-result', { detail: { checked, scope: 'staged-auto' } })); } catch (_) {}
+      return {
+        ok: technicalFailures === 0,
+        checkedCount: checked.length,
+        verifiedRides: applied.verifiedRides,
+        sourceConfirmedRides: applied.sourceConfirmedRides,
+        uncertainRides: applied.uncertainRides,
+        matchedRides: applied.matchedRides,
+        officialProviderAttempted: Number(officialSummary?.attempted || 0),
+        officialProviderMatched: Number(officialSummary?.matched || 0),
+        officialProviderUnsupported: Array.isArray(officialSummary?.unsupported) ? officialSummary.unsupported.length : 0,
+        officialProviderFailures: Array.isArray(officialSummary?.failures) ? officialSummary.failures.length : 0,
+        officialProviderUnavailable: Boolean(officialSummary?.providerUnavailable),
+        nativeBridgeAvailable: Boolean(officialSummary?.nativeState?.available),
+        nativeBridgeCompatible: officialSummary?.nativeState ? Boolean(officialSummary.nativeState.compatible) : null,
+        technicalFailureCount: technicalFailures,
+        firstTechnicalError,
+        noGroundingFlights,
+        singleSourceFlights,
+        conflictFlights,
+        strictSearchFallbackAttempted: Number(strictSearchSummary?.attempted || 0),
+        strictSearchFallbackVerified: Number(strictSearchSummary?.verified || 0),
+        quotaBlocked: quotaFailure
+      };
+    } catch (error) {
+      const officialChecked = Array.isArray(officialSummary?.checked) ? officialSummary.checked : [];
+      const applied = officialChecked.length ? applyGeminiResultsToStagedPlan(officialChecked, new Date().toISOString()) : { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 };
+      if (fallbackButton) fallbackButton.style.display = '';
+      const message = cellText(error?.message) || 'unbekannter technischer Fehler';
+      const quotaFailure = /(?:\b429\b|quota|rate[ -]?limit|exceeded)/i.test(message);
+      if (quotaFailure) sessionStorage.setItem(quotaSessionKey, '1');
+      if (status) status.textContent = applied.sourceConfirmedRides > 0
+        ? `${applied.sourceConfirmedRides} Fahrt(en) aus offizieller Airportquelle erkannt; weitere Prüfung technisch offen (${message}).`
+        : (automaticPipeline ? `Flugort-Automatik technisch nicht verfügbar (${message}). Die Fahrten werden trotzdem automatisch übernommen.` : `Automatische Flugprüfung technisch fehlgeschlagen: ${message}. Vorhandene Fahrtdaten wurden nicht überschrieben. Fallback-Prüfauftrag ist verfügbar.`);
+      return {
+        ok: false,
+        quotaBlocked: quotaFailure,
+        errorMessage: message,
+        verifiedRides: applied.verifiedRides,
+        sourceConfirmedRides: applied.sourceConfirmedRides,
+        uncertainRides: applied.uncertainRides,
+        matchedRides: applied.matchedRides,
+        technicalFailureCount: 1,
+        firstTechnicalError: message,
+        singleSourceFlights: officialChecked.length,
+        officialProviderAttempted: Number(officialSummary?.attempted || 0),
+        officialProviderMatched: Number(officialSummary?.matched || 0),
+        nativeBridgeAvailable: Boolean(officialSummary?.nativeState?.available),
+        nativeBridgeCompatible: officialSummary?.nativeState ? Boolean(officialSummary.nativeState.compatible) : null
+      };
+    } finally {
+      if (button) {
+        button.disabled = !state.rides.some(ride => ride.flightNumber);
+        button.removeAttribute('aria-busy');
+      }
+    }
+  }
+
+  async function copyFlightCheckPrompt() {
+    if (!state.rides.length || !window.ATMSFlight) return;
+    const prompt = window.ATMSFlight.buildGeminiPrompt(state.rides);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      $('importStatus').textContent = 'Gemini-Flugprüfauftrag wurde kopiert. In Gemini einfügen und die Flüge für den aktuellen Tag prüfen lassen.';
+      if (typeof window.showToast === 'function') window.showToast('Gemini-Flugprüfung kopiert', 'ok');
+    } catch (_) {
+      const ta = document.createElement('textarea');
+      ta.value = prompt;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      $('importStatus').textContent = 'Gemini-Flugprüfauftrag wurde kopiert.';
+    }
+  }
+
+  function init() {
+    const input = $('fileInput'), drop = $('planImportDrop');
+    if (!input) return;
+    ensurePlanDateControl();
+    currentPlanDate();
+    input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
+    $('analyzePlanBtn')?.addEventListener('click', analyze);
+    $('importPlanBtn')?.addEventListener('click', importRides);
+    $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
+    $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
+    if (drop) {
+      ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('over'); }));
+      ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
+      drop.addEventListener('drop', event => {
+        const file = event.dataTransfer.files && event.dataTransfer.files[0];
+        if (file) selectFile(file);
+      });
+    }
+  }
+
+
+  // CORE-005J:
+  // Preis und PLAN/DISPO/LIVE werden jetzt nativ in app.js / pwa.js gerendert.
+  // Kein MutationObserver-/Textknoten-Hack mehr in plan-import.js.
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
