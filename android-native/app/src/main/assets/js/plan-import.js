@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P55 · 25.09.2026: LONG-PREFIX MODE-PARALLEL OCR PERFORMANCE FIX – P54 hat long_prefix_flight_ocr mit rund 98 s als größten Einzel-Flaschenhals belegt. P55 führt innerhalb jedes unveränderten Flugzellen-Crops die drei bereits vorhandenen OCR-Modi parallel auf ihren jeweils getrennten, bereits von P53 wiederverwendeten Workern aus. Crop-Geometrie, drei Modi, Stimmen, Crop-Support, P46-Fail-safe, P49-S↔9-Ziffernprobe und sämtliche Übernahmeschwellen bleiben unverändert.
+// Keine Flugnummern-/Airline-/Routen-Hardcodes; P54-Timing-Diagnose bleibt aktiv. Datum, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P54 · 25.09.2026: OCR STAGE TIMING DIAGNOSTIC – misst ausschließlich die Laufzeit der bestehenden Bild-/OCR-Analyseabschnitte (Primär-OCR und nachgelagerte Sicherheitsprüfungen) und hängt die Messwerte sichtbar an den bestehenden Diagnose-Selbstcheck an.
 // Keine OCR-Regel, kein Crop, keine Konsensschwelle, keine Flug-/Datums-/PLAN-/DISPO-/LIVE-/Persistenzlogik wird verändert. Reine Performance-Diagnose als Beweistest vor weiterer Optimierung.
 // CORE-007D8A1F1D8P53 · 25.09.2026: LONG-PREFIX OCR WORKER-REUSE PERFORMANCE FIX – reduziert ausschließlich den belegten Zeitaufwand der P46/P49-Flugzellen-Gegenprüfung, indem die bereits verwendeten Tesseract-Worker pro OCR-Modus sowie der P48/P49-Ziffern-Worker innerhalb eines Analyse-Laufs wiederverwendet und erst nach Abschluss der gesamten Long-Prefix-Prüfung beendet werden. Crops, OCR-Versuchszahl, Stimmen, Zwei-Crop-Konsens, S↔9-Sicherheitsregel, Placeholder-Fail-safe und sämtliche Übernahmeschwellen bleiben unverändert. Keine Flugnummern-/Airline-/Routen-Hardcodes; P49-EW9040/EW9736/EEA21-Sicherheitsverhalten, Datum, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
@@ -4183,11 +4185,18 @@
         for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
           const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          for (const mode of ocrModes) {
+          // P55: Die drei bestehenden Modi arbeiten auf drei getrennten P53-Workern.
+          // Deshalb können sie für denselben unveränderten Crop parallel laufen, ohne
+          // einen Worker gleichzeitig doppelt zu benutzen. Promise.all bewahrt die
+          // ocrModes-Reihenfolge, sodass Diagnose-/Stimmreihenfolge unverändert bleibt.
+          const modeResults = await Promise.all(ocrModes.map(async mode => {
             const modeWorker = await getLongPrefixModeWorker(mode);
             const second = modeWorker
               ? await modeWorker.recognize(crop)
               : await Tesseract.recognize(crop, 'eng', mode.options);
+            return { mode, second };
+          }));
+          for (const { mode, second } of modeResults) {
             const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
               .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
             // CORE-007D8A1F1D3: Rohtrace bleibt sichtbar. Zusätzlich nutzt diese gezielte
