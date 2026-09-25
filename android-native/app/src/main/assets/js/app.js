@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P50 · 25.09.2026: MANUAL-CHECK WITHOUT FLIGHT NUMBER FIX – Explizite Konflikt-/Manual-Check-Sicherheitsflags werden vor dem Vorhandensein einer Flugnummer ausgewertet. Dadurch bleibt eine OCR-Fahrt ohne erkannte Flugnummer bei flightNeedsManualCheck=true sichtbar „⚠ manuell prüfen“. Keine Änderung an OCR, PLAN, DISPO, LIVE oder FLIGHT-008-Verifikationsregeln.
 // CORE-007D8A1F1D8P44 · 24.09.2026: NATIVE DUS ACTUAL ARRIVAL APPLY – Übernimmt bei DUS-Ankünften ausschließlich die vom P44-Gate freigegebene offizielle DUS-Actual-Zeit als operative LIVE-Landungszeit und berechnet daraus den bestehenden Arrival-Puffer. Voraussetzung bleibt die unabhängige FlightStats-Bestätigung von exakter Identität/Route + Status landed. Die Minute selbst gilt nicht als Zwei-Quellen-minutengenau bestätigt; FR24 bleibt manuelle Zusatzkontrolle. PLAN/DISPO und Abflug-Abholzeiten bleiben unverändert.
 // CORE-007D8A1F1D8P40 · 24.09.2026: NATIVE LIVE STATUS AUTO-CONFIRM – ergänzt im Native-LIVE-Bereich eine registrierungsfreie Zwei-Quellen-Statusprüfung über die vorhandene DUS-/FlightStats-Bridge. Automatisch übernommen werden ausschließlich exakt übereinstimmende, im P39/P39F1-Realtest belegte Status departed/landed/cancelled; scheduled/on_time/delayed bleiben ohne eigene Zweitquellenzeit offen. Estimated/Actual/LIVE-Zeit bleiben leer, PLAN/DISPO unverändert und manuell bestätigte Landungen/Abflüge geschützt.
 // CORE-007D8A1F1D8P36F22 · 24.09.2026: NATIVE AIRPORT-CONFLICT USER WARNING – Zeigt einen von der strikten Importprüfung gesetzten datumsspezifischen Airport-Konflikt sichtbar in Fahrtenkarte und Cockpit. Die Fremdroute bleibt reine Warn-/Diagnoseinformation und wird niemals als Flugort übernommen. Nur verified/high bleibt warnungsfrei.
@@ -672,14 +673,17 @@ function hasFlightNumber(r){
 // source_confirmed bleibt absichtlich sichtbar manuell pruefpflichtig; ein vorhandener
 // Planort allein ist ebenfalls keine Verifikation. Alte explizite flightVerified=true-
 // Datensaetze bleiben kompatibel, sofern ein Flugort vorhanden und kein Konflikt gesetzt ist.
+// CORE-007D8A1F1D8P50 · 25.09.2026: MANUAL-CHECK WITHOUT FLIGHT NUMBER FIX
+// Explizite Sicherheitskennzeichen haben Vorrang vor dem Vorhandensein einer Flugnummer.
+// Fahrt ohne Flugnummer bleibt nur dann warnungsfrei, wenn weder Konflikt noch flightNeedsManualCheck gesetzt ist.
 function flightNeedsManualReview(r){
+  const conflict=Boolean(r?.flightConflict===true||r?.flightSourceConflict===true||r?.conflict===true);
+  if(conflict)return true;
+  if(r?.flightNeedsManualCheck===true)return true;
   if(!hasFlightNumber(r))return false;
   const location=String(r?.flightLocation||'').trim();
   const confidence=String(r?.flightCheckConfidence||r?.flightConfidence||'').trim().toLowerCase();
   const status=String(r?.flightVerificationStatus||'').trim().toLowerCase();
-  const conflict=Boolean(r?.flightConflict===true||r?.flightSourceConflict===true||r?.conflict===true);
-  if(conflict)return true;
-  if(r?.flightNeedsManualCheck===true)return true;
   const explicitlyVerified=Boolean(location)&&(
     r?.flightVerified===true ||
     confidence==='verified' ||
