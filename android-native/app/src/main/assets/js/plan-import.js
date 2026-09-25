@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P61 · 25.09.2026: ROUTE PICKUP/DESTINATION COLUMN-PARALLEL OCR PERFORMANCE FIX – P60/P54 hat route_deu_column_ocr mit rund 29 s als größten verbleibenden stabilen OCR-Block belegt. P61 startet die beiden bereits vorhandenen unabhängigen Routen-Spalten (Von/pickup und Nach/destination) parallel; innerhalb jeder Spalte bleibt die P56-Parallelisierung der unveränderten PSM4-/PSM6-Versuche bestehen.
+// Spalten-Crops, PSM-Modi, Skalierungen, Zwei-Lauf-Konsens, Gleichstandsblockade, Diakritik-Sicherheitsprüfung, Diagnose-Logs und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Preis-/Zeit-/Fahrer-/Flug-OCR, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P60 · 25.09.2026: PRICE CELL CROP-PARALLEL OCR PERFORMANCE FIX – P59/P54 hat price_targeted_ocr in den jüngsten Realgerät-Läufen wiederholt mit rund 22 s als einen der größten stabilen OCR-Blöcke belegt. P60 startet die drei bereits vorhandenen unveränderten Preiszellen-Crops einer auffälligen Preiszelle parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Crop-Reihenfolge aus.
 // Crop-Geometrie, drei Preis-OCR-Crops, Kandidatenbereinigung, Zwei-Crop-Mindestkonsens, Gleichstandsblockade, Plausibilitätsprüfung und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Zeit-/Fahrer-/Orts-/Flug-OCR, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P59 · 25.09.2026: EARLY-TIME BATCH MODE-PARALLEL OCR PERFORMANCE FIX – P58/P54 hat early_time_batch_ocr in zwei Realgerät-Läufen stabil mit rund 23 s als einen der größten verbleibenden OCR-Blöcke belegt. P59 startet die drei bereits vorhandenen gebündelten DISPO-Zeitspalten-OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Versuch-Reihenfolge aus.
@@ -3326,12 +3328,19 @@
       { field: 'destination', label: 'Nach' }
     ];
 
-    for (const descriptor of fields) {
+    // P61: Pickup- und Destination-Spalte werden als zwei voneinander unabhängige
+    // Routen-Spalten gleichzeitig bearbeitet. Innerhalb jeder Spalte bleibt P56
+    // unverändert: dieselben zwei OCR-Modi laufen parallel und werden weiterhin
+    // strikt in attempts-Reihenfolge ausgewertet. Beide Tasks schreiben ausschließlich
+    // in ihre jeweils eigene Feldfamilie (pickup* bzw. destination*).
+    if (status) status.textContent = 'Von-/Nach-Ortszellen werden lokal mit deutscher OCR gegengeprüft …';
+
+    const processDescriptor = async descriptor => {
       const column = mapping?.[descriptor.field];
-      if (column === undefined) continue;
+      if (column === undefined) return;
       const left = Number(boundaries[column]);
       const right = Number(boundaries[column + 1]);
-      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return;
 
       const rowsWithMeta = out.map(ride => {
         const matrixIndex = Number(ride.sourceRow || 0) - 1;
@@ -3343,7 +3352,7 @@
         if (![y0, y1, cy].every(Number.isFinite) || y1 <= y0) return null;
         return { sourceRow: Number(ride.sourceRow), meta: { y0, y1, cy } };
       }).filter(Boolean);
-      if (!rowsWithMeta.length) continue;
+      if (!rowsWithMeta.length) return;
 
       const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
       const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
@@ -3356,8 +3365,6 @@
       const votesByRow = new Map();
       const displayByRowKey = new Map();
       const attemptLogByRow = new Map();
-
-      if (status) status.textContent = `${descriptor.label}-Ortszellen werden lokal mit deutscher OCR gegengeprüft …`;
 
       try {
         // P56: Beide bestehenden OCR-Versuche derselben unveränderten Spalte werden
@@ -3417,8 +3424,9 @@
         ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
         ride[`${descriptor.field}RecoverySource`] = 'targeted_route_diacritic_consensus';
       });
-    }
+    };
 
+    await Promise.all(fields.map(processDescriptor));
     return out;
   }
 
