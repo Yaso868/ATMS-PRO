@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P54 · 25.09.2026: OCR STAGE TIMING DIAGNOSTIC – misst ausschließlich die Laufzeit der bestehenden Bild-/OCR-Analyseabschnitte (Primär-OCR und nachgelagerte Sicherheitsprüfungen) und hängt die Messwerte sichtbar an den bestehenden Diagnose-Selbstcheck an.
+// Keine OCR-Regel, kein Crop, keine Konsensschwelle, keine Flug-/Datums-/PLAN-/DISPO-/LIVE-/Persistenzlogik wird verändert. Reine Performance-Diagnose als Beweistest vor weiterer Optimierung.
 // CORE-007D8A1F1D8P53 · 25.09.2026: LONG-PREFIX OCR WORKER-REUSE PERFORMANCE FIX – reduziert ausschließlich den belegten Zeitaufwand der P46/P49-Flugzellen-Gegenprüfung, indem die bereits verwendeten Tesseract-Worker pro OCR-Modus sowie der P48/P49-Ziffern-Worker innerhalb eines Analyse-Laufs wiederverwendet und erst nach Abschluss der gesamten Long-Prefix-Prüfung beendet werden. Crops, OCR-Versuchszahl, Stimmen, Zwei-Crop-Konsens, S↔9-Sicherheitsregel, Placeholder-Fail-safe und sämtliche Übernahmeschwellen bleiben unverändert. Keine Flugnummern-/Airline-/Routen-Hardcodes; P49-EW9040/EW9736/EEA21-Sicherheitsverhalten, Datum, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P51 · 25.09.2026: OCR SUMMARY DATE-CONFIRM SYNC FIX – synchronisiert ausschließlich die sichtbare OCR-Zusammenfassung nach einer Folgetag-/Datumsentscheidung erneut mit dem bereits neu validierten state.issues-Stand. Dadurch verschwinden erledigte Datumsfehler auch in „OCR-Analyse“ und „Fahrten OCR-geprüft“, während Hinweis-/Fehler-Kacheln, Importfreigabe und Daten bereits vorhandene Logik unverändert verwenden. Keine Änderung an OCR-Erkennung, Folgetag-Zuordnung, Flugnummern, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P49 · 25.09.2026: PRIMARY-WORD TAIL CROP CONSENSUS – verbessert ausschließlich die bereits fail-safe S↔9-Ziffernprobe: statt die komplette Flugzelle erneut als Ziffern zu lesen, werden aus dem Primär-OCR-Wort drei unterschiedlich zugeschnittene Tail-Crops ab der generischen Grenze nach dem zweistelligen Designator erzeugt. Die Zwei-Crop-Konsensschwelle bleibt unverändert; ohne mindestens zwei identische Tail-Lesungen keine Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46/P48-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
@@ -97,7 +99,7 @@
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
+  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -4627,6 +4629,13 @@
     };
   }
 
+  function formatOcrPerformanceDiagnostic(perf) {
+    if (!perf || !Array.isArray(perf.stages)) return '∅';
+    const ms = value => `${Math.round(Number(value || 0))}ms`;
+    const stages = perf.stages.map(item => `${cellText(item?.name) || '?'}=${ms(item?.ms)}`).join(', ');
+    return `gesamt=${ms(perf.totalMs)}${stages ? `; ${stages}` : ''}`;
+  }
+
   function formatOcrDiagnosticSelfCheck(check) {
     if (!check) return 'Selbstcheck nicht ausgeführt';
     const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
@@ -4648,15 +4657,31 @@
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `Ungeklärt=[${list(check.unresolvedSuspiciousFlights)}]`,
-      `Mapping={${check.mappingSnapshot || '∅'}}`
+      `Mapping={${check.mappingSnapshot || '∅'}}`,
+      `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`
     ].join(' · ');
   }
 
   async function readImagePlan(file) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
-    const canvas = await preprocessImage(file);
+    const perfStartedAt = performance.now();
+    const perfStages = [];
+    const measureAsync = async (name, task) => {
+      const started = performance.now();
+      const value = await task();
+      perfStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+    const measureSync = (name, task) => {
+      const started = performance.now();
+      const value = task();
+      perfStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+
+    const canvas = await measureAsync('preprocess_image', () => preprocessImage(file));
     const status = $('importStatus');
-    const result = await Tesseract.recognize(canvas, 'eng', {
+    const result = await measureAsync('primary_ocr', () => Tesseract.recognize(canvas, 'eng', {
       logger: message => {
         if (!status) return;
         if (message.status === 'recognizing text') {
@@ -4665,20 +4690,20 @@
           status.textContent = `Bildanalyse: ${message.status}`;
         }
       }
-    });
+    }));
     let words = result?.data?.words || [];
     // CORE-007D4: Nur wenn kein sicherer Header vorhanden ist und die erste OCR
     // trotz mehrerer Zeitanker zu wenige Preisanker liefert, wird der linke
     // Preiskorridor zeilenweise gezielt nachgelesen. Das Ergebnis wird lediglich
     // als OCR-Anker ergänzt; die unveränderten Headerless-Sicherheitsguards
     // entscheiden anschließend weiterhin über Annahme oder Abbruch.
-    words = await recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width);
-    let matrix = imageWordsToMatrix(words, canvas.width);
+    words = await measureAsync('headerless_price_anchor_check', () => recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width));
+    let matrix = measureSync('image_words_to_matrix', () => imageWordsToMatrix(words, canvas.width));
     if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
     if (matrix._atmsImageMeta) {
-      matrix = await recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta);
+      matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
       if (matrix._atmsImageMeta?.headerlessAtms) {
-        matrix = await recoverHeaderlessCellsTargeted(matrix, canvas, matrix._atmsImageMeta);
+        matrix = await measureAsync('headerless_cell_recovery', () => recoverHeaderlessCellsTargeted(matrix, canvas, matrix._atmsImageMeta));
         const recovery = matrix._atmsImageMeta?.headerlessCellRecovery;
         if (!recovery?.accepted) {
           const reason = cellText(recovery?.reason) || 'cell_recovery_not_accepted';
@@ -4688,6 +4713,13 @@
         }
       }
     }
+    try {
+      window.ATMSP54ReadImageTiming = {
+        version: 'CORE-007D8A1F1D8P54',
+        totalMs: performance.now() - perfStartedAt,
+        stages: perfStages.map(item => ({ ...item }))
+      };
+    } catch (_) {}
     return {
       kind: 'matrix',
       matrix,
@@ -5517,6 +5549,22 @@
 
   async function analyze() {
     if (!state.file || state.analysisRunInProgress || state.autoPipelineInProgress) return;
+    const p54AnalyzeStartedAt = performance.now();
+    const p54AnalyzeStages = [];
+    const p54MeasureAsync = async (name, task) => {
+      const started = performance.now();
+      const value = await task();
+      p54AnalyzeStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+    const p54MeasureSync = (name, task) => {
+      const started = performance.now();
+      const value = task();
+      p54AnalyzeStages.push({ name, ms: performance.now() - started });
+      return value;
+    };
+    state.ocrPerformanceDiagnostic = null;
+    try { window.ATMSP54ReadImageTiming = null; } catch (_) {}
     state.analysisRunInProgress = true;
     state.pipelineGeneration += 1;
     const generation = state.pipelineGeneration;
@@ -5527,7 +5575,7 @@
     try {
       currentPlanDate();
       $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
-      const result = await readFile(state.file);
+      const result = await p54MeasureAsync('read_file_total', () => readFile(state.file));
       if (generation !== state.pipelineGeneration) return;
       if (result.kind === 'json') {
         const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
@@ -5617,77 +5665,93 @@
 
       let preparedRides = rides;
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
-        preparedRides = await recoverMissingRideTimesTargeted(
+        preparedRides = await p54MeasureAsync('recover_missing_times', () => recoverMissingRideTimesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = await recoverSuspiciousRideTimesTargeted(
+        ));
+        preparedRides = await p54MeasureAsync('early_time_batch_ocr', () => recoverSuspiciousRideTimesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = await recoverSuspiciousPricesTargeted(
+        ));
+        preparedRides = await p54MeasureAsync('price_targeted_ocr', () => recoverSuspiciousPricesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = recoverRouteBoundarySpillover(
+        ));
+        preparedRides = p54MeasureSync('route_boundary_spillover', () => recoverRouteBoundarySpillover(
           preparedRides,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = await recoverRouteDiacriticsTargeted(
-          preparedRides,
-          result.imageCanvas,
-          result.imageMeta,
-          mappingInfo.mapping
-        );
-        preparedRides = await recoverMissingDriversTargeted(
+        ));
+        preparedRides = await p54MeasureAsync('route_deu_column_ocr', () => recoverRouteDiacriticsTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = await recoverDriverColumnConsensusTargeted(
+        ));
+        preparedRides = await p54MeasureAsync('missing_driver_targeted_ocr', () => recoverMissingDriversTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = await recoverMissingFlightNumbersTargeted(
+        ));
+        preparedRides = await p54MeasureAsync('driver_deu_column_ocr', () => recoverDriverColumnConsensusTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = await recoverAmbiguousFlightNumbersTargeted(
+        ));
+        preparedRides = await p54MeasureAsync('missing_flight_targeted_ocr', () => recoverMissingFlightNumbersTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = await recoverSuspiciousLongFlightPrefixesTargeted(
+        ));
+        preparedRides = await p54MeasureAsync('ambiguous_flight_targeted_ocr', () => recoverAmbiguousFlightNumbersTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        preparedRides = applyRepeatedTextConsistency(preparedRides);
-        state.ocrCellDiagnostics = buildOcrCellRawDiagnostics(
+        ));
+        preparedRides = await p54MeasureAsync('long_prefix_flight_ocr', () => recoverSuspiciousLongFlightPrefixesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
+        state.ocrCellDiagnostics = p54MeasureSync('build_raw_diagnostics', () => buildOcrCellRawDiagnostics(
           preparedRides,
           result.imageMeta,
           mappingInfo.mapping
-        );
-        state.ocrDiagnosticSelfCheck = buildOcrDiagnosticSelfCheck(
+        ));
+        const readPerf = (() => { try { return window.ATMSP54ReadImageTiming || null; } catch (_) { return null; } })();
+        state.ocrPerformanceDiagnostic = {
+          version: 'CORE-007D8A1F1D8P54',
+          totalMs: performance.now() - p54AnalyzeStartedAt,
+          stages: [
+            ...(Array.isArray(readPerf?.stages) ? readPerf.stages.map(item => ({ name: `read:${item.name}`, ms: Number(item?.ms || 0) })) : []),
+            ...p54AnalyzeStages.map(item => ({ ...item }))
+          ]
+        };
+        state.ocrDiagnosticSelfCheck = p54MeasureSync('build_self_check', () => buildOcrDiagnosticSelfCheck(
           preparedRides,
           result.imageMeta,
           mappingInfo.mapping,
           state.ocrCellDiagnostics
-        );
+        ));
+        state.ocrPerformanceDiagnostic.totalMs = performance.now() - p54AnalyzeStartedAt;
+        state.ocrPerformanceDiagnostic.stages = [
+          ...(Array.isArray(readPerf?.stages) ? readPerf.stages.map(item => ({ name: `read:${item.name}`, ms: Number(item?.ms || 0) })) : []),
+          ...p54AnalyzeStages.map(item => ({ ...item }))
+        ];
+        state.ocrDiagnosticSelfCheck.performance = state.ocrPerformanceDiagnostic;
+        try { window.ATMSP54OcrPerformanceDiagnostic = JSON.parse(JSON.stringify(state.ocrPerformanceDiagnostic)); } catch (_) {}
         try { window.ATMSCore007D8A1DiagnosticSelfCheck = { ...state.ocrDiagnosticSelfCheck }; } catch (_) {}
       } else {
         state.ocrCellDiagnostics = [];
@@ -5721,6 +5785,7 @@
     state.cancelledRows = [];
     state.ocrCellDiagnostics = [];
     state.ocrDiagnosticSelfCheck = null;
+    state.ocrPerformanceDiagnostic = null;
     state.issues = [];
     state.meta = {};
     state.pipelineGeneration += 1;
