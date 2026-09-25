@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P48 · 25.09.2026: DEDICATED WORKER DIGIT-PARAMETER FIX – behebt ausschließlich den im P47-Realtest belegten Konfigurationsfehler der S↔9-Ziffernprobe: Tesseract.recognize(image, lang, options) reicht den dritten Parameter bei Tesseract.js v5 als Worker-Erstelloptionen weiter und setzt dadurch tessedit_char_whitelist/pageseg_mode nicht als OCR-Parameter. P48 verwendet für genau diese bereits auffällige Zusatzprobe einen dedizierten Tesseract-Worker, setzt PSM 8 + Ziffern-Whitelist ausdrücklich via worker.setParameters() und beendet den Worker danach. Die bestehende Zwei-Crop-Konsensregel bleibt unverändert; keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P47 · 25.09.2026: S↔9 FLIGHT BOUNDARY DIGIT PROBE – löst ausschließlich den bereits als auffällig erkannten OCR-Grenzfall, bei dem an Position 3 eines vermeintlich 3-buchstabigen Flugpräfixes ein 'S' steht, obwohl die Flugnummer nach einem 2-stelligen Designator mit '9' weitergeht. Eine automatische Korrektur ist nur erlaubt, wenn eine zusätzliche Ziffern-only-OCR der konkreten Flugzelle in mindestens zwei unterschiedlich zugeschnittenen Crops exakt denselben erwarteten Zahlenteil liest; andere Ziffern bleiben unverändert und konkurrierende gleich lange Mehrfach-Evidenz blockiert die Korrektur. Keine Flugnummern-/Airline-/Routen-Hardcodes; P46-Fail-safe, P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P46 · 25.09.2026: SUSPICIOUS FLIGHT OCR FAIL-SAFE – auffällige 3+ Buchstaben-Präfixe dürfen nach der lokalen Flugzellen-Gegenprüfung nicht mehr still als unauffällige Flugnummer durchgehen. Ein sicher belegter 2-stelliger Alternativkandidat darf jetzt zusätzlich den generischen OCR-Grenzfall 'drittes Präfixzeichen als erste Ziffer' abbilden; ohne sichere Alternative bleibt der Wert sichtbar prüfpflichtig. Zeigt die Primär-Rohzelle nur einen leeren/Strich-Platzhalter und findet auch die lokale Gegenprüfung keinen Flugkandidaten, wird der OCR-Scheinwert verworfen statt importiert. Keine Flugnummern-, Airline- oder Routen-Hardcodes; P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P45 · 25.09.2026: BATCHED EARLY-TIME OCR PERFORMANCE FIX – ersetzt die bisherige serielle 00:00–05:59-Zellprüfung (bis zu 9 Tesseract-Läufe je Fahrt) durch drei gebündelte OCR-Durchläufe über die komplette DISPO-Zeitspalte. Die Ergebnisse werden weiterhin pro Quellzeile getrennt ausgewertet; eine abweichende Uhrzeit wird nur bei mindestens zwei exakt übereinstimmenden unabhängigen Batch-Läufen und eindeutigem Konsens übernommen.
@@ -4115,24 +4116,33 @@
         continue;
       }
 
-      // P47: Wenn die normale Volltext-Gegen-OCR keinen sicheren Sieger liefert,
-      // darf ausschließlich ein S↔9-Grenzfall einen zusätzlichen Ziffern-only-Probe
-      // erhalten. Der erwartete Zahlenteil muss in mindestens zwei verschiedenen
-      // Crops exakt gelesen werden. Ein konkurrierender gleich langer Zahlenteil mit
-      // ebenfalls mindestens zwei Crops blockiert die Korrektur. Dadurch wird weder
-      // aus dem Flugkontext geraten noch eine konkrete Flugnummer fest eingebaut.
+      // P48: P47 hat im Realgerät belegt, dass Tesseract.recognize(crop, 'eng', {...})
+      // die tessedit_* Werte hier NICHT als Tesseract-Parameter wirksam setzt. Für
+      // ausschließlich diesen bereits streng eingegrenzten S↔9-Zusatzbeweis wird
+      // daher ein eigener Worker erzeugt, PSM 8 + Ziffern-Whitelist explizit über
+      // worker.setParameters() gesetzt und danach wieder beendet. Die P47-Regel
+      // (mindestens zwei verschiedene Crops, kein gleich starker Konkurrent) bleibt
+      // unverändert. Ohne Worker/Parameterbeweis gilt weiter P46 fail-closed.
       const sNineProbe = sNineBoundaryDigitProbeSpec(initial);
       if (sNineProbe) {
         const expectedCropSupport = new Set();
         const competingSupport = new Map();
+        let digitWorker = null;
         try {
+          if (typeof Tesseract.createWorker !== 'function') throw new Error('createWorker_unavailable');
+          digitWorker = await Tesseract.createWorker('eng');
+          if (!digitWorker || typeof digitWorker.setParameters !== 'function' || typeof digitWorker.recognize !== 'function') {
+            throw new Error('worker_parameter_api_unavailable');
+          }
+          await digitWorker.setParameters({
+            tessedit_pageseg_mode: '8',
+            tessedit_char_whitelist: '0123456789'
+          });
+
           for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
             const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
             const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-            const second = await Tesseract.recognize(crop, 'eng', {
-              tessedit_pageseg_mode: '8',
-              tessedit_char_whitelist: '0123456789'
-            });
+            const second = await digitWorker.recognize(crop);
             const digitTokens = digitOnlyTokensFromOcrResult(second);
             const exactExpected = digitTokens.includes(sNineProbe.expectedTail);
             const sameLengthCompetitors = digitTokens.filter(token =>
@@ -4151,7 +4161,7 @@
               .slice(0, 80);
             attempts.push({
               crop: cropIndex + 1,
-              mode: 'digit-tail-psm8',
+              mode: 'digit-tail-worker-psm8',
               scale,
               rawText,
               rawWords,
@@ -4159,9 +4169,20 @@
               digitTokens: digitTokens.slice()
             });
           }
-        } catch (_) {
-          // Fail closed: P46 bleibt wirksam; ohne belastbaren Zusatzbeweis wird
-          // die auffällige Flugnummer weiterhin nur als prüfpflichtig markiert.
+        } catch (error) {
+          attempts.push({
+            crop: 0,
+            mode: 'digit-tail-worker-error',
+            scale: 0,
+            rawText: cellText(error?.message || error).replace(/\s+/g, ' ').trim().slice(0, 80),
+            rawWords: '',
+            candidates: [],
+            digitTokens: []
+          });
+        } finally {
+          if (digitWorker && typeof digitWorker.terminate === 'function') {
+            try { await digitWorker.terminate(); } catch (_) {}
+          }
         }
 
         const competitorWithMultiCropSupport = [...competingSupport.values()]
@@ -4175,7 +4196,7 @@
           ride.flightRecoveredFromLongPrefixOcr = true;
           ride.flightRecoveredFromS9BoundaryProbe = true;
           ride.flightLongPrefixOcrEvidence = {
-            mode: 's9_digit_tail_consensus',
+            mode: 's9_digit_tail_worker_consensus',
             crops: expectedCropSupport.size,
             expectedTail: sNineProbe.expectedTail,
             initialVotes
@@ -4459,7 +4480,7 @@
         ? 'PRÜFUNG OFFEN'
         : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D8P47',
+      version: 'CORE-007D8A1F1D8P48',
       status,
       reason,
       rides: rideList.length,
