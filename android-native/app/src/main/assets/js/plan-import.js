@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P46 · 25.09.2026: SUSPICIOUS FLIGHT OCR FAIL-SAFE – auffällige 3+ Buchstaben-Präfixe dürfen nach der lokalen Flugzellen-Gegenprüfung nicht mehr still als unauffällige Flugnummer durchgehen. Ein sicher belegter 2-stelliger Alternativkandidat darf jetzt zusätzlich den generischen OCR-Grenzfall 'drittes Präfixzeichen als erste Ziffer' abbilden; ohne sichere Alternative bleibt der Wert sichtbar prüfpflichtig. Zeigt die Primär-Rohzelle nur einen leeren/Strich-Platzhalter und findet auch die lokale Gegenprüfung keinen Flugkandidaten, wird der OCR-Scheinwert verworfen statt importiert. Keine Flugnummern-, Airline- oder Routen-Hardcodes; P45-Zeitoptimierung, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P45 · 25.09.2026: BATCHED EARLY-TIME OCR PERFORMANCE FIX – ersetzt die bisherige serielle 00:00–05:59-Zellprüfung (bis zu 9 Tesseract-Läufe je Fahrt) durch drei gebündelte OCR-Durchläufe über die komplette DISPO-Zeitspalte. Die Ergebnisse werden weiterhin pro Quellzeile getrennt ausgewertet; eine abweichende Uhrzeit wird nur bei mindestens zwei exakt übereinstimmenden unabhängigen Batch-Läufen und eindeutigem Konsens übernommen.
 // Folgetag-Logik, Primär-OCR, Fahrer-/Orts-OCR, Flugprüfung, PLAN/DISPO/LIVE und Persistenz bleiben unverändert; keine Uhrzeit wird geraten oder hart codiert.
 // CORE-007D8A1F1D8P44 · 24.09.2026: NATIVE DUS ACTUAL ARRIVAL WITH DUAL-SOURCE STATUS GATE – Für DUS-Ankünfte darf die offizielle Düsseldorf-Airport-Actual-Zeit operativ als LIVE-Landungszeit verwendet werden, aber ausschließlich wenn Düsseldorf Airport + FlightStats denselben Flug/Tag/Airport/dieselbe Route und den Status landed unabhängig bestätigen. Die exakte Minute wird ausdrücklich NICHT als Zwei-Quellen-minutengenau bestätigt bezeichnet; Flightradar24 bleibt manuelle Zusatzkontrolle. Abflüge, PLAN, DISPO, FLIGHT-008 und manuelle Bestätigungen bleiben unverändert.
@@ -968,6 +969,22 @@
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
         issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
+      }
+      if (ride.flightLongPrefixOcrUnresolved && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          kind: 'flight_ocr',
+          row,
+          text: `Flugnummer ${ride.flightNumber} hat einen auffälligen langen Präfix und konnte lokal nicht sicher bestätigt/korrigiert werden – Original-Planliste prüfen`
+        });
+      }
+      if (ride.flightRejectedSuspiciousOcr && !ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          kind: 'flight_ocr',
+          row,
+          text: `OCR-Scheinwert ${normalizeFlightNumber(ride.flightRejectedSuspiciousOcrInitial)} wurde verworfen, weil die Flugzelle nur leer/Platzhalter zeigte – Original-Planliste prüfen`
+        });
       }
 
       // Ort darf nie stillschweigend ohne zugehoerige Flugnummer bestehen bleiben.
@@ -3914,21 +3931,59 @@
     return false;
   }
 
+  function longPrefixBoundaryGlyphShiftMatch(initialValue, candidateValue) {
+    const initial = normalizeFlightNumber(initialValue);
+    const candidate = normalizeFlightNumber(candidateValue);
+    // P46: Generischer OCR-Grenzfall zwischen Designator und Zahlenteil.
+    // Beispielstruktur (ohne konkrete Flugnummer): ABC123 -> AB9123, wenn nur
+    // das dritte Zeichen Buchstabe/Ziffer verwechselt wurde und ALLE übrigen
+    // Zeichen exakt identisch sind. Eine bloße Heuristik ohne OCR-Kandidat reicht
+    // ausdrücklich nicht; diese Funktion bewertet nur bereits lokal gelesene Kandidaten.
+    if (!/^[A-Z]{3}\d{1,4}[A-Z]?$/.test(initial)) return false;
+    if (!/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(candidate)) return false;
+    if (initial.length !== candidate.length || initial === candidate) return false;
+    if (initial.slice(0, 2) !== candidate.slice(0, 2)) return false;
+    if (!/[A-Z]/.test(initial[2]) || !/\d/.test(candidate[2])) return false;
+    return initial.slice(3) === candidate.slice(3);
+  }
+
   function safeLongPrefixFlightAlternative(initialValue, candidateValue) {
     const initial = normalizeFlightNumber(initialValue);
     const candidate = normalizeFlightNumber(candidateValue);
     const initialMatch = initial.match(/^([A-Z]{3,4})(\d{1,4}[A-Z]?)$/);
     const candidateMatch = candidate.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
     if (!initialMatch || !candidateMatch || candidate === initial) return false;
-    if (initialMatch[2] !== candidateMatch[2]) return false;
-    return singleDeletionPrefixMatch(initialMatch[1], candidateMatch[1]);
+    if (initialMatch[2] === candidateMatch[2] && singleDeletionPrefixMatch(initialMatch[1], candidateMatch[1])) return true;
+    return longPrefixBoundaryGlyphShiftMatch(initial, candidate);
   }
 
-  // CORE-007D8A1F1: Drei oder mehr Buchstaben vor dem Zahlenteil werden NICHT
+  function rawFlightCellHasOnlyPlaceholder(imageMeta, rowMeta, columnIndex) {
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[columnIndex + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return false;
+
+    const y0 = Number(rowMeta.y0 || 0);
+    const y1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, y1 - y0);
+    const words = rawWords.filter(word => {
+      const cx = (Number(word?.x0 || 0) + Number(word?.x1 || 0)) / 2;
+      const cy = (Number(word?.y0 || 0) + Number(word?.y1 || 0)) / 2;
+      return cx >= left && cx < right && cy >= y0 - rowHeight * 0.25 && cy <= y1 + rowHeight * 0.25;
+    }).map(word => cellText(word?.text).trim()).filter(Boolean);
+
+    // Ohne irgendein Primärwort fehlt der positive Platzhalter-Beweis; dann nur warnen.
+    if (!words.length) return false;
+    return words.every(value => /^[-–—~_.]+$/.test(value));
+  }
+
+  // CORE-007D8A1F1/P46: Drei oder mehr Buchstaben vor dem Zahlenteil werden NICHT
   // pauschal gekürzt. Nur die konkrete Flugzelle wird erneut gelesen. Eine alternative
-  // 2-stellige Lesart muss denselben Zahlenteil besitzen, durch genau eine Zeichenlöschung
-  // aus dem Primärpräfix entstehen, mindestens drei Stimmen UND Evidenz aus mindestens
-  // zwei verschiedenen Crop-Geometrien erhalten und stärker als die Primärlesart sein.
+  // 2-stellige Lesart braucht mindestens drei Stimmen, Evidenz aus mindestens zwei Crops
+  // und muss stärker als die Primärlesart sein. P46 erlaubt zusätzlich ausschließlich
+  // einen lokal tatsächlich gelesenen Designator/Zahl-Grenzfall; ohne sicheren Sieger
+  // bleibt die Zelle prüfpflichtig bzw. wird nur bei positivem Platzhalterbeweis verworfen.
   async function recoverSuspiciousLongFlightPrefixesTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const status = $('importStatus');
@@ -4003,26 +4058,53 @@
       }
 
       ride.flightLongPrefixOcrAttempts = attempts;
+      ride.flightLongPrefixOcrInitial = initial;
       const alternatives = [...votes.entries()]
         .filter(([candidate]) => candidate !== initial && safeLongPrefixFlightAlternative(initial, candidate))
         .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       const winner = alternatives[0] || null;
       const runner = alternatives[1] || null;
       const initialVotes = Number(votes.get(initial) || 0);
-      if (!winner) continue;
-      const supportingCrops = cropSupport.get(winner[0])?.size || 0;
-      if (winner[1] < 3 || supportingCrops < 2) continue;
-      if (winner[1] <= initialVotes) continue;
-      if (runner && winner[1] <= runner[1]) continue;
+      const supportingCrops = winner ? (cropSupport.get(winner[0])?.size || 0) : 0;
+      const winnerAccepted = Boolean(
+        winner
+        && winner[1] >= 3
+        && supportingCrops >= 2
+        && winner[1] > initialVotes
+        && (!runner || winner[1] > runner[1])
+      );
 
-      const recovered = winner[0];
-      ride.flightNumber = recovered;
-      if (routeType === 'arrival') ride.arrivalFlight = recovered;
-      if (routeType === 'departure') ride.departureFlight = recovered;
-      ride.flightDirection = routeType;
-      ride.flightLongPrefixOcrInitial = initial;
-      ride.flightRecoveredFromLongPrefixOcr = true;
-      ride.flightLongPrefixOcrEvidence = { votes: winner[1], crops: supportingCrops, initialVotes };
+      if (winnerAccepted) {
+        const recovered = winner[0];
+        ride.flightNumber = recovered;
+        if (routeType === 'arrival') ride.arrivalFlight = recovered;
+        if (routeType === 'departure') ride.departureFlight = recovered;
+        ride.flightDirection = routeType;
+        ride.flightRecoveredFromLongPrefixOcr = true;
+        ride.flightLongPrefixOcrEvidence = { votes: winner[1], crops: supportingCrops, initialVotes };
+        ride.flightLongPrefixOcrUnresolved = false;
+        continue;
+      }
+
+      // P46 Fail-safe: Ein auffälliger 3+ Buchstaben-Präfix darf nach erfolgloser
+      // Gegenprüfung nicht mehr still "OK" werden. Wenn die Primär-Rohzelle sogar
+      // ausschließlich leer/Platzhalter ist und die lokale OCR keinerlei plausiblen
+      // Flugkandidaten findet, ist der Primärwert ein OCR-Scheinwert und wird verworfen.
+      // Sonst bleibt der Wert erhalten, aber explizit prüfpflichtig – niemals geraten.
+      const anyLocalCandidate = attempts.some(attempt => Array.isArray(attempt?.candidates) && attempt.candidates.length > 0);
+      const placeholderOnly = rawFlightCellHasOnlyPlaceholder(imageMeta, rowMeta, colIndex);
+      if (!anyLocalCandidate && initialVotes === 0 && placeholderOnly) {
+        ride.flightNumber = '';
+        if (routeType === 'arrival') ride.arrivalFlight = '';
+        if (routeType === 'departure') ride.departureFlight = '';
+        ride.flightRejectedSuspiciousOcr = true;
+        ride.flightRejectedSuspiciousOcrInitial = initial;
+        ride.flightLongPrefixOcrUnresolved = false;
+      } else {
+        ride.flightLongPrefixOcrUnresolved = true;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      }
     }
 
     return out;
@@ -4167,7 +4249,7 @@
         });
       });
 
-      const flight = normalizeFlightNumber(ride?.flightNumber);
+      const flight = normalizeFlightNumber(ride?.flightNumber || ride?.flightRejectedSuspiciousOcrInitial);
       // Drei oder mehr Buchstaben vor dem Zahlenteil sind fuer ATMS auffaellig genug,
       // um die Rohzelle sichtbar zu machen. Es wird dadurch NICHT gewarnt/korrigiert.
       if (flight && diagnosticFlightPrefixLength(flight) >= 3) {
@@ -4220,13 +4302,17 @@
     });
     const flightPrefixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromLongPrefixOcr)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightLongPrefixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
+    const flightPrefixRejects = rideList.filter(ride => ride?.flightRejectedSuspiciousOcr)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightRejectedSuspiciousOcrInitial)}→∅`);
+    const unresolvedSuspiciousFlights = rideList.filter(ride => ride?.flightLongPrefixOcrUnresolved && ride?.flightNumber)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightNumber)}`);
 
     // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
     // irgendeinen OCR-Wert oder eine Importentscheidung zu verändern.
     const flightOcrTraces = rideList.filter(ride => {
-      const flight = normalizeFlightNumber(ride?.flightNumber);
-      return flight && diagnosticFlightPrefixLength(flight) >= 3 && Array.isArray(ride?.flightLongPrefixOcrAttempts);
+      const initial = normalizeFlightNumber(ride?.flightLongPrefixOcrInitial || ride?.flightNumber || ride?.flightRejectedSuspiciousOcrInitial);
+      return initial && diagnosticFlightPrefixLength(initial) >= 3 && Array.isArray(ride?.flightLongPrefixOcrAttempts);
     }).map(ride => {
       const initial = normalizeFlightNumber(ride?.flightLongPrefixOcrInitial || ride?.flightNumber);
       const attempts = Array.isArray(ride?.flightLongPrefixOcrAttempts) ? ride.flightLongPrefixOcrAttempts : [];
@@ -4266,10 +4352,15 @@
     else if (rideList.length && !matchedMatrixIndexes.length) reason = 'source_row_to_row_meta_mismatch';
     else if (rideList.length && routeDiagnostics === 0) reason = 'route_diagnostics_empty_despite_targets';
     else if (suspiciousFlights.length && flightDiagnostics === 0) reason = 'suspicious_flight_diagnostic_missing';
+    else if (unresolvedSuspiciousFlights.length) reason = 'suspicious_flight_unresolved';
 
-    const status = reason === 'ok' ? 'OK' : 'DIAGNOSE BLOCKIERT';
+    const status = reason === 'ok'
+      ? 'OK'
+      : reason === 'suspicious_flight_unresolved'
+        ? 'PRÜFUNG OFFEN'
+        : 'DIAGNOSE BLOCKIERT';
     return {
-      version: 'CORE-007D8A1F1D3',
+      version: 'CORE-007D8A1F1D8P46',
       status,
       reason,
       rides: rideList.length,
@@ -4283,8 +4374,10 @@
       routeDiagnostics,
       flightDiagnostics,
       suspiciousFlights,
+      unresolvedSuspiciousFlights,
       routeBoundaryRecoveries,
       flightPrefixRecoveries,
+      flightPrefixRejects,
       flightOcrTraces,
       diagnosticItems: diagList.length
     };
@@ -4307,8 +4400,10 @@
       `FlightDiag=${check.flightDiagnostics}`,
       `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
+      `FlightPrefixReject=[${list(check.flightPrefixRejects)}]`,
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
+      `Ungeklärt=[${list(check.unresolvedSuspiciousFlights)}]`,
       `Mapping={${check.mappingSnapshot || '∅'}}`
     ].join(' · ');
   }
