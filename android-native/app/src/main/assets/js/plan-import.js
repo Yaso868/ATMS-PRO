@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P56 · 25.09.2026: ROUTE DEU-COLUMN MODE-PARALLEL OCR PERFORMANCE FIX – P55/P54 hat route_deu_column_ocr mit rund 39 s als größten verbleibenden OCR-Einzelblock belegt. P56 startet innerhalb jeder unveränderten Routen-Spalte die beiden bereits vorhandenen deutschen OCR-Versuche parallel und wertet ihre Ergebnisse anschließend weiterhin in derselben Versuch-Reihenfolge aus.
+// Crop-Geometrie, PSM-Versuche, Zwei-Lauf-Konsens, Diakritik-Sicherheitsprüfung und alle Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Flugnummern, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P55 · 25.09.2026: LONG-PREFIX MODE-PARALLEL OCR PERFORMANCE FIX – P54 hat long_prefix_flight_ocr mit rund 98 s als größten Einzel-Flaschenhals belegt. P55 führt innerhalb jedes unveränderten Flugzellen-Crops die drei bereits vorhandenen OCR-Modi parallel auf ihren jeweils getrennten, bereits von P53 wiederverwendeten Workern aus. Crop-Geometrie, drei Modi, Stimmen, Crop-Support, P46-Fail-safe, P49-S↔9-Ziffernprobe und sämtliche Übernahmeschwellen bleiben unverändert.
 // Keine Flugnummern-/Airline-/Routen-Hardcodes; P54-Timing-Diagnose bleibt aktiv. Datum, PLAN/DISPO/LIVE, FLIGHT-008 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P54 · 25.09.2026: OCR STAGE TIMING DIAGNOSTIC – misst ausschließlich die Laufzeit der bestehenden Bild-/OCR-Analyseabschnitte (Primär-OCR und nachgelagerte Sicherheitsprüfungen) und hängt die Messwerte sichtbar an den bestehenden Diagnose-Selbstcheck an.
@@ -3343,9 +3345,20 @@
       if (status) status.textContent = `${descriptor.label}-Ortszellen werden lokal mit deutscher OCR gegengeprüft …`;
 
       try {
-        for (const attempt of attempts) {
+        // P56: Beide bestehenden OCR-Versuche derselben unveränderten Spalte werden
+        // gleichzeitig gestartet. Die Auswertung erfolgt danach weiterhin strikt in
+        // attempts-Reihenfolge; Crops, Kandidatenlogik und Konsens bleiben identisch.
+        const attemptJobs = attempts.map(attempt => {
           const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-          const second = await Tesseract.recognize(crop, 'deu', attempt.options);
+          return Tesseract.recognize(crop, 'deu', attempt.options)
+            .then(second => ({ ok: true, attempt, second }))
+            .catch(error => ({ ok: false, attempt, error }));
+        });
+
+        for (const job of attemptJobs) {
+          const result = await job;
+          if (!result?.ok) break;
+          const { attempt, second } = result;
           const rowCandidates = routeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
 
           rowsWithMeta.forEach(item => {
