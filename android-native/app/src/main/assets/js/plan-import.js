@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P67 · 27.09.2026: NATIVE FLIGHTSTATS SINGLE-FLIGHT ROUTE FALLBACK – wenn die bereits bevorzugte FlightStats-Airport-Board-Zweitquelle für einen offiziell bestätigten Flug vollständig unerreichbar ist (board_unreachable), prüft ATMS ausschließlich diesen noch offenen Flug über den bereits in P39/P39F1 real getesteten datumsspezifischen FlightStats-Einzelflug-Endpunkt. verified/high wird nur bei exakt passender Flugnummer-URL, exaktem airportEventDate auf der passenden Ankunfts-/Abflugseite, identischer originIata/destinationIata-Route, identischem Fahrt-Airport/Richtungskontext und zwei unterschiedlichen dokumentierten Quellenhosts gesetzt.
+// Der Einzel-Flug-Fallback läuft ausdrücklich NICHT bei erreichbarem Board mit Routenkonflikt/Mehrdeutigkeit und übernimmt keine Estimated-/Actual-/LIVE-Zeit. P66-Zürich-Normalisierung, OCR, PLAN, DISPO, LIVE, Persistenz und alle bestehenden FLIGHT-008-Sicherheitsgrenzen bleiben unverändert.
 // CORE-007D8A1F1D8P66 · 27.09.2026: NATIVE ZÜRICH OCR / VERIFIED-STATUS SYNC FIX – normalisiert die exakt beobachtete OCR-Variante „Ziirich“ vor dem bestehenden Quellenkonflikt-Vergleich auf „Zürich“. Dadurch kann eine bereits streng mit mindestens zwei datumsspezifischen Quellen als verified/high bestätigte ZRH-Route nicht mehr allein wegen dieses Schreibfehlers fälschlich als „Flugprüfung offen“ stehen bleiben.
 // Keine Lockerung von FLIGHT-008, Quellenanzahl, Flug-/Datums-/Airport-/Richtungs-/IATA-Prüfung oder verified/high-Schwellen; keine Änderung an OCR-Aufrufen, PLAN, DISPO, LIVE oder Persistenz.
 // CORE-007D8A1F1D8P63 · 26.09.2026: PRIMARY OCR INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb des unveränderten Tesseract.recognize()-Primär-OCR-Aufrufs. Über den bereits vorhandenen Logger werden erstmals die Zeit bis zum Beginn von ‘recognizing text’, die eigentliche Erkennungsphase sowie die ersten Status-/Fortschrittszeitpunkte sichtbar gemacht.
@@ -5515,6 +5517,32 @@
         + `<div style="margin-top:8px"><b>Flugabgleich</b><br><small>${rowText}</small></div>`
         + `</div>`;
     })() : '';
+    const secondSourceSingleFallbackDiag = (() => {
+      try { return window.ATMSNativeSecondSourceSingleFallbackLastDiagnostic || null; } catch (_) { return null; }
+    })();
+    const secondSourceSingleFallbackDiagHtml = secondSourceSingleFallbackDiag ? (() => {
+      const summaryText = cellText(secondSourceSingleFallbackDiag?.text) || 'Keine Zusammenfassung verfügbar';
+      const rows = Array.isArray(secondSourceSingleFallbackDiag?.rows) ? secondSourceSingleFallbackDiag.rows : [];
+      const promoted = Number(secondSourceSingleFallbackDiag?.promotedFlights || 0);
+      const promotionText = promoted > 0
+        ? `${promoted} Flug/Flüge über offizielle Airportquelle + FlightStats Einzel-Flug auf verified/high freigegeben.`
+        : 'Keine Einzel-Flug-Fallback-Freigabe erfolgt.';
+      const rowText = rows.length
+        ? rows.map(item => {
+            const flight = normalizeFlightForCurrentCheck(item?.flightNumber) || '?';
+            const stateLabel = item?.routeMatch === true ? 'Route stimmt überein' : (item?.reachable === true ? 'erreichbar, keine sichere Übereinstimmung' : 'nicht erreichbar');
+            const route = item?.originIata && item?.destinationIata ? ` · ${item.originIata}→${item.destinationIata}` : '';
+            const reason = cellText(item?.reason);
+            const eventDate = cellText(item?.eventDate);
+            return `${escapeHtml(flight)} · ${escapeHtml(stateLabel)}${escapeHtml(route)}${eventDate ? ` · Event ${escapeHtml(eventDate)}` : ''}${reason ? ` · ${escapeHtml(reason)}` : ''}`;
+          }).join('<br>')
+        : 'Kein Einzel-Flug-Fallback erforderlich.';
+      return `<div style="margin-top:10px;padding:10px;border:1px solid rgba(100,210,255,.38);border-radius:10px">`
+        + `<b>🔎 Einzel-Flug-Zweitquellen-Fallback · P67</b><br>`
+        + `<small>${escapeHtml(summaryText)}<br>${escapeHtml(promotionText)}<br>Nur bei board_unreachable; keine LIVE-Zeit-Übernahme.</small>`
+        + `<div style="margin-top:8px"><small>${rowText}</small></div>`
+        + `</div>`;
+    })() : '';
     const p39LiveDiag = (() => {
       try { return window.ATMSP39NativeLiveLastDiagnostic || null; } catch (_) { return null; }
     })();
@@ -5687,7 +5715,7 @@
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
     })() : '';
-    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag || p42CurrentSchemaTimeDiag || p43FlickArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${p42CurrentSchemaTimeDiagHtml}${p43FlickArrivalTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
+    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag || p42CurrentSchemaTimeDiag || p43FlickArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${secondSourceSingleFallbackDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${p42CurrentSchemaTimeDiagHtml}${p43FlickArrivalTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
 
     $('p39NativeLiveDiagBtn')?.addEventListener('click', runP39NativeLiveDiagnostic);
@@ -5760,6 +5788,7 @@
     try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceSingleFallbackLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
@@ -6016,6 +6045,7 @@
     try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeSecondSourceBoardLastDiagnostic = null; } catch (_) {}
+    try { window.ATMSNativeSecondSourceSingleFallbackLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeUnresolvedFlightRouteLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39NativeLiveLastDiagnostic = null; } catch (_) {}
     try { window.ATMSP39ArrivalTimeFieldDiagnostic = null; } catch (_) {}
@@ -8385,6 +8415,227 @@
     }
   }
 
+  // CORE-007D8A1F1D8P67: Strict single-flight fallback for route verification only.
+  // It is eligible only when the preferred airport-board source was fully unreachable for
+  // the concrete flight. Reachable board mismatches/ambiguities are never bypassed.
+  function safeFlightStatsSingleSourceUrl(value, item = null) {
+    try {
+      const url = new URL(String(value || ''));
+      if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'www.flightstats.com') return '';
+      const match = url.pathname.match(/^\/v2\/api-next\/flight-tracker\/([A-Z0-9]{2}|[A-Z]{3})\/(\d{1,4}[A-Z]?)\/(\d{4})\/(\d{1,2})\/(\d{1,2})$/i);
+      if (!match || url.search) return '';
+      if (item) {
+        const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+        const date = cellText(item?.airportEventDate || item?.date);
+        const dm = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!parts || !dm) return '';
+        if (decodeURIComponent(match[1]).toUpperCase() !== parts.carrier) return '';
+        if (decodeURIComponent(match[2]).toUpperCase() !== parts.number) return '';
+        if (match[3] !== dm[1] || Number(match[4]) !== Number(dm[2]) || Number(match[5]) !== Number(dm[3])) return '';
+      }
+      return url.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function p67FlightStatsIsoDate(value) {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') {
+      for (const key of ['dateLocal','date','local','value','scheduled','scheduledGate','iso']) {
+        if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+        const hit = p67FlightStatsIsoDate(value[key]);
+        if (hit) return hit;
+      }
+      return '';
+    }
+    const match = String(value).trim().match(/(?:^|\D)(20\d{2}-\d{2}-\d{2})(?:T|\s|$)/);
+    return match ? match[1] : '';
+  }
+
+  function p67FlightStatsEventDate(item, payload) {
+    const rawData = payload && typeof payload === 'object' ? payload.data : null;
+    const data = Array.isArray(rawData) ? (rawData[0] || null) : rawData;
+    if (!data || typeof data !== 'object') return '';
+    const direction = String(item?.direction || '').trim().toLowerCase();
+    const schedule = data?.schedule && typeof data.schedule === 'object' ? data.schedule : {};
+    const side = direction === 'arrival' ? data?.arrivalAirport : data?.departureAirport;
+    const candidates = direction === 'arrival'
+      ? [schedule.scheduledArrival, schedule.scheduledGateArrival, side?.date, side?.times?.scheduled, side?.times?.scheduledGate, data?.arrivalTime]
+      : [schedule.scheduledDeparture, schedule.scheduledGateDeparture, side?.date, side?.times?.scheduled, side?.times?.scheduledGate, data?.departureTime];
+    for (const candidate of candidates) {
+      const date = p67FlightStatsIsoDate(candidate);
+      if (date) return date;
+    }
+    return '';
+  }
+
+  function parseNativeSecondSourceSingleFallback(item, payload, sourceUrl) {
+    const rawData = payload && typeof payload === 'object' ? payload.data : null;
+    const data = Array.isArray(rawData) ? (rawData[0] || null) : rawData;
+    if (!data || typeof data !== 'object') {
+      return { reachable: true, routeMatch: false, reason: 'no_data', originIata: '', destinationIata: '', eventDate: '' };
+    }
+    const safeUrl = safeFlightStatsSingleSourceUrl(sourceUrl, item);
+    if (!safeUrl) return { reachable: true, routeMatch: false, reason: 'unsafe_source_url', originIata: '', destinationIata: '', eventDate: '' };
+    const parts = splitFlightNumberForSecondSource(item?.flightNumber);
+    const reportedCarrier = String(data?.resultHeader?.carrier?.fs || data?.ticketHeader?.carrier?.fs || '').trim().toUpperCase();
+    const reportedNumber = String(data?.resultHeader?.flightNumber || data?.ticketHeader?.flightNumber || '').trim().toUpperCase();
+    const originIata = nativeSecondSourceIata(data?.departureAirport) || String(data?.resultHeader?.departureAirportFS || data?.positional?.departureAirportCode || '').trim().toUpperCase();
+    const destinationIata = nativeSecondSourceIata(data?.arrivalAirport) || String(data?.resultHeader?.arrivalAirportFS || data?.positional?.arrivalAirportCode || '').trim().toUpperCase();
+    const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+    const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+    const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+    const direction = String(item?.direction || '').trim().toLowerCase();
+    const targetDate = cellText(item?.airportEventDate || item?.date);
+    const eventDate = p67FlightStatsEventDate(item, payload);
+    const identityMatch = Boolean(parts)
+      && (!reportedCarrier || reportedCarrier === parts.carrier)
+      && (!reportedNumber || reportedNumber === parts.number);
+    const airportAnchored = direction === 'arrival'
+      ? destinationIata === airportIata
+      : direction === 'departure' ? originIata === airportIata : false;
+    const routeMatch = Boolean(identityMatch && eventDate && eventDate === targetDate && airportAnchored
+      && /^[A-Z]{3}$/.test(originIata) && /^[A-Z]{3}$/.test(destinationIata)
+      && originIata === expectedOrigin && destinationIata === expectedDestination);
+    let reason = routeMatch ? 'route_match' : 'route_or_date_mismatch';
+    if (!originIata || !destinationIata) reason = 'route_missing';
+    else if (!identityMatch) reason = 'flight_identity_mismatch';
+    else if (!eventDate) reason = 'event_date_missing';
+    else if (eventDate !== targetDate) reason = 'event_date_mismatch';
+    else if (!airportAnchored) reason = 'airport_anchor_mismatch';
+    else if (originIata !== expectedOrigin || destinationIata !== expectedDestination) reason = 'route_mismatch';
+    return { reachable: true, routeMatch, reason, originIata, destinationIata, eventDate, sourceUrl: safeUrl };
+  }
+
+  async function runNativeSecondSourceSingleFallback(officialChecked = [], boardProbe = null, options = {}) {
+    const bridge = nativeSecondSourceBridgeHost();
+    const boardRows = Array.isArray(boardProbe?.rows) ? boardProbe.rows : [];
+    const eligible = (Array.isArray(officialChecked) ? officialChecked : []).filter(item => {
+      if (item?.officialAirportEvidence !== true) return false;
+      const alreadyVerified = String(item?.status || '').toLowerCase() === 'verified' && ['high','verified'].includes(String(item?.confidence || '').toLowerCase());
+      if (alreadyVerified) return false;
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+      const airportEventDate = cellText(item?.airportEventDate || item?.date);
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+      const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+      if (!flightNumber || !/^[A-Z]{3}$/.test(airportIata) || !/^\d{4}-\d{2}-\d{2}$/.test(airportEventDate)
+        || !['arrival','departure'].includes(direction) || !/^[A-Z]{3}$/.test(expectedOrigin) || !/^[A-Z]{3}$/.test(expectedDestination)) return false;
+      return boardRows.some(row => normalizeFlightForCurrentCheck(row?.flightNumber) === flightNumber
+        && cellText(row?.reason) === 'board_unreachable');
+    });
+    const rows = [];
+    if (!eligible.length) return { attempted: 0, reachable: 0, routeMatches: 0, rows, unavailable: false, text: '0 geprüft · kein board_unreachable-Fallback erforderlich' };
+    if (!bridge) {
+      for (const item of eligible) rows.push({ flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber), reachable: false, routeMatch: false, reason: 'native_bridge_unavailable' });
+      return { attempted: eligible.length, reachable: 0, routeMatches: 0, rows, unavailable: true, text: `${eligible.length} geprüft · Native Bridge nicht verfügbar` };
+    }
+    for (let i = 0; i < eligible.length; i++) {
+      const item = eligible[i];
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      options?.onProgress?.({ current: i + 1, total: eligible.length, flightNumber });
+      const sourceUrl = safeFlightStatsSingleSourceUrl(nativeSecondSourceProbeUrl(item), item);
+      if (!sourceUrl) {
+        rows.push({ flightNumber, reachable: false, routeMatch: false, reason: 'invalid_probe_url' });
+        continue;
+      }
+      try {
+        const raw = await nativeSecondSourceRequestJsonString(bridge, {
+          contractVersion: 'ATMS-FLIGHT-NATIVE-1',
+          purpose: 'flightstats_probe',
+          airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+          method: 'GET',
+          url: sourceUrl,
+          timeoutMs: 15000
+        });
+        if (!raw) {
+          let message = '';
+          try { message = cellText(bridge.lastError?.()); } catch (_) {}
+          rows.push({ flightNumber, reachable: false, routeMatch: false, reason: message ? `transport:${message.slice(0,180)}` : 'empty_response' });
+          continue;
+        }
+        let payload;
+        try { payload = JSON.parse(String(raw)); } catch (_) {
+          rows.push({ flightNumber, reachable: true, routeMatch: false, reason: 'invalid_json' });
+          continue;
+        }
+        rows.push({
+          flightNumber,
+          airportIata: String(item?.airportIata || '').trim().toUpperCase(),
+          airportEventDate: cellText(item?.airportEventDate || item?.date),
+          direction: String(item?.direction || '').trim().toLowerCase(),
+          ...parseNativeSecondSourceSingleFallback(item, payload, sourceUrl)
+        });
+      } catch (error) {
+        rows.push({ flightNumber, reachable: false, routeMatch: false, reason: `technical:${cellText(error?.message) || String(error || 'unknown')}`.slice(0,220) });
+      }
+    }
+    const reachable = rows.filter(item => item.reachable === true).length;
+    const routeMatches = rows.filter(item => item.routeMatch === true).length;
+    return { attempted: eligible.length, reachable, routeMatches, rows, unavailable: false, text: `${eligible.length} geprüft · ${reachable} erreichbar · ${routeMatches} strikte Routenübereinstimmung(en)` };
+  }
+
+  function promoteOfficialEvidenceWithNativeSingleFallback(officialChecked = [], fallbackProbe = null) {
+    const rows = Array.isArray(fallbackProbe?.rows) ? fallbackProbe.rows : [];
+    let promotedFlights = 0;
+    const promotions = [];
+    const checked = (Array.isArray(officialChecked) ? officialChecked : []).map(item => {
+      if (item?.officialAirportEvidence !== true) return item;
+      const alreadyVerified = String(item?.status || '').toLowerCase() === 'verified' && ['high','verified'].includes(String(item?.confidence || '').toLowerCase());
+      if (alreadyVerified) return item;
+      const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
+      const airportIata = String(item?.airportIata || '').trim().toUpperCase();
+      const airportEventDate = cellText(item?.airportEventDate || item?.date);
+      const direction = String(item?.direction || '').trim().toLowerCase();
+      const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
+      const expectedDestination = String(item?.officialDestinationIata || '').trim().toUpperCase();
+      const candidates = rows.filter(row => row?.routeMatch === true
+        && cellText(row?.reason) === 'route_match'
+        && normalizeFlightForCurrentCheck(row?.flightNumber) === flightNumber
+        && String(row?.airportIata || '').trim().toUpperCase() === airportIata
+        && cellText(row?.airportEventDate) === airportEventDate
+        && cellText(row?.eventDate) === airportEventDate
+        && String(row?.direction || '').trim().toLowerCase() === direction
+        && String(row?.originIata || '').trim().toUpperCase() === expectedOrigin
+        && String(row?.destinationIata || '').trim().toUpperCase() === expectedDestination
+        && Boolean(safeFlightStatsSingleSourceUrl(row?.sourceUrl, item)));
+      if (candidates.length !== 1) return item;
+      const singleSourceUrl = safeFlightStatsSingleSourceUrl(candidates[0]?.sourceUrl, item);
+      const sources = mergeDocumentedFlightSources([
+        ...(Array.isArray(item?.sources) ? item.sources : []),
+        { name: 'FlightStats Einzel-Flug', url: singleSourceUrl }
+      ]);
+      const sourceHosts = new Set(sources.map(source => {
+        try { return new URL(String(source?.url || '')).hostname.replace(/^www\./i, '').toLowerCase(); } catch (_) { return ''; }
+      }).filter(Boolean));
+      if (sources.length < 2 || sourceHosts.size < 2) return item;
+      promotedFlights++;
+      promotions.push({ flightNumber, airportEventDate, direction, airportIata, originIata: expectedOrigin, destinationIata: expectedDestination });
+      return {
+        ...item,
+        confidence: 'high',
+        status: 'verified',
+        conflict: false,
+        sources,
+        sourceCount: sources.length,
+        explicitSourceCount: sources.length,
+        sourceNote: `Zwei unabhängige datumsspezifische Quellen bestätigen ${flightNumber} am ${airportEventDate}: offizielle Airportquelle + FlightStats Einzel-Flug · ${expectedOrigin} -> ${expectedDestination}. Airport-Board war für diesen Flug nicht erreichbar; Einzel-Flug-Fallback ohne LIVE-Zeit-Übernahme.`,
+        modelUsed: 'Official Airport Provider + FlightStats Single Flight',
+        nativeSecondSourceEvidence: true,
+        nativeSecondSourceSingleFallbackEvidence: true,
+        nativeSecondSourceCheckedAt: new Date().toISOString()
+      };
+    });
+    return {
+      checked,
+      promotedFlights,
+      remainingSingleSourceFlights: checked.filter(item => item?.officialAirportEvidence === true && !(String(item?.status || '').toLowerCase() === 'verified' && ['high','verified'].includes(String(item?.confidence || '').toLowerCase()))).length,
+      promotions
+    };
+  }
+
   function promoteOfficialEvidenceWithNativeBoard(officialChecked = [], secondSourceProbe = null) {
     const rows = Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : [];
     let promotedFlights = 0;
@@ -8511,7 +8762,23 @@
             status.textContent = `Airport-Board-Zweitquelle ${current}/${total}${label ? ` · ${label}` : ''} …`;
           }
         });
-        const dualSource = promoteOfficialEvidenceWithNativeBoard(officialChecked, secondSourceProbe);
+        const boardDualSource = promoteOfficialEvidenceWithNativeBoard(officialChecked, secondSourceProbe);
+        const singleFallbackProbe = await runNativeSecondSourceSingleFallback(boardDualSource.checked, secondSourceProbe, {
+          onProgress: progress => {
+            if (!status) return;
+            const current = Number(progress?.current || 0), total = Number(progress?.total || 0), flight = cellText(progress?.flightNumber);
+            status.textContent = `Einzel-Flug-Zweitquellen-Fallback ${current}/${total}${flight ? ` · ${flight}` : ''} …`;
+          }
+        });
+        const singleFallbackDualSource = promoteOfficialEvidenceWithNativeSingleFallback(boardDualSource.checked, singleFallbackProbe);
+        const dualSource = {
+          checked: singleFallbackDualSource.checked,
+          promotedFlights: Number(boardDualSource.promotedFlights || 0) + Number(singleFallbackDualSource.promotedFlights || 0),
+          remainingSingleSourceFlights: Number(singleFallbackDualSource.remainingSingleSourceFlights || 0),
+          promotions: [...(Array.isArray(boardDualSource.promotions) ? boardDualSource.promotions : []), ...(Array.isArray(singleFallbackDualSource.promotions) ? singleFallbackDualSource.promotions : [])],
+          boardPromotedFlights: Number(boardDualSource.promotedFlights || 0),
+          singleFallbackPromotedFlights: Number(singleFallbackDualSource.promotedFlights || 0)
+        };
         const unresolvedFlightRouteProbe = await runNativeUnresolvedFlightRouteProbe(officialDiagnostic.rows, {
           onProgress: progress => {
             if (!status) return;
@@ -8535,9 +8802,17 @@
             patch: 'CORE-007D8A1F1D8P36F15',
             checkedAt: new Date().toISOString(),
             ...secondSourceProbe,
-            promotedFlights: dualSource.promotedFlights,
-            remainingSingleSourceFlights: dualSource.remainingSingleSourceFlights,
-            promotions: dualSource.promotions
+            promotedFlights: boardDualSource.promotedFlights,
+            remainingSingleSourceFlights: boardDualSource.remainingSingleSourceFlights,
+            promotions: boardDualSource.promotions
+          };
+          window.ATMSNativeSecondSourceSingleFallbackLastDiagnostic = {
+            patch: 'CORE-007D8A1F1D8P67',
+            checkedAt: new Date().toISOString(),
+            ...singleFallbackProbe,
+            promotedFlights: singleFallbackDualSource.promotedFlights,
+            remainingSingleSourceFlights: singleFallbackDualSource.remainingSingleSourceFlights,
+            promotions: singleFallbackDualSource.promotions
           };
         } catch (_) {}
         const appliedAt = new Date().toISOString();
@@ -8579,6 +8854,12 @@
           secondSourceProbeDiagnostic: cellText(secondSourceProbe?.text),
           secondSourceProbeRows: Array.isArray(secondSourceProbe?.rows) ? secondSourceProbe.rows : [],
           secondSourceProbeContexts: Array.isArray(secondSourceProbe?.contexts) ? secondSourceProbe.contexts : [],
+          secondSourceSingleFallbackAttempted: Number(singleFallbackProbe?.attempted || 0),
+          secondSourceSingleFallbackReachable: Number(singleFallbackProbe?.reachable || 0),
+          secondSourceSingleFallbackRouteMatches: Number(singleFallbackProbe?.routeMatches || 0),
+          secondSourceSingleFallbackPromoted: Number(singleFallbackDualSource?.promotedFlights || 0),
+          secondSourceSingleFallbackDiagnostic: cellText(singleFallbackProbe?.text),
+          secondSourceSingleFallbackRows: Array.isArray(singleFallbackProbe?.rows) ? singleFallbackProbe.rows : [],
           unresolvedFlightRouteProbeAttempted: Number(unresolvedFlightRouteProbe?.attempted || 0),
           unresolvedFlightRouteProbeReachable: Number(unresolvedFlightRouteProbe?.reachable || 0),
           unresolvedFlightRouteProbeConflicts: Number(unresolvedFlightRouteProbe?.conflicts || 0),
