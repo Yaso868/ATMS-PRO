@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P62 · 26.09.2026: LONG-PREFIX INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb der bereits bestehenden P55/P53/P49-Long-Prefix-Flugzellenprüfung. Gemessen werden Worker-Erzeugung, vollständige Flugzellen-Gegenprüfung, S↔9-Tail-Probe, Worker-Beendigung und die Laufzeit je tatsächlich geprüfter Zeile.
+// Reine Diagnose: keine OCR-Aufrufe werden hinzugefügt, entfernt, parallelisiert oder übersprungen; Crop-Geometrie, PSM-Modi, Worker-Wiederverwendung, Stimmen, Crop-Support, P46-Fail-safe, P49-S↔9-Ziffernprobe und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing bleibt aktiv. Keine Änderung an Datum, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P61 · 25.09.2026: ROUTE PICKUP/DESTINATION COLUMN-PARALLEL OCR PERFORMANCE FIX – P60/P54 hat route_deu_column_ocr mit rund 29 s als größten verbleibenden stabilen OCR-Block belegt. P61 startet die beiden bereits vorhandenen unabhängigen Routen-Spalten (Von/pickup und Nach/destination) parallel; innerhalb jeder Spalte bleibt die P56-Parallelisierung der unveränderten PSM4-/PSM6-Versuche bestehen.
 // Spalten-Crops, PSM-Modi, Skalierungen, Zwei-Lauf-Konsens, Gleichstandsblockade, Diakritik-Sicherheitsprüfung, Diagnose-Logs und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing-Diagnose bleibt aktiv. Keine Änderung an Preis-/Zeit-/Fahrer-/Flug-OCR, Datum, PLAN, DISPO, LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P60 · 25.09.2026: PRICE CELL CROP-PARALLEL OCR PERFORMANCE FIX – P59/P54 hat price_targeted_ocr in den jüngsten Realgerät-Läufen wiederholt mit rund 22 s als einen der größten stabilen OCR-Blöcke belegt. P60 startet die drei bereits vorhandenen unveränderten Preiszellen-Crops einer auffälligen Preiszelle parallel und wertet ihre Ergebnisse anschließend weiterhin strikt in derselben Crop-Reihenfolge aus.
@@ -4174,6 +4176,18 @@
     const status = $('importStatus');
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
 
+    // P62: Reine interne Laufzeitdiagnose. Keine OCR-Entscheidung und kein Await-Pfad
+    // wird dadurch verändert; die Zeitstempel lesen ausschließlich performance.now().
+    const p62StartedAt = performance.now();
+    const p62Rows = [];
+    let p62ModeWorkerCreateMs = 0;
+    let p62DigitWorkerCreateMs = 0;
+    let p62FullFlightMs = 0;
+    let p62DigitTailMs = 0;
+    let p62TerminateMs = 0;
+    let p62FullFlightCrops = 0;
+    let p62DigitTailCrops = 0;
+
     // P53: Tesseract.recognize(...) erzeugt intern für jeden Aufruf einen neuen Worker.
     // Die Long-Prefix-Gegenprüfung benötigt bei drei Crops × drei Modi dadurch sonst
     // bis zu neun Worker-Starts PRO auffälliger Flugzelle. Die Worker werden hier
@@ -4188,7 +4202,9 @@
       // mode.options wird absichtlich weiterhin als Worker-Option übergeben. Das bildet
       // den bisherigen Tesseract.recognize(crop,'eng',mode.options)-Pfad nach und ändert
       // deshalb NICHT nachträglich PSM/Whitelist-Verhalten oder OCR-Entscheidungsregeln.
+      const p62WorkerStartedAt = performance.now();
       const worker = await Tesseract.createWorker('eng', undefined, mode?.options || {});
+      p62ModeWorkerCreateMs += performance.now() - p62WorkerStartedAt;
       if (!worker || typeof worker.recognize !== 'function') throw new Error('long_prefix_worker_api_unavailable');
       longPrefixModeWorkers.set(key, worker);
       return worker;
@@ -4196,7 +4212,9 @@
     const getLongPrefixDigitWorker = async () => {
       if (longPrefixDigitWorker) return longPrefixDigitWorker;
       if (typeof Tesseract.createWorker !== 'function') throw new Error('createWorker_unavailable');
+      const p62WorkerStartedAt = performance.now();
       const worker = await Tesseract.createWorker('eng');
+      p62DigitWorkerCreateMs += performance.now() - p62WorkerStartedAt;
       if (!worker || typeof worker.setParameters !== 'function' || typeof worker.recognize !== 'function') {
         if (worker && typeof worker.terminate === 'function') { try { await worker.terminate(); } catch (_) {} }
         throw new Error('worker_parameter_api_unavailable');
@@ -4248,6 +4266,17 @@
       const votes = new Map();
       const cropSupport = new Map();
       const attempts = [];
+      const p62Row = {
+        sourceRow: Number(ride.sourceRow || 0),
+        initial,
+        fullFlightMs: 0,
+        digitTailMs: 0,
+        fullFlightCrops: regions.length,
+        digitTailCrops: 0
+      };
+      p62Rows.push(p62Row);
+      p62FullFlightCrops += regions.length;
+      const p62FullFlightStartedAt = performance.now();
       try {
         for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
           const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
@@ -4284,9 +4313,13 @@
           }
         }
       } catch (_) {
+        p62Row.fullFlightMs = performance.now() - p62FullFlightStartedAt;
+        p62FullFlightMs += p62Row.fullFlightMs;
         ride.flightLongPrefixOcrAttempts = attempts;
         continue;
       }
+      p62Row.fullFlightMs = performance.now() - p62FullFlightStartedAt;
+      p62FullFlightMs += p62Row.fullFlightMs;
 
       ride.flightLongPrefixOcrAttempts = attempts;
       ride.flightLongPrefixOcrInitial = initial;
@@ -4326,6 +4359,7 @@
       if (sNineProbe) {
         const expectedCropSupport = new Set();
         const competingSupport = new Map();
+        const p62DigitTailStartedAt = performance.now();
         try {
           const digitWorker = await getLongPrefixDigitWorker();
 
@@ -4335,6 +4369,8 @@
             : regions.map(([x0, y0, x1, y1, scale], index) => ({
                 x0, y0, x1, y1, scale, crop: index + 1, mode: 'digit-tail-worker-psm8-fallback'
               }));
+          p62Row.digitTailCrops = digitRegions.length;
+          p62DigitTailCrops += digitRegions.length;
 
           for (let cropIndex = 0; cropIndex < digitRegions.length; cropIndex++) {
             const region = digitRegions[cropIndex];
@@ -4377,6 +4413,9 @@
             candidates: [],
             digitTokens: []
           });
+        } finally {
+          p62Row.digitTailMs = performance.now() - p62DigitTailStartedAt;
+          p62DigitTailMs += p62Row.digitTailMs;
         }
 
         const competitorWithMultiCropSupport = [...competingSupport.values()]
@@ -4421,12 +4460,29 @@
       }
     }
     } finally {
+      const p62TerminateStartedAt = performance.now();
       const workers = [...longPrefixModeWorkers.values()];
       if (longPrefixDigitWorker) workers.push(longPrefixDigitWorker);
       for (const worker of workers) {
         if (!worker || typeof worker.terminate !== 'function') continue;
         try { await worker.terminate(); } catch (_) {}
       }
+      p62TerminateMs = performance.now() - p62TerminateStartedAt;
+      try {
+        window.ATMSP62LongPrefixTiming = {
+          version: 'CORE-007D8A1F1D8P62',
+          totalMs: performance.now() - p62StartedAt,
+          rows: p62Rows.map(item => ({ ...item })),
+          suspiciousRows: p62Rows.length,
+          fullFlightMs: p62FullFlightMs,
+          modeWorkerCreateMs: p62ModeWorkerCreateMs,
+          fullFlightCrops: p62FullFlightCrops,
+          digitTailMs: p62DigitTailMs,
+          digitWorkerCreateMs: p62DigitWorkerCreateMs,
+          digitTailCrops: p62DigitTailCrops,
+          terminateMs: p62TerminateMs
+        };
+      } catch (_) {}
     }
 
     return out;
@@ -4712,9 +4768,30 @@
     return `gesamt=${ms(perf.totalMs)}${stages ? `; ${stages}` : ''}`;
   }
 
+  function formatP62LongPrefixDiagnostic(value) {
+    if (!value) return '∅';
+    const ms = input => `${Math.round(Number(input || 0))}ms`;
+    const rows = (Array.isArray(value.rows) ? value.rows : []).map(item =>
+      `${Number(item?.sourceRow || 0)}:full=${ms(item?.fullFlightMs)}/tail=${ms(item?.digitTailMs)}`
+    ).join(',');
+    return [
+      `gesamt=${ms(value.totalMs)}`,
+      `zeilen=${Number(value.suspiciousRows || 0)}`,
+      `full=${ms(value.fullFlightMs)}`,
+      `modeSetup=${ms(value.modeWorkerCreateMs)}`,
+      `fullCrops=${Number(value.fullFlightCrops || 0)}`,
+      `tail=${ms(value.digitTailMs)}`,
+      `digitSetup=${ms(value.digitWorkerCreateMs)}`,
+      `tailCrops=${Number(value.digitTailCrops || 0)}`,
+      `terminate=${ms(value.terminateMs)}`,
+      `rows=[${rows || '∅'}]`
+    ].join('; ');
+  }
+
   function formatOcrDiagnosticSelfCheck(check) {
     if (!check) return 'Selbstcheck nicht ausgeführt';
     const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
+    const p62LongPrefix = (() => { try { return window.ATMSP62LongPrefixTiming || null; } catch (_) { return null; } })();
     return [
       `Status=${check.status}`,
       `Grund=${check.reason}`,
@@ -4734,7 +4811,8 @@
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `Ungeklärt=[${list(check.unresolvedSuspiciousFlights)}]`,
       `Mapping={${check.mappingSnapshot || '∅'}}`,
-      `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`
+      `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`,
+      `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`
     ].join(' · ');
   }
 
