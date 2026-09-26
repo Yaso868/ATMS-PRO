@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P65 · 26.09.2026: NATIVE ADDRESS BOOK DURABLE PERSISTENCE – Schützt das lokale Orte-&-Adressen-Adressbuch zusätzlich im bestehenden Safety-Snapshot und im unabhängigen IndexedDB-Durable-Shadow. Fehlende Adressbuchdaten werden wie die bereits geschützten Flug-/Ride-Daten automatisch wiederhergestellt; absichtlicher kompletter ATMS-Reset löscht den Schutz weiterhin. Keine Änderung an OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder bestehenden Adressinhalten.
 // CORE-007D8A1F1D8P52 · 25.09.2026: MANUAL-REVIEW VISIBILITY CONSISTENCY FIX – Offene Flugprüfungen werden auch bei Bündelfahrten ohne Flugort sowie im Cockpit sichtbar als „⚠ manuell prüfen“ dargestellt. Airport-Konflikte behalten ihre eigene Warnung. Keine Änderung an OCR, FLIGHT-008, PLAN, DISPO, LIVE, Bündelbildung oder Persistenz.
 // CORE-007D8A1F1D8P50 · 25.09.2026: MANUAL-CHECK WITHOUT FLIGHT NUMBER FIX – Explizite Konflikt-/Manual-Check-Sicherheitsflags werden vor dem Vorhandensein einer Flugnummer ausgewertet. Dadurch bleibt eine OCR-Fahrt ohne erkannte Flugnummer bei flightNeedsManualCheck=true sichtbar „⚠ manuell prüfen“. Keine Änderung an OCR, PLAN, DISPO, LIVE oder FLIGHT-008-Verifikationsregeln.
 // CORE-007D8A1F1D8P44 · 24.09.2026: NATIVE DUS ACTUAL ARRIVAL APPLY – Übernimmt bei DUS-Ankünften ausschließlich die vom P44-Gate freigegebene offizielle DUS-Actual-Zeit als operative LIVE-Landungszeit und berechnet daraus den bestehenden Arrival-Puffer. Voraussetzung bleibt die unabhängige FlightStats-Bestätigung von exakter Identität/Route + Status landed. Die Minute selbst gilt nicht als Zwei-Quellen-minutengenau bestätigt; FR24 bleibt manuelle Zusatzkontrolle. PLAN/DISPO und Abflug-Abholzeiten bleiben unverändert.
@@ -225,7 +226,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY]){
+  for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK]){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
@@ -289,7 +290,7 @@ function capturePersistenceSafety(reason='snapshot'){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+    const protectedCritical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK];
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -316,7 +317,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
-    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY].includes(key)){
+    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK].includes(key)){
       const storage={...(persistenceDurableShadow?.storage||{})};storage[key]=value;persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:'verified-write:'+reason,storage};persistenceDurableReady=true;
       writePersistenceDurableShadow(storage,'verified-write:'+reason).catch(e=>{persistenceDurableError=String(e?.message||e);persistAudit('durable_sync_failed',{reason:'verified-write:'+reason,message:persistenceDurableError})});
     }
@@ -330,7 +331,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK];
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
@@ -368,7 +369,7 @@ function persistenceDiagnosis(){
     selfTest:persistenceSelfTest(),
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
-    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
+    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK)},
     recentAudit:audit.slice(0,30)
   };
 }
