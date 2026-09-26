@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P66 · 27.09.2026: NATIVE ZÜRICH OCR / VERIFIED-STATUS SYNC FIX – normalisiert die exakt beobachtete OCR-Variante „Ziirich“ vor dem bestehenden Quellenkonflikt-Vergleich auf „Zürich“. Dadurch kann eine bereits streng mit mindestens zwei datumsspezifischen Quellen als verified/high bestätigte ZRH-Route nicht mehr allein wegen dieses Schreibfehlers fälschlich als „Flugprüfung offen“ stehen bleiben.
+// Keine Lockerung von FLIGHT-008, Quellenanzahl, Flug-/Datums-/Airport-/Richtungs-/IATA-Prüfung oder verified/high-Schwellen; keine Änderung an OCR-Aufrufen, PLAN, DISPO, LIVE oder Persistenz.
 // CORE-007D8A1F1D8P63 · 26.09.2026: PRIMARY OCR INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb des unveränderten Tesseract.recognize()-Primär-OCR-Aufrufs. Über den bereits vorhandenen Logger werden erstmals die Zeit bis zum Beginn von ‘recognizing text’, die eigentliche Erkennungsphase sowie die ersten Status-/Fortschrittszeitpunkte sichtbar gemacht.
 // Reine Diagnose: kein OCR-Aufruf, Worker, Sprachmodell, Crop, Parameter, Logger-UI-Verhalten oder Auswertungsweg wird hinzugefügt, entfernt, parallelisiert oder übersprungen. P54/P62 bleiben aktiv. Keine Änderung an OCR-Entscheidungen, Datum, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P62 · 26.09.2026: LONG-PREFIX INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb der bereits bestehenden P55/P53/P49-Long-Prefix-Flugzellenprüfung. Gemessen werden Worker-Erzeugung, vollständige Flugzellen-Gegenprüfung, S↔9-Tail-Probe, Worker-Beendigung und die Laufzeit je tatsächlich geprüfter Zeile.
@@ -468,7 +470,10 @@
     if (!text || /^[-–—~_.\s]+$/.test(text)) return '';
     if (flightLocationNote(text)) return '';
     if (/^(miinchen|mienchen|munchen|muenchen)$/i.test(text)) return 'München';
-    if (/^zirich$/i.test(text) || /^zurich$/i.test(text)) return 'Zürich';
+    // P66: Exakter OCR-Alias „Ziirich“ darf denselben bereits verifizierten Ort
+    // nicht als Quellenkonflikt blockieren. Keine unscharfe Ortskorrektur: nur
+    // Zirich/Ziirich/Zurich werden weiterhin eindeutig auf Zürich normalisiert.
+    if (/^zi{1,2}rich$/i.test(text) || /^zurich$/i.test(text)) return 'Zürich';
     if (/^milan$/i.test(text)) return 'Mailand';
     return text;
   }
