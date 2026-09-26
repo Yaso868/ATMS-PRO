@@ -1,5 +1,3 @@
-// CORE-007D8A1F1D8P64 · 26.09.2026: LONG-PREFIX CROSS-CROP MODE-LANE PIPELINE PERFORMANCE FIX – P62/P63 hat erneut belegt, dass die eigentliche OCR-recognize-Zeit der Long-Prefix-Prüfung stark schwankt, während Worker-Setup klein bleibt. P64 entfernt deshalb ausschließlich die unnötige Crop-für-Crop-Synchronisationsbarriere: jeder der drei bereits getrennten P53/P55-Modus-Worker verarbeitet seine unveränderten drei Crops seriell in einer eigenen Lane, während die drei Lanes parallel laufen.
-// Alle neun Full-Flight-OCR-Aufrufe, Crops, Modi, Worker, Sprache, Optionen, Ergebnis-/Stimmreihenfolge, P46-Fail-safe, P49-S↔9-Tail-Probe und sämtliche Übernahmeschwellen bleiben unverändert. Kein Worker wird gleichzeitig doppelt benutzt. P54/P62/P63-Diagnose bleibt aktiv; keine Änderung an Datum, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P63 · 26.09.2026: PRIMARY OCR INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb des unveränderten Tesseract.recognize()-Primär-OCR-Aufrufs. Über den bereits vorhandenen Logger werden erstmals die Zeit bis zum Beginn von ‘recognizing text’, die eigentliche Erkennungsphase sowie die ersten Status-/Fortschrittszeitpunkte sichtbar gemacht.
 // Reine Diagnose: kein OCR-Aufruf, Worker, Sprachmodell, Crop, Parameter, Logger-UI-Verhalten oder Auswertungsweg wird hinzugefügt, entfernt, parallelisiert oder übersprungen. P54/P62 bleiben aktiv. Keine Änderung an OCR-Entscheidungen, Datum, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P62 · 26.09.2026: LONG-PREFIX INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb der bereits bestehenden P55/P53/P49-Long-Prefix-Flugzellenprüfung. Gemessen werden Worker-Erzeugung, vollständige Flugzellen-Gegenprüfung, S↔9-Tail-Probe, Worker-Beendigung und die Laufzeit je tatsächlich geprüfter Zeile.
@@ -4282,37 +4280,21 @@
       p62FullFlightCrops += regions.length;
       const p62FullFlightStartedAt = performance.now();
       try {
-        // P64: Die drei P53/P55-Modus-Worker bleiben weiterhin strikt getrennt und
-        // jeder Worker verarbeitet weiterhin exakt dieselben drei Crops in derselben
-        // Reihenfolge. Entfernt wird nur die globale Barriere nach jedem einzelnen
-        // Crop: die drei Modus-Lanes dürfen unabhängig zum nächsten Crop weiterlaufen.
-        // Dadurch bleibt pro Worker immer nur EIN recognize()-Aufruf gleichzeitig aktiv.
-        const preparedRegions = regions.map(([x0, cy0, x1, cy1, scale], cropIndex) => ({
-          cropIndex,
-          scale,
-          crop: cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale)
-        }));
-        const modeLanes = await Promise.all(ocrModes.map(async mode => {
-          const modeWorker = await getLongPrefixModeWorker(mode);
-          const lane = [];
-          for (const prepared of preparedRegions) {
+        for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
+          const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          // P55: Die drei bestehenden Modi arbeiten auf drei getrennten P53-Workern.
+          // Deshalb können sie für denselben unveränderten Crop parallel laufen, ohne
+          // einen Worker gleichzeitig doppelt zu benutzen. Promise.all bewahrt die
+          // ocrModes-Reihenfolge, sodass Diagnose-/Stimmreihenfolge unverändert bleibt.
+          const modeResults = await Promise.all(ocrModes.map(async mode => {
+            const modeWorker = await getLongPrefixModeWorker(mode);
             const second = modeWorker
-              ? await modeWorker.recognize(prepared.crop)
-              : await Tesseract.recognize(prepared.crop, 'eng', mode.options);
-            lane.push({ second, scale: prepared.scale });
-          }
-          return lane;
-        }));
-
-        // Die Auswertung bleibt absichtlich crop-major und innerhalb jedes Crops in
-        // der bisherigen ocrModes-Reihenfolge. Damit bleiben Rohtrace, Map-Insertion,
-        // Stimmen und sämtliche Entscheidungsregeln bit-für-bit in derselben Logik.
-        for (let cropIndex = 0; cropIndex < preparedRegions.length; cropIndex++) {
-          for (let modeIndex = 0; modeIndex < ocrModes.length; modeIndex++) {
-            const mode = ocrModes[modeIndex];
-            const laneResult = modeLanes[modeIndex]?.[cropIndex];
-            const second = laneResult?.second;
-            const scale = laneResult?.scale ?? preparedRegions[cropIndex].scale;
+              ? await modeWorker.recognize(crop)
+              : await Tesseract.recognize(crop, 'eng', mode.options);
+            return { mode, second };
+          }));
+          for (const { mode, second } of modeResults) {
             const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
               .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
             // CORE-007D8A1F1D3: Rohtrace bleibt sichtbar. Zusätzlich nutzt diese gezielte
