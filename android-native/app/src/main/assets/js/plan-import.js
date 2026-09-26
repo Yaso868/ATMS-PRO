@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P63 · 26.09.2026: PRIMARY OCR INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb des unveränderten Tesseract.recognize()-Primär-OCR-Aufrufs. Über den bereits vorhandenen Logger werden erstmals die Zeit bis zum Beginn von ‘recognizing text’, die eigentliche Erkennungsphase sowie die ersten Status-/Fortschrittszeitpunkte sichtbar gemacht.
+// Reine Diagnose: kein OCR-Aufruf, Worker, Sprachmodell, Crop, Parameter, Logger-UI-Verhalten oder Auswertungsweg wird hinzugefügt, entfernt, parallelisiert oder übersprungen. P54/P62 bleiben aktiv. Keine Änderung an OCR-Entscheidungen, Datum, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P62 · 26.09.2026: LONG-PREFIX INTERNAL TIMING DIAGNOSTIC – ergänzt ausschließlich eine feinere Laufzeitmessung innerhalb der bereits bestehenden P55/P53/P49-Long-Prefix-Flugzellenprüfung. Gemessen werden Worker-Erzeugung, vollständige Flugzellen-Gegenprüfung, S↔9-Tail-Probe, Worker-Beendigung und die Laufzeit je tatsächlich geprüfter Zeile.
 // Reine Diagnose: keine OCR-Aufrufe werden hinzugefügt, entfernt, parallelisiert oder übersprungen; Crop-Geometrie, PSM-Modi, Worker-Wiederverwendung, Stimmen, Crop-Support, P46-Fail-safe, P49-S↔9-Ziffernprobe und sämtliche Übernahmeschwellen bleiben unverändert. P54-Timing bleibt aktiv. Keine Änderung an Datum, PLAN/DISPO/LIVE, FLIGHT-008 oder Persistenz.
 // CORE-007D8A1F1D8P61 · 25.09.2026: ROUTE PICKUP/DESTINATION COLUMN-PARALLEL OCR PERFORMANCE FIX – P60/P54 hat route_deu_column_ocr mit rund 29 s als größten verbleibenden stabilen OCR-Block belegt. P61 startet die beiden bereits vorhandenen unabhängigen Routen-Spalten (Von/pickup und Nach/destination) parallel; innerhalb jeder Spalte bleibt die P56-Parallelisierung der unveränderten PSM4-/PSM6-Versuche bestehen.
@@ -4788,10 +4790,30 @@
     ].join('; ');
   }
 
+  function formatP63PrimaryDiagnostic(value) {
+    if (!value) return '∅';
+    const ms = input => `${Math.round(Number(input || 0))}ms`;
+    const events = (Array.isArray(value.events) ? value.events : []).map(item =>
+      `${cellText(item?.status) || '?'}@${ms(item?.atMs)}`
+    ).join(',');
+    const progress = (Array.isArray(value.progress) ? value.progress : []).map(item =>
+      `${Math.round(Number(item?.percent || 0))}%@${ms(item?.atMs)}`
+    ).join(',');
+    return [
+      `gesamt=${ms(value.totalMs)}`,
+      `vorRecognize=${ms(value.preRecognizeMs)}`,
+      `recognize=${ms(value.recognizeActiveMs)}`,
+      `firstEvent=${ms(value.firstEventMs)}`,
+      `events=[${events || '∅'}]`,
+      `progress=[${progress || '∅'}]`
+    ].join('; ');
+  }
+
   function formatOcrDiagnosticSelfCheck(check) {
     if (!check) return 'Selbstcheck nicht ausgeführt';
     const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
     const p62LongPrefix = (() => { try { return window.ATMSP62LongPrefixTiming || null; } catch (_) { return null; } })();
+    const p63Primary = (() => { try { return window.ATMSP63PrimaryTiming || null; } catch (_) { return null; } })();
     return [
       `Status=${check.status}`,
       `Grund=${check.reason}`,
@@ -4812,7 +4834,8 @@
       `Ungeklärt=[${list(check.unresolvedSuspiciousFlights)}]`,
       `Mapping={${check.mappingSnapshot || '∅'}}`,
       `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`,
-      `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`
+      `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`,
+      `P63Primary=[${formatP63PrimaryDiagnostic(p63Primary)}]`
     ].join(' · ');
   }
 
@@ -4820,6 +4843,7 @@
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
     const perfStartedAt = performance.now();
     const perfStages = [];
+    try { window.ATMSP63PrimaryTiming = null; } catch (_) {}
     const measureAsync = async (name, task) => {
       const started = performance.now();
       const value = await task();
@@ -4835,16 +4859,53 @@
 
     const canvas = await measureAsync('preprocess_image', () => preprocessImage(file));
     const status = $('importStatus');
-    const result = await measureAsync('primary_ocr', () => Tesseract.recognize(canvas, 'eng', {
-      logger: message => {
-        if (!status) return;
-        if (message.status === 'recognizing text') {
-          status.textContent = `Bild wird gelesen … ${Math.round((message.progress || 0) * 100)} %`;
-        } else if (message.status) {
-          status.textContent = `Bildanalyse: ${message.status}`;
+    // P63: Der bereits vorhandene Tesseract-Logger wird ausschließlich mit Zeitstempeln
+    // beobachtet. Der recognize()-Aufruf selbst und sein UI-Verhalten bleiben identisch.
+    const p63PrimaryStartedAt = performance.now();
+    const p63Events = [];
+    const p63SeenStatuses = new Set();
+    const p63Progress = [];
+    const p63ProgressThresholds = [0, 25, 50, 75, 100];
+    const p63SeenProgress = new Set();
+    const p63Logger = message => {
+      const atMs = performance.now() - p63PrimaryStartedAt;
+      const statusName = cellText(message?.status) || '';
+      if (statusName && !p63SeenStatuses.has(statusName)) {
+        p63SeenStatuses.add(statusName);
+        p63Events.push({ status: statusName, atMs });
+      }
+      if (statusName === 'recognizing text') {
+        const percent = Math.max(0, Math.min(100, Math.round(Number(message?.progress || 0) * 100)));
+        for (const threshold of p63ProgressThresholds) {
+          if (percent >= threshold && !p63SeenProgress.has(threshold)) {
+            p63SeenProgress.add(threshold);
+            p63Progress.push({ percent: threshold, atMs });
+          }
         }
       }
+      if (!status) return;
+      if (message.status === 'recognizing text') {
+        status.textContent = `Bild wird gelesen … ${Math.round((message.progress || 0) * 100)} %`;
+      } else if (message.status) {
+        status.textContent = `Bildanalyse: ${message.status}`;
+      }
+    };
+    const result = await measureAsync('primary_ocr', () => Tesseract.recognize(canvas, 'eng', {
+      logger: p63Logger
     }));
+    const p63PrimaryTotalMs = performance.now() - p63PrimaryStartedAt;
+    const p63RecognizeEvent = p63Events.find(item => item.status === 'recognizing text') || null;
+    try {
+      window.ATMSP63PrimaryTiming = {
+        version: 'CORE-007D8A1F1D8P63',
+        totalMs: p63PrimaryTotalMs,
+        preRecognizeMs: p63RecognizeEvent ? p63RecognizeEvent.atMs : p63PrimaryTotalMs,
+        recognizeActiveMs: p63RecognizeEvent ? Math.max(0, p63PrimaryTotalMs - p63RecognizeEvent.atMs) : 0,
+        firstEventMs: p63Events.length ? p63Events[0].atMs : p63PrimaryTotalMs,
+        events: p63Events.map(item => ({ ...item })),
+        progress: p63Progress.map(item => ({ ...item }))
+      };
+    } catch (_) {}
     let words = result?.data?.words || [];
     // CORE-007D4: Nur wenn kein sicherer Header vorhanden ist und die erste OCR
     // trotz mehrerer Zeitanker zu wenige Preisanker liefert, wird der linke
