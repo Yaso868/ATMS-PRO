@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – Adds a dedicated Storage Access Framework bridge for user-confirmed CSV/XLSX file creation. Existing import picker, geolocation and flight bridge stay unchanged.
 // CORE-007D8A1F1D8P40F1 · 24.09.2026: NATIVE LIVE NON-BLOCKING BRIDGE – P40 network requests can run off the WebView/UI thread via an async Promise bridge; existing synchronous bridge remains for backward compatibility.
 package de.atmspro.app;
 
@@ -8,7 +9,9 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.Base64;
 import android.webkit.GeolocationPermissions;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -19,6 +22,10 @@ import android.webkit.WebViewClient;
 
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONObject;
+
+import java.io.OutputStream;
+
 /**
  * P31F13: aktuelle bestaetigte ATMS-Weboberflaeche als lokale Android-Assets.
  * Die DUS-Abfrage laeuft weiterhin ausschliesslich ueber die bestaetigte Native Flight Bridge.
@@ -28,12 +35,15 @@ import androidx.webkit.WebViewAssetLoader;
  */
 public final class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST_CODE = 3608;
+    private static final int FILE_EXPORT_REQUEST_CODE = 6901;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 3701;
     private static final String LOCAL_APP_URL =
             "https://appassets.androidplatform.net/assets/index.html";
 
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileChooser;
+    private byte[] pendingExportBytes;
+    private String pendingExportRequestId;
     private String pendingGeolocationOrigin;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
 
@@ -61,6 +71,9 @@ public final class MainActivity extends Activity {
         webView.addJavascriptInterface(
                 new AtmsNativeFlightBridge(webView),
                 "ATMSNativeFlightBridgeHost");
+        webView.addJavascriptInterface(
+                new AtmsNativeFileExportBridge(),
+                "ATMSNativeFileExportHost");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -128,6 +141,7 @@ public final class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 installAtmsBridge(view);
+                installAtmsFileExportBridge(view);
             }
         });
 
@@ -144,6 +158,10 @@ public final class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == FILE_EXPORT_REQUEST_CODE) {
+            handleNativeFileExportResult(resultCode, data);
+            return;
+        }
         if (requestCode != FILE_CHOOSER_REQUEST_CODE || pendingFileChooser == null) {
             return;
         }
@@ -174,6 +192,132 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private final class AtmsNativeFileExportBridge {
+        @JavascriptInterface
+        public void saveBase64File(
+                String base64Data,
+                String fileName,
+                String mimeType,
+                String requestId) {
+            final byte[] bytes;
+            try {
+                bytes = Base64.decode(base64Data == null ? "" : base64Data, Base64.DEFAULT);
+            } catch (IllegalArgumentException error) {
+                notifyNativeFileExportResult(
+                        requestId,
+                        false,
+                        "Exportdaten konnten nicht verarbeitet werden.");
+                return;
+            }
+            runOnUiThread(() -> beginNativeFileExport(bytes, fileName, mimeType, requestId));
+        }
+    }
+
+    private void beginNativeFileExport(
+            byte[] bytes,
+            String fileName,
+            String mimeType,
+            String requestId) {
+        String currentUrl = webView == null ? null : webView.getUrl();
+        if (currentUrl == null
+                || !currentUrl.startsWith("https://appassets.androidplatform.net/assets/")) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Dateiexport ist nur innerhalb der lokalen ATMS-App erlaubt.");
+            return;
+        }
+        if (pendingExportRequestId != null) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Ein Speicherdialog ist bereits geöffnet.");
+            return;
+        }
+
+        pendingExportBytes = bytes == null ? new byte[0] : bytes;
+        pendingExportRequestId = requestId;
+
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType(normalizeExportMimeType(mimeType));
+        intent.putExtra(Intent.EXTRA_TITLE, sanitizeExportFileName(fileName));
+        try {
+            startActivityForResult(intent, FILE_EXPORT_REQUEST_CODE);
+        } catch (ActivityNotFoundException | SecurityException error) {
+            finishNativeFileExport(false, "Android-Speicherdialog konnte nicht geöffnet werden.");
+        }
+    }
+
+    private void handleNativeFileExportResult(int resultCode, Intent data) {
+        if (pendingExportRequestId == null) {
+            return;
+        }
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            finishNativeFileExport(false, "Speichern abgebrochen.");
+            return;
+        }
+
+        Uri target = data.getData();
+        try (OutputStream output = getContentResolver().openOutputStream(target)) {
+            if (output == null) {
+                throw new IllegalStateException("Kein Schreibzugriff auf die gewählte Datei.");
+            }
+            output.write(pendingExportBytes == null ? new byte[0] : pendingExportBytes);
+            output.flush();
+            finishNativeFileExport(true, "");
+        } catch (Exception error) {
+            String detail = error.getMessage();
+            finishNativeFileExport(
+                    false,
+                    detail == null || detail.trim().isEmpty()
+                            ? "Datei konnte nicht gespeichert werden."
+                            : "Datei konnte nicht gespeichert werden: " + detail);
+        }
+    }
+
+    private void finishNativeFileExport(boolean success, String errorMessage) {
+        String requestId = pendingExportRequestId;
+        pendingExportRequestId = null;
+        pendingExportBytes = null;
+        notifyNativeFileExportResult(requestId, success, errorMessage);
+    }
+
+    private void notifyNativeFileExportResult(
+            String requestId,
+            boolean success,
+            String errorMessage) {
+        if (requestId == null || requestId.trim().isEmpty() || webView == null) {
+            return;
+        }
+        String safeId = JSONObject.quote(requestId);
+        String safeError = JSONObject.quote(errorMessage == null ? "" : errorMessage);
+        String script = "try{if(typeof window.__ATMSNativeFileExportResolve==='function'){"
+                + "window.__ATMSNativeFileExportResolve("
+                + safeId
+                + ","
+                + (success ? "true" : "false")
+                + ","
+                + safeError
+                + ");}}catch(e){}";
+        webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
+    private static String normalizeExportMimeType(String mimeType) {
+        String value = mimeType == null ? "" : mimeType.trim();
+        int separator = value.indexOf(';');
+        if (separator >= 0) {
+            value = value.substring(0, separator).trim();
+        }
+        return value.contains("/") ? value : "application/octet-stream";
+    }
+
+    private static String sanitizeExportFileName(String fileName) {
+        String value = fileName == null ? "" : fileName.trim();
+        value = value.replace('/', '_').replace('\\', '_');
+        return value.isEmpty() ? "ATMS_Export" : value;
+    }
+
     private static void installAtmsBridge(WebView view) {
         String script = "(function(){"
                 + "if(!window.ATMSNativeFlightBridgeHost)return;"
@@ -194,6 +338,27 @@ public final class MainActivity extends Activity {
                 + "};"
                 + "try{if(typeof window.ATMSNotifyNativeFlightBridgeReady==='function'){window.ATMSNotifyNativeFlightBridgeReady();}}catch(e){}"
                 + "try{window.dispatchEvent(new CustomEvent('atms-native-flight-bridge-ready'));}catch(e){}"
+                + "})();";
+        view.evaluateJavascript(script, null);
+    }
+
+    private static void installAtmsFileExportBridge(WebView view) {
+        String script = "(function(){"
+                + "if(!window.ATMSNativeFileExportHost)return;"
+                + "var seq=0;"
+                + "window.__ATMSNativeFileExportPending=window.__ATMSNativeFileExportPending||{};"
+                + "window.__ATMSNativeFileExportResolve=function(id,success,error){"
+                + "var p=window.__ATMSNativeFileExportPending[id];if(!p)return;delete window.__ATMSNativeFileExportPending[id];"
+                + "if(success){p.resolve(true);}else{p.reject(new Error(String(error||'Speichern fehlgeschlagen.')));}};"
+                + "window.ATMSNativeFileExport={"
+                + "contractVersion:'ATMS-FILE-EXPORT-NATIVE-1',"
+                + "saveBase64File:function(base64Data,fileName,mimeType){return new Promise(function(resolve,reject){"
+                + "seq+=1;var id='atms-file-'+Date.now().toString(36)+'-'+seq.toString(36);"
+                + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
+                + "try{window.ATMSNativeFileExportHost.saveBase64File(String(base64Data||''),String(fileName||''),String(mimeType||''),id);}"
+                + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});}"
+                + "};"
+                + "try{window.dispatchEvent(new CustomEvent('atms-native-file-export-ready'));}catch(e){}"
                 + "})();";
         view.evaluateJavascript(script, null);
     }
