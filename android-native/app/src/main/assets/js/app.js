@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P74 · 27.09.2026: MANUAL DRIVER COLOR PICKER – In „Alle Fahrten“ kann jedem Fahrer seine feste Farbe manuell zugewiesen werden. Bei Farbkollision wird die bisherige Farbe des gewählten Fahrers mit dem betroffenen Fahrer getauscht, damit die Fahrerfarben eindeutig bleiben. Auswahl wird im bestehenden DRIVER_COLOR_KEY dauerhaft lokal gespeichert. P73 Dedupe, P72 Multi-Stop, P71 Scrollposition/Farbpersistenz, P70 Google-Maps-Handoff sowie OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P73 · 27.09.2026: OVERLAPPING PLAN RE-IMPORT DEDUPE – Überlappende Planlisten desselben Plantags erkennen dieselbe reale Fahrt auch dann wieder, wenn sich nur die Listen-Flugzeit zwischen Planversionen geändert hat. Fahrer + DISPO-Zeit + Route + Flug bleiben stabiler Match; vorhandene Alt-Duplikate derselben stabilen Fahrt werden beim nächsten Import entfernt statt fälschlich als Bündelfahrt/Pax-Dopplung weitergeführt. Parallele Fahrten verschiedener Fahrer und echte Bündelfahrten mit unterschiedlichen Stopps bleiben getrennt. Bei geändertem Flugzeit-Tupel wird nur die stabile Ride-ID übernommen; strikte Flug-/LIVE-Verifikation wird nicht blind übertragen. P72 Multi-Stop-Routing, P71 Fahrerfarben/Scrollposition, P70 Google-Maps-Handoff, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben sonst unverändert.
 // CORE-007D8A1F1D8P72 · 27.09.2026: SAFE COMPOSITE MULTI-STOP ROUTING – Zusammengesetzte Planziele wie „NH Nord-Holiday Inn“ werden nur dann in mehrere Stopps zerlegt, wenn der Gesamtname nicht direkt auflösbar ist und jedes Teilziel exakt über das lokale Adressbuch bzw. einen bekannten Airport aufgelöst werden kann. Reihenfolge aus der Planliste bleibt unverändert; keine geratenen Adressen. P71 Fahrerfarben/Scrollposition, P70 Google-Maps-App-Handoff, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P71 · 27.09.2026: FIXED DRIVER COLORS + RIDE LIST RETURN POSITION – Jeder Fahrer erhält eine lokal persistente, eindeutige Farbe (solange freie Farben vorhanden sind), die in Fahrtenkarten und Fahrerauswahl stabil bleibt. Beim Wechsel Fahrten → Cockpit → Fahrten wird die zuvor sichtbare Fahrt an derselben Bildschirmposition wiederhergestellt. P70 Google-Maps-Routing, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Adressbuch und Nachrichten bleiben unverändert.
@@ -683,10 +684,30 @@ function driverColorOf(name){
   ensureDriverColorAssignments([{driver:name}]);
   return DRIVER_COLOR_PALETTE.find(x=>x.id===driverColorMap[key])||DRIVER_COLOR_UNASSIGNED;
 }
+function setDriverColorManual(name,colorId){
+  const key=driverColorKey(name);
+  const target=DRIVER_COLOR_PALETTE.find(x=>x.id===String(colorId||''));
+  if(!key||!target)return false;
+  ensureDriverColorAssignments(rides);
+  const previous=driverColorMap[key];
+  if(previous===target.id)return true;
+  // Gehört die Wunschfarbe bereits einem gespeicherten Fahrer, tauschen beide
+  // ihre Farben. So bleibt die manuelle Wunschfarbe dauerhaft eindeutig.
+  const currentKeys=[...new Set(rides.map(r=>driverColorKey(r?.driver)).filter(Boolean))];
+  const conflictKey=Object.keys(driverColorMap).find(k=>k!==key&&driverColorMap[k]===target.id);
+  driverColorMap[key]=target.id;
+  if(conflictKey){
+    const fallback=DRIVER_COLOR_PALETTE.find(c=>c.id===previous)
+      || DRIVER_COLOR_PALETTE.find(c=>!currentKeys.some(k=>k!==conflictKey&&driverColorMap[k]===c.id));
+    if(fallback)driverColorMap[conflictKey]=fallback.id;
+  }
+  saveDriverColorMap();
+  return true;
+}
 function ensureDriverColorCss(){
   if(document.getElementById('atmsDriverColorStyles'))return;
   const style=document.createElement('style');style.id='atmsDriverColorStyles';
-  style.textContent='.ride.atms-driver-color .stripe{background:var(--atms-driver-color)!important}.ride.atms-driver-color .price,.ride.atms-driver-color .time,.ride.atms-driver-color .driver-left,.ride.atms-driver-color .driver,.ride.atms-driver-color .time-single,.ride.atms-driver-color .time-stack .current-large{color:var(--atms-driver-color)!important}';
+  style.textContent='.ride.atms-driver-color .stripe{background:var(--atms-driver-color)!important}.ride.atms-driver-color .price,.ride.atms-driver-color .time,.ride.atms-driver-color .driver-left,.ride.atms-driver-color .driver,.ride.atms-driver-color .time-single,.ride.atms-driver-color .time-stack .current-large{color:var(--atms-driver-color)!important}.driver-choice-item{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:8px;align-items:stretch;margin-bottom:7px}.driver-choice-item>.choice{margin:0!important;width:100%}.driver-color-edit{border:1px solid rgba(255,255,255,.18);border-radius:11px;background:rgba(255,255,255,.07);color:#fff;font-size:18px;min-height:42px;padding:0;display:flex;align-items:center;justify-content:center}.driver-color-edit:active{transform:scale(.97)}.driver-color-palette{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;padding:9px;border-radius:11px;background:rgba(7,20,31,.96);border:1px solid rgba(255,255,255,.14)}.driver-color-palette.hidden{display:none}.driver-color-swatch{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.40);padding:0;box-shadow:0 0 0 1px rgba(0,0,0,.22)}.driver-color-swatch.selected{border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.22)}';
   document.head.appendChild(style);
 }
 function rideCardElementById(id){return [...document.querySelectorAll('#rideList [data-id]')].find(el=>String(el.dataset.id||'')===String(id||''))||null}
@@ -1038,9 +1059,42 @@ function openDrivers(){
   const dialog=$('driverDialog');
   if(!box||!dialog){showAppError(new Error('Fahrerauswahl ist nicht verfügbar.'));return}
   box.className=choices.length>10?'ultra':choices.length>6?'dense':'';
+  ensureDriverColorCss();
   ensureDriverColorAssignments(rides);
-  box.innerHTML=choices.map((c,i)=>`<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:${i===0?'#00a8ff':driverColorOf(c.value).hex}"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`).join('');
+  const paletteHtml=(driver)=>{
+    const current=driverColorOf(driver).id;
+    return DRIVER_COLOR_PALETTE.map(c=>`<button type="button" class="driver-color-swatch ${current===c.id?'selected':''}" data-driver-color-id="${esc(c.id)}" title="Farbe wählen" aria-label="Farbe ${esc(c.id)} wählen" style="background:${c.hex}"></button>`).join('');
+  };
+  box.innerHTML=choices.map((c,i)=>{
+    if(i===0)return `<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:#00a8ff"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`;
+    const color=driverColorOf(c.value);
+    return `<div class="driver-choice-item" data-driver-item-index="${i}">
+      <button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:${color.hex}"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>
+      <button type="button" class="driver-color-edit" data-driver-color-toggle="${i}" title="Farbe für ${esc(c.label)} auswählen" aria-label="Farbe für ${esc(c.label)} auswählen">🎨</button>
+      <div class="driver-color-palette hidden" data-driver-color-palette="${i}">${paletteHtml(c.value)}</div>
+    </div>`;
+  }).join('');
   box.onclick=e=>{
+    const swatch=e.target.closest('[data-driver-color-id]');
+    if(swatch){
+      const palette=swatch.closest('[data-driver-color-palette]');
+      const idx=Number(palette?.dataset.driverColorPalette);
+      const c=choices[idx];
+      if(c?.value&&setDriverColorManual(c.value,swatch.dataset.driverColorId)){
+        render();
+        openDrivers();
+      }
+      return;
+    }
+    const toggle=e.target.closest('[data-driver-color-toggle]');
+    if(toggle){
+      const idx=Number(toggle.dataset.driverColorToggle);
+      const palette=box.querySelector(`[data-driver-color-palette="${idx}"]`);
+      const willOpen=Boolean(palette?.classList.contains('hidden'));
+      box.querySelectorAll('[data-driver-color-palette]').forEach(p=>p.classList.add('hidden'));
+      if(palette&&willOpen)palette.classList.remove('hidden');
+      return;
+    }
     const b=e.target.closest('[data-choice-index]');if(!b)return;
     const c=choices[Number(b.dataset.choiceIndex)];if(!c)return;
     driverFilter=c.value;mode='all';dialog.classList.add('hidden');
