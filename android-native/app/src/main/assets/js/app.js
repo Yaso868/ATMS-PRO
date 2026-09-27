@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P72 · 27.09.2026: SAFE COMPOSITE MULTI-STOP ROUTING – Zusammengesetzte Planziele wie „NH Nord-Holiday Inn“ werden nur dann in mehrere Stopps zerlegt, wenn der Gesamtname nicht direkt auflösbar ist und jedes Teilziel exakt über das lokale Adressbuch bzw. einen bekannten Airport aufgelöst werden kann. Reihenfolge aus der Planliste bleibt unverändert; keine geratenen Adressen. P71 Fahrerfarben/Scrollposition, P70 Google-Maps-App-Handoff, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P71 · 27.09.2026: FIXED DRIVER COLORS + RIDE LIST RETURN POSITION – Jeder Fahrer erhält eine lokal persistente, eindeutige Farbe (solange freie Farben vorhanden sind), die in Fahrtenkarten und Fahrerauswahl stabil bleibt. Beim Wechsel Fahrten → Cockpit → Fahrten wird die zuvor sichtbare Fahrt an derselben Bildschirmposition wiederhergestellt. P70 Google-Maps-Routing, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Adressbuch und Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – CSV-/Excel-Adresslisten werden in der Android-App über einen nativen Speichern-unter-Dialog geschrieben und erst nach bestätigtem Schreibvorgang als exportiert gemeldet. Web-Fallback bleibt erhalten; Adressdaten, Import, Persistenz, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing und Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P65 · 26.09.2026: NATIVE ADDRESS BOOK DURABLE PERSISTENCE – Schützt das lokale Orte-&-Adressen-Adressbuch zusätzlich im bestehenden Safety-Snapshot und im unabhängigen IndexedDB-Durable-Shadow. Fehlende Adressbuchdaten werden wie die bereits geschützten Flug-/Ride-Daten automatisch wiederhergestellt; absichtlicher kompletter ATMS-Reset löscht den Schutz weiterhin. Keine Änderung an OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder bestehenden Adressinhalten.
@@ -3312,7 +3313,7 @@ function googleMapsRouteUrl(r,geo){
   return{url:`https://www.google.com/maps/dir/?${params.toString()}`,missing:[]};
 }
 function openGoogleMapsRoute(r,geo=null){const result=googleMapsRouteUrl(r,geo);if(result.missing?.length){showMissingRouteAddresses(result.missing);return false}if(!result.url){showToast('Keine vollständige Route verfügbar','warn');return false}window.open(result.url,'_blank');return true}
-function routeLabelForRide(r){const points=routePointsForRide(r);return points.length?points.join(' → '):'Keine Route verfügbar'}
+function routeLabelForRide(r){const route=routeAddressResolution(r),points=route.points.length?route.points:routePointsForRide(r);return points.length?points.join(' → '):'Keine Route verfügbar'}
 // CORE-006S – Lokales, editierbares Orts-/Adressbuch.
 function normalizeAddressAlias(value){return normKey(String(value||'').replace(/[.,;:]+$/g,''))}
 function normalizeAddressBookEntry(raw,index=0){
@@ -3397,7 +3398,31 @@ function ensureAddressBookPanel(){
   $('addressBookSaveBtn')?.addEventListener('click',saveAddressBookForm);$('addressBookCancelEditBtn')?.addEventListener('click',()=>{resetAddressBookForm();renderAddressBook()});installAddressBookSearchEvents();$('addressBookList')?.addEventListener('click',e=>{const btn=e.target.closest('[data-address-action]'),row=e.target.closest('[data-address-id]');if(!btn||!row)return;const id=row.dataset.addressId;if(btn.dataset.addressAction==='edit')editAddressBookEntry(id);else if(btn.dataset.addressAction==='delete')deleteAddressBookEntry(id)});$('addressBookImportBtn')?.addEventListener('click',()=>{const input=$('addressBookImportInput');if(input){input.value='';input.click()}});$('addressBookImportInput')?.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)importAddressBookFile(file)});$('addressBookExportXlsxBtn')?.addEventListener('click',exportAddressBookXlsx);$('addressBookExportCsvBtn')?.addEventListener('click',exportAddressBookCsv);renderAddressBook();return true
 }
 function navigationResolvedPoint(name){const raw=String(name||'').trim();if(!raw)return{ok:false,name:raw,value:''};const entry=findAddressBookEntry(raw);if(entry)return{ok:true,name:raw,value:entry.address,entry};const iata=flightAirportIataFromPlace(raw);if(iata==='DUS')return{ok:true,name:raw,value:'Düsseldorf Airport (DUS), Düsseldorf, Germany',airportIata:iata};if(iata==='CGN')return{ok:true,name:raw,value:'Cologne Bonn Airport (CGN), Köln, Germany',airportIata:iata};if(iata)return{ok:true,name:raw,value:`${iata} Airport`,airportIata:iata};return{ok:false,name:raw,value:''}}
-function routeAddressResolution(r){const points=routePointsForRide(r),resolved=points.map(navigationResolvedPoint),missing=resolved.filter(x=>!x.ok).map(x=>x.name);return{points,resolved,missing}}
+function compositeRoutePointResolution(name){
+  const raw=String(name||'').trim();if(!raw)return null;
+  // Ein exakter gespeicherter Kurzname/Alias hat immer Vorrang vor einer Zerlegung.
+  if(navigationResolvedPoint(raw).ok)return null;
+  const splitters=[/\s*→\s*/u,/\s*\+\s*/u,/\s+&\s+/u,/\s+und\s+/iu,/\s*\/\s*/u,/\s*-\s*/u];
+  for(const splitter of splitters){
+    const parts=raw.split(splitter).map(x=>String(x||'').trim()).filter(Boolean);
+    if(parts.length<2)continue;
+    const resolved=parts.map(navigationResolvedPoint);
+    if(resolved.every(x=>x.ok))return{parts,resolved};
+  }
+  return null;
+}
+function routeAddressResolution(r){
+  const sourcePoints=routePointsForRide(r),points=[],resolved=[],missing=[];
+  const push=(name,item)=>{const clean=String(name||'').trim();if(!clean)return;const last=points.at(-1);if(last&&normKey(last)===normKey(clean))return;points.push(clean);resolved.push(item)};
+  for(const point of sourcePoints){
+    const direct=navigationResolvedPoint(point);
+    if(direct.ok){push(point,direct);continue}
+    const composite=compositeRoutePointResolution(point);
+    if(composite){composite.parts.forEach((name,i)=>push(name,composite.resolved[i]));continue}
+    push(point,direct);missing.push(point);
+  }
+  return{points,resolved,missing,sourcePoints};
+}
 function showMissingRouteAddresses(missing){const unique=[...new Set((missing||[]).map(x=>String(x||'').trim()).filter(Boolean))];if(unique.length)alert(`Für folgende Orte fehlt eine eindeutige Adresse in „Orte & Adressen“:\n\n${unique.map(x=>'• '+x).join('\n')}\n\nBitte die Adresse einmal unter Einstellungen → Orte & Adressen hinterlegen. ATMS öffnet bewusst keine geratenen Hotel-Adressen.`)}
 function navigationSearchQuery(name){
   const resolved=navigationResolvedPoint(name);
