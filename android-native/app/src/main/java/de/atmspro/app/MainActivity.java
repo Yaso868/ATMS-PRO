@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P70 · 27.09.2026: NATIVE GOOGLE MAPS ROUTE HANDOFF – Opens ATMS Google Maps routes directly in the installed Google Maps app and intercepts intent:// route handoffs inside the WebView; HTTPS fallback remains if Google Maps is unavailable.
 // CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – Adds a dedicated Storage Access Framework bridge for user-confirmed CSV/XLSX file creation. Existing import picker, geolocation and flight bridge stay unchanged.
 // CORE-007D8A1F1D8P40F1 · 24.09.2026: NATIVE LIVE NON-BLOCKING BRIDGE – P40 network requests can run off the WebView/UI thread via an async Promise bridge; existing synchronous bridge remains for backward compatibility.
 package de.atmspro.app;
@@ -39,6 +40,7 @@ public final class MainActivity extends Activity {
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 3701;
     private static final String LOCAL_APP_URL =
             "https://appassets.androidplatform.net/assets/index.html";
+    private static final String GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps";
 
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileChooser;
@@ -126,6 +128,21 @@ public final class MainActivity extends Activity {
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request != null && request.getUrl() != null
+                        && openExternalNavigation(request.getUrl().toString())) {
+                    return true;
+                }
+                return false;
+            }
+
+            @Override
+            @SuppressWarnings("deprecation")
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return openExternalNavigation(url);
+            }
+
+            @Override
             public WebResourceResponse shouldInterceptRequest(
                     WebView view,
                     WebResourceRequest request) {
@@ -146,6 +163,83 @@ public final class MainActivity extends Activity {
         });
 
         webView.loadUrl(LOCAL_APP_URL);
+    }
+
+    private boolean openExternalNavigation(String rawUrl) {
+        String value = rawUrl == null ? "" : rawUrl.trim();
+        if (value.isEmpty()) {
+            return false;
+        }
+
+        try {
+            if (value.startsWith("intent://")) {
+                Intent parsedIntent = Intent.parseUri(value, Intent.URI_INTENT_SCHEME);
+                Uri routeUri = parsedIntent.getData();
+                if (isGoogleMapsRouteUri(routeUri)) {
+                    launchGoogleMapsRoute(routeUri);
+                    return true;
+                }
+                return false;
+            }
+
+            Uri uri = Uri.parse(value);
+            if (isGoogleMapsRouteUri(uri)) {
+                launchGoogleMapsRoute(uri);
+                return true;
+            }
+        } catch (Exception ignored) {
+            String fallbackUrl = value;
+            int marker = fallbackUrl.indexOf("#Intent;");
+            if (marker >= 0) {
+                fallbackUrl = fallbackUrl.substring(0, marker);
+            }
+            if (fallbackUrl.startsWith("intent://")) {
+                fallbackUrl = "https://" + fallbackUrl.substring("intent://".length());
+            }
+            try {
+                Uri fallbackUri = Uri.parse(fallbackUrl);
+                if (isGoogleMapsRouteUri(fallbackUri)) {
+                    launchGoogleMapsRoute(fallbackUri);
+                    return true;
+                }
+            } catch (Exception ignoredFallback) {
+                // Ungueltiger intent://-Wert wird unten nur aus der WebView abgefangen.
+            }
+            return value.startsWith("intent://www.google.com/maps/dir/")
+                    || value.startsWith("intent://maps.google.com/maps/dir/");
+        }
+        return false;
+    }
+
+    private static boolean isGoogleMapsRouteUri(Uri uri) {
+        if (uri == null) {
+            return false;
+        }
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        String path = uri.getPath();
+        boolean webScheme = "https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme);
+        boolean googleHost = "www.google.com".equalsIgnoreCase(host)
+                || "google.com".equalsIgnoreCase(host)
+                || "maps.google.com".equalsIgnoreCase(host);
+        return webScheme && googleHost && path != null && path.startsWith("/maps/dir");
+    }
+
+    private void launchGoogleMapsRoute(Uri routeUri) {
+        Intent mapsIntent = new Intent(Intent.ACTION_VIEW, routeUri);
+        mapsIntent.setPackage(GOOGLE_MAPS_PACKAGE);
+        try {
+            startActivity(mapsIntent);
+            return;
+        } catch (ActivityNotFoundException | SecurityException ignored) {
+            // Google Maps ist nicht verfuegbar: sicheren HTTPS-Fallback extern oeffnen.
+        }
+
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, routeUri));
+        } catch (ActivityNotFoundException | SecurityException ignored) {
+            // Kein externer Handler vorhanden. Die Navigation bleibt bewusst aus der WebView heraus.
+        }
     }
 
     private boolean hasLocationPermission() {
