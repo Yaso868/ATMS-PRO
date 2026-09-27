@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P75B · 27.09.2026: COMPACT GRID ROW RECOVERY – wenn ein Bild eine sicher erkannte ATMS-Kopfzeile besitzt, die Primär-OCR aber trotzdem keine einzige sichere Fahrtzeile liefert, darf ATMS einmalig die sichtbaren horizontalen Tabellenlinien aus dem unveränderten Farbbild als reine Zeilengeometrie verwenden und genau diese Zeilen lokal erneut lesen. Der Fallback akzeptiert nur eine vollständig wiederhergestellte, gleichmäßig gerasterte Tabelle; schon eine nicht plausibel gelesene physische Zeile blockiert die Übernahme, damit keine Fahrt still verloren geht. Keine feste Fahrtenanzahl, keine Flug-/Fahrer-Hardcodes und keine Änderung an FLIGHT-008, PLAN, DISPO oder LIVE.
 // CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – erkennt bei Bild-/WhatsApp-Planlisten die sichtbare Zeilen-/Fahrerfarbe direkt aus dem unveränderten Farbbild und hängt sie als reine Metadaten an die erkannte Fahrt. OCR-Zeilen, Texte, Grenzen, Flugprüfung und Importentscheidung bleiben unverändert.
 // Die Farberkennung arbeitet nur bei ausreichend gesättigter, dominanter Zeilenfarbe; unsichere/weiße/graue Zeilen bleiben ohne Farbmetadatum. P74 manuelle Fahrerfarben haben in app.js Vorrang.
 // CORE-007D8A1F1D8P67 · 27.09.2026: NATIVE FLIGHTSTATS SINGLE-FLIGHT ROUTE FALLBACK – wenn die bereits bevorzugte FlightStats-Airport-Board-Zweitquelle für einen offiziell bestätigten Flug vollständig unerreichbar ist (board_unreachable), prüft ATMS ausschließlich diesen noch offenen Flug über den bereits in P39/P39F1 real getesteten datumsspezifischen FlightStats-Einzelflug-Endpunkt. verified/high wird nur bei exakt passender Flugnummer-URL, exaktem airportEventDate auf der passenden Ankunfts-/Abflugseite, identischer originIata/destinationIata-Route, identischem Fahrt-Airport/Richtungskontext und zwei unterschiedlichen dokumentierten Quellenhosts gesetzt.
@@ -2471,6 +2472,16 @@
       semantic,
       rowMetaByMatrixIndex,
       width,
+      headerLineMeta: hasSafeHeader ? (() => {
+        const headerWords = Array.isArray(header?.line?.words) ? header.line.words : [];
+        const y0 = headerWords.map(word => Number(word?.y0)).filter(Number.isFinite);
+        const y1 = headerWords.map(word => Number(word?.y1)).filter(Number.isFinite);
+        return {
+          y0: y0.length ? Math.min(...y0) : Number(header?.line?.cy || 0),
+          y1: y1.length ? Math.max(...y1) : Number(header?.line?.cy || 0),
+          cy: Number(header?.line?.cy || 0)
+        };
+      })() : null,
       standardAtms: completed.standard,
       schemaColumns: anchors.length,
       forcedNoPriceMirror: Boolean(forceNoPriceMirror),
@@ -2817,6 +2828,193 @@
       }
     }
 
+    out._atmsImageMeta = imageMeta;
+    return out;
+  }
+
+
+  // P75B: Fail-closed fallback fuer kompakte, aber vollstaendige Tabellenbilder.
+  // Die horizontalen Rasterlinien liefern NUR die Y-Geometrie. Inhalte werden weiterhin
+  // ausschließlich per OCR gelesen und gegen Zeit/Preis/Route/Identität validiert.
+  function detectCompactGridRowBands(sourceCanvas, imageMeta) {
+    const fail = reason => ({ accepted: false, reason, bands: [], ruleCenters: [] });
+    if (!sourceCanvas || !imageMeta?.standardAtms || imageMeta?.headerlessAtms) return fail('not_safe_header_table');
+    const header = imageMeta.headerLineMeta || null;
+    const headerCy = Number(header?.cy);
+    const headerY1 = Number(header?.y1);
+    if (!Number.isFinite(headerCy) || !Number.isFinite(headerY1)) return fail('header_geometry_missing');
+
+    const boundaries = Array.isArray(imageMeta.boundaries) ? imageMeta.boundaries : [];
+    if (boundaries.length < 8) return fail('column_geometry_missing');
+    const leftBoundary = Number(boundaries[0]);
+    const rightBoundary = Number(boundaries[boundaries.length - 1]);
+    if (![leftBoundary, rightBoundary].every(Number.isFinite) || rightBoundary - leftBoundary < sourceCanvas.width * 0.70) {
+      return fail('table_width_not_safe');
+    }
+
+    const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    let image;
+    try { image = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height); } catch (_) { return fail('pixel_read_failed'); }
+    const data = image.data;
+    const x0 = Math.max(0, Math.floor(leftBoundary + (rightBoundary - leftBoundary) * 0.01));
+    const x1 = Math.min(sourceCanvas.width, Math.ceil(rightBoundary - (rightBoundary - leftBoundary) * 0.01));
+    const xStep = Math.max(1, Math.floor((x1 - x0) / 900));
+    const candidates = [];
+
+    for (let y = Math.max(0, Math.floor(headerCy)); y < sourceCanvas.height; y++) {
+      let neutralDark = 0, sampled = 0;
+      for (let x = x0; x < x1; x += xStep) {
+        const idx = (y * sourceCanvas.width + x) * 4;
+        const r = Number(data[idx] || 0), g = Number(data[idx + 1] || 0), b = Number(data[idx + 2] || 0);
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const chroma = max - min;
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        sampled++;
+        // Tabellenraster ist neutral grau/dunkel. Farbige Fahrer-/Datenzellen duerfen
+        // die Linienerkennung nicht selbst ausloesen.
+        if (luminance <= 208 && chroma <= 52) neutralDark++;
+      }
+      const coverage = sampled ? neutralDark / sampled : 0;
+      if (coverage >= 0.52) candidates.push({ y, coverage });
+    }
+    if (!candidates.length) return fail('no_horizontal_rules');
+
+    const clusters = [];
+    candidates.forEach(item => {
+      const last = clusters[clusters.length - 1];
+      if (!last || item.y > last[last.length - 1].y + 2) clusters.push([item]);
+      else last.push(item);
+    });
+    const ruleCenters = clusters.map(cluster => {
+      const best = cluster.slice().sort((a,b) => b.coverage - a.coverage || a.y - b.y)[0];
+      return Number(best?.y);
+    }).filter(Number.isFinite).sort((a,b)=>a-b);
+
+    // Erste echte horizontale Linie UNTER der erkannten Kopfzeile ist deren Unterkante.
+    const belowHeader = ruleCenters.filter(y => y >= headerY1 + 3);
+    if (belowHeader.length < 3) return { ...fail('too_few_rules_below_header'), ruleCenters };
+    const headerBottom = belowHeader[0];
+    const rowRules = belowHeader.slice(1);
+    const gaps = [];
+    let previous = headerBottom;
+    rowRules.forEach(rule => { gaps.push(rule - previous); previous = rule; });
+    const medianGap = medianNumber(gaps);
+    if (!Number.isFinite(medianGap) || medianGap < 18 || medianGap > sourceCanvas.height * 0.25) {
+      return { ...fail('implausible_row_height'), ruleCenters };
+    }
+    if (rowRules.length < 2 || rowRules.length > 60) return { ...fail('implausible_row_count'), ruleCenters };
+    // Jede erkannte physische Zeile muss zum selben Tabellenraster passen. So werden
+    // zufaellige Text-/Bildkanten nicht als Fahrtzeilen akzeptiert.
+    if (gaps.some(gap => gap < medianGap * 0.68 || gap > medianGap * 1.38)) {
+      return { ...fail('unstable_row_grid'), ruleCenters };
+    }
+
+    const bands = [];
+    previous = headerBottom;
+    for (const rule of rowRules) {
+      const gap = rule - previous;
+      const inset = Math.max(2, Math.min(8, gap * 0.07));
+      const y0 = previous + inset;
+      const y1 = rule - inset;
+      if (!(y1 > y0 + 8)) return { ...fail('row_band_too_small'), ruleCenters };
+      bands.push({ y0, y1, cy: (y0 + y1) / 2, syntheticGap: true, compactGridBand: true });
+      previous = rule;
+    }
+    return { accepted: true, reason: 'ok', bands, ruleCenters, headerBottom, medianGap };
+  }
+
+  function compactRecoveredRowIsSafe(row, semantic) {
+    if (!Array.isArray(row) || !semantic) return false;
+    const nonEmpty = row.filter(value => Boolean(cellText(value))).length;
+    const rideTimeIndex = semantic.rideTime;
+    const rawTime = rideTimeIndex === undefined ? '' : cellText(row[rideTimeIndex]);
+    const normalizedTime = rawTime.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const rideTimeValid = looksLikeTime(normalizedTime) || /^\d{3,4}$/.test(normalizedTime.replace(/\D/g,''));
+    const hasRoute = semantic.pickup !== undefined && semantic.destination !== undefined &&
+      Boolean(cellText(row[semantic.pickup])) && Boolean(cellText(row[semantic.destination]));
+    const hasIdentity = [semantic.customer, semantic.company, semantic.driver]
+      .filter(index => index !== undefined)
+      .some(index => Boolean(cellText(row[index])));
+    const priceOk = semantic.price === undefined || (Boolean(cellText(row[semantic.price])) && parseNumber(row[semantic.price]) > 0);
+    return rideTimeValid && hasRoute && hasIdentity && priceOk && nonEmpty >= 5;
+  }
+
+  async function recoverCompactGridRowsTargeted(file, matrix, imageCanvas) {
+    if (!Array.isArray(matrix) || matrix.length > 1 || !imageCanvas || !window.Tesseract) return matrix;
+    const imageMeta = matrix._atmsImageMeta;
+    if (!imageMeta?.standardAtms || imageMeta?.headerlessAtms) return matrix;
+
+    let sourceCanvas;
+    try { sourceCanvas = await buildSourceColorCanvas(file, imageCanvas.width, imageCanvas.height); }
+    catch (_) {
+      imageMeta.compactGridRecovery = { accepted: false, reason: 'source_color_canvas_failed' };
+      return matrix;
+    }
+    const grid = detectCompactGridRowBands(sourceCanvas, imageMeta);
+    imageMeta.compactGridRecovery = {
+      accepted: false,
+      reason: grid.reason,
+      detectedBands: Array.isArray(grid.bands) ? grid.bands.length : 0,
+      ruleCenters: Array.isArray(grid.ruleCenters) ? grid.ruleCenters.slice() : [],
+      medianGap: Number(grid.medianGap || 0)
+    };
+    if (!grid.accepted || !grid.bands.length) return matrix;
+
+    const columnCount = Math.max(0, (imageMeta.boundaries || []).length - 1);
+    if (columnCount < 8) {
+      imageMeta.compactGridRecovery.reason = 'column_count_not_safe';
+      return matrix;
+    }
+    const seeded = [Array.isArray(matrix[0]) ? matrix[0].slice() : matrix[0]];
+    const rowMetaByMatrixIndex = {};
+    grid.bands.forEach(band => {
+      seeded.push(Array(columnCount).fill(''));
+      rowMetaByMatrixIndex[seeded.length - 1] = { ...band };
+    });
+    imageMeta.rowMetaByMatrixIndex = rowMetaByMatrixIndex;
+    seeded._atmsImageMeta = imageMeta;
+
+    const recovered = await recoverSyntheticImageRowsTargeted(seeded, imageCanvas, imageMeta);
+    const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+    const recoveredRows = [];
+    const recoveredMeta = {};
+    let failedBand = 0;
+    for (let matrixIndex = 1; matrixIndex < recovered.length; matrixIndex++) {
+      const row = recovered[matrixIndex];
+      if (!compactRecoveredRowIsSafe(row, semantic)) {
+        failedBand = matrixIndex;
+        break;
+      }
+      recoveredRows.push(Array.isArray(row) ? row.slice() : row);
+    }
+    // Fail closed: keine teilweise Liste. Wenn sieben physische Zeilen erkannt wurden,
+    // muessen auch exakt sieben plausible Fahrtenzeilen wiederhergestellt sein.
+    if (failedBand || recoveredRows.length !== grid.bands.length) {
+      imageMeta.compactGridRecovery = {
+        ...imageMeta.compactGridRecovery,
+        accepted: false,
+        reason: failedBand ? 'row_ocr_not_safe' : 'row_count_mismatch',
+        recoveredRows: recoveredRows.length,
+        failedBand
+      };
+      imageMeta.rowMetaByMatrixIndex = {};
+      matrix._atmsImageMeta = imageMeta;
+      return matrix;
+    }
+
+    const out = [Array.isArray(matrix[0]) ? matrix[0].slice() : matrix[0]];
+    recoveredRows.forEach((row, index) => {
+      out.push(row);
+      recoveredMeta[index + 1] = { ...grid.bands[index], syntheticGap: false, syntheticGapRecovered: true, compactGridRecovered: true };
+    });
+    imageMeta.rowMetaByMatrixIndex = recoveredMeta;
+    imageMeta.compactGridRecovery = {
+      ...imageMeta.compactGridRecovery,
+      accepted: true,
+      reason: 'ok',
+      recoveredRows: recoveredRows.length,
+      failedBand: 0
+    };
     out._atmsImageMeta = imageMeta;
     return out;
   }
@@ -5027,7 +5225,16 @@
     // entscheiden anschließend weiterhin über Annahme oder Abbruch.
     words = await measureAsync('headerless_price_anchor_check', () => recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width));
     let matrix = measureSync('image_words_to_matrix', () => imageWordsToMatrix(words, canvas.width));
-    if (matrix.length <= 1) throw new Error('Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.');
+    // P75B: Nur der belegte Sonderfall "sichere Kopfzeile, aber 0 Fahrtzeilen" darf
+    // den kompakten Raster-Fallback starten. Der normale erfolgreiche OCR-Pfad bleibt unverändert.
+    if (matrix.length <= 1 && matrix._atmsImageMeta?.standardAtms && !matrix._atmsImageMeta?.headerlessAtms) {
+      matrix = await measureAsync('compact_grid_row_recovery', () => recoverCompactGridRowsTargeted(file, matrix, canvas));
+    }
+    if (matrix.length <= 1) {
+      const compact = matrix?._atmsImageMeta?.compactGridRecovery;
+      const suffix = compact ? ` CORE-007D8A1F1D8P75B Diagnose: Grund=${cellText(compact.reason) || 'unknown'} · Rasterzeilen=${Number(compact.detectedBands || 0)} · Wiederhergestellt=${Number(compact.recoveredRows || 0)}.` : '';
+      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${suffix}`);
+    }
     if (matrix._atmsImageMeta) {
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
       if (matrix._atmsImageMeta?.headerlessAtms) {
