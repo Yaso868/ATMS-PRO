@@ -1205,23 +1205,28 @@
     return `#${c(r)}${c(g)}${c(b)}`;
   }
 
-  function samplePlanRowColor(sourceCanvas, rowMeta) {
+  function samplePlanColorRegion(sourceCanvas, rowMeta, x0, x1) {
     if (!sourceCanvas || !rowMeta) return null;
     const y0 = Math.max(0, Math.floor(Number(rowMeta.y0) || 0));
     const y1 = Math.min(sourceCanvas.height, Math.ceil(Number(rowMeta.y1) || 0));
-    if (!(y1 > y0 + 2)) return null;
+    const left = Math.max(0, Math.floor(Number(x0) || 0));
+    const right = Math.min(sourceCanvas.width, Math.ceil(Number(x1) || 0));
+    if (!(y1 > y0 + 2) || !(right > left + 3)) return null;
     const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-    const marginY = Math.max(1, Math.floor((y1 - y0) * 0.18));
+    // P75A: Die Fahrerfarbe sitzt in echten Planlisten in der letzten Fahrer-/Wg-Zelle.
+    // Deshalb nur den Innenbereich dieser Zelle auswerten und Text/Rahmen möglichst ausblenden.
+    const marginY = Math.max(1, Math.floor((y1 - y0) * 0.16));
+    const marginX = Math.max(2, Math.floor((right - left) * 0.08));
     const sy = Math.max(0, y0 + marginY);
     const sh = Math.max(1, Math.min(sourceCanvas.height - sy, (y1 - y0) - marginY * 2));
-    const sx = Math.max(0, Math.floor(sourceCanvas.width * 0.015));
-    const sw = Math.max(1, Math.min(sourceCanvas.width - sx, Math.floor(sourceCanvas.width * 0.97)));
+    const sx = Math.max(0, left + marginX);
+    const sw = Math.max(1, Math.min(sourceCanvas.width - sx, (right - left) - marginX * 2));
     let image;
     try { image = ctx.getImageData(sx, sy, sw, sh); } catch (_) { return null; }
     const data = image.data;
     const buckets = new Map();
     let colorful = 0, sampled = 0;
-    const pixelStep = Math.max(1, Math.floor(Math.sqrt((sw * sh) / 9000)));
+    const pixelStep = Math.max(1, Math.floor(Math.sqrt((sw * sh) / 3500)));
     for (let y = 0; y < sh; y += pixelStep) {
       for (let x = 0; x < sw; x += pixelStep) {
         const idx = (y * sw + x) * 4;
@@ -1231,37 +1236,52 @@
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
         const chroma = max - min;
         const brightness = (r + g + b) / 3;
-        if (brightness < 105 || brightness > 252 || chroma < 34) continue;
+        if (brightness < 90 || brightness > 253 || chroma < 30) continue;
         colorful++;
-        const qr = Math.round(r / 24) * 24, qg = Math.round(g / 24) * 24, qb = Math.round(b / 24) * 24;
+        const qr = Math.round(r / 20) * 20, qg = Math.round(g / 20) * 20, qb = Math.round(b / 20) * 20;
         const key = `${qr}|${qg}|${qb}`;
         const item = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
         item.count++; item.r += r; item.g += g; item.b += b;
         buckets.set(key, item);
       }
     }
-    if (!colorful || colorful < Math.max(18, sampled * 0.12) || !buckets.size) return null;
+    if (!colorful || colorful < Math.max(10, sampled * 0.20) || !buckets.size) return null;
     const best = [...buckets.values()].sort((a, b) => b.count - a.count)[0];
     const dominance = best.count / colorful;
     const colorfulShare = colorful / Math.max(1, sampled);
-    if (dominance < 0.28 || colorfulShare < 0.12) return null;
+    if (dominance < 0.42 || colorfulShare < 0.20) return null;
     const r = best.r / best.count, g = best.g / best.count, b = best.b / best.count;
-    return { hex: rgbHex(r, g, b), confidence: Math.min(1, dominance * 0.7 + colorfulShare * 0.3), dominance, colorfulShare };
+    return {
+      hex: rgbHex(r, g, b),
+      confidence: Math.min(1, dominance * 0.72 + colorfulShare * 0.28),
+      dominance,
+      colorfulShare,
+      source: 'driver_cell'
+    };
   }
 
   async function attachImageRowColors(file, matrix, width, height) {
     const meta = matrix?._atmsImageMeta;
     const rows = meta?.rowMetaByMatrixIndex;
-    if (!meta || !rows || !Object.keys(rows).length) return;
+    const boundaries = Array.isArray(meta?.boundaries) ? meta.boundaries : [];
+    const driverColumn = Number(meta?.semantic?.driver);
+    // P75A fail-closed: Wenn die Fahrer-Spalte nicht eindeutig geometrisch bekannt ist,
+    // keine Gesamtzeilenfarbe als Fahrerfarbe missdeuten.
+    if (!meta || !rows || !Object.keys(rows).length || !Number.isInteger(driverColumn) || driverColumn < 0 || boundaries.length <= driverColumn + 1) return;
+    const x0 = Number(boundaries[driverColumn]);
+    const x1 = Number(boundaries[driverColumn + 1]);
+    if (!Number.isFinite(x0) || !Number.isFinite(x1) || x1 <= x0) return;
     let sourceCanvas;
     try { sourceCanvas = await buildSourceColorCanvas(file, width, height); } catch (_) { return; }
     const out = {};
     Object.entries(rows).forEach(([key, rowMeta]) => {
-      const sampled = samplePlanRowColor(sourceCanvas, rowMeta);
+      const sampled = samplePlanColorRegion(sourceCanvas, rowMeta, x0, x1);
       if (sampled?.hex) out[key] = sampled;
     });
     meta.rowColorByMatrixIndex = out;
     meta.rowColorDetectedCount = Object.keys(out).length;
+    meta.rowColorSource = 'driver_cell';
+    meta.rowColorDriverColumn = driverColumn;
   }
 
   function applyImageRowColorsToRides(rides, imageMeta) {
@@ -1270,7 +1290,7 @@
       const matrixIndex = Number(ride?.sourceRow || 0) - 1;
       const color = map[matrixIndex];
       if (!color?.hex) return ride;
-      return { ...ride, sourcePlanColorHex: color.hex, sourcePlanColorConfidence: Number(color.confidence || 0), sourcePlanColorSource: 'image_row_background' };
+      return { ...ride, sourcePlanColorHex: color.hex, sourcePlanColorConfidence: Number(color.confidence || 0), sourcePlanColorSource: 'image_driver_cell' };
     });
   }
 
