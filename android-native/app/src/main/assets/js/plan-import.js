@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – erkennt bei Bild-/WhatsApp-Planlisten die sichtbare Zeilen-/Fahrerfarbe direkt aus dem unveränderten Farbbild und hängt sie als reine Metadaten an die erkannte Fahrt. OCR-Zeilen, Texte, Grenzen, Flugprüfung und Importentscheidung bleiben unverändert.
+// Die Farberkennung arbeitet nur bei ausreichend gesättigter, dominanter Zeilenfarbe; unsichere/weiße/graue Zeilen bleiben ohne Farbmetadatum. P74 manuelle Fahrerfarben haben in app.js Vorrang.
 // CORE-007D8A1F1D8P67 · 27.09.2026: NATIVE FLIGHTSTATS SINGLE-FLIGHT ROUTE FALLBACK – wenn die bereits bevorzugte FlightStats-Airport-Board-Zweitquelle für einen offiziell bestätigten Flug vollständig unerreichbar ist (board_unreachable), prüft ATMS ausschließlich diesen noch offenen Flug über den bereits in P39/P39F1 real getesteten datumsspezifischen FlightStats-Einzelflug-Endpunkt. verified/high wird nur bei exakt passender Flugnummer-URL, exaktem airportEventDate auf der passenden Ankunfts-/Abflugseite, identischer originIata/destinationIata-Route, identischem Fahrt-Airport/Richtungskontext und zwei unterschiedlichen dokumentierten Quellenhosts gesetzt.
 // Der Einzel-Flug-Fallback läuft ausdrücklich NICHT bei erreichbarem Board mit Routenkonflikt/Mehrdeutigkeit und übernimmt keine Estimated-/Actual-/LIVE-Zeit. P66-Zürich-Normalisierung, OCR, PLAN, DISPO, LIVE, Persistenz und alle bestehenden FLIGHT-008-Sicherheitsgrenzen bleiben unverändert.
 // CORE-007D8A1F1D8P66 · 27.09.2026: NATIVE ZÜRICH OCR / VERIFIED-STATUS SYNC FIX – normalisiert die exakt beobachtete OCR-Variante „Ziirich“ vor dem bestehenden Quellenkonflikt-Vergleich auf „Zürich“. Dadurch kann eine bereits streng mit mindestens zwei datumsspezifischen Quellen als verified/high bestätigte ZRH-Route nicht mehr allein wegen dieses Schreibfehlers fälschlich als „Flugprüfung offen“ stehen bleiben.
@@ -1185,6 +1187,90 @@
       img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht geöffnet werden.')); };
       img.src = url;
+    });
+  }
+
+  async function buildSourceColorCanvas(file, width, height) {
+    const img = await loadImage(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(Number(width) || img.naturalWidth || 1));
+    canvas.height = Math.max(1, Math.round(Number(height) || img.naturalHeight || 1));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function rgbHex(r, g, b) {
+    const c = value => Math.max(0, Math.min(255, Math.round(Number(value) || 0))).toString(16).padStart(2, '0');
+    return `#${c(r)}${c(g)}${c(b)}`;
+  }
+
+  function samplePlanRowColor(sourceCanvas, rowMeta) {
+    if (!sourceCanvas || !rowMeta) return null;
+    const y0 = Math.max(0, Math.floor(Number(rowMeta.y0) || 0));
+    const y1 = Math.min(sourceCanvas.height, Math.ceil(Number(rowMeta.y1) || 0));
+    if (!(y1 > y0 + 2)) return null;
+    const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    const marginY = Math.max(1, Math.floor((y1 - y0) * 0.18));
+    const sy = Math.max(0, y0 + marginY);
+    const sh = Math.max(1, Math.min(sourceCanvas.height - sy, (y1 - y0) - marginY * 2));
+    const sx = Math.max(0, Math.floor(sourceCanvas.width * 0.015));
+    const sw = Math.max(1, Math.min(sourceCanvas.width - sx, Math.floor(sourceCanvas.width * 0.97)));
+    let image;
+    try { image = ctx.getImageData(sx, sy, sw, sh); } catch (_) { return null; }
+    const data = image.data;
+    const buckets = new Map();
+    let colorful = 0, sampled = 0;
+    const pixelStep = Math.max(1, Math.floor(Math.sqrt((sw * sh) / 9000)));
+    for (let y = 0; y < sh; y += pixelStep) {
+      for (let x = 0; x < sw; x += pixelStep) {
+        const idx = (y * sw + x) * 4;
+        const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
+        if (a < 220) continue;
+        sampled++;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const chroma = max - min;
+        const brightness = (r + g + b) / 3;
+        if (brightness < 105 || brightness > 252 || chroma < 34) continue;
+        colorful++;
+        const qr = Math.round(r / 24) * 24, qg = Math.round(g / 24) * 24, qb = Math.round(b / 24) * 24;
+        const key = `${qr}|${qg}|${qb}`;
+        const item = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+        item.count++; item.r += r; item.g += g; item.b += b;
+        buckets.set(key, item);
+      }
+    }
+    if (!colorful || colorful < Math.max(18, sampled * 0.12) || !buckets.size) return null;
+    const best = [...buckets.values()].sort((a, b) => b.count - a.count)[0];
+    const dominance = best.count / colorful;
+    const colorfulShare = colorful / Math.max(1, sampled);
+    if (dominance < 0.28 || colorfulShare < 0.12) return null;
+    const r = best.r / best.count, g = best.g / best.count, b = best.b / best.count;
+    return { hex: rgbHex(r, g, b), confidence: Math.min(1, dominance * 0.7 + colorfulShare * 0.3), dominance, colorfulShare };
+  }
+
+  async function attachImageRowColors(file, matrix, width, height) {
+    const meta = matrix?._atmsImageMeta;
+    const rows = meta?.rowMetaByMatrixIndex;
+    if (!meta || !rows || !Object.keys(rows).length) return;
+    let sourceCanvas;
+    try { sourceCanvas = await buildSourceColorCanvas(file, width, height); } catch (_) { return; }
+    const out = {};
+    Object.entries(rows).forEach(([key, rowMeta]) => {
+      const sampled = samplePlanRowColor(sourceCanvas, rowMeta);
+      if (sampled?.hex) out[key] = sampled;
+    });
+    meta.rowColorByMatrixIndex = out;
+    meta.rowColorDetectedCount = Object.keys(out).length;
+  }
+
+  function applyImageRowColorsToRides(rides, imageMeta) {
+    const map = imageMeta?.rowColorByMatrixIndex || {};
+    return (Array.isArray(rides) ? rides : []).map(ride => {
+      const matrixIndex = Number(ride?.sourceRow || 0) - 1;
+      const color = map[matrixIndex];
+      if (!color?.hex) return ride;
+      return { ...ride, sourcePlanColorHex: color.hex, sourcePlanColorConfidence: Number(color.confidence || 0), sourcePlanColorSource: 'image_row_background' };
     });
   }
 
@@ -4935,6 +5021,7 @@
         }
       }
     }
+    await measureAsync('plan_row_color_detection', () => attachImageRowColors(file, matrix, canvas.width, canvas.height));
     try {
       window.ATMSP54ReadImageTiming = {
         version: 'CORE-007D8A1F1D8P54',
@@ -5974,6 +6061,7 @@
           mappingInfo.mapping
         ));
         preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
+        preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         state.ocrCellDiagnostics = p54MeasureSync('build_raw_diagnostics', () => buildOcrCellRawDiagnostics(
           preparedRides,
           result.imageMeta,

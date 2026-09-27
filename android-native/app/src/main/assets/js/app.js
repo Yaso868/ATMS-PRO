@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – übernimmt bei ausreichend eindeutigen Bild-/WhatsApp-Planlisten die erkannte Zeilenfarbe als persistente Fahrerfarbe, solange keine manuelle P74-Farbwahl Vorrang hat. Ergänzt in „Alle Fahrten“ eine Fahrer-Tagesübersicht mit echter Fahrtenanzahl nach bestehender Bündel-/Flugnummernlogik, Preis-Summe und Detailzeilen.
+// P74 manuelle Farbauswahl bleibt erhalten; Farbkollisionen, P73 Dedupe, P72 Multi-Stop, P71 Scrollposition, P70 Google-Maps-Handoff sowie OCR/FLIGHT-008/PLAN/DISPO/LIVE bleiben sonst unverändert.
 // CORE-007D8A1F1D8P74 · 27.09.2026: MANUAL DRIVER COLOR PICKER – In „Alle Fahrten“ kann jedem Fahrer seine feste Farbe manuell zugewiesen werden. Bei Farbkollision wird die bisherige Farbe des gewählten Fahrers mit dem betroffenen Fahrer getauscht, damit die Fahrerfarben eindeutig bleiben. Auswahl wird im bestehenden DRIVER_COLOR_KEY dauerhaft lokal gespeichert. P73 Dedupe, P72 Multi-Stop, P71 Scrollposition/Farbpersistenz, P70 Google-Maps-Handoff sowie OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P73 · 27.09.2026: OVERLAPPING PLAN RE-IMPORT DEDUPE – Überlappende Planlisten desselben Plantags erkennen dieselbe reale Fahrt auch dann wieder, wenn sich nur die Listen-Flugzeit zwischen Planversionen geändert hat. Fahrer + DISPO-Zeit + Route + Flug bleiben stabiler Match; vorhandene Alt-Duplikate derselben stabilen Fahrt werden beim nächsten Import entfernt statt fälschlich als Bündelfahrt/Pax-Dopplung weitergeführt. Parallele Fahrten verschiedener Fahrer und echte Bündelfahrten mit unterschiedlichen Stopps bleiben getrennt. Bei geändertem Flugzeit-Tupel wird nur die stabile Ride-ID übernommen; strikte Flug-/LIVE-Verifikation wird nicht blind übertragen. P72 Multi-Stop-Routing, P71 Fahrerfarben/Scrollposition, P70 Google-Maps-Handoff, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben sonst unverändert.
 // CORE-007D8A1F1D8P72 · 27.09.2026: SAFE COMPOSITE MULTI-STOP ROUTING – Zusammengesetzte Planziele wie „NH Nord-Holiday Inn“ werden nur dann in mehrere Stopps zerlegt, wenn der Gesamtname nicht direkt auflösbar ist und jedes Teilziel exakt über das lokale Adressbuch bzw. einen bekannten Airport aufgelöst werden kann. Reihenfolge aus der Planliste bleibt unverändert; keine geratenen Adressen. P71 Fahrerfarben/Scrollposition, P70 Google-Maps-App-Handoff, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
@@ -85,7 +87,7 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -649,7 +651,14 @@ const DRIVER_COLOR_PALETTE=[
 ];
 const DRIVER_COLOR_UNASSIGNED={id:'unassigned',hex:'#91a8b7'};
 driverColorMap=loadDriverColorMap();
+driverPlanColorMap=loadDriverPlanColorMap();
+driverColorManualMap=loadDriverColorManualMap();
 function driverColorKey(name){return String(name||'').trim().toLocaleLowerCase('de-DE')}
+function normalizeDriverHex(value){const m=String(value||'').trim().match(/^#?([0-9a-f]{6})$/i);return m?`#${m[1].toLowerCase()}`:''}
+function driverRgb(hex){const h=normalizeDriverHex(hex);if(!h)return null;return{r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)}}
+function driverRgbDistance(a,b){const x=driverRgb(a),y=driverRgb(b);if(!x||!y)return Infinity;return Math.hypot(x.r-y.r,x.g-y.g,x.b-y.b)}
+function driverHexFromRgb(r,g,b){const c=v=>Math.max(0,Math.min(255,Math.round(Number(v)||0))).toString(16).padStart(2,'0');return`#${c(r)}${c(g)}${c(b)}`}
+function driverPlanHexUsable(hex){const rgb=driverRgb(hex);if(!rgb)return false;const max=Math.max(rgb.r,rgb.g,rgb.b),min=Math.min(rgb.r,rgb.g,rgb.b);return max-min>=32&&((rgb.r+rgb.g+rgb.b)/3)>=100}
 function loadDriverColorMap(){
   try{
     const parsed=JSON.parse(localStorage.getItem(DRIVER_COLOR_KEY)||'{}');
@@ -658,7 +667,26 @@ function loadDriverColorMap(){
     return Object.fromEntries(Object.entries(parsed).filter(([key,value])=>key&&valid.has(String(value))));
   }catch(_){return{}}
 }
+function loadDriverPlanColorMap(){
+  try{const parsed=JSON.parse(localStorage.getItem(DRIVER_PLAN_COLOR_KEY)||'{}');if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return{};return Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,normalizeDriverHex(v)]).filter(([k,v])=>k&&driverPlanHexUsable(v)))}catch(_){return{}}
+}
+function loadDriverColorManualMap(){
+  try{const parsed=JSON.parse(localStorage.getItem(DRIVER_COLOR_MANUAL_KEY)||'{}');if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return{};return Object.fromEntries(Object.entries(parsed).filter(([k,v])=>k&&v).map(([k])=>[k,true]))}catch(_){return{}}
+}
 function saveDriverColorMap(){try{localStorage.setItem(DRIVER_COLOR_KEY,JSON.stringify(driverColorMap))}catch(_){}}
+function saveDriverPlanColorMap(){try{localStorage.setItem(DRIVER_PLAN_COLOR_KEY,JSON.stringify(driverPlanColorMap))}catch(_){}}
+function saveDriverColorManualMap(){try{localStorage.setItem(DRIVER_COLOR_MANUAL_KEY,JSON.stringify(driverColorManualMap))}catch(_){}}
+function migrateLegacyManualDriverColors(){
+  try{if(localStorage.getItem(DRIVER_COLOR_MANUAL_MIGRATION_KEY)==='1')return}catch(_){}
+  const keys=Object.keys(driverColorMap);
+  for(let i=0;i<Math.min(keys.length,DRIVER_COLOR_PALETTE.length);i++){
+    const key=keys[i],expected=DRIVER_COLOR_PALETTE[i]?.id;
+    if(expected&&driverColorMap[key]&&driverColorMap[key]!==expected)driverColorManualMap[key]=true;
+  }
+  saveDriverColorManualMap();
+  try{localStorage.setItem(DRIVER_COLOR_MANUAL_MIGRATION_KEY,'1')}catch(_){}
+}
+migrateLegacyManualDriverColors();
 function ensureDriverColorAssignments(source=rides){
   let changed=false;
   const validIds=new Set(DRIVER_COLOR_PALETTE.map(x=>x.id));
@@ -679,9 +707,11 @@ function ensureDriverColorAssignments(source=rides){
   }
   if(changed)saveDriverColorMap();
 }
+function driverPlanColorOf(name){const key=driverColorKey(name),hex=normalizeDriverHex(driverPlanColorMap[key]);return driverPlanHexUsable(hex)?hex:''}
 function driverColorOf(name){
   const key=driverColorKey(name);if(!key)return DRIVER_COLOR_UNASSIGNED;
   ensureDriverColorAssignments([{driver:name}]);
+  if(!driverColorManualMap[key]){const planHex=driverPlanColorOf(name);if(planHex)return{id:'plan',hex:planHex}}
   return DRIVER_COLOR_PALETTE.find(x=>x.id===driverColorMap[key])||DRIVER_COLOR_UNASSIGNED;
 }
 function setDriverColorManual(name,colorId){
@@ -690,24 +720,81 @@ function setDriverColorManual(name,colorId){
   if(!key||!target)return false;
   ensureDriverColorAssignments(rides);
   const previous=driverColorMap[key];
-  if(previous===target.id)return true;
-  // Gehört die Wunschfarbe bereits einem gespeicherten Fahrer, tauschen beide
-  // ihre Farben. So bleibt die manuelle Wunschfarbe dauerhaft eindeutig.
+  if(previous===target.id){driverColorManualMap[key]=true;saveDriverColorManualMap();return true}
   const currentKeys=[...new Set(rides.map(r=>driverColorKey(r?.driver)).filter(Boolean))];
   const conflictKey=Object.keys(driverColorMap).find(k=>k!==key&&driverColorMap[k]===target.id);
-  driverColorMap[key]=target.id;
+  driverColorMap[key]=target.id;driverColorManualMap[key]=true;
   if(conflictKey){
     const fallback=DRIVER_COLOR_PALETTE.find(c=>c.id===previous)
       || DRIVER_COLOR_PALETTE.find(c=>!currentKeys.some(k=>k!==conflictKey&&driverColorMap[k]===c.id));
-    if(fallback)driverColorMap[conflictKey]=fallback.id;
+    if(fallback){driverColorMap[conflictKey]=fallback.id;driverColorManualMap[conflictKey]=true}
   }
-  saveDriverColorMap();
+  saveDriverColorMap();saveDriverColorManualMap();
   return true;
+}
+function useDriverPlanColor(name){
+  const key=driverColorKey(name);if(!key||!driverPlanColorOf(name))return false;
+  delete driverColorManualMap[key];saveDriverColorManualMap();return true;
+}
+function driverPlanColorConsensus(items){
+  const usable=(Array.isArray(items)?items:[]).map(x=>({hex:normalizeDriverHex(x?.hex),confidence:Number(x?.confidence||0)})).filter(x=>driverPlanHexUsable(x.hex)&&x.confidence>=0.25);
+  if(!usable.length)return'';
+  const rgbs=usable.map(x=>driverRgb(x.hex)).filter(Boolean);if(!rgbs.length)return'';
+  const avg={r:rgbs.reduce((a,x)=>a+x.r,0)/rgbs.length,g:rgbs.reduce((a,x)=>a+x.g,0)/rgbs.length,b:rgbs.reduce((a,x)=>a+x.b,0)/rgbs.length};
+  const hex=driverHexFromRgb(avg.r,avg.g,avg.b);
+  const spread=Math.max(...usable.map(x=>driverRgbDistance(x.hex,hex)));
+  return spread<=58?hex:'';
+}
+function reassignAutomaticPaletteConflicts(){
+  const reserved=[...Object.entries(driverPlanColorMap).filter(([k,h])=>!driverColorManualMap[k]&&driverPlanHexUsable(h)).map(([key,hex])=>({key,hex})),...Object.entries(driverColorManualMap).filter(([,v])=>v).map(([key])=>({key,hex:DRIVER_COLOR_PALETTE.find(c=>c.id===driverColorMap[key])?.hex||''})).filter(x=>x.hex)];
+  const keys=Object.keys(driverColorMap);
+  let changed=false;
+  for(const key of keys){
+    if(driverColorManualMap[key]||driverPlanColorMap[key])continue;
+    const currentId=driverColorMap[key],current=DRIVER_COLOR_PALETTE.find(c=>c.id===currentId);if(!current)continue;
+    if(!reserved.some(x=>x.key!==key&&driverRgbDistance(x.hex,current.hex)<42))continue;
+    const used=new Set(keys.filter(k=>k!==key).map(k=>driverColorMap[k]).filter(Boolean));
+    const candidate=DRIVER_COLOR_PALETTE.find(c=>!used.has(c.id)&&reserved.every(x=>driverRgbDistance(x.hex,c.hex)>=42));
+    if(candidate){driverColorMap[key]=candidate.id;changed=true}
+  }
+  if(changed)saveDriverColorMap();
+  return changed;
+}
+function applyImportedDriverPlanColors(source){
+  const byDriver=new Map();
+  for(const ride of (Array.isArray(source)?source:[])){
+    const name=String(ride?.driver||'').trim(),key=driverColorKey(name),hex=normalizeDriverHex(ride?.sourcePlanColorHex);
+    if(!key||!driverPlanHexUsable(hex))continue;
+    if(!byDriver.has(key))byDriver.set(key,{name,items:[]});
+    byDriver.get(key).items.push({hex,confidence:Number(ride?.sourcePlanColorConfidence||0)});
+  }
+  if(!byDriver.size)return{changed:0,skippedManual:0,skippedConflict:0};
+  ensureDriverColorAssignments(source);
+  let changed=0,skippedManual=0,skippedConflict=0;
+  const reserved=[];
+  const allKeys=[...new Set([...Object.keys(driverColorMap),...Object.keys(driverPlanColorMap),...byDriver.keys()])];
+  allKeys.forEach(key=>{
+    if(!driverColorManualMap[key])return;
+    const id=driverColorMap[key],hex=DRIVER_COLOR_PALETTE.find(c=>c.id===id)?.hex;
+    if(hex)reserved.push({key,hex});
+  });
+  for(const [key,entry] of byDriver){
+    if(driverColorManualMap[key]){skippedManual++;continue}
+    const hex=driverPlanColorConsensus(entry.items);if(!hex)continue;
+    const conflict=reserved.find(x=>x.key!==key&&driverRgbDistance(x.hex,hex)<30)
+      || [...byDriver.keys()].filter(k=>k!==key&&driverPlanColorMap[k]).map(k=>({key:k,hex:driverPlanColorMap[k]})).find(x=>driverRgbDistance(x.hex,hex)<24);
+    if(conflict){skippedConflict++;continue}
+    if(driverPlanColorMap[key]!==hex){driverPlanColorMap[key]=hex;changed++}
+    reserved.push({key,hex});
+  }
+  if(changed)saveDriverPlanColorMap();
+  reassignAutomaticPaletteConflicts();
+  return{changed,skippedManual,skippedConflict};
 }
 function ensureDriverColorCss(){
   if(document.getElementById('atmsDriverColorStyles'))return;
   const style=document.createElement('style');style.id='atmsDriverColorStyles';
-  style.textContent='.ride.atms-driver-color .stripe{background:var(--atms-driver-color)!important}.ride.atms-driver-color .price,.ride.atms-driver-color .time,.ride.atms-driver-color .driver-left,.ride.atms-driver-color .driver,.ride.atms-driver-color .time-single,.ride.atms-driver-color .time-stack .current-large{color:var(--atms-driver-color)!important}.driver-choice-item{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:8px;align-items:stretch;margin-bottom:7px}.driver-choice-item>.choice{margin:0!important;width:100%}.driver-color-edit{border:1px solid rgba(255,255,255,.18);border-radius:11px;background:rgba(255,255,255,.07);color:#fff;font-size:18px;min-height:42px;padding:0;display:flex;align-items:center;justify-content:center}.driver-color-edit:active{transform:scale(.97)}.driver-color-palette{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;padding:9px;border-radius:11px;background:rgba(7,20,31,.96);border:1px solid rgba(255,255,255,.14)}.driver-color-palette.hidden{display:none}.driver-color-swatch{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.40);padding:0;box-shadow:0 0 0 1px rgba(0,0,0,.22)}.driver-color-swatch.selected{border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.22)}';
+  style.textContent='.ride.atms-driver-color .stripe{background:var(--atms-driver-color)!important}.ride.atms-driver-color .price,.ride.atms-driver-color .time,.ride.atms-driver-color .driver-left,.ride.atms-driver-color .driver,.ride.atms-driver-color .time-single,.ride.atms-driver-color .time-stack .current-large{color:var(--atms-driver-color)!important}.driver-choice-item{display:grid;grid-template-columns:minmax(0,1fr) 44px 44px;gap:8px;align-items:stretch;margin-bottom:7px}.driver-choice-item>.choice{margin:0!important;width:100%}.driver-color-edit,.driver-day-summary-btn{border:1px solid rgba(255,255,255,.18);border-radius:11px;background:rgba(255,255,255,.07);color:#fff;font-size:18px;min-height:42px;padding:0;display:flex;align-items:center;justify-content:center}.driver-color-edit:active,.driver-day-summary-btn:active{transform:scale(.97)}.driver-color-palette{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;padding:9px;border-radius:11px;background:rgba(7,20,31,.96);border:1px solid rgba(255,255,255,.14)}.driver-color-palette.hidden{display:none}.driver-color-swatch{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.40);padding:0;box-shadow:0 0 0 1px rgba(0,0,0,.22)}.driver-color-swatch.selected{border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.22)}.driver-plan-swatch{width:auto;min-width:88px;padding:0 10px;border-radius:18px;color:#06121b;font-size:12px;font-weight:900}.driver-day-summary-overlay{position:fixed;inset:0;z-index:12000;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center}.driver-day-summary-sheet{width:min(720px,100%);max-height:88vh;overflow:auto;background:#071b27;border:1px solid rgba(255,255,255,.15);border-radius:20px 20px 0 0;padding:18px 16px 28px;color:#fff}.driver-day-summary-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.driver-day-summary-close{border:0;background:rgba(255,255,255,.1);color:#fff;border-radius:10px;font-size:20px;width:42px;height:42px}.driver-day-summary-controls{display:flex;gap:10px;align-items:center;margin:14px 0}.driver-day-summary-controls select{flex:1;background:#0d2b3b;color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px}.driver-day-summary-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}.driver-day-summary-kpi{background:rgba(255,255,255,.06);border-radius:12px;padding:12px}.driver-day-summary-kpi b{display:block;font-size:22px}.driver-day-summary-row{padding:12px 0;border-top:1px solid rgba(255,255,255,.12)}.driver-day-summary-row .top{display:flex;justify-content:space-between;gap:10px;font-weight:900}.driver-day-summary-row .meta{font-size:13px;opacity:.8;margin-top:3px}.driver-day-summary-row .route{font-size:14px;margin-top:5px}.driver-day-summary-bundle{display:inline-block;margin-left:6px;font-size:11px;color:#dba6ff}';
   document.head.appendChild(style);
 }
 function rideCardElementById(id){return [...document.querySelectorAll('#rideList [data-id]')].find(el=>String(el.dataset.id||'')===String(id||''))||null}
@@ -1052,6 +1139,39 @@ function showView(v){
   if(v==='live')$('liveDispositionView')?.classList.remove('hidden');
   if(v==='messages'){ensureMessagesView();$('messagesView')?.classList.remove('hidden');resetHorizontalViewport('messagesView')}
 }
+function driverRideDate(r){return String(first(r?.date,r?.planDate,r?.datum)||'').trim()}
+function driverSummaryRoute(r){
+  if(r?.isBundle&&Array.isArray(r.routeStops)&&r.routeStops.length)return r.routeStops.slice().sort((a,b)=>a.order-b.order).map(x=>x.name).filter(Boolean).join(' → ');
+  return `${String(r?.pickup||'–').trim()||'–'} → ${String(r?.destination||'–').trim()||'–'}`;
+}
+function driverSummaryFlightsForDay(name,date){
+  const source=rides.filter(r=>driverColorKey(r?.driver)===driverColorKey(name)&&driverRideDate(r)===date);
+  return visualRides(source).slice().sort((a,b)=>{
+    const ta=String(planTimeOf(a)||'99:99'),tb=String(planTimeOf(b)||'99:99');
+    return ta.localeCompare(tb)||String(a.flightNumber||'').localeCompare(String(b.flightNumber||''));
+  });
+}
+function renderDriverDaySummary(name,date){
+  const overlay=document.getElementById('driverDaySummaryOverlay');if(!overlay)return;
+  const dates=[...new Set(rides.filter(r=>driverColorKey(r?.driver)===driverColorKey(name)).map(driverRideDate).filter(Boolean))].sort().reverse();
+  const selected=dates.includes(date)?date:(dates[0]||'');
+  const rows=selected?driverSummaryFlightsForDay(name,selected):[];
+  const total=rows.reduce((sum,r)=>sum+(Number(r?.price)||0),0);
+  const color=driverColorOf(name).hex;
+  const list=rows.length?rows.map(r=>`<div class="driver-day-summary-row"><div class="top"><span>${esc(planTimeOf(r)||'--:--')} · ${esc(r.flightNumber||'ohne Flugnr.')}${r.isBundle?'<span class="driver-day-summary-bundle">BÜNDELFAHRT</span>':''}</span><span>${esc(money(Number(r.price)||0))}</span></div><div class="meta">${esc(ridePartnerLabel(r)||'–')} · ${esc(r.vehicle||'–')} · ${Number(r.persons)||0} Pers.</div><div class="route">${esc(driverSummaryRoute(r))}</div></div>`).join(''):'<div class="empty">Keine Fahrten für diesen Tag.</div>';
+  overlay.innerHTML=`<div class="driver-day-summary-sheet"><div class="driver-day-summary-head"><div><div style="font-size:13px;opacity:.72">Fahrer-Tagesübersicht</div><h3 style="margin:2px 0 0;color:${esc(color)}">${esc(name)}</h3></div><button type="button" class="driver-day-summary-close" aria-label="Schließen">×</button></div><div class="driver-day-summary-controls"><label for="driverDaySummaryDate">Tag</label><select id="driverDaySummaryDate">${dates.map(d=>`<option value="${esc(d)}" ${d===selected?'selected':''}>${esc(d)}</option>`).join('')}</select></div><div class="driver-day-summary-kpis"><div class="driver-day-summary-kpi"><span>Fahrten</span><b>${rows.length}</b></div><div class="driver-day-summary-kpi"><span>Gesamtsumme</span><b>${esc(money(total))}</b></div></div><div>${list}</div></div>`;
+  overlay.querySelector('.driver-day-summary-close')?.addEventListener('click',()=>overlay.remove());
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
+  overlay.querySelector('#driverDaySummaryDate')?.addEventListener('change',e=>renderDriverDaySummary(name,e.target.value));
+}
+function openDriverDaySummary(name){
+  ensureDriverColorCss();
+  let overlay=document.getElementById('driverDaySummaryOverlay');
+  if(!overlay){overlay=document.createElement('div');overlay.id='driverDaySummaryOverlay';overlay.className='driver-day-summary-overlay';document.body.appendChild(overlay)}
+  const dates=[...new Set(rides.filter(r=>driverColorKey(r?.driver)===driverColorKey(name)).map(driverRideDate).filter(Boolean))].sort().reverse();
+  renderDriverDaySummary(name,dates[0]||'');
+}
+
 function openDrivers(){
   const names=[...new Set(rides.map(r=>String(r.driver||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
   const choices=[{label:'Alle Fahrten',value:''},...names.map(n=>({label:n,value:n}))];
@@ -1063,7 +1183,9 @@ function openDrivers(){
   ensureDriverColorAssignments(rides);
   const paletteHtml=(driver)=>{
     const current=driverColorOf(driver).id;
-    return DRIVER_COLOR_PALETTE.map(c=>`<button type="button" class="driver-color-swatch ${current===c.id?'selected':''}" data-driver-color-id="${esc(c.id)}" title="Farbe wählen" aria-label="Farbe ${esc(c.id)} wählen" style="background:${c.hex}"></button>`).join('');
+    const planHex=driverPlanColorOf(driver);
+    const planButton=planHex?`<button type="button" class="driver-color-swatch driver-plan-swatch ${!driverColorManualMap[driverColorKey(driver)]?'selected':''}" data-driver-plan-color="1" title="Planfarbe verwenden" aria-label="Planfarbe verwenden" style="background:${planHex}">Plan</button>`:'';
+    return planButton+DRIVER_COLOR_PALETTE.map(c=>`<button type="button" class="driver-color-swatch ${current===c.id?'selected':''}" data-driver-color-id="${esc(c.id)}" title="Farbe wählen" aria-label="Farbe ${esc(c.id)} wählen" style="background:${c.hex}"></button>`).join('');
   };
   box.innerHTML=choices.map((c,i)=>{
     if(i===0)return `<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:#00a8ff"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`;
@@ -1071,6 +1193,7 @@ function openDrivers(){
     return `<div class="driver-choice-item" data-driver-item-index="${i}">
       <button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:${color.hex}"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>
       <button type="button" class="driver-color-edit" data-driver-color-toggle="${i}" title="Farbe für ${esc(c.label)} auswählen" aria-label="Farbe für ${esc(c.label)} auswählen">🎨</button>
+      <button type="button" class="driver-day-summary-btn" data-driver-summary="${i}" title="Tagesübersicht für ${esc(c.label)}" aria-label="Tagesübersicht für ${esc(c.label)}">📊</button>
       <div class="driver-color-palette hidden" data-driver-color-palette="${i}">${paletteHtml(c.value)}</div>
     </div>`;
   }).join('');
@@ -1086,6 +1209,14 @@ function openDrivers(){
       }
       return;
     }
+    const plan=e.target.closest('[data-driver-plan-color]');
+    if(plan){
+      const palette=plan.closest('[data-driver-color-palette]');
+      const idx=Number(palette?.dataset.driverColorPalette);const c=choices[idx];
+      if(c?.value&&useDriverPlanColor(c.value)){render();openDrivers()}return;
+    }
+    const summary=e.target.closest('[data-driver-summary]');
+    if(summary){const c=choices[Number(summary.dataset.driverSummary)];if(c?.value)openDriverDaySummary(c.value);return;}
     const toggle=e.target.closest('[data-driver-color-toggle]');
     if(toggle){
       const idx=Number(toggle.dataset.driverColorToggle);
@@ -3199,6 +3330,9 @@ function applyImportedRides(newRides){
     if(explicitDate)return r;
     return {...r,date:assumedPlantDay,dateAssumed:true,planDateAssumed:true,planImportedAt:importedAt};
   });
+  // P75: Fahrerfarben aus farbigen Bild-/WhatsApp-Planlisten nur als UI-Metadaten übernehmen.
+  // Manuell in P74 gewählte/gesperrte Farben haben Vorrang; Fahrtdaten bleiben unverändert.
+  applyImportedDriverPlanColors(normalizedIncoming);
   // P32: gleiche reale, noch offene Fahrt aus einer neuen Planversion behält ihre stabile ID
   // und bereits bestätigte Flug-/LIVE-Metadaten. Nicht sicher gematchte offene Alt-Fahrten
   // werden nicht blind gelöscht, sondern als Carryover markiert.
