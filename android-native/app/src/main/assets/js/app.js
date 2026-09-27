@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P71 · 27.09.2026: FIXED DRIVER COLORS + RIDE LIST RETURN POSITION – Jeder Fahrer erhält eine lokal persistente, eindeutige Farbe (solange freie Farben vorhanden sind), die in Fahrtenkarten und Fahrerauswahl stabil bleibt. Beim Wechsel Fahrten → Cockpit → Fahrten wird die zuvor sichtbare Fahrt an derselben Bildschirmposition wiederhergestellt. P70 Google-Maps-Routing, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Adressbuch und Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – CSV-/Excel-Adresslisten werden in der Android-App über einen nativen Speichern-unter-Dialog geschrieben und erst nach bestätigtem Schreibvorgang als exportiert gemeldet. Web-Fallback bleibt erhalten; Adressdaten, Import, Persistenz, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing und Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P65 · 26.09.2026: NATIVE ADDRESS BOOK DURABLE PERSISTENCE – Schützt das lokale Orte-&-Adressen-Adressbuch zusätzlich im bestehenden Safety-Snapshot und im unabhängigen IndexedDB-Durable-Shadow. Fehlende Adressbuchdaten werden wie die bereits geschützten Flug-/Ride-Daten automatisch wiederhergestellt; absichtlicher kompletter ATMS-Reset löscht den Schutz weiterhin. Keine Änderung an OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder bestehenden Adressinhalten.
 // CORE-007D8A1F1D8P52 · 25.09.2026: MANUAL-REVIEW VISIBILITY CONSISTENCY FIX – Offene Flugprüfungen werden auch bei Bündelfahrten ohne Flugort sowie im Cockpit sichtbar als „⚠ manuell prüfen“ dargestellt. Airport-Konflikte behalten ihre eigene Warnung. Keine Änderung an OCR, FLIGHT-008, PLAN, DISPO, LIVE, Bündelbildung oder Persistenz.
@@ -81,7 +82,7 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -636,7 +637,73 @@ function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r
   rides=corrected.rides;
   safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
   safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
-}function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
+}function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}
+// CORE-007D8A1F1D8P71: Fahrerfarben sind personenbezogen statt kartenpositionsbezogen.
+const DRIVER_COLOR_PALETTE=[
+  {id:'green',hex:'#54e20f'},{id:'cyan',hex:'#19d8df'},{id:'red',hex:'#ff3155'},{id:'yellow',hex:'#ffbd17'},
+  {id:'purple',hex:'#b45cff'},{id:'orange',hex:'#ff8a3d'},{id:'pink',hex:'#ff5fd1'},{id:'blue',hex:'#4f8cff'},
+  {id:'mint',hex:'#33e6a6'},{id:'violet',hex:'#d56cff'},{id:'amber',hex:'#ffd166'},{id:'coral',hex:'#ff6b6b'}
+];
+const DRIVER_COLOR_UNASSIGNED={id:'unassigned',hex:'#91a8b7'};
+driverColorMap=loadDriverColorMap();
+function driverColorKey(name){return String(name||'').trim().toLocaleLowerCase('de-DE')}
+function loadDriverColorMap(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(DRIVER_COLOR_KEY)||'{}');
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return{};
+    const valid=new Set(DRIVER_COLOR_PALETTE.map(x=>x.id));
+    return Object.fromEntries(Object.entries(parsed).filter(([key,value])=>key&&valid.has(String(value))));
+  }catch(_){return{}}
+}
+function saveDriverColorMap(){try{localStorage.setItem(DRIVER_COLOR_KEY,JSON.stringify(driverColorMap))}catch(_){}}
+function ensureDriverColorAssignments(source=rides){
+  let changed=false;
+  const validIds=new Set(DRIVER_COLOR_PALETTE.map(x=>x.id));
+  const used=new Set(Object.values(driverColorMap).filter(id=>validIds.has(id)));
+  const names=[];
+  for(const r of (Array.isArray(source)?source:[])){
+    const name=String(r?.driver||'').trim(),key=driverColorKey(name);
+    if(name&&key&&!names.some(x=>x.key===key))names.push({name,key});
+  }
+  for(const item of names){
+    if(validIds.has(driverColorMap[item.key]))continue;
+    let color=DRIVER_COLOR_PALETTE.find(x=>!used.has(x.id));
+    if(!color){
+      let hash=0;for(const ch of item.key)hash=((hash*31)+ch.codePointAt(0))>>>0;
+      color=DRIVER_COLOR_PALETTE[hash%DRIVER_COLOR_PALETTE.length];
+    }
+    driverColorMap[item.key]=color.id;used.add(color.id);changed=true;
+  }
+  if(changed)saveDriverColorMap();
+}
+function driverColorOf(name){
+  const key=driverColorKey(name);if(!key)return DRIVER_COLOR_UNASSIGNED;
+  ensureDriverColorAssignments([{driver:name}]);
+  return DRIVER_COLOR_PALETTE.find(x=>x.id===driverColorMap[key])||DRIVER_COLOR_UNASSIGNED;
+}
+function ensureDriverColorCss(){
+  if(document.getElementById('atmsDriverColorStyles'))return;
+  const style=document.createElement('style');style.id='atmsDriverColorStyles';
+  style.textContent='.ride.atms-driver-color .stripe{background:var(--atms-driver-color)!important}.ride.atms-driver-color .price,.ride.atms-driver-color .time,.ride.atms-driver-color .driver-left,.ride.atms-driver-color .driver,.ride.atms-driver-color .time-single,.ride.atms-driver-color .time-stack .current-large{color:var(--atms-driver-color)!important}';
+  document.head.appendChild(style);
+}
+function rideCardElementById(id){return [...document.querySelectorAll('#rideList [data-id]')].find(el=>String(el.dataset.id||'')===String(id||''))||null}
+function rememberRideListPosition(rideId){
+  const card=rideCardElementById(rideId);
+  rideListReturnState={rideId:String(rideId||''),viewportTop:card?card.getBoundingClientRect().top:null,scrollY:window.scrollY||document.documentElement.scrollTop||0};
+}
+function restoreRideListPosition(){
+  const state=rideListReturnState;rideListReturnState=null;if(!state)return;
+  const apply=()=>{
+    const card=rideCardElementById(state.rideId);
+    if(card&&Number.isFinite(Number(state.viewportTop))){
+      const delta=card.getBoundingClientRect().top-Number(state.viewportTop);
+      if(Math.abs(delta)>0.5)window.scrollTo(0,Math.max(0,(window.scrollY||0)+delta));
+    }else if(Number.isFinite(Number(state.scrollY))){window.scrollTo(0,Math.max(0,Number(state.scrollY)))}
+  };
+  requestAnimationFrame(()=>requestAnimationFrame(apply));
+}
+function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
 // CORE-007C: Karten-/Cockpit-Status folgt derselben konservativen LIVE-Semantik wie Live-Dispo.
 // Ein bestätigter scheduled-Datensatz ist nur dann sichtbares LIVE-Signal, wenn zusätzlich
 // eine Estimated-/Actual-Zeit vorliegt. Ist diese aktuelle Zeit identisch zur Planzeit,
@@ -793,9 +860,10 @@ function rideCard(r,i){
   const bundleFlightLocationText=r.flightLocation?`✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}`:'Flugort nicht verfügbar';
   const bundleFlightLocation=r.isBundle?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>${bundleFlightLocationText}</span>${r.flightLocation?`<span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>`:''}${manualFlightBadge}</div>`:'';
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
-  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${liveFreshnessMarkup(r)}${stopRows}${airportConflictWarning}</div><div class="chev">›</div></article>`
+  const driverColor=driverColorOf(r.driver);
+  return `<article class="ride atms-driver-color ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}" style="--atms-driver-color:${driverColor.hex}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${liveFreshnessMarkup(r)}${stopRows}${airportConflictWarning}</div><div class="chev">›</div></article>`
 }
-function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
+function render(options={}){showView('list');ensureDriverColorCss();ensureDriverColorAssignments(rides);const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
   // CORE-006I: Fahrtenansicht folgt der Reihenfolge der importierten Planliste.
   const open=vr.filter(r=>!isDone(r)&&matches(r));
   const fin=vr.filter(r=>isDone(r)&&matches(r));
@@ -829,7 +897,7 @@ if(stats){
  <span>Hinweise</span>
  </div>`;
 }
-let h=`<section class="donebar"><div class="donehead" id="doneHead"><b>✓ Erledigte Fahrten</b><span>${fin.length}</span><button id="toggleDone" class="doneToggle" aria-label="Erledigte Fahrten ein- oder ausklappen">${doneOpen?'⌃':'⌄'}</button></div><div id="doneWrap" class="donewrap ${doneOpen?'':'hidden'}">${fin.length?fin.map(rideCard).join(''):'<div class="done-empty">Noch keine erledigten Fahrten.</div>'}</div></section>`;if(mode==='all'){h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}else{h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}$('rideList').innerHTML=h;document.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>openCockpit(x.dataset.id));const t=$('toggleDone');if(t)t.onclick=e=>{e.stopPropagation();doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const dh=$('doneHead');if(dh)dh.onclick=e=>{if(e.target.closest('[data-id]'))return;if(e.target.id==='toggleDone')return;doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};}
+let h=`<section class="donebar"><div class="donehead" id="doneHead"><b>✓ Erledigte Fahrten</b><span>${fin.length}</span><button id="toggleDone" class="doneToggle" aria-label="Erledigte Fahrten ein- oder ausklappen">${doneOpen?'⌃':'⌄'}</button></div><div id="doneWrap" class="donewrap ${doneOpen?'':'hidden'}">${fin.length?fin.map(rideCard).join(''):'<div class="done-empty">Noch keine erledigten Fahrten.</div>'}</div></section>`;if(mode==='all'){h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}else{h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}$('rideList').innerHTML=h;document.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>{rememberRideListPosition(x.dataset.id);openCockpit(x.dataset.id)});const t=$('toggleDone');if(t)t.onclick=e=>{e.stopPropagation();doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const dh=$('doneHead');if(dh)dh.onclick=e=>{if(e.target.closest('[data-id]'))return;if(e.target.id==='toggleDone')return;doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};if(options?.restoreRidePosition)restoreRideListPosition();}
 function resetHorizontalViewport(viewId){
   try{document.documentElement.scrollLeft=0;document.body.scrollLeft=0;const view=$(viewId);if(view)view.scrollLeft=0;}catch(_){ }
 }
@@ -968,7 +1036,8 @@ function openDrivers(){
   const dialog=$('driverDialog');
   if(!box||!dialog){showAppError(new Error('Fahrerauswahl ist nicht verfügbar.'));return}
   box.className=choices.length>10?'ultra':choices.length>6?'dense':'';
-  box.innerHTML=choices.map((c,i)=>`<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:${i===0?'#00a8ff':['#ffbd17','#54e20f','#ff3155','#19d8df'][(i-1)%4]}"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`).join('');
+  ensureDriverColorAssignments(rides);
+  box.innerHTML=choices.map((c,i)=>`<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:${i===0?'#00a8ff':driverColorOf(c.value).hex}"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`).join('');
   box.onclick=e=>{
     const b=e.target.closest('[data-choice-index]');if(!b)return;
     const c=choices[Number(b.dataset.choiceIndex)];if(!c)return;
@@ -4125,7 +4194,7 @@ function initApp(){
     const driverDialog=safeEl('driverDialog');
     if(driverDialog)driverDialog.addEventListener('click',e=>{if(e.target===driverDialog)driverDialog.classList.add('hidden')});
     const driverSheet=safeEl('driverSheet');if(driverSheet)driverSheet.addEventListener('click',e=>e.stopPropagation());
-    bindClick('backBtn',render);
+    bindClick('backBtn',()=>render({restoreRidePosition:true}));
     bindClick('importBack',render);
     bindClick('settingsBack',render);
     bindClick('plusBtn',()=>{document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));showView('import')});
@@ -4154,7 +4223,7 @@ function initApp(){
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
     document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));showView('settings');safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
-    try{loadWhatsappSettings();renderNavigationSettings();ensureAddressBookPanel();renderAddressBook();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){renderMessagesView()}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
+    try{loadWhatsappSettings();renderNavigationSettings();ensureAddressBookPanel();renderAddressBook();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){renderMessagesView()}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render({restoreRidePosition:true})}}));
 
     ensureMobileImportLayoutFix();
     ensureGeminiFlightPanel();
