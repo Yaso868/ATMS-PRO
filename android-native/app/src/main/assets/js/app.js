@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P73 · 27.09.2026: OVERLAPPING PLAN RE-IMPORT DEDUPE – Überlappende Planlisten desselben Plantags erkennen dieselbe reale Fahrt auch dann wieder, wenn sich nur die Listen-Flugzeit zwischen Planversionen geändert hat. Fahrer + DISPO-Zeit + Route + Flug bleiben stabiler Match; vorhandene Alt-Duplikate derselben stabilen Fahrt werden beim nächsten Import entfernt statt fälschlich als Bündelfahrt/Pax-Dopplung weitergeführt. Parallele Fahrten verschiedener Fahrer und echte Bündelfahrten mit unterschiedlichen Stopps bleiben getrennt. Bei geändertem Flugzeit-Tupel wird nur die stabile Ride-ID übernommen; strikte Flug-/LIVE-Verifikation wird nicht blind übertragen. P72 Multi-Stop-Routing, P71 Fahrerfarben/Scrollposition, P70 Google-Maps-Handoff, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben sonst unverändert.
 // CORE-007D8A1F1D8P72 · 27.09.2026: SAFE COMPOSITE MULTI-STOP ROUTING – Zusammengesetzte Planziele wie „NH Nord-Holiday Inn“ werden nur dann in mehrere Stopps zerlegt, wenn der Gesamtname nicht direkt auflösbar ist und jedes Teilziel exakt über das lokale Adressbuch bzw. einen bekannten Airport aufgelöst werden kann. Reihenfolge aus der Planliste bleibt unverändert; keine geratenen Adressen. P71 Fahrerfarben/Scrollposition, P70 Google-Maps-App-Handoff, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P71 · 27.09.2026: FIXED DRIVER COLORS + RIDE LIST RETURN POSITION – Jeder Fahrer erhält eine lokal persistente, eindeutige Farbe (solange freie Farben vorhanden sind), die in Fahrtenkarten und Fahrerauswahl stabil bleibt. Beim Wechsel Fahrten → Cockpit → Fahrten wird die zuvor sichtbare Fahrt an derselben Bildschirmposition wiederhergestellt. P70 Google-Maps-Routing, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Adressbuch und Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – CSV-/Excel-Adresslisten werden in der Android-App über einen nativen Speichern-unter-Dialog geschrieben und erst nach bestätigtem Schreibvorgang als exportiert gemeldet. Web-Fallback bleibt erhalten; Adressdaten, Import, Persistenz, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing und Nachrichten bleiben unverändert.
@@ -2857,6 +2858,22 @@ function planImportRideIdentity(r){
     ? ['flight',date,flight,dir,airport,pickup,destination,flightTime||rideTime].join('|')
     : ['ride',date,rideTime,pickup,destination].join('|');
 }
+// P73: stabile reale Fahrt auch dann wiedererkennen, wenn sich in einer späteren
+// überlappenden Planversion nur die Listen-Flugzeit korrigiert hat. Fahrer + DISPO-Zeit
+// + Route bleiben dabei zwingend Bestandteil der Identität, damit parallele Fahrzeuge
+// desselben Fluges (z. B. Yaser/Leon) nicht miteinander verschmolzen werden.
+function planImportStableRideIdentity(r){
+  const date=String(first(r?.date,r?.datum)||'').trim()||berlinDate();
+  const flight=flightCacheNumber(r?.flightNumber||'');
+  const dir=flight?String(flightDirectionForGemini(r)||'unknown'):'';
+  const airport=flight?String(flightAirportForGemini(r)||'').toUpperCase():'';
+  const pickup=planImportNorm(r?.pickup),destination=planImportNorm(r?.destination);
+  const rideTime=String(planTimeOf(r)||'').trim();
+  const driver=planImportNorm(r?.driver||r?.fahrer);
+  return flight
+    ? ['stable-flight',date,flight,dir,airport,rideTime,pickup,destination,driver].join('|')
+    : ['stable-ride',date,rideTime,pickup,destination,driver].join('|');
+}
 function planImportPreserveMetadata(oldRide,newRide){
   const preserve=['id','flightLocation','iata','flightVerified','flightVerificationStatus','flightConfidence','flightSources','flightSourceNote','flightSourceConflict','flightResolutionMode','flightPrioritySourceUrl','flightCheckedAt','liveTime','actualLandingTime','actualDepartureTime','flightStatus','liveCheckedAt','liveSources','liveSourceNote','liveSourceConflict','liveResolutionMode','livePrioritySourceUrl','liveManualConfirmed','liveBufferOverrideMinutes'];
   const out={...newRide};
@@ -2865,13 +2882,52 @@ function planImportPreserveMetadata(oldRide,newRide){
   out._planCarryover=false;out._planMissingFromLatest=false;
   return out;
 }
+function planImportPreserveStableId(oldRide,newRide){
+  const out={...newRide,id:oldRide?.id??newRide?.id};
+  out._planCarryover=false;out._planMissingFromLatest=false;
+  return out;
+}
 function mergePlanImportByIdentity(current,incoming){
-  const buckets=new Map();
-  (current||[]).forEach(r=>{const k=planImportRideIdentity(r);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(r)});
-  const used=new Set(),merged=[];let matched=0;
-  (incoming||[]).forEach(r=>{const k=planImportRideIdentity(r),c=(buckets.get(k)||[]).filter(x=>!used.has(String(x.id)));if(c.length===1){used.add(String(c[0].id));merged.push(planImportPreserveMetadata(c[0],r));matched++}else merged.push(r)});
+  const exactBuckets=new Map(),stableBuckets=new Map();
+  (current||[]).forEach(r=>{
+    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r);
+    if(!exactBuckets.has(exact))exactBuckets.set(exact,[]);exactBuckets.get(exact).push(r);
+    if(!stableBuckets.has(stable))stableBuckets.set(stable,[]);stableBuckets.get(stable).push(r);
+  });
+  const used=new Set(),merged=[];let matched=0,deduped=0;
+  (incoming||[]).forEach(r=>{
+    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r);
+    const exactCandidates=(exactBuckets.get(exact)||[]).filter(x=>!used.has(String(x.id)));
+    if(exactCandidates.length===1){
+      const preferred=exactCandidates[0];
+      const sameStable=(stableBuckets.get(stable)||[]).filter(x=>!used.has(String(x.id)));
+      if(sameStable.some(x=>String(x.id)===String(preferred.id))){
+        sameStable.forEach(x=>used.add(String(x.id)));
+        deduped+=Math.max(0,sameStable.length-1);
+      }else used.add(String(preferred.id));
+      merged.push(planImportPreserveMetadata(preferred,r));
+      matched++;
+      return;
+    }
+    const stableCandidates=(stableBuckets.get(stable)||[]).filter(x=>!used.has(String(x.id)));
+    if(stableCandidates.length){
+      const incomingFlightTime=String(listedFlightTimeOf(r)||'').trim();
+      const preferred=stableCandidates.find(x=>String(listedFlightTimeOf(x)||'').trim()===incomingFlightTime)
+        || stableCandidates.find(x=>!x?._planCarryover&&!x?._planMissingFromLatest)
+        || stableCandidates[0];
+      // Alle weiteren Alt-Duplikate derselben stabilen realen Fahrt gelten als durch
+      // diese aktuelle Planzeile ersetzt und dürfen nicht erneut als Carryover auftauchen.
+      stableCandidates.forEach(x=>used.add(String(x.id)));
+      deduped+=Math.max(0,stableCandidates.length-1);
+      const sameExact=planImportRideIdentity(preferred)===exact;
+      merged.push(sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r));
+      matched++;
+      return;
+    }
+    merged.push(r);
+  });
   const carry=(current||[]).filter(r=>!used.has(String(r.id))&&!done.has(r.id)).map(r=>({...r,_planCarryover:true,_planMissingFromLatest:true}));
-  return{rides:[...merged,...carry],matched,carryover:carry.length,incomingCount:(incoming||[]).length};
+  return{rides:[...merged,...carry],matched,carryover:carry.length,deduped,incomingCount:(incoming||[]).length};
 }
 function beginPlanImportSession(incoming,mergeInfo){
   const now=new Date().toISOString(),id=planImportSessionId();
