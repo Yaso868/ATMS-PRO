@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75C · 28.09.2026: COMPACT GRID TRIGGER DIAGNOSTIC – reine Diagnose fuer den reproduzierbaren kompakten 7-Zeilen-Plan. Wenn nach der Primär-OCR keine Fahrtzeile vorhanden ist, zeigt die Fehlermeldung jetzt explizit, ob der P75B-Fallback gestartet oder wegen Header-/Schema-Metadaten uebersprungen wurde.
+// Keine OCR-Regel, kein Crop, keine Schwelle, keine Importentscheidung, keine Farberkennung und keine FLIGHT-008-/PLAN-/DISPO-/LIVE-Logik wird veraendert.
 // CORE-007D8A1F1D8P75B · 27.09.2026: COMPACT GRID ROW RECOVERY – wenn ein Bild eine sicher erkannte ATMS-Kopfzeile besitzt, die Primär-OCR aber trotzdem keine einzige sichere Fahrtzeile liefert, darf ATMS einmalig die sichtbaren horizontalen Tabellenlinien aus dem unveränderten Farbbild als reine Zeilengeometrie verwenden und genau diese Zeilen lokal erneut lesen. Der Fallback akzeptiert nur eine vollständig wiederhergestellte, gleichmäßig gerasterte Tabelle; schon eine nicht plausibel gelesene physische Zeile blockiert die Übernahme, damit keine Fahrt still verloren geht. Keine feste Fahrtenanzahl, keine Flug-/Fahrer-Hardcodes und keine Änderung an FLIGHT-008, PLAN, DISPO oder LIVE.
 // CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – erkennt bei Bild-/WhatsApp-Planlisten die sichtbare Zeilen-/Fahrerfarbe direkt aus dem unveränderten Farbbild und hängt sie als reine Metadaten an die erkannte Fahrt. OCR-Zeilen, Texte, Grenzen, Flugprüfung und Importentscheidung bleiben unverändert.
 // Die Farberkennung arbeitet nur bei ausreichend gesättigter, dominanter Zeilenfarbe; unsichere/weiße/graue Zeilen bleiben ohne Farbmetadatum. P74 manuelle Fahrerfarben haben in app.js Vorrang.
@@ -2483,6 +2485,12 @@
         };
       })() : null,
       standardAtms: completed.standard,
+      // P75C: reine Trigger-Diagnose. Diese Felder veraendern keine Erkennung/Entscheidung.
+      safeHeaderDetected: Boolean(hasSafeHeader),
+      headerDetectionScore: Number(header?.score || 0),
+      headerDetectionAnchors: Number(header?.anchors?.length || 0),
+      completedStandard: Boolean(completed?.standard),
+      completedAnchorCount: Array.isArray(completed?.anchors) ? completed.anchors.length : 0,
       schemaColumns: anchors.length,
       forcedNoPriceMirror: Boolean(forceNoPriceMirror),
       syntheticAnchorCount: completed.syntheticCount,
@@ -5231,9 +5239,18 @@
       matrix = await measureAsync('compact_grid_row_recovery', () => recoverCompactGridRowsTargeted(file, matrix, canvas));
     }
     if (matrix.length <= 1) {
-      const compact = matrix?._atmsImageMeta?.compactGridRecovery;
-      const suffix = compact ? ` CORE-007D8A1F1D8P75B Diagnose: Grund=${cellText(compact.reason) || 'unknown'} · Rasterzeilen=${Number(compact.detectedBands || 0)} · Wiederhergestellt=${Number(compact.recoveredRows || 0)}.` : '';
-      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${suffix}`);
+      const meta = matrix?._atmsImageMeta || {};
+      const compact = meta?.compactGridRecovery;
+      const trigger = compact
+        ? 'gestartet'
+        : (!meta?.safeHeaderDetected
+            ? 'uebersprungen_keine_sichere_kopfzeile'
+            : (!meta?.standardAtms
+                ? 'uebersprungen_schema_nicht_standard'
+                : (meta?.headerlessAtms ? 'uebersprungen_headerless' : 'uebersprungen_unbekannt')));
+      const p75c = ` CORE-007D8A1F1D8P75C Diagnose: Trigger=${trigger} · Matrix=${Number(matrix?.length || 0)} · SafeHeader=${meta?.safeHeaderDetected ? 'ja' : 'nein'} · HeaderScore=${Number(meta?.headerDetectionScore || 0)} · HeaderAnker=${Number(meta?.headerDetectionAnchors || 0)} · Standard=${meta?.standardAtms ? 'ja' : 'nein'} · SchemaSpalten=${Number(meta?.schemaColumns || 0)} · CompletedAnker=${Number(meta?.completedAnchorCount || 0)} · SyntheticAnker=${Number(meta?.syntheticAnchorCount || 0)} · Headerless=${meta?.headerlessAtms ? 'ja' : 'nein'}.`;
+      const p75b = compact ? ` P75B: Grund=${cellText(compact.reason) || 'unknown'} · Rasterzeilen=${Number(compact.detectedBands || 0)} · Wiederhergestellt=${Number(compact.recoveredRows || 0)}.` : '';
+      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75b}`);
     }
     if (matrix._atmsImageMeta) {
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
