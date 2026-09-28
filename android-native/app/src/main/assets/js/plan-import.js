@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75G · 28.09.2026: FIRST-DATA-ROW GEOMETRY DIAGNOSTIC – reine Diagnose nach dem P75F-Realtest. Wenn eine kompakte Bildliste trotz sichtbarer erster Datenzeile nur die folgenden Zeilen importiert, protokolliert P75G die Primaer-OCR-Zeilengruppen rund um den erkannten Header, die Keep/Reject-Entscheidung der ersten Datenzeilen sowie die vorhandenen horizontalen Rasterlinien und deren Abstand zum Header.
+// Keine OCR-Regel, kein Crop, keine Schwelle, keine Matrix-/Importentscheidung, keine Flugpruefung und keine PLAN/DISPO/LIVE-/Farben-/Persistenzlogik wird veraendert. P75G dient ausschliesslich dazu zu beweisen, ob die erste Datenzeile mit der Headerzeile gruppiert, als eigene OCR-Zeile verworfen oder erst durch die Header-/Rastergeometrie uebersprungen wird.
 // CORE-007D8A1F1D8P75F · 28.09.2026: FIRST DATA ROW / HEADER-BBOX RECOVERY – der P75E-Realtest mit IMG-20260927-WA0012.jpg belegt, dass das 14-Spalten-Raster korrekt rekonstruiert wird, die erste Datenzeile direkt unter dem Tabellenkopf aber verloren geht, weil OCR-Wortboxen des Headers durch vertikale Tabellenlinien bis in die erste Datenzeile hineinreichen und dadurch headerY1 die echte Header-Unterkante ueberschreitet. P75F darf fuer genau den bereits P75E-reparierten starken 14-Spalten-Fall die echte Header-Unterkante aus dem stabilen horizontalen Vollraster um headerCy bestimmen.
 // Fail-closed: Die alternative Header-Unterkante wird nur akzeptiert, wenn eine horizontale Regel direkt unter headerCy liegt, eine passende Regel direkt darueber existiert, Headerzellenhoehe und nachfolgende Zeilenabstaende demselben stabilen Raster entsprechen und alle daraus erkannten physischen Datenzeilen vollstaendig per bestehender P75B-Zell-OCR als sichere Fahrten wiederhergestellt werden. Teilmengen bleiben verboten. Keine feste Fahrtenanzahl, keine Flug-/Fahrer-/Routen-Hardcodes; FLIGHT-008, PLAN, DISPO, LIVE, Farben und Persistenz bleiben unveraendert.
 // CORE-007D8A1F1D8P75E · 28.09.2026: COMPACT GRID ROUTE-HEADER RECOVERY – der P75D-Realtest belegt ein korrekt erkanntes 14-Spalten-/15-Regel-Raster mit 9 positionsrichtig ausgerichteten Header-Ankern, das ausschließlich an header_alignment_not_safe scheitert. P75E darf in genau diesem starken 14-Spalten-Preis-Schema fehlende Von-/Nach-Header aus der bereits eindeutig belegten Spaltengeometrie rekonstruieren.
@@ -2331,9 +2333,36 @@
     const headerRow = anchors.map(anchor => anchor.label);
     const rows = [headerRow];
     const rowMetaByMatrixIndex = {};
+
+    // P75G: reine Beobachtung der Primaer-OCR-Zeilengruppierung rund um den Header.
+    // Die Daten werden erst am Ende als Diagnose-Metadaten angehaengt und greifen in
+    // keinerlei Keep-/Reject-/Importentscheidung ein.
+    const p75gLineDecisions = [];
+    const p75gLineSummary = line => {
+      const lineWords = Array.isArray(line?.words) ? line.words : [];
+      const ys0 = lineWords.map(word => Number(word?.y0)).filter(Number.isFinite);
+      const ys1 = lineWords.map(word => Number(word?.y1)).filter(Number.isFinite);
+      return {
+        cy: Number(line?.cy || 0),
+        y0: ys0.length ? Math.min(...ys0) : Number(line?.cy || 0),
+        y1: ys1.length ? Math.max(...ys1) : Number(line?.cy || 0),
+        words: lineWords.length,
+        text: lineWords.map(word => cellText(word?.text)).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
+      };
+    };
+    const p75gHeaderIndex = hasSafeHeader ? Number(header?.index ?? -1) : -1;
+    const p75gHeaderSummary = hasSafeHeader && header?.line ? p75gLineSummary(header.line) : null;
+    const p75gNearHeaderLines = hasSafeHeader
+      ? lines.slice(Math.max(0, p75gHeaderIndex - 1), Math.min(lines.length, p75gHeaderIndex + 5)).map((line, offset) => ({
+          index: Math.max(0, p75gHeaderIndex - 1) + offset,
+          isHeader: Math.max(0, p75gHeaderIndex - 1) + offset === p75gHeaderIndex,
+          ...p75gLineSummary(line)
+        }))
+      : [];
+
     const dataLines = hasSafeHeader ? lines.slice(header.index + 1) : headerlessLayout.lines;
 
-    dataLines.forEach(line => {
+    dataLines.forEach((line, dataLineOffset) => {
       const cells = Array(anchors.length).fill('').map(()=>[]);
       (line.words || []).forEach(word => {
         const cx = (word.x0 + word.x1) / 2;
@@ -2383,6 +2412,28 @@
       const keep = completed.standard
         ? ((rideTimeValid && nonEmpty >= 2) || strongOrphanRow)
         : (nonEmpty >= 3 && (hasTime || hasFlight));
+
+      // P75G: dokumentiert nur, warum eine bereits vorhandene OCR-Zeilengruppe
+      // behalten oder verworfen wurde. Keine Entscheidung wird veraendert.
+      if (hasSafeHeader) {
+        const summary = p75gLineSummary(line);
+        p75gLineDecisions.push({
+          lineIndex: p75gHeaderIndex + 1 + dataLineOffset,
+          ...summary,
+          nonEmpty,
+          rideTimeRaw,
+          rideTimeNormalized,
+          rideTimeValid,
+          secondaryTimeValid,
+          hasTime,
+          hasFlight,
+          hasRoute,
+          hasIdentity,
+          hasFlightCells,
+          strongOrphanRow,
+          keep
+        });
+      }
 
       if (!keep) return;
 
@@ -2480,6 +2531,19 @@
       semantic,
       rowMetaByMatrixIndex,
       width,
+      p75gFirstRowDiagnostic: hasSafeHeader ? {
+        version: 'CORE-007D8A1F1D8P75G',
+        headerIndex: p75gHeaderIndex,
+        headerCy: Number(p75gHeaderSummary?.cy || 0),
+        headerY0: Number(p75gHeaderSummary?.y0 || 0),
+        headerY1: Number(p75gHeaderSummary?.y1 || 0),
+        headerWords: Number(p75gHeaderSummary?.words || 0),
+        headerText: cellText(p75gHeaderSummary?.text),
+        nearHeaderLines: p75gNearHeaderLines,
+        dataLineDecisions: p75gLineDecisions.slice(0, 10),
+        groupedLineCount: Array.isArray(lines) ? lines.length : 0,
+        dataLineCount: Array.isArray(dataLines) ? dataLines.length : 0
+      } : null,
       headerLineMeta: hasSafeHeader ? (() => {
         const headerWords = Array.isArray(header?.line?.words) ? header.line.words : [];
         const y0 = headerWords.map(word => Number(word?.y0)).filter(Number.isFinite);
@@ -5416,6 +5480,7 @@
       flightPrefixRecoveries,
       flightPrefixRejects,
       flightOcrTraces,
+      p75gFirstRowDiagnostic: imageMeta?.p75gFirstRowDiagnostic || null,
       diagnosticItems: diagList.length
     };
   }
@@ -5466,6 +5531,32 @@
     ].join('; ');
   }
 
+  function formatP75GFirstRowDiagnostic(diag) {
+    if (!diag || typeof diag !== 'object') return '∅';
+    const n = value => Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
+    const compactText = (value, max = 180) => {
+      const text = cellText(value).replace(/\s+/g, ' ').trim();
+      return text.length > max ? `${text.slice(0, max)}…` : (text || '∅');
+    };
+    const lineText = Array.isArray(diag.nearHeaderLines) ? diag.nearHeaderLines.map(line =>
+      `#${Number(line?.index ?? -1)}${line?.isHeader ? 'H' : ''}@${n(line?.cy)}[${n(line?.y0)}-${n(line?.y1)}]:${compactText(line?.text, 120)}`
+    ).join(' | ') : '∅';
+    const decisions = Array.isArray(diag.dataLineDecisions) ? diag.dataLineDecisions.slice(0, 6).map(item =>
+      `#${Number(item?.lineIndex ?? -1)}@${n(item?.cy)} keep=${item?.keep ? 1 : 0} time=${compactText(item?.rideTimeRaw, 18)}/${item?.rideTimeValid ? 1 : 0} route=${item?.hasRoute ? 1 : 0} id=${item?.hasIdentity ? 1 : 0} n=${Number(item?.nonEmpty || 0)} text=${compactText(item?.text, 120)}`
+    ).join(' | ') : '∅';
+    const nearestRules = Array.isArray(diag.nearestRules) ? diag.nearestRules.map(item =>
+      `${n(item?.y)}(dCy=${n(item?.dCy)},dY1=${n(item?.dY1)})`
+    ).join(',') : '∅';
+    return [
+      `Header=#${Number(diag.headerIndex ?? -1)}@${n(diag.headerCy)} Y=${n(diag.headerY0)}-${n(diag.headerY1)} Wörter=${Number(diag.headerWords || 0)}`,
+      `HeaderText=${compactText(diag.headerText, 220)}`,
+      `Zeilen=${lineText || '∅'}`,
+      `Entscheidungen=${decisions || '∅'}`,
+      `Raster=${cellText(diag.gridReason) || 'unknown'}/${diag.gridAccepted ? 'ok' : 'nein'} Bänder=${Number(diag.detectedBands || 0)} HeaderBottom=${n(diag.gridHeaderBottom)} Gap=${n(diag.gridMedianGap)}`,
+      `RegelnNah=[${nearestRules || '∅'}]`
+    ].join('; ');
+  }
+
   function formatOcrDiagnosticSelfCheck(check) {
     if (!check) return 'Selbstcheck nicht ausgeführt';
     const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
@@ -5492,7 +5583,8 @@
       `Mapping={${check.mappingSnapshot || '∅'}}`,
       `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`,
       `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`,
-      `P63Primary=[${formatP63PrimaryDiagnostic(p63Primary)}]`
+      `P63Primary=[${formatP63PrimaryDiagnostic(p63Primary)}]`,
+      `P75G=[${formatP75GFirstRowDiagnostic(check.p75gFirstRowDiagnostic)}]`
     ].join(' · ');
   }
 
@@ -5571,6 +5663,53 @@
     // entscheiden anschließend weiterhin über Annahme oder Abbruch.
     words = await measureAsync('headerless_price_anchor_check', () => recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width));
     let matrix = measureSync('image_words_to_matrix', () => imageWordsToMatrix(words, canvas.width));
+
+    // P75G: Reiner Geometrie-Beweistest auch dann, wenn der normale OCR-Pfad bereits
+    // mehrere Fahrten geliefert hat (genau der P75F-Realtestfall). Das vorhandene
+    // Farbbild wird nur gelesen; matrix/rows/rowMeta und Importlogik bleiben unberuehrt.
+    if (matrix?._atmsImageMeta?.safeHeaderDetected && !matrix._atmsImageMeta?.headerlessAtms) {
+      await measureAsync('p75g_first_row_geometry_diagnostic', async () => {
+        const meta = matrix._atmsImageMeta;
+        const diag = meta?.p75gFirstRowDiagnostic || { version: 'CORE-007D8A1F1D8P75G' };
+        try {
+          const sourceCanvas = await buildSourceColorCanvas(file, canvas.width, canvas.height);
+          const grid = detectCompactGridRowBands(sourceCanvas, meta);
+          const rules = Array.isArray(grid?.ruleCenters) ? grid.ruleCenters.slice() : [];
+          const headerCy = Number(meta?.headerLineMeta?.cy || diag?.headerCy || 0);
+          const headerY1 = Number(meta?.headerLineMeta?.y1 || diag?.headerY1 || 0);
+          const nearestRules = rules
+            .map(y => ({ y: Number(y), dCy: Number(y) - headerCy, dY1: Number(y) - headerY1 }))
+            .filter(item => Number.isFinite(item.y))
+            .sort((a,b) => Math.abs(a.dCy) - Math.abs(b.dCy))
+            .slice(0, 8)
+            .sort((a,b) => a.y - b.y);
+          meta.p75gFirstRowDiagnostic = {
+            ...diag,
+            gridReason: cellText(grid?.reason) || 'unknown',
+            gridAccepted: Boolean(grid?.accepted),
+            detectedBands: Array.isArray(grid?.bands) ? grid.bands.length : 0,
+            ruleCenters: rules,
+            nearestRules,
+            gridHeaderBottom: Number(grid?.headerBottom || 0),
+            gridMedianGap: Number(grid?.medianGap || 0),
+            gridHeaderBottomRecovered: Boolean(grid?.headerBottomRecovered),
+            gridHeaderBottomRecoveryReason: cellText(grid?.headerBottomRecoveryReason) || '',
+            gridHeaderFrameGap: Number(grid?.headerFrameGap || 0),
+            gridHeaderGridGap: Number(grid?.headerGridGap || 0)
+          };
+        } catch (error) {
+          meta.p75gFirstRowDiagnostic = {
+            ...diag,
+            gridReason: `diagnostic_error:${cellText(error?.message) || String(error || '')}`,
+            gridAccepted: false,
+            detectedBands: 0,
+            ruleCenters: [],
+            nearestRules: []
+          };
+        }
+      });
+    }
+
     // P75D: Der normale erfolgreiche OCR-Pfad bleibt unverändert. Bei 0 Fahrtzeilen darf
     // P75B weiterhin sofort fuer standardAtms starten. Zusaetzlich darf der mit P75C
     // belegte starke Header-Sonderfall den fail-closed Schema-Rastertest starten.
