@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75F · 28.09.2026: FIRST DATA ROW / HEADER-BBOX RECOVERY – der P75E-Realtest mit IMG-20260927-WA0012.jpg belegt, dass das 14-Spalten-Raster korrekt rekonstruiert wird, die erste Datenzeile direkt unter dem Tabellenkopf aber verloren geht, weil OCR-Wortboxen des Headers durch vertikale Tabellenlinien bis in die erste Datenzeile hineinreichen und dadurch headerY1 die echte Header-Unterkante ueberschreitet. P75F darf fuer genau den bereits P75E-reparierten starken 14-Spalten-Fall die echte Header-Unterkante aus dem stabilen horizontalen Vollraster um headerCy bestimmen.
+// Fail-closed: Die alternative Header-Unterkante wird nur akzeptiert, wenn eine horizontale Regel direkt unter headerCy liegt, eine passende Regel direkt darueber existiert, Headerzellenhoehe und nachfolgende Zeilenabstaende demselben stabilen Raster entsprechen und alle daraus erkannten physischen Datenzeilen vollstaendig per bestehender P75B-Zell-OCR als sichere Fahrten wiederhergestellt werden. Teilmengen bleiben verboten. Keine feste Fahrtenanzahl, keine Flug-/Fahrer-/Routen-Hardcodes; FLIGHT-008, PLAN, DISPO, LIVE, Farben und Persistenz bleiben unveraendert.
 // CORE-007D8A1F1D8P75E · 28.09.2026: COMPACT GRID ROUTE-HEADER RECOVERY – der P75D-Realtest belegt ein korrekt erkanntes 14-Spalten-/15-Regel-Raster mit 9 positionsrichtig ausgerichteten Header-Ankern, das ausschließlich an header_alignment_not_safe scheitert. P75E darf in genau diesem starken 14-Spalten-Preis-Schema fehlende Von-/Nach-Header aus der bereits eindeutig belegten Spaltengeometrie rekonstruieren.
 // Fail-closed bleibt erhalten: mindestens HeaderScore 9 + 9 Header-Anker + 9 positionsrichtig ausgerichtete Header, Preis muss in der Preis-Spalte ausgerichtet sein und in jedem fehlenden Routen-Slot darf kein widersprechender erkannter Header liegen. 12/13-Spalten-Schemata sowie alle OCR-/Zeilen-/Fahrt-Sicherheitsgrenzen bleiben unveraendert. Keine feste Fahrtenanzahl, keine Flug-/Fahrer-/Routen-Hardcodes; P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unveraendert.
 // CORE-007D8A1F1D8P75D · 28.09.2026: COMPACT GRID STRONG-HEADER SCHEMA RECOVERY – behebt den mit P75C belegten Sonderfall, dass ein kompakter Bildplan eine sehr sicher erkannte Kopfzeile (9/9) besitzt, die normale Schema-Vervollstaendigung aber trotzdem standardAtms=false liefert. In diesem engen Fall darf P75D die vertikalen Tabellenlinien des unveraenderten Farbbilds als reine Spaltengeometrie verwenden, das passende vorhandene ATMS-12/13/14-Spaltenschema nur bei eindeutiger Spaltenzahl + Header-Ausrichtung rekonstruieren und danach den bestehenden P75B-Zeilenfallback starten.
@@ -2903,8 +2905,71 @@
     }).filter(Number.isFinite).sort((a,b)=>a-b);
 
     // Erste echte horizontale Linie UNTER der erkannten Kopfzeile ist deren Unterkante.
-    const belowHeader = ruleCenters.filter(y => y >= headerY1 + 3);
-    if (belowHeader.length < 3) return { ...fail('too_few_rules_below_header'), ruleCenters };
+    // Normalfall bleibt unveraendert: OCR-Headerbox + 3 px Sicherheitsabstand.
+    let belowHeader = ruleCenters.filter(y => y >= headerY1 + 3);
+    let headerBottomRecovered = false;
+    let headerBottomRecoveryReason = 'not_needed';
+    let headerFrameGap = 0;
+    let headerGridGap = 0;
+
+    // P75F: Im mit P75E real belegten 14-Spalten-Sonderfall kann Tesseract eine
+    // vertikale Tabellenlinie in die Header-Wortbox aufnehmen. headerY1 liegt dann
+    // bereits INNERHALB der ersten Datenzeile und die bisherige +3-Regel ueberspringt
+    // deren obere Rasterkante. Nur fuer ein zuvor erfolgreich P75E-repariertes, starkes
+    // 14-Spalten-Schema darf deshalb die echte Header-Unterkante aus dem Vollraster
+    // um headerCy rekonstruiert werden.
+    const schemaRecovery = imageMeta?.compactGridSchemaRecovery || null;
+    const p75fExactRecovered14 = Boolean(
+      schemaRecovery?.accepted &&
+      Number(schemaRecovery?.columnCount || 0) === ATMS_IMAGE_SCHEMA_14_PRICE.length &&
+      compactGridStrongHeaderMeta(imageMeta) &&
+      Number(imageMeta?.headerDetectionScore || 0) >= 9 &&
+      Number(imageMeta?.headerDetectionAnchors || 0) >= 9
+    );
+    if (p75fExactRecovered14) {
+      const rulesAboveOrAtCy = ruleCenters.filter(y => y <= headerCy);
+      const rulesBelowCy = ruleCenters.filter(y => y > headerCy);
+      const candidateHeaderBottom = Number(rulesBelowCy[0]);
+      const candidateHeaderTop = Number(rulesAboveOrAtCy[rulesAboveOrAtCy.length - 1]);
+      const tailGaps = [];
+      for (let i = 1; i < rulesBelowCy.length; i++) {
+        const gap = Number(rulesBelowCy[i]) - Number(rulesBelowCy[i - 1]);
+        if (Number.isFinite(gap) && gap > 0) tailGaps.push(gap);
+      }
+      const stableGap = medianNumber(tailGaps);
+      headerFrameGap = Number.isFinite(candidateHeaderBottom) && Number.isFinite(candidateHeaderTop)
+        ? candidateHeaderBottom - candidateHeaderTop
+        : 0;
+      headerGridGap = Number.isFinite(stableGap) ? stableGap : 0;
+      const candidateToNext = rulesBelowCy.length >= 2
+        ? Number(rulesBelowCy[1]) - candidateHeaderBottom
+        : NaN;
+      const tailStable = Number.isFinite(stableGap) && stableGap >= 18 && stableGap <= sourceCanvas.height * 0.25 &&
+        tailGaps.length >= 3 &&
+        tailGaps.every(gap => gap >= stableGap * 0.68 && gap <= stableGap * 1.38);
+      const frameStable = tailStable && Number.isFinite(candidateHeaderTop) &&
+        headerFrameGap >= stableGap * 0.68 && headerFrameGap <= stableGap * 1.38;
+      const firstRowStable = tailStable && Number.isFinite(candidateToNext) &&
+        candidateToNext >= stableGap * 0.68 && candidateToNext <= stableGap * 1.38;
+      const headerCyInsideFrame = Number.isFinite(candidateHeaderTop) && Number.isFinite(candidateHeaderBottom) &&
+        candidateHeaderTop < headerCy && candidateHeaderBottom > headerCy + 2;
+      const oldThresholdSkippedCandidate = Number.isFinite(candidateHeaderBottom) && candidateHeaderBottom < headerY1 + 3;
+
+      if (headerCyInsideFrame && oldThresholdSkippedCandidate && frameStable && firstRowStable) {
+        belowHeader = rulesBelowCy.slice();
+        headerBottomRecovered = true;
+        headerBottomRecoveryReason = 'header_bbox_overshoot';
+      }
+    }
+
+    if (belowHeader.length < 3) return {
+      ...fail('too_few_rules_below_header'),
+      ruleCenters,
+      headerBottomRecovered,
+      headerBottomRecoveryReason,
+      headerFrameGap,
+      headerGridGap
+    };
     const headerBottom = belowHeader[0];
     const rowRules = belowHeader.slice(1);
     const gaps = [];
@@ -2932,7 +2997,18 @@
       bands.push({ y0, y1, cy: (y0 + y1) / 2, syntheticGap: true, compactGridBand: true });
       previous = rule;
     }
-    return { accepted: true, reason: 'ok', bands, ruleCenters, headerBottom, medianGap };
+    return {
+      accepted: true,
+      reason: 'ok',
+      bands,
+      ruleCenters,
+      headerBottom,
+      medianGap,
+      headerBottomRecovered,
+      headerBottomRecoveryReason,
+      headerFrameGap,
+      headerGridGap
+    };
   }
 
   function compactRecoveredRowIsSafe(row, semantic) {
@@ -3221,7 +3297,12 @@
       reason: grid.reason,
       detectedBands: Array.isArray(grid.bands) ? grid.bands.length : 0,
       ruleCenters: Array.isArray(grid.ruleCenters) ? grid.ruleCenters.slice() : [],
-      medianGap: Number(grid.medianGap || 0)
+      medianGap: Number(grid.medianGap || 0),
+      headerBottom: Number(grid.headerBottom || 0),
+      headerBottomRecovered: Boolean(grid.headerBottomRecovered),
+      headerBottomRecoveryReason: cellText(grid.headerBottomRecoveryReason) || '',
+      headerFrameGap: Number(grid.headerFrameGap || 0),
+      headerGridGap: Number(grid.headerGridGap || 0)
     };
     if (!grid.accepted || !grid.bands.length) return matrix;
 
@@ -5510,10 +5591,11 @@
                 : (meta?.headerlessAtms ? 'uebersprungen_headerless' : 'uebersprungen_unbekannt')));
       const p75c = ` CORE-007D8A1F1D8P75C Diagnose: Trigger=${trigger} · Matrix=${Number(matrix?.length || 0)} · SafeHeader=${meta?.safeHeaderDetected ? 'ja' : 'nein'} · HeaderScore=${Number(meta?.headerDetectionScore || 0)} · HeaderAnker=${Number(meta?.headerDetectionAnchors || 0)} · Standard=${meta?.standardAtms ? 'ja' : 'nein'} · SchemaSpalten=${Number(meta?.schemaColumns || 0)} · CompletedAnker=${Number(meta?.completedAnchorCount || 0)} · SyntheticAnker=${Number(meta?.syntheticAnchorCount || 0)} · Headerless=${meta?.headerlessAtms ? 'ja' : 'nein'}.`;
       const p75b = compact ? ` P75B: Grund=${cellText(compact.reason) || 'unknown'} · Rasterzeilen=${Number(compact.detectedBands || 0)} · Wiederhergestellt=${Number(compact.recoveredRows || 0)}.` : '';
+      const p75f = compact ? ` P75F: ErsteZeile=${compact.headerBottomRecovered ? 'Rasterkante_rekonstruiert' : 'normal'} · HeaderBottom=${Number(compact.headerBottom || 0)} · HeaderGap=${Number(compact.headerFrameGap || 0).toFixed(1)} · ZeilenGap=${Number(compact.headerGridGap || compact.medianGap || 0).toFixed(1)}.` : '';
       const schemaRepair = meta?.compactGridSchemaRecovery;
       const p75d = schemaRepair ? ` P75D: Schema=${schemaRepair.accepted ? 'repariert' : 'abgelehnt'} · Grund=${cellText(schemaRepair.reason) || 'unknown'} · Spalten=${Number(schemaRepair.columnCount || 0)} · HeaderAlign=${Number(schemaRepair.alignedHeaders || 0)} · Vertikalregeln=${Array.isArray(schemaRepair.verticalRules) ? schemaRepair.verticalRules.length : 0}.` : '';
       const p75e = schemaRepair ? ` P75E: RouteAnker=${Number(schemaRepair.routePresentCount || 0)}/2 · RouteReparatur=${schemaRepair.routeHeaderRecovered ? 'ja' : 'nein'} · PreisAlign=${schemaRepair.priceAligned ? 'ja' : 'nein'} · RouteKonflikt=${schemaRepair.missingRouteConflict ? 'ja' : 'nein'}.` : '';
-      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75e}${p75b}`);
+      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75e}${p75f}${p75b}`);
     }
     if (matrix._atmsImageMeta) {
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
