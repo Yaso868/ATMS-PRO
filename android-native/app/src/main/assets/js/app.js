@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P76A · 28.09.2026: NATIVE BACKUP FILE EXPORT HOTFIX – „📤 Backup erstellen“ verwendet in der Android-App jetzt den bereits vorhandenen nativen Speichern-unter-Dialog statt des unbestätigten Browser-Downloads. Der sichtbare Sicherungszeitpunkt wird erst nach erfolgreich bestätigtem Dateischreiben aktualisiert; Abbruch/Fehler erzeugt keinen falschen „Letzte Sicherung“-Status. Web-Fallback sowie Backup-Inhalt, Wiederherstellung, Fahrten, OCR, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – übernimmt bei ausreichend eindeutigen Bild-/WhatsApp-Planlisten die erkannte Zeilenfarbe als persistente Fahrerfarbe, solange keine manuelle P74-Farbwahl Vorrang hat. Ergänzt in „Alle Fahrten“ eine Fahrer-Tagesübersicht mit echter Fahrtenanzahl nach bestehender Bündel-/Flugnummernlogik, Preis-Summe und Detailzeilen.
 // P74 manuelle Farbauswahl bleibt erhalten; Farbkollisionen, P73 Dedupe, P72 Multi-Stop, P71 Scrollposition, P70 Google-Maps-Handoff sowie OCR/FLIGHT-008/PLAN/DISPO/LIVE bleiben sonst unverändert.
 // CORE-007D8A1F1D8P74 · 27.09.2026: MANUAL DRIVER COLOR PICKER – In „Alle Fahrten“ kann jedem Fahrer seine feste Farbe manuell zugewiesen werden. Bei Farbkollision wird die bisherige Farbe des gewählten Fahrers mit dem betroffenen Fahrer getauscht, damit die Fahrerfarben eindeutig bleiben. Auswahl wird im bestehenden DRIVER_COLOR_KEY dauerhaft lokal gespeichert. P73 Dedupe, P72 Multi-Stop, P71 Scrollposition/Farbpersistenz, P70 Google-Maps-Handoff sowie OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
@@ -1465,13 +1466,21 @@ function updateBackupUI(){
     setBackupStatus(text,'ok');if(info){info.textContent=dt.toLocaleDateString('de-DE')+' · '+dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});info.classList.remove('warn');info.classList.add('status');}
   }else{setBackupStatus('Noch keine Sicherung erstellt.','warn');if(info){info.textContent='Noch keine Sicherung';info.classList.add('warn');info.classList.remove('status');}}
 }
-function exportAtmsBackup(){
+async function exportAtmsBackup(){
   try{
     const payload=backupPayload();
-    downloadTextFile(JSON.stringify(payload,null,2),backupFileName(),'application/octet-stream');
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/octet-stream'});
+    await saveExportBlob(blob,backupFileName(),'application/octet-stream');
     localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:payload.createdAt,appVersion:payload.appVersion}));
     updateBackupUI();
-  }catch(e){setBackupStatus('Backup konnte nicht erstellt werden: '+e.message,'warn');}
+  }catch(e){
+    const message=String(e?.message||e||'Unbekannter Fehler');
+    if(/abgebrochen/i.test(message)){
+      setBackupStatus('Backup-Speichern abgebrochen.','warn');
+      return;
+    }
+    setBackupStatus('Backup konnte nicht erstellt werden: '+message,'warn');
+  }
 }
 function chooseBackupFile(){const input=$('backupFileInput');if(input){input.value='';input.click();}}
 async function importAtmsBackup(file){
