@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P75I · 28.09.2026: OCR INTEGRITY PACK – ergänzt drei eng zusammengehörende, fail-safe OCR-Sicherungen: (1) ein einzelner trailing Buchstabe an einer formal plausiblen Flugnummer wird nur dann entfernt, wenn mehrere enge OCR-Crops der originalen Flugzelle eindeutig dieselbe kürzere Flugnummer bestätigen; (2) eine einzelne 1-Zeichen-Abweichung in längeren Routenbezeichnungen wird nur bei starkem Wiederholungs-Konsens innerhalb derselben Liste vereinheitlicht; (3) automatische Korrekturen und ungeklärte Gegenprüfungen werden im OCR-Selbstcheck/Preview sichtbar, sodass relevante interne Abweichungen nicht mehr unsichtbar hinter „0 Hinweise · 0 Fehler“ verschwinden. Keine Flugnummern-, Airline-, Hotel- oder Orts-Hardcodes. P75H First-Row-Recovery, FLIGHT-008, PLAN/DISPO/LIVE, Fahrerfarben und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75H · 28.09.2026: FIRST POST-HEADER PRIMARY OCR ROW RECOVERY – P75G hat bewiesen, dass die verlorene erste Fahrt bereits in der Primär-OCR vollständig als eigene Zeile vorhanden ist, aber wegen der überlappenden Header-Bounding-Box nicht in das kompakte Raster gelangt. P75H darf ausschließlich im bereits P75E-reparierten starken 14-Spalten-Preis-Schema genau eine sichere Primär-OCR-Zeile unmittelbar unter dem Header vor die per P75B/P75E wiederhergestellten Rasterzeilen setzen.
 // Fail-closed: Der Sonderfall wird nur aktiv, wenn HeaderScore/Anker weiterhin 9/9-orientiert stark sind, P75E das 14-Spalten-Schema sicher repariert hat, die Kandidatenzeile den Header-Bereich direkt berührt/überlappt, exakt einen stabilen Zeilenabstand vor der ersten Rasterzeile liegt und dieselben bestehenden Zeit-/Preis-/Routen-/Identitätsprüfungen besteht. Mehrdeutige Kandidaten blockieren statt teilweise zu importieren. Keine Flug-/Fahrer-/Routen-Hardcodes; FLIGHT-008, PLAN, DISPO, LIVE, Farben und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75G · 28.09.2026: FIRST-DATA-ROW GEOMETRY DIAGNOSTIC – reine Diagnose nach dem P75F-Realtest. Wenn eine kompakte Bildliste trotz sichtbarer erster Datenzeile nur die folgenden Zeilen importiert, protokolliert P75G die Primaer-OCR-Zeilengruppen rund um den erkannten Header, die Keep/Reject-Entscheidung der ersten Datenzeilen sowie die vorhandenen horizontalen Rasterlinien und deren Abstand zum Header.
@@ -1025,6 +1026,46 @@
           text: `Flugnummer ${ride.flightNumber} hat einen auffälligen langen Präfix und konnte lokal nicht sicher bestätigt/korrigiert werden – Original-Planliste prüfen`
         });
       }
+      if (ride.flightTrailingSuffixOcrNeedsReview && ride.flightNumber) {
+        issues.push({
+          level: 'warning',
+          kind: 'flight_ocr',
+          row,
+          text: `Flugnummer ${ride.flightNumber} hat am Ende einen OCR-auffälligen Buchstaben; die lokale Zell-Gegenprüfung war nicht eindeutig – Original-Planliste prüfen`
+        });
+      }
+      if (ride.flightRecoveredFromTrailingSuffixOcr && ride.flightNumber) {
+        issues.push({
+          level: 'info',
+          kind: 'ocr_recovery',
+          row,
+          text: `Flugnummer ${ride.flightTrailingSuffixOcrInitial} → ${ride.flightNumber} durch eindeutigen lokalen Flugzellen-Konsens automatisch korrigiert`
+        });
+      }
+      const routeReview = ride.routeTextConsistencyNeedsReview && typeof ride.routeTextConsistencyNeedsReview === 'object'
+        ? ride.routeTextConsistencyNeedsReview
+        : {};
+      Object.entries(routeReview).forEach(([field, data]) => {
+        const label = field === 'pickup' ? 'Abholort' : field === 'destination' ? 'Ziel' : field;
+        issues.push({
+          level: 'warning',
+          kind: 'route_ocr',
+          row,
+          text: `${label} „${cellText(data?.value || ride?.[field])}“ weicht um ein OCR-Zeichen von einer wiederholten Routenbezeichnung ab; Konsens reicht nicht für automatische Korrektur – Original-Planliste prüfen`
+        });
+      });
+      const routeFixes = ride.routeTextConsistency && typeof ride.routeTextConsistency === 'object'
+        ? ride.routeTextConsistency
+        : {};
+      Object.entries(routeFixes).forEach(([field, data]) => {
+        const label = field === 'pickup' ? 'Abholort' : field === 'destination' ? 'Ziel' : field;
+        issues.push({
+          level: 'info',
+          kind: 'ocr_recovery',
+          row,
+          text: `${label} „${cellText(data?.from)}“ → „${cellText(data?.to)}“ durch wiederholten Listenkonsens automatisch korrigiert`
+        });
+      });
       if (ride.flightRejectedSuspiciousOcr && !ride.flightNumber) {
         issues.push({
           level: 'warning',
@@ -4932,6 +4973,117 @@
     return out;
   }
 
+  function trailingFlightSuffixBaseCandidate(value) {
+    const initial = normalizeFlightNumber(value);
+    if (!initial || !/\d[A-Z]$/.test(initial)) return '';
+    const base = normalizeFlightNumber(initial.slice(0, -1));
+    if (!base || base === initial || !looksLikeFlight(base)) return '';
+    return base;
+  }
+
+  async function recoverSuspiciousTrailingFlightSuffixesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+
+    for (let i = 0; i < out.length; i++) {
+      const ride = out[i];
+      const initial = normalizeFlightNumber(ride?.flightNumber);
+      const base = trailingFlightSuffixBaseCandidate(initial);
+      if (!initial || !base) continue;
+
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+      const colIndex = field ? mapping?.[field] : undefined;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (colIndex === undefined || !rowMeta) continue;
+
+      const boundaries = imageMeta.boundaries || [];
+      const left = Number(boundaries[colIndex]);
+      const right = Number(boundaries[colIndex + 1]);
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      const rowHeight = Math.max(18, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const regions = [
+        [left + cellWidth * 0.03, y0 - rowHeight * 0.14, right - cellWidth * 0.03, y1 + rowHeight * 0.14, 1],
+        [left + cellWidth * 0.07, y0 - rowHeight * 0.10, right - cellWidth * 0.07, y1 + rowHeight * 0.10, 2],
+        [left + cellWidth * 0.11, y0 - rowHeight * 0.06, right - cellWidth * 0.11, y1 + rowHeight * 0.06, 3]
+      ];
+
+      if (status) status.textContent = `Flugnummer-Endzeichen Zeile ${ride.sourceRow} wird lokal gegengeprüft …`;
+      const attempts = [];
+      const baseCrops = new Set();
+      const initialCrops = new Set();
+      let worker = null;
+      try {
+        if (typeof Tesseract.createWorker === 'function') {
+          worker = await Tesseract.createWorker('eng');
+          if (worker && typeof worker.setParameters === 'function') {
+            await worker.setParameters({
+              tessedit_pageseg_mode: '8',
+              tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+            });
+          }
+        }
+        for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
+          const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
+          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          const second = worker && typeof worker.recognize === 'function'
+            ? await worker.recognize(crop)
+            : await Tesseract.recognize(crop, 'eng', {
+                tessedit_pageseg_mode: '8',
+                tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+              });
+          const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
+            .map(normalizeFlightNumber)
+            .filter(candidate => candidate === initial || candidate === base))];
+          const cropNo = cropIndex + 1;
+          if (candidates.includes(base)) baseCrops.add(cropNo);
+          if (candidates.includes(initial)) initialCrops.add(cropNo);
+          attempts.push({
+            crop: cropNo,
+            scale,
+            rawText: cellText(second?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60),
+            candidates: candidates.slice()
+          });
+        }
+      } catch (error) {
+        attempts.push({ crop: 0, scale: 0, rawText: cellText(error?.message || error).slice(0, 80), candidates: [] });
+      } finally {
+        if (worker && typeof worker.terminate === 'function') {
+          try { await worker.terminate(); } catch (_) {}
+        }
+      }
+
+      ride.flightTrailingSuffixOcrAttempts = attempts;
+      ride.flightTrailingSuffixOcrInitial = initial;
+      const baseSupport = baseCrops.size;
+      const initialSupport = initialCrops.size;
+      const accepted = baseSupport >= 2 && initialSupport === 0;
+
+      if (accepted) {
+        ride.flightNumber = base;
+        if (routeType === 'arrival') ride.arrivalFlight = base;
+        if (routeType === 'departure') ride.departureFlight = base;
+        ride.flightDirection = routeType;
+        ride.flightRecoveredFromTrailingSuffixOcr = true;
+        ride.flightTrailingSuffixOcrNeedsReview = false;
+        ride.flightTrailingSuffixOcrEvidence = { baseSupport, initialSupport, crops: regions.length };
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      } else if (baseSupport > 0 && (initialSupport > 0 || baseSupport < 2)) {
+        ride.flightTrailingSuffixOcrNeedsReview = true;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      }
+    }
+    return out;
+  }
+
   function singleDeletionPrefixMatch(longPrefix, shortPrefix) {
     if (!longPrefix || !shortPrefix || longPrefix.length !== shortPrefix.length + 1) return false;
     for (let drop = 0; drop < longPrefix.length; drop++) {
@@ -5431,6 +5583,50 @@
       .replace(/[\s·._\-–—/:\\|]+/g, '');
   }
 
+  function routeConsistencyTokens(value) {
+    const text = cellText(value).normalize('NFC').toLocaleLowerCase('de-DE').trim();
+    if (!text) return [];
+    return text
+      .replace(/[^a-z0-9äöüßà-ÿ]+/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean);
+  }
+
+  function oneEditApartToken(leftValue, rightValue) {
+    const left = cellText(leftValue).toLocaleLowerCase('de-DE');
+    const right = cellText(rightValue).toLocaleLowerCase('de-DE');
+    if (!left || !right || left === right || Math.abs(left.length - right.length) > 1) return false;
+    let i = 0, j = 0, edits = 0;
+    while (i < left.length && j < right.length) {
+      if (left[i] === right[j]) { i++; j++; continue; }
+      edits++;
+      if (edits > 1) return false;
+      if (left.length > right.length) i++;
+      else if (right.length > left.length) j++;
+      else { i++; j++; }
+    }
+    if (i < left.length || j < right.length) edits++;
+    return edits === 1;
+  }
+
+  function routeOneCharacterVariantKind(leftValue, rightValue) {
+    const left = routeConsistencyTokens(leftValue);
+    const right = routeConsistencyTokens(rightValue);
+    if (left.length < 3 || right.length !== left.length) return '';
+    if (left[0] !== right[0] || left[left.length - 1] !== right[right.length - 1]) return '';
+    const differences = [];
+    for (let i = 0; i < left.length; i++) {
+      if (left[i] !== right[i]) differences.push(i);
+    }
+    if (differences.length !== 1) return '';
+    const index = differences[0];
+    if (Math.min(left[index].length, right[index].length) < 5) return '';
+    if (!oneEditApartToken(left[index], right[index])) return '';
+    return left[index].length === right[index].length ? 'substitution' : 'insertion_deletion';
+  }
+
   function applyRepeatedTextConsistency(rides) {
     if (!Array.isArray(rides) || rides.length < 3) return rides;
 
@@ -5470,6 +5666,49 @@
           // Legacy-/UI-Alias nach einer Textvereinheitlichung erneut synchronisieren.
           out[entry.index].partner = cellText(out[entry.index].customer) || cellText(out[entry.index].company);
         });
+      });
+    });
+
+    // P75I: Routenfelder werden NICHT unscharf normalisiert. Automatische Korrektur
+    // ist ausschließlich erlaubt, wenn exakt ein längeres 3+-Token-Routenlabel in
+    // demselben Feld mindestens zweimal identisch vorkommt und die Einzelabweichung
+    // nur ein Zeichen in genau EINEM inneren, mindestens 5 Zeichen langen Token ist.
+    ['pickup', 'destination'].forEach(field => {
+      const counts = new Map();
+      out.forEach(ride => {
+        const raw = cellText(ride?.[field]).normalize('NFC').trim();
+        if (raw) counts.set(raw, (counts.get(raw) || 0) + 1);
+      });
+      const repeated = [...counts.entries()].filter(([, count]) => count >= 2);
+      if (!repeated.length) return;
+
+      out.forEach((ride, index) => {
+        const raw = cellText(ride?.[field]).normalize('NFC').trim();
+        if (!raw || Number(counts.get(raw) || 0) !== 1) return;
+        const candidates = repeated
+          .map(([candidate, count]) => ({ candidate, count, kind: candidate !== raw ? routeOneCharacterVariantKind(raw, candidate) : '' }))
+          .filter(item => item.kind)
+          .sort((a,b) => b.count - a.count || a.candidate.localeCompare(b.candidate, 'de-DE'));
+        if (!candidates.length) return;
+        const winner = candidates[0];
+        const runner = candidates[1] || null;
+        const safeMajority = winner.count >= 2 && (!runner || winner.count > runner.count);
+        // Automatisch nur echte Einfüge-/Löschfehler korrigieren. Eine gleich lange
+        // 1-Zeichen-Substitution kann ein echter anderer Eigenname sein und bleibt offen.
+        if (!safeMajority || winner.kind !== 'insertion_deletion') {
+          out[index].routeTextConsistencyNeedsReview = {
+            ...(out[index].routeTextConsistencyNeedsReview || {}),
+            [field]: { value: raw, candidates: candidates.map(item => ({ value: item.candidate, count: item.count, kind: item.kind })) }
+          };
+          return;
+        }
+
+        out[index][field] = winner.candidate;
+        out[index].routeTextConsistency = {
+          ...(out[index].routeTextConsistency || {}),
+          [field]: { from: raw, to: winner.candidate, evidenceCount: winner.count, editDistance: 1, kind: winner.kind }
+        };
+        out[index].rideType = classifyRide(out[index].pickup, out[index].destination, out[index].arrivalFlight, out[index].departureFlight);
       });
     });
 
@@ -5615,6 +5854,20 @@
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightRejectedSuspiciousOcrInitial)}→∅`);
     const unresolvedSuspiciousFlights = rideList.filter(ride => ride?.flightLongPrefixOcrUnresolved && ride?.flightNumber)
       .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightNumber)}`);
+    const flightSuffixRecoveries = rideList.filter(ride => ride?.flightRecoveredFromTrailingSuffixOcr)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightTrailingSuffixOcrInitial)}→${normalizeFlightNumber(ride?.flightNumber)}`);
+    const flightSuffixReviews = rideList.filter(ride => ride?.flightTrailingSuffixOcrNeedsReview)
+      .map(ride => `${Number(ride?.sourceRow || 0)}:${normalizeFlightNumber(ride?.flightNumber)}`);
+    const routeTextRecoveries = [];
+    const routeTextReviews = [];
+    rideList.forEach(ride => {
+      Object.entries(ride?.routeTextConsistency || {}).forEach(([field, data]) => {
+        routeTextRecoveries.push(`${Number(ride?.sourceRow || 0)}:${field}=${cellText(data?.from)}→${cellText(data?.to)}`);
+      });
+      Object.entries(ride?.routeTextConsistencyNeedsReview || {}).forEach(([field, data]) => {
+        routeTextReviews.push(`${Number(ride?.sourceRow || 0)}:${field}=${cellText(data?.value || ride?.[field])}`);
+      });
+    });
 
     // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
@@ -5662,10 +5915,13 @@
     else if (rideList.length && routeDiagnostics === 0) reason = 'route_diagnostics_empty_despite_targets';
     else if (suspiciousFlights.length && flightDiagnostics === 0) reason = 'suspicious_flight_diagnostic_missing';
     else if (unresolvedSuspiciousFlights.length) reason = 'suspicious_flight_unresolved';
+    else if (flightSuffixReviews.length) reason = 'flight_suffix_ocr_review';
+    else if (routeTextReviews.length) reason = 'route_text_consistency_review';
 
+    const reviewReasons = new Set(['suspicious_flight_unresolved', 'flight_suffix_ocr_review', 'route_text_consistency_review']);
     const status = reason === 'ok'
       ? 'OK'
-      : reason === 'suspicious_flight_unresolved'
+      : reviewReasons.has(reason)
         ? 'PRÜFUNG OFFEN'
         : 'DIAGNOSE BLOCKIERT';
     return {
@@ -5683,6 +5939,10 @@
       routeDiagnostics,
       flightDiagnostics,
       suspiciousFlights,
+      flightSuffixRecoveries,
+      flightSuffixReviews,
+      routeTextRecoveries,
+      routeTextReviews,
       unresolvedSuspiciousFlights,
       routeBoundaryRecoveries,
       flightPrefixRecoveries,
@@ -5809,6 +6069,10 @@
       `FlightOCRTrace=[${list(check.flightOcrTraces)}]`,
       `AuffälligeFlüge=[${list(check.suspiciousFlights)}]`,
       `Ungeklärt=[${list(check.unresolvedSuspiciousFlights)}]`,
+      `FlightSuffixFix=[${list(check.flightSuffixRecoveries)}]`,
+      `FlightSuffixOffen=[${list(check.flightSuffixReviews)}]`,
+      `RouteTextFix=[${list(check.routeTextRecoveries)}]`,
+      `RouteTextOffen=[${list(check.routeTextReviews)}]`,
       `Mapping={${check.mappingSnapshot || '∅'}}`,
       `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`,
       `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`,
@@ -6044,14 +6308,16 @@
     const actionable = issues.filter(issue => issue.kind !== 'flight_check');
     const errors = actionable.filter(issue => issue.level === 'error').length;
     const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const recoveries = actionable.filter(issue => issue.kind === 'ocr_recovery' && issue.level === 'info').length;
     const rideCount = Array.isArray(state.rides) ? state.rides.length : 0;
     const clean = rideCount > 0 && errors === 0 && warnings === 0;
+    const recoveryText = recoveries ? ` · ${recoveries} automatisch korrigiert` : '';
     const headline = clean
-      ? '✓ OCR-Analyse sauber'
-      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+      ? `✓ OCR-Analyse sauber${recoveryText}`
+      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler${recoveryText}`;
     const detail = rideCount
-      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
-      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft${recoveryText} · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
+      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler${recoveryText}`;
 
     // Technischen Wert maschinenlesbar behalten, ohne ihn als Erfolgsquote auszugeben.
     const labelText = labels.join(' · ');
@@ -6075,14 +6341,16 @@
     const actionable = issues.filter(issue => issue.kind !== 'flight_check');
     const errors = actionable.filter(issue => issue.level === 'error').length;
     const warnings = actionable.filter(issue => issue.level === 'warning').length;
+    const recoveries = actionable.filter(issue => issue.kind === 'ocr_recovery' && issue.level === 'info').length;
     const rideCount = Array.isArray(state.rides) ? state.rides.length : 0;
     const clean = rideCount > 0 && errors === 0 && warnings === 0;
+    const recoveryText = recoveries ? ` · ${recoveries} automatisch korrigiert` : '';
     const headline = clean
-      ? '✓ OCR-Analyse sauber'
-      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+      ? `✓ OCR-Analyse sauber${recoveryText}`
+      : `OCR-Analyse · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler${recoveryText}`;
     const detail = rideCount
-      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
-      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`;
+      ? `${rideCount}/${rideCount} Fahrten OCR-geprüft${recoveryText} · ${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler`
+      : `${warnings} Hinweis${warnings === 1 ? '' : 'e'} · ${errors} Fehler${recoveryText}`;
 
     const headlineEl = el.querySelector('span');
     const detailEl = el.querySelector('small');
@@ -7008,6 +7276,12 @@
           mappingInfo.mapping
         ));
         preparedRides = await p54MeasureAsync('ambiguous_flight_targeted_ocr', () => recoverAmbiguousFlightNumbersTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('trailing_flight_suffix_ocr', () => recoverSuspiciousTrailingFlightSuffixesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
