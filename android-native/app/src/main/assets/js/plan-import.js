@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75E · 28.09.2026: COMPACT GRID ROUTE-HEADER RECOVERY – der P75D-Realtest belegt ein korrekt erkanntes 14-Spalten-/15-Regel-Raster mit 9 positionsrichtig ausgerichteten Header-Ankern, das ausschließlich an header_alignment_not_safe scheitert. P75E darf in genau diesem starken 14-Spalten-Preis-Schema fehlende Von-/Nach-Header aus der bereits eindeutig belegten Spaltengeometrie rekonstruieren.
+// Fail-closed bleibt erhalten: mindestens HeaderScore 9 + 9 Header-Anker + 9 positionsrichtig ausgerichtete Header, Preis muss in der Preis-Spalte ausgerichtet sein und in jedem fehlenden Routen-Slot darf kein widersprechender erkannter Header liegen. 12/13-Spalten-Schemata sowie alle OCR-/Zeilen-/Fahrt-Sicherheitsgrenzen bleiben unveraendert. Keine feste Fahrtenanzahl, keine Flug-/Fahrer-/Routen-Hardcodes; P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unveraendert.
 // CORE-007D8A1F1D8P75D · 28.09.2026: COMPACT GRID STRONG-HEADER SCHEMA RECOVERY – behebt den mit P75C belegten Sonderfall, dass ein kompakter Bildplan eine sehr sicher erkannte Kopfzeile (9/9) besitzt, die normale Schema-Vervollstaendigung aber trotzdem standardAtms=false liefert. In diesem engen Fall darf P75D die vertikalen Tabellenlinien des unveraenderten Farbbilds als reine Spaltengeometrie verwenden, das passende vorhandene ATMS-12/13/14-Spaltenschema nur bei eindeutiger Spaltenzahl + Header-Ausrichtung rekonstruieren und danach den bestehenden P75B-Zeilenfallback starten.
 // Fail-closed: nur bei sicherer Kopfzeile, mindestens 8 Header-Ankern, mindestens 8 Header-Scorepunkten, stabilen durchgehenden vertikalen Rasterlinien, eindeutig passender Spaltenzahl, mindestens 7 positionsrichtig ausgerichteten Header-Ankern sowie Von+Nach (und bei Preislisten Preis). Keine feste Fahrtenanzahl, keine Flug-/Fahrer-/Routen-Hardcodes; P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unveraendert.
 // CORE-007D8A1F1D8P75C · 28.09.2026: COMPACT GRID TRIGGER DIAGNOSTIC – reine Diagnose fuer den reproduzierbaren kompakten 7-Zeilen-Plan. Wenn nach der Primär-OCR keine Fahrtzeile vorhanden ist, zeigt die Fehlermeldung jetzt explizit, ob der P75B-Fallback gestartet oder wegen Header-/Schema-Metadaten uebersprungen wurde.
@@ -3058,27 +3060,62 @@
     if (!schema) return fail('column_count_schema_mismatch', { vertical });
     const boundaries = vertical.boundaries.slice();
     const byColumn = new Map();
-    const alignedKeys = new Set();
+    const observedByPhysicalColumn = new Map();
     for (const anchor of observed) {
       const x = Number(anchor?.x);
       if (!Number.isFinite(x)) continue;
       let index = boundaries.findIndex((right, i) => i > 0 && x < right) - 1;
       if (index < 0) index = 0;
       if (index >= schema.length) index = schema.length - 1;
+      if (!observedByPhysicalColumn.has(index)) observedByPhysicalColumn.set(index, []);
+      observedByPhysicalColumn.get(index).push(anchor);
       if (!compactGridSchemaKeyCompatible(schema, index, anchor)) continue;
-      if (!byColumn.has(index)) {
-        byColumn.set(index, anchor);
-        alignedKeys.add(anchor.key);
-      }
+      if (!byColumn.has(index)) byColumn.set(index, anchor);
     }
     // Nur eindeutig verschiedene physische Spalten zaehlen. Mehrere OCR-Headerfragmente
     // innerhalb derselben Zelle duerfen die Sicherheitsgrenze niemals kuenstlich erhoehen.
     const aligned = byColumn.size;
     const hasPrice = observed.some(anchor => anchor?.key === 'preis' || anchor?.key === 'price');
-    const routeAligned = alignedKeys.has('von') && alignedKeys.has('nach');
-    const priceAligned = !hasPrice || (byColumn.has(0) && (byColumn.get(0)?.key === 'preis' || byColumn.get(0)?.key === 'price'));
-    if (aligned < 7 || !routeAligned || !priceAligned) {
-      return fail('header_alignment_not_safe', { vertical, aligned, routeAligned, priceAligned });
+    const priceIndex = schema.findIndex(slot => slot?.key === 'preis' || slot?.key === 'price');
+    const pickupIndex = schema.findIndex(slot => slot?.key === 'von');
+    const destinationIndex = schema.findIndex(slot => slot?.key === 'nach');
+    const routeIndexes = [pickupIndex, destinationIndex].filter(index => index >= 0);
+    const routePresentCount = routeIndexes.filter(index => byColumn.has(index)).length;
+    const routeAligned = routeIndexes.length === 2 && routePresentCount === 2;
+    const priceAligned = !hasPrice || (priceIndex >= 0 && byColumn.has(priceIndex));
+
+    // P75E – enger, fail-closed Sonderfall fuer den real belegten kompakten 14-Spalten-Plan:
+    // Wenn Von/Nach-Header in der Primaer-OCR fehlen, duerfen nur diese beiden festen Routen-Slots
+    // aus dem eindeutig erkannten 14-Spalten-Preis-Schema synthetisiert werden. Ein erkannter,
+    // aber semantisch widersprechender Header in einem fehlenden Routen-Slot blockiert die Reparatur.
+    const missingRouteIndexes = routeIndexes.filter(index => !byColumn.has(index));
+    const missingRouteIndex = missingRouteIndexes.length === 1 ? missingRouteIndexes[0] : -1;
+    const missingRouteConflict = missingRouteIndexes.some(index => (observedByPhysicalColumn.get(index) || [])
+      .some(anchor => !compactGridSchemaKeyCompatible(schema, index, anchor)));
+    const exactPrice14 = schema === ATMS_IMAGE_SCHEMA_14_PRICE && vertical.columnCount === ATMS_IMAGE_SCHEMA_14_PRICE.length;
+    const routeHeaderRecovered = Boolean(
+      !routeAligned &&
+      exactPrice14 &&
+      priceAligned &&
+      aligned >= 9 &&
+      Number(imageMeta?.headerDetectionScore || 0) >= 9 &&
+      Number(imageMeta?.headerDetectionAnchors || 0) >= 9 &&
+      missingRouteIndexes.length >= 1 &&
+      missingRouteIndexes.length <= 2 &&
+      !missingRouteConflict
+    );
+    const routeSafe = routeAligned || routeHeaderRecovered;
+    if (aligned < 7 || !routeSafe || !priceAligned) {
+      return fail('header_alignment_not_safe', {
+        vertical,
+        aligned,
+        routeAligned,
+        routePresentCount,
+        routeHeaderRecovered,
+        missingRouteIndex,
+        missingRouteConflict,
+        priceAligned
+      });
     }
     const anchors = schema.map((slot, index) => {
       const observedAnchor = byColumn.get(index);
@@ -3096,7 +3133,8 @@
         key: slot.key,
         x: (Number(boundaries[index]) + Number(boundaries[index + 1])) / 2,
         synthetic: true,
-        compactGridSchemaRecovered: true
+        compactGridSchemaRecovered: true,
+        compactGridRouteHeaderRecovered: routeHeaderRecovered && missingRouteIndexes.includes(index)
       };
     });
     imageMeta.anchors = anchors;
@@ -3113,11 +3151,30 @@
       columnCount: vertical.columnCount,
       alignedHeaders: aligned,
       routeAligned,
+      routePresentCount,
+      routeHeaderRecovered,
+      missingRouteIndex,
+      recoveredRouteHeaderCount: routeHeaderRecovered ? missingRouteIndexes.length : 0,
+      missingRouteConflict,
       priceAligned,
       verticalRules: boundaries.slice(),
       syntheticAnchors: imageMeta.syntheticAnchorCount
     };
-    return { accepted: true, reason: 'ok', anchors, boundaries, aligned, vertical };
+    return {
+      accepted: true,
+      reason: 'ok',
+      anchors,
+      boundaries,
+      aligned,
+      routeAligned,
+      routePresentCount,
+      routeHeaderRecovered,
+      missingRouteIndex,
+      recoveredRouteHeaderCount: routeHeaderRecovered ? missingRouteIndexes.length : 0,
+      missingRouteConflict,
+      priceAligned,
+      vertical
+    };
   }
 
   async function recoverCompactGridRowsTargeted(file, matrix, imageCanvas) {
@@ -3142,6 +3199,12 @@
           reason: schemaRepair.reason || 'schema_recovery_failed',
           columnCount: Number(schemaRepair?.vertical?.columnCount || 0),
           alignedHeaders: Number(schemaRepair?.aligned || 0),
+          routeAligned: Boolean(schemaRepair?.routeAligned),
+          routePresentCount: Number(schemaRepair?.routePresentCount || 0),
+          routeHeaderRecovered: Boolean(schemaRepair?.routeHeaderRecovered),
+          missingRouteIndex: Number.isInteger(schemaRepair?.missingRouteIndex) ? schemaRepair.missingRouteIndex : -1,
+          missingRouteConflict: Boolean(schemaRepair?.missingRouteConflict),
+          priceAligned: Boolean(schemaRepair?.priceAligned),
           verticalRules: Array.isArray(schemaRepair?.vertical?.boundaries) ? schemaRepair.vertical.boundaries.slice() : []
         };
         imageMeta.compactGridRecovery = { accepted: false, reason: `schema_${schemaRepair.reason || 'recovery_failed'}`, detectedBands: 0, recoveredRows: 0 };
@@ -5449,7 +5512,8 @@
       const p75b = compact ? ` P75B: Grund=${cellText(compact.reason) || 'unknown'} · Rasterzeilen=${Number(compact.detectedBands || 0)} · Wiederhergestellt=${Number(compact.recoveredRows || 0)}.` : '';
       const schemaRepair = meta?.compactGridSchemaRecovery;
       const p75d = schemaRepair ? ` P75D: Schema=${schemaRepair.accepted ? 'repariert' : 'abgelehnt'} · Grund=${cellText(schemaRepair.reason) || 'unknown'} · Spalten=${Number(schemaRepair.columnCount || 0)} · HeaderAlign=${Number(schemaRepair.alignedHeaders || 0)} · Vertikalregeln=${Array.isArray(schemaRepair.verticalRules) ? schemaRepair.verticalRules.length : 0}.` : '';
-      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75b}`);
+      const p75e = schemaRepair ? ` P75E: RouteAnker=${Number(schemaRepair.routePresentCount || 0)}/2 · RouteReparatur=${schemaRepair.routeHeaderRecovered ? 'ja' : 'nein'} · PreisAlign=${schemaRepair.priceAligned ? 'ja' : 'nein'} · RouteKonflikt=${schemaRepair.missingRouteConflict ? 'ja' : 'nein'}.` : '';
+      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75e}${p75b}`);
     }
     if (matrix._atmsImageMeta) {
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
