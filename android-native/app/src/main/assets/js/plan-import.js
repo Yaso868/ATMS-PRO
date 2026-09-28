@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75H · 28.09.2026: FIRST POST-HEADER PRIMARY OCR ROW RECOVERY – P75G hat bewiesen, dass die verlorene erste Fahrt bereits in der Primär-OCR vollständig als eigene Zeile vorhanden ist, aber wegen der überlappenden Header-Bounding-Box nicht in das kompakte Raster gelangt. P75H darf ausschließlich im bereits P75E-reparierten starken 14-Spalten-Preis-Schema genau eine sichere Primär-OCR-Zeile unmittelbar unter dem Header vor die per P75B/P75E wiederhergestellten Rasterzeilen setzen.
+// Fail-closed: Der Sonderfall wird nur aktiv, wenn HeaderScore/Anker weiterhin 9/9-orientiert stark sind, P75E das 14-Spalten-Schema sicher repariert hat, die Kandidatenzeile den Header-Bereich direkt berührt/überlappt, exakt einen stabilen Zeilenabstand vor der ersten Rasterzeile liegt und dieselben bestehenden Zeit-/Preis-/Routen-/Identitätsprüfungen besteht. Mehrdeutige Kandidaten blockieren statt teilweise zu importieren. Keine Flug-/Fahrer-/Routen-Hardcodes; FLIGHT-008, PLAN, DISPO, LIVE, Farben und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75G · 28.09.2026: FIRST-DATA-ROW GEOMETRY DIAGNOSTIC – reine Diagnose nach dem P75F-Realtest. Wenn eine kompakte Bildliste trotz sichtbarer erster Datenzeile nur die folgenden Zeilen importiert, protokolliert P75G die Primaer-OCR-Zeilengruppen rund um den erkannten Header, die Keep/Reject-Entscheidung der ersten Datenzeilen sowie die vorhandenen horizontalen Rasterlinien und deren Abstand zum Header.
 // Keine OCR-Regel, kein Crop, keine Schwelle, keine Matrix-/Importentscheidung, keine Flugpruefung und keine PLAN/DISPO/LIVE-/Farben-/Persistenzlogik wird veraendert. P75G dient ausschliesslich dazu zu beweisen, ob die erste Datenzeile mit der Headerzeile gruppiert, als eigene OCR-Zeile verworfen oder erst durch die Header-/Rastergeometrie uebersprungen wird.
 // CORE-007D8A1F1D8P75F · 28.09.2026: FIRST DATA ROW / HEADER-BBOX RECOVERY – der P75E-Realtest mit IMG-20260927-WA0012.jpg belegt, dass das 14-Spalten-Raster korrekt rekonstruiert wird, die erste Datenzeile direkt unter dem Tabellenkopf aber verloren geht, weil OCR-Wortboxen des Headers durch vertikale Tabellenlinien bis in die erste Datenzeile hineinreichen und dadurch headerY1 die echte Header-Unterkante ueberschreitet. P75F darf fuer genau den bereits P75E-reparierten starken 14-Spalten-Fall die echte Header-Unterkante aus dem stabilen horizontalen Vollraster um headerCy bestimmen.
@@ -3091,6 +3093,158 @@
     return rideTimeValid && hasRoute && hasIdentity && priceOk && nonEmpty >= 5;
   }
 
+
+  // P75H: Mappt ausschließlich eine bereits vorhandene Primär-OCR-Zeile anhand der
+  // durch P75D/P75E sicher rekonstruierten Spaltengrenzen. Kein neuer OCR-Aufruf.
+  function compactPrimaryLineToRow(line, imageMeta) {
+    const boundaries = Array.isArray(imageMeta?.boundaries) ? imageMeta.boundaries : [];
+    const anchors = Array.isArray(imageMeta?.anchors) ? imageMeta.anchors : [];
+    if (!line || boundaries.length !== anchors.length + 1 || anchors.length < 8) return null;
+    const cells = Array(anchors.length).fill('').map(() => []);
+    (line.words || []).forEach(word => {
+      const cx = (Number(word?.x0 || 0) + Number(word?.x1 || 0)) / 2;
+      if (!Number.isFinite(cx)) return;
+      let col = boundaries.findIndex((right, index) => index > 0 && cx < Number(right)) - 1;
+      if (col < 0) col = 0;
+      if (col >= cells.length) col = cells.length - 1;
+      const value = cellText(word?.text);
+      if (value) cells[col].push(value);
+    });
+    const row = cells.map(parts => parts.join(' ').replace(/\s+/g, ' ').trim());
+    const semantic = imageMeta.semantic || imageSemanticColumns(anchors);
+    const rideTimeIndex = semantic.rideTime;
+    if (rideTimeIndex !== undefined) {
+      const raw = cellText(row[rideTimeIndex]);
+      const normalized = raw.replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+      if (looksLikeTime(normalized) || /^\d{3,4}$/.test(normalized.replace(/\D/g, ''))) {
+        row[rideTimeIndex] = normalized;
+      }
+    }
+    return row;
+  }
+
+  // P75H: Enge Wiederherstellung exakt einer bereits von Tesseract gelesenen ersten
+  // Datenzeile, die direkt in die Header-BBox hineinragt und deshalb vom horizontalen
+  // Rasterpfad übersprungen wurde. Ohne eindeutige Geometrie bleibt der alte Pfad aktiv.
+  function recoverFirstPostHeaderPrimaryRow(imageMeta, firstRecoveredMeta, medianGap) {
+    const fail = (reason, applicable = false, extra = {}) => ({
+      accepted: false,
+      applicable,
+      reason,
+      candidateCount: 0,
+      ...extra
+    });
+    const schemaRecovery = imageMeta?.compactGridSchemaRecovery || null;
+    const exactGate = Boolean(
+      schemaRecovery?.accepted &&
+      Number(schemaRecovery?.columnCount || 0) === ATMS_IMAGE_SCHEMA_14_PRICE.length &&
+      Boolean(schemaRecovery?.routeHeaderRecovered) &&
+      Boolean(schemaRecovery?.priceAligned) &&
+      Number(schemaRecovery?.alignedHeaders || 0) >= 9 &&
+      compactGridStrongHeaderMeta(imageMeta) &&
+      Number(imageMeta?.headerDetectionScore || 0) >= 9 &&
+      Number(imageMeta?.headerDetectionAnchors || 0) >= 9
+    );
+    if (!exactGate) return fail('gate_not_applicable');
+
+    const raw = Array.isArray(imageMeta?.rawOcrWords) ? imageMeta.rawOcrWords : [];
+    const gap = Number(medianGap || 0);
+    const firstCy = Number(firstRecoveredMeta?.cy);
+    if (!raw.length || !Number.isFinite(gap) || gap < 18 || !Number.isFinite(firstCy)) {
+      return fail('primary_geometry_missing');
+    }
+
+    const words = raw.map(word => ({
+      text: cellText(word?.text),
+      confidence: Number(word?.confidence || 0),
+      bbox: {
+        x0: Number(word?.x0 || 0),
+        x1: Number(word?.x1 || 0),
+        y0: Number(word?.y0 || 0),
+        y1: Number(word?.y1 || 0)
+      }
+    }));
+    const lines = groupOcrLines(words);
+    const header = detectImageHeaderLine(lines);
+    if (!header || Number(header.score || 0) < 9 || Number(header.anchors?.length || 0) < 9) {
+      return fail('primary_header_not_strong');
+    }
+
+    const headerCy = Number(header?.line?.cy);
+    const headerY1 = Number(imageMeta?.headerLineMeta?.y1);
+    if (!Number.isFinite(headerCy) || !Number.isFinite(headerY1)) return fail('primary_header_geometry_missing');
+
+    const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+    const examined = [];
+    const candidates = [];
+    for (let index = Number(header.index || 0) + 1; index < lines.length; index++) {
+      const line = lines[index];
+      const cy = Number(line?.cy);
+      if (!Number.isFinite(cy)) continue;
+      // Sobald wir in die erste bereits per Raster wiederhergestellte Zeile laufen,
+      // endet das ausschließlich direkte Post-Header-Suchfenster.
+      if (cy >= firstCy - gap * 0.25) break;
+      const ys0 = (line.words || []).map(word => Number(word?.y0)).filter(Number.isFinite);
+      const ys1 = (line.words || []).map(word => Number(word?.y1)).filter(Number.isFinite);
+      const y0 = ys0.length ? Math.min(...ys0) : cy;
+      const y1 = ys1.length ? Math.max(...ys1) : cy;
+      const row = compactPrimaryLineToRow(line, imageMeta);
+      const safe = compactRecoveredRowIsSafe(row, semantic);
+      const headerGap = cy - headerCy;
+      const gapToFirst = firstCy - cy;
+      const touchesHeader = y0 <= headerY1 + gap * 0.12 && y1 >= headerY1 - gap * 0.20;
+      const immediateAfterHeader = headerGap >= gap * 0.45 && headerGap <= gap * 1.18;
+      const exactlyOneRowBefore = gapToFirst >= gap * 0.68 && gapToFirst <= gap * 1.38;
+      const snapshot = {
+        lineIndex: index,
+        cy,
+        y0,
+        y1,
+        headerGap,
+        gapToFirst,
+        safe,
+        touchesHeader,
+        immediateAfterHeader,
+        exactlyOneRowBefore,
+        nonEmpty: Array.isArray(row) ? row.filter(value => Boolean(cellText(value))).length : 0
+      };
+      examined.push(snapshot);
+      if (safe && touchesHeader && immediateAfterHeader) {
+        candidates.push({ ...snapshot, row, meta: { y0, y1, cy } });
+      }
+    }
+
+    // Ohne sichere, tatsächlich den Header berührende Primärzeile wird der Sonderfall
+    // nicht aktiv; bereits funktionierende kompakte Listen bleiben unangetastet.
+    if (!candidates.length) return fail('no_post_header_primary_candidate', false, { examined });
+    const slotMatches = candidates.filter(candidate => candidate.exactlyOneRowBefore);
+    if (candidates.length !== 1 || slotMatches.length !== 1) {
+      return fail('post_header_candidate_ambiguous', true, {
+        candidateCount: candidates.length,
+        slotMatchCount: slotMatches.length,
+        examined
+      });
+    }
+
+    const candidate = slotMatches[0];
+    return {
+      accepted: true,
+      applicable: true,
+      reason: 'ok',
+      candidateCount: 1,
+      lineIndex: candidate.lineIndex,
+      headerCy,
+      headerY1,
+      firstRecoveredCy: firstCy,
+      medianGap: gap,
+      headerGap: candidate.headerGap,
+      gapToFirst: candidate.gapToFirst,
+      row: candidate.row,
+      meta: candidate.meta,
+      examined
+    };
+  }
+
   function compactGridStrongHeaderMeta(imageMeta) {
     return Boolean(
       imageMeta?.safeHeaderDetected &&
@@ -3412,17 +3566,71 @@
       return matrix;
     }
 
+    // P75H: Erst NACH erfolgreicher, vollständig fail-closed geprüfter P75B/P75E-
+    // Rasterwiederherstellung wird geprüft, ob genau eine bereits in der Primär-OCR
+    // vorhandene Datenzeile unmittelbar vor der ersten Rasterzeile fehlt.
+    const firstPostHeader = recoverFirstPostHeaderPrimaryRow(imageMeta, grid.bands[0], grid.medianGap);
+    imageMeta.firstPostHeaderRecovery = {
+      version: 'CORE-007D8A1F1D8P75H',
+      accepted: Boolean(firstPostHeader?.accepted),
+      applicable: Boolean(firstPostHeader?.applicable),
+      reason: cellText(firstPostHeader?.reason) || 'unknown',
+      candidateCount: Number(firstPostHeader?.candidateCount || 0),
+      slotMatchCount: Number(firstPostHeader?.slotMatchCount || (firstPostHeader?.accepted ? 1 : 0)),
+      lineIndex: Number.isInteger(firstPostHeader?.lineIndex) ? firstPostHeader.lineIndex : -1,
+      headerCy: Number(firstPostHeader?.headerCy || 0),
+      headerY1: Number(firstPostHeader?.headerY1 || 0),
+      firstRecoveredCy: Number(firstPostHeader?.firstRecoveredCy || 0),
+      medianGap: Number(firstPostHeader?.medianGap || grid.medianGap || 0),
+      headerGap: Number(firstPostHeader?.headerGap || 0),
+      gapToFirst: Number(firstPostHeader?.gapToFirst || 0),
+      examined: Array.isArray(firstPostHeader?.examined) ? firstPostHeader.examined.map(item => ({ ...item })) : []
+    };
+
+    // Wenn der eng begrenzte P75H-Sonderfall tatsächlich greift, aber nicht eindeutig
+    // auf genau eine fehlende Zeile passt, darf die bereits bekannte Teilmenge NICHT
+    // wieder als vollständige Liste durchgehen.
+    if (firstPostHeader?.applicable && !firstPostHeader?.accepted) {
+      imageMeta.compactGridRecovery = {
+        ...imageMeta.compactGridRecovery,
+        accepted: false,
+        reason: `first_post_header_${cellText(firstPostHeader?.reason) || 'not_safe'}`,
+        recoveredRows: recoveredRows.length,
+        gridRecoveredRows: recoveredRows.length,
+        firstPostHeaderRecovered: false,
+        failedBand: 0
+      };
+      imageMeta.rowMetaByMatrixIndex = {};
+      matrix._atmsImageMeta = imageMeta;
+      return matrix;
+    }
+
     const out = [Array.isArray(matrix[0]) ? matrix[0].slice() : matrix[0]];
+    let outIndex = 1;
+    if (firstPostHeader?.accepted && Array.isArray(firstPostHeader.row)) {
+      out.push(firstPostHeader.row.slice());
+      recoveredMeta[outIndex] = {
+        ...firstPostHeader.meta,
+        syntheticGap: false,
+        syntheticGapRecovered: true,
+        compactGridRecovered: true,
+        firstPostHeaderPrimaryRecovered: true
+      };
+      outIndex++;
+    }
     recoveredRows.forEach((row, index) => {
       out.push(row);
-      recoveredMeta[index + 1] = { ...grid.bands[index], syntheticGap: false, syntheticGapRecovered: true, compactGridRecovered: true };
+      recoveredMeta[outIndex] = { ...grid.bands[index], syntheticGap: false, syntheticGapRecovered: true, compactGridRecovered: true };
+      outIndex++;
     });
     imageMeta.rowMetaByMatrixIndex = recoveredMeta;
     imageMeta.compactGridRecovery = {
       ...imageMeta.compactGridRecovery,
       accepted: true,
-      reason: 'ok',
-      recoveredRows: recoveredRows.length,
+      reason: firstPostHeader?.accepted ? 'ok_first_post_header_recovered' : 'ok',
+      recoveredRows: out.length - 1,
+      gridRecoveredRows: recoveredRows.length,
+      firstPostHeaderRecovered: Boolean(firstPostHeader?.accepted),
       failedBand: 0
     };
     out._atmsImageMeta = imageMeta;
@@ -5481,6 +5689,7 @@
       flightPrefixRejects,
       flightOcrTraces,
       p75gFirstRowDiagnostic: imageMeta?.p75gFirstRowDiagnostic || null,
+      p75hFirstPostHeaderRecovery: imageMeta?.firstPostHeaderRecovery || null,
       diagnosticItems: diagList.length
     };
   }
@@ -5557,6 +5766,26 @@
     ].join('; ');
   }
 
+  function formatP75HFirstPostHeaderRecovery(value) {
+    if (!value || typeof value !== 'object') return '∅';
+    const n = input => Number.isFinite(Number(input)) ? Math.round(Number(input) * 10) / 10 : 0;
+    const examined = (Array.isArray(value.examined) ? value.examined : []).slice(0, 5).map(item =>
+      `#${Number(item?.lineIndex ?? -1)}@${n(item?.cy)} safe=${item?.safe ? 1 : 0} touch=${item?.touchesHeader ? 1 : 0} direct=${item?.immediateAfterHeader ? 1 : 0} slot=${item?.exactlyOneRowBefore ? 1 : 0} gap=${n(item?.gapToFirst)}`
+    ).join(',');
+    return [
+      `aktiv=${value.applicable ? 'ja' : 'nein'}`,
+      `akzeptiert=${value.accepted ? 'ja' : 'nein'}`,
+      `Grund=${cellText(value.reason) || 'unknown'}`,
+      `Kandidaten=${Number(value.candidateCount || 0)}`,
+      `Zeile=#${Number(value.lineIndex ?? -1)}`,
+      `HeaderY1=${n(value.headerY1)}`,
+      `FirstCy=${n(value.firstRecoveredCy)}`,
+      `Gap=${n(value.medianGap)}`,
+      `dFirst=${n(value.gapToFirst)}`,
+      `Prüfung=[${examined || '∅'}]`
+    ].join('; ');
+  }
+
   function formatOcrDiagnosticSelfCheck(check) {
     if (!check) return 'Selbstcheck nicht ausgeführt';
     const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
@@ -5584,7 +5813,8 @@
       `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`,
       `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`,
       `P63Primary=[${formatP63PrimaryDiagnostic(p63Primary)}]`,
-      `P75G=[${formatP75GFirstRowDiagnostic(check.p75gFirstRowDiagnostic)}]`
+      `P75G=[${formatP75GFirstRowDiagnostic(check.p75gFirstRowDiagnostic)}]`,
+      `P75H=[${formatP75HFirstPostHeaderRecovery(check.p75hFirstPostHeaderRecovery)}]`
     ].join(' · ');
   }
 
@@ -5734,7 +5964,8 @@
       const schemaRepair = meta?.compactGridSchemaRecovery;
       const p75d = schemaRepair ? ` P75D: Schema=${schemaRepair.accepted ? 'repariert' : 'abgelehnt'} · Grund=${cellText(schemaRepair.reason) || 'unknown'} · Spalten=${Number(schemaRepair.columnCount || 0)} · HeaderAlign=${Number(schemaRepair.alignedHeaders || 0)} · Vertikalregeln=${Array.isArray(schemaRepair.verticalRules) ? schemaRepair.verticalRules.length : 0}.` : '';
       const p75e = schemaRepair ? ` P75E: RouteAnker=${Number(schemaRepair.routePresentCount || 0)}/2 · RouteReparatur=${schemaRepair.routeHeaderRecovered ? 'ja' : 'nein'} · PreisAlign=${schemaRepair.priceAligned ? 'ja' : 'nein'} · RouteKonflikt=${schemaRepair.missingRouteConflict ? 'ja' : 'nein'}.` : '';
-      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75e}${p75f}${p75b}`);
+      const p75h = meta?.firstPostHeaderRecovery ? ` P75H: Aktiv=${meta.firstPostHeaderRecovery.applicable ? 'ja' : 'nein'} · Akzeptiert=${meta.firstPostHeaderRecovery.accepted ? 'ja' : 'nein'} · Grund=${cellText(meta.firstPostHeaderRecovery.reason) || 'unknown'} · Kandidaten=${Number(meta.firstPostHeaderRecovery.candidateCount || 0)}.` : '';
+      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75e}${p75f}${p75h}${p75b}`);
     }
     if (matrix._atmsImageMeta) {
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
