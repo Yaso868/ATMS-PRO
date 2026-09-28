@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P77A · 28.09.2026: COMPACT LEGACY-DEDUPE ROLLBACK HOTFIX – behebt den auf dem Realgerät belegten P77-Fail-Closed-Abbruch beim Schreiben des vollständigen 120-Fahrten-Rollback-Snapshots. Statt alle Fahrten nochmals in localStorage zu duplizieren, sichert P77A nur die tatsächlich zu entfernenden Altzeilen plus deren Done-Zustand und die geplanten Ersetzungen. Die Dedupe-Beweiskette selbst bleibt unverändert streng. Neuer v2-Migrationsschlüssel erzwingt genau einen frischen Lauf nach dem blockierten P77-Versuch. P76A Backup-Export, Restore, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN, DISPO, LIVE und übrige Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P77 · 28.09.2026: LEGACY DEDUPE & CLEANUP PACK – führt genau einmal eine fail-closed Bereinigung historischer, durch überlappende Planversionen stehengebliebener Dubletten aus. Entfernt wird nur eine ältere Carryover-Fahrt, wenn zwei Nicht-Bundle-Fahrten in allen fachlich stabilen Merkmalen (Plantag, Flug, Richtung, Fahrer, Route, Firma/Kunde, Fahrzeug, Personen, Preis/Währung) identisch sind, aus unterschiedlichen Planquellen stammen und ausschließlich eine eng begrenzte Flugzeitkorrektur (≤15 Min.) ODER Planzeitkorrektur (≤45 Min.) vorliegt. Zusätzlich muss die neuere Planquelle den alten Zeitpunkt tatsächlich zeitlich überdecken. Gleiche Quelle/gleicher Plan, echte Bundles, Multi-Stop-Fahrten, parallele Fahrer und mehrdeutige Gruppen werden nicht angefasst. Vor jeder Änderung wird ein lokaler Rollback-Snapshot geschrieben; ohne Rollback kein Cleanup. P76A Backup-Export, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
 // CORE-007D8A1F1D8P76A · 28.09.2026: NATIVE BACKUP FILE EXPORT HOTFIX – „📤 Backup erstellen“ verwendet in der Android-App jetzt den bereits vorhandenen nativen Speichern-unter-Dialog statt des unbestätigten Browser-Downloads. Der sichtbare Sicherungszeitpunkt wird erst nach erfolgreich bestätigtem Dateischreiben aktualisiert; Abbruch/Fehler erzeugt keinen falschen „Letzte Sicherung“-Status. Web-Fallback sowie Backup-Inhalt, Wiederherstellung, Fahrten, OCR, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – übernimmt bei ausreichend eindeutigen Bild-/WhatsApp-Planlisten die erkannte Zeilenfarbe als persistente Fahrerfarbe, solange keine manuelle P74-Farbwahl Vorrang hat. Ergänzt in „Alle Fahrten“ eine Fahrer-Tagesübersicht mit echter Fahrtenanzahl nach bestehender Bündel-/Flugnummernlogik, Preis-Summe und Detailzeilen.
@@ -89,8 +90,8 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77_legacy_dedupe_migration_v1';
-const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77_legacy_dedupe_rollback_v1';
+const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
+const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -3171,30 +3172,39 @@ function p77RunLegacyDedupeMigration(current){
 
   // Unerwartet viele Treffer bedeuten eine zu breite Regel: fail closed, keine Datenänderung.
   if(removals.length>10){
-    persistAudit('p77_legacy_dedupe_blocked',{reason:'too-many-candidates',candidateCount:removals.length});
+    persistAudit('p77a_legacy_dedupe_blocked',{reason:'too-many-candidates',candidateCount:removals.length});
     return{rides:input,changed:false,removed:[],blocked:true};
   }
 
   if(!removals.length){
     const status={completed:true,completedAt:new Date().toISOString(),removedCount:0,removed:[]};
     try{localStorage.setItem(P77_LEGACY_DEDUPE_MIGRATION_KEY,JSON.stringify(status))}catch(_){ }
-    persistAudit('p77_legacy_dedupe_completed',{removedCount:0});
+    persistAudit('p77a_legacy_dedupe_completed',{removedCount:0});
     return{rides:input,changed:false,removed:[],status};
   }
 
-  // Rollback ist Pflicht. Kann der Snapshot nicht geschrieben und wieder gelesen werden,
-  // wird die Migration vollständig abgebrochen.
-  const rollback={savedAt:new Date().toISOString(),reason:'P77 pre-migration rollback',rides:input,done:[...done],plannedRemovals:removals};
+  // Rollback ist Pflicht. P77A sichert bewusst nur die tatsächlich betroffenen Altzeilen
+  // statt die komplette Fahrtenliste ein zweites Mal in localStorage zu duplizieren.
+  // Dadurch bleibt der Fail-Closed-Schutz erhalten, ohne den lokalen Speicher unnötig zu belasten.
+  const removeIds=new Set(removals.map(x=>x.oldId));
+  const removedRides=input.filter(r=>removeIds.has(String(r?.id||'')));
+  const doneState=removals.map(item=>({
+    oldId:item.oldId,keepId:item.keepId,
+    oldWasDone:done.has(item.oldId),keepWasDone:done.has(item.keepId)
+  }));
+  const rollback={
+    savedAt:new Date().toISOString(),reason:'P77A compact pre-migration rollback',
+    baseRideCount:input.length,removedRides,doneState,plannedRemovals:removals
+  };
   try{
     localStorage.setItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY,JSON.stringify(rollback));
     const verify=JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY)||'null');
-    if(!verify||!Array.isArray(verify.rides)||verify.rides.length!==input.length)throw Error('rollback verification failed');
+    if(!verify||!Array.isArray(verify.removedRides)||verify.removedRides.length!==removals.length||Number(verify.baseRideCount)!==input.length)throw Error('compact rollback verification failed');
   }catch(error){
-    persistAudit('p77_legacy_dedupe_blocked',{reason:'rollback-failed',message:String(error?.message||error)});
+    persistAudit('p77a_legacy_dedupe_blocked',{reason:'rollback-failed',message:String(error?.message||error)});
     return{rides:input,changed:false,removed:[],blocked:true};
   }
 
-  const removeIds=new Set(removals.map(x=>x.oldId));
   removals.forEach(item=>{
     if(done.has(item.oldId))done.add(item.keepId);
     done.delete(item.oldId);
@@ -3202,7 +3212,7 @@ function p77RunLegacyDedupeMigration(current){
   const next=input.filter(r=>!removeIds.has(String(r.id)));
   const status={completed:true,completedAt:new Date().toISOString(),removedCount:removals.length,removed:removals};
   try{localStorage.setItem(P77_LEGACY_DEDUPE_MIGRATION_KEY,JSON.stringify(status))}catch(_){ }
-  persistAudit('p77_legacy_dedupe_completed',{removedCount:removals.length,removed:removals.map(x=>({oldId:x.oldId,keepId:x.keepId,flightNumber:x.flightNumber,reason:x.reason}))});
+  persistAudit('p77a_legacy_dedupe_completed',{removedCount:removals.length,removed:removals.map(x=>({oldId:x.oldId,keepId:x.keepId,flightNumber:x.flightNumber,reason:x.reason}))});
   return{rides:next,changed:true,removed:removals,status};
 }
 function p77LegacyDedupeStatus(){try{return JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_MIGRATION_KEY)||'null')}catch(_){return null}}
