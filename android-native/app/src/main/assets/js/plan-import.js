@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P76 · 28.09.2026: FLIGHT VERIFICATION SYNC & RETRY PACK – bündelt drei eng zusammengehörende Status-/Transportkorrekturen: (1) bei bereits identischer, gültiger IATA darf eine reine Ortsnamen-/Sprachvariante wie Geneva/Genf keinen verified/high-Nachweis mehr künstlich in einen Quellenkonflikt zurückstufen; (2) die Preview-Spalte „Status“ bewertet nur ungelöste Warnungen/Fehler – bereits gelöste info/ocr_recovery-Korrekturen bleiben sichtbar dokumentiert, markieren die Fahrt aber nicht mehr als „Prüfen“; (3) die offizielle Airportquelle erhält genau EINEN fail-safe Retry für eindeutig transiente technische Transportfehler (u. a. „transport returned no JSON“/Timeout/Netzwerk), ohne not_found/unsupported oder fachliche Konflikte erneut zu versuchen. FLIGHT-008, Zwei-Quellen-Pflicht, Datum/Airport/Richtung/IATA, PLAN/DISPO/LIVE, OCR-Inhalt und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75I · 28.09.2026: OCR INTEGRITY PACK – ergänzt drei eng zusammengehörende, fail-safe OCR-Sicherungen: (1) ein einzelner trailing Buchstabe an einer formal plausiblen Flugnummer wird nur dann entfernt, wenn mehrere enge OCR-Crops der originalen Flugzelle eindeutig dieselbe kürzere Flugnummer bestätigen; (2) eine einzelne 1-Zeichen-Abweichung in längeren Routenbezeichnungen wird nur bei starkem Wiederholungs-Konsens innerhalb derselben Liste vereinheitlicht; (3) automatische Korrekturen und ungeklärte Gegenprüfungen werden im OCR-Selbstcheck/Preview sichtbar, sodass relevante interne Abweichungen nicht mehr unsichtbar hinter „0 Hinweise · 0 Fehler“ verschwinden. Keine Flugnummern-, Airline-, Hotel- oder Orts-Hardcodes. P75H First-Row-Recovery, FLIGHT-008, PLAN/DISPO/LIVE, Fahrerfarben und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75H · 28.09.2026: FIRST POST-HEADER PRIMARY OCR ROW RECOVERY – P75G hat bewiesen, dass die verlorene erste Fahrt bereits in der Primär-OCR vollständig als eigene Zeile vorhanden ist, aber wegen der überlappenden Header-Bounding-Box nicht in das kompakte Raster gelangt. P75H darf ausschließlich im bereits P75E-reparierten starken 14-Spalten-Preis-Schema genau eine sichere Primär-OCR-Zeile unmittelbar unter dem Header vor die per P75B/P75E wiederhergestellten Rasterzeilen setzen.
 // Fail-closed: Der Sonderfall wird nur aktiv, wenn HeaderScore/Anker weiterhin 9/9-orientiert stark sind, P75E das 14-Spalten-Schema sicher repariert hat, die Kandidatenzeile den Header-Bereich direkt berührt/überlappt, exakt einen stabilen Zeilenabstand vor der ersten Rasterzeile liegt und dieselben bestehenden Zeit-/Preis-/Routen-/Identitätsprüfungen besteht. Mehrdeutige Kandidaten blockieren statt teilweise zu importieren. Keine Flug-/Fahrer-/Routen-Hardcodes; FLIGHT-008, PLAN, DISPO, LIVE, Farben und Persistenz bleiben unverändert.
@@ -6566,14 +6567,28 @@
       let sourceConflict = Boolean(hit?.conflict);
       const existingLocation = cellText(ride?.flightLocation);
       const existingIata = String(ride?.iata || '').trim().toUpperCase();
+      const strictIndependentEvidence = status === 'verified'
+        && (confidence === 'verified' || confidence === 'high')
+        && Boolean(location)
+        && /^[A-Z]{3}$/.test(iata)
+        && checkedSourceCount(hit) >= 2;
       if (!sourceConflict && hit?.officialAirportEvidence === true && location) {
-        if (/^[A-Z]{3}$/.test(existingIata) && /^[A-Z]{3}$/.test(iata) && existingIata !== iata) {
-          sourceConflict = true;
-        } else if (existingLocation && existingLocation !== 'Flugort prüfen' && existingLocation !== 'Flugort nicht verfügbar') {
+        const existingIataValid = /^[A-Z]{3}$/.test(existingIata);
+        const incomingIataValid = /^[A-Z]{3}$/.test(iata);
+        if (existingIataValid && incomingIataValid) {
+          // P76: IATA ist der kanonische Routenbeweis. Wenn beide Seiten denselben
+          // konkreten IATA-Code tragen, darf eine reine Ortsnamen-/Sprachvariante
+          // (z. B. Geneva/Genf) keinen Quellenkonflikt erzeugen. Unterschiedliche
+          // IATA bleiben weiterhin ein harter Konflikt.
+          sourceConflict = existingIata !== iata;
+        } else if (!strictIndependentEvidence && existingLocation && existingLocation !== 'Flugort prüfen' && existingLocation !== 'Flugort nicht verfügbar') {
+          // Solange nur eine Quelle vorliegt, bleibt der Plan-Ort ein strenger
+          // Plausibilitätscheck. Erst zwei unabhängige, datumsspezifisch identische
+          // Quellen dürfen eine reine Text-/Sprachabweichung des Plan-Orts überstimmen.
           sourceConflict = cleanKey(normalizeFlightLocation(existingLocation)) !== cleanKey(normalizeFlightLocation(location));
         }
       }
-      const verified = status === 'verified' && (confidence === 'verified' || confidence === 'high') && Boolean(location) && /^[A-Z]{3}$/.test(iata) && !sourceConflict && checkedSourceCount(hit) >= 2;
+      const verified = strictIndependentEvidence && !sourceConflict;
       const sourceConfirmed = !verified && hit?.officialAirportEvidence === true && Boolean(location) && /^[A-Z]{3}$/.test(iata) && !sourceConflict && checkedSourceCount(hit) >= 1;
       if (verified) verifiedRides++;
       else {
@@ -7062,7 +7077,11 @@
 
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
       const rowIssues = actionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
-      const status = rowIssues.some(issue => issue.level === 'error') ? 'Fehler' : rowIssues.length ? 'Prüfen' : 'OK';
+      // P76: reine Info-/Recovery-Einträge sind bereits gelöst und bleiben oberhalb
+      // transparent sichtbar. Die Statuszelle darf deshalb nur ungelöste Warnungen
+      // oder Fehler als „Prüfen“/„Fehler“ markieren.
+      const unresolvedRowIssues = rowIssues.filter(issue => issue.level === 'warning' || issue.level === 'error');
+      const status = unresolvedRowIssues.some(issue => issue.level === 'error') ? 'Fehler' : unresolvedRowIssues.length ? 'Prüfen' : 'OK';
       const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
       return `<tr>
         <td>${escapeHtml(ride.time || '–')}<div style="font-size:11px;opacity:.72;margin-top:3px">${escapeHtml(formatPlanDate(ride.date))}</div></td>
@@ -7658,25 +7677,135 @@
     };
   }
 
+  function officialTransientTransportMessage(value) {
+    const message = cellText(value).toLowerCase();
+    if (!message) return false;
+    return /transport returned no json|empty response|timeout|timed out|network|temporar|connection reset|connection aborted|connection refused|socket|econn|etimedout/.test(message);
+  }
+
+  function officialRetryableFailure(item) {
+    const reason = String(item?.reason || '').trim().toLowerCase();
+    if (reason !== 'technical' && reason !== 'provider_unavailable') return false;
+    return officialTransientTransportMessage(item?.message || item?.error || item?.reason);
+  }
+
+  function officialRetryIdentity(item) {
+    return officialFlightBaseIdentity({
+      flightNumber: item?.flightNumber,
+      date: item?.date,
+      airportEventDate: item?.airportEventDate || item?.date,
+      direction: item?.direction,
+      airportIata: item?.airportIata
+    });
+  }
+
+  function officialSleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   async function runOfficialAirportEvidence(rides = state.rides, options = {}) {
     const items = officialProviderItemsFromRides(rides);
     if (!items.length) {
-      return { checked: [], attempted: 0, matched: 0, unsupported: [], failures: [], nativeState: null, providerUnavailable: false };
+      return { checked: [], attempted: 0, matched: 0, unsupported: [], failures: [], nativeState: null, providerUnavailable: false, retryAttempted: 0, retryMatched: 0, retryFailures: 0 };
     }
     let provider;
     try {
       provider = await ensureOfficialFlightProvider();
     } catch (error) {
-      return { checked: [], attempted: items.length, matched: 0, unsupported: [], failures: [{ reason: 'provider_unavailable', message: cellText(error?.message) || String(error || '') }], nativeState: null, providerUnavailable: true };
+      return { checked: [], attempted: items.length, matched: 0, unsupported: [], failures: [{ reason: 'provider_unavailable', message: cellText(error?.message) || String(error || '') }], nativeState: null, providerUnavailable: true, retryAttempted: 0, retryMatched: 0, retryFailures: 0 };
     }
     let nativeState = null;
     try { nativeState = typeof provider.getNativeRuntimeState === 'function' ? provider.getNativeRuntimeState() : null; } catch (_) {}
+
     let result;
+    let didRetry = false;
+    let retryAttempted = 0, retryMatched = 0, retryFailures = 0;
+    const fetchProvider = async (fetchItems, retry = false) => provider.fetchLive(fetchItems, {
+      onProgress: progress => options?.onProgress?.({ ...progress, retry })
+    });
+
     try {
-      result = await provider.fetchLive(items, { onProgress: progress => options?.onProgress?.(progress) });
+      result = await fetchProvider(items, false);
     } catch (error) {
-      return { checked: [], attempted: items.length, matched: 0, unsupported: [], failures: [{ reason: 'technical', message: cellText(error?.message) || String(error || '') }], nativeState, providerUnavailable: false };
+      const message = cellText(error?.message) || String(error || '');
+      if (!officialTransientTransportMessage(message)) {
+        return { checked: [], attempted: items.length, matched: 0, unsupported: [], failures: [{ reason: 'technical', message }], nativeState, providerUnavailable: false, retryAttempted: 0, retryMatched: 0, retryFailures: 0 };
+      }
+      // P76: genau ein Retry bei eindeutig transientem Transportfehler.
+      didRetry = true;
+      retryAttempted = items.length;
+      try {
+        await officialSleep(450);
+        result = await fetchProvider(items, true);
+        retryMatched = Array.isArray(result?.flights) ? result.flights.length : 0;
+        retryFailures = Array.isArray(result?.failures) ? result.failures.length : 0;
+      } catch (retryError) {
+        const retryMessage = cellText(retryError?.message) || String(retryError || '');
+        return { checked: [], attempted: items.length, matched: 0, unsupported: [], failures: [{ reason: 'technical', message: retryMessage || message }], nativeState, providerUnavailable: false, retryAttempted, retryMatched: 0, retryFailures: items.length };
+      }
     }
+
+    // P76: Falls der Provider pro Flug technische Transportfehler meldet, wird nur
+    // die eindeutig betroffene Teilmenge genau einmal erneut abgefragt. Fachliche
+    // not_found/unsupported-Kontexte werden niemals wiederholt.
+    if (!didRetry) {
+      const firstFailures = Array.isArray(result?.failures) ? result.failures : [];
+      const retryable = firstFailures.filter(officialRetryableFailure);
+      if (retryable.length) {
+        const itemByKey = new Map(items.map(item => [officialFlightBaseIdentity(item), item]));
+        const retryMap = new Map();
+        retryable.forEach(failure => {
+          const key = officialRetryIdentity(failure);
+          const item = itemByKey.get(key);
+          if (item) retryMap.set(key, item);
+        });
+        // Manche Bridge-Fehler enthalten keine vollständige Identität. Nur wenn der
+        // gesamte Lauf ausschließlich transient technisch scheiterte und kein Flug
+        // geliefert wurde, ist ein einmaliger Retry aller Eingaben eindeutig sicher.
+        if (!retryMap.size && retryable.length === firstFailures.length && !(Array.isArray(result?.flights) && result.flights.length)) {
+          items.forEach(item => retryMap.set(officialFlightBaseIdentity(item), item));
+        }
+        const retryItems = [...retryMap.values()];
+        if (retryItems.length) {
+          didRetry = true;
+          retryAttempted = retryItems.length;
+          try {
+            await officialSleep(450);
+            const retryResult = await fetchProvider(retryItems, true);
+            const retryFlights = Array.isArray(retryResult?.flights) ? retryResult.flights : [];
+            const retryFailureList = Array.isArray(retryResult?.failures) ? retryResult.failures : [];
+            retryMatched = retryFlights.length;
+            retryFailures = retryFailureList.length;
+
+            const retriedKeys = new Set(retryItems.map(officialFlightBaseIdentity));
+            const successfulRetryKeys = new Set(retryFlights.map(officialFlightBaseIdentity));
+            const flightMap = new Map((Array.isArray(result?.flights) ? result.flights : []).map(item => [officialFlightBaseIdentity(item), item]));
+            retryFlights.forEach(item => flightMap.set(officialFlightBaseIdentity(item), item));
+
+            const preservedFailures = firstFailures.filter(failure => {
+              if (!officialRetryableFailure(failure)) return true;
+              const key = officialRetryIdentity(failure);
+              return key && (!retriedKeys.has(key) || (!successfulRetryKeys.has(key) && !retryFailureList.some(item => officialRetryIdentity(item) === key)));
+            });
+            const unsupported = [
+              ...(Array.isArray(result?.unsupported) ? result.unsupported : []),
+              ...(Array.isArray(retryResult?.unsupported) ? retryResult.unsupported : [])
+            ];
+            result = {
+              ...result,
+              flights: [...flightMap.values()],
+              failures: [...preservedFailures, ...retryFailureList],
+              unsupported
+            };
+          } catch (retryError) {
+            retryFailures = retryItems.length;
+            // Fail-safe: der Erstlauf bleibt maßgeblich; Retry-Fehler überschreibt
+            // keine bereits vorhandene fachliche Evidenz.
+          }
+        }
+      }
+    }
+
     const inputByKey = new Map(items.map(item => [officialFlightBaseIdentity(item), item]));
     const checked = [];
     for (const providerFlight of Array.isArray(result?.flights) ? result.flights : []) {
@@ -7694,7 +7823,10 @@
       failures: Array.isArray(result?.failures) ? result.failures : [],
       nativeState,
       providerUnavailable: false,
-      capabilities: Array.isArray(result?.capabilities) ? result.capabilities : []
+      capabilities: Array.isArray(result?.capabilities) ? result.capabilities : [],
+      retryAttempted,
+      retryMatched,
+      retryFailures
     };
   }
 
@@ -7717,6 +7849,9 @@
     const parts = [`${attempted} geprüft`, `${matched} Treffer`];
     if (failureCount) parts.push(`${failureCount} Fehler`);
     if (unsupportedCount) parts.push(`${unsupportedCount} nicht unterstützt`);
+    const retryAttempted = Number(summary?.retryAttempted || 0);
+    const retryMatched = Number(summary?.retryMatched || 0);
+    if (retryAttempted > 0) parts.push(`Retry ${retryMatched}/${retryAttempted}`);
     if (rows.length) {
       parts.push(rows.map(row => `${row.flightNumber}:${row.reason}${row.message ? `(${row.message.slice(0, 80)})` : ''}`).join(', '));
     }
