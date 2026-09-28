@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P75D · 28.09.2026: COMPACT GRID STRONG-HEADER SCHEMA RECOVERY – behebt den mit P75C belegten Sonderfall, dass ein kompakter Bildplan eine sehr sicher erkannte Kopfzeile (9/9) besitzt, die normale Schema-Vervollstaendigung aber trotzdem standardAtms=false liefert. In diesem engen Fall darf P75D die vertikalen Tabellenlinien des unveraenderten Farbbilds als reine Spaltengeometrie verwenden, das passende vorhandene ATMS-12/13/14-Spaltenschema nur bei eindeutiger Spaltenzahl + Header-Ausrichtung rekonstruieren und danach den bestehenden P75B-Zeilenfallback starten.
+// Fail-closed: nur bei sicherer Kopfzeile, mindestens 8 Header-Ankern, mindestens 8 Header-Scorepunkten, stabilen durchgehenden vertikalen Rasterlinien, eindeutig passender Spaltenzahl, mindestens 7 positionsrichtig ausgerichteten Header-Ankern sowie Von+Nach (und bei Preislisten Preis). Keine feste Fahrtenanzahl, keine Flug-/Fahrer-/Routen-Hardcodes; P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unveraendert.
 // CORE-007D8A1F1D8P75C · 28.09.2026: COMPACT GRID TRIGGER DIAGNOSTIC – reine Diagnose fuer den reproduzierbaren kompakten 7-Zeilen-Plan. Wenn nach der Primär-OCR keine Fahrtzeile vorhanden ist, zeigt die Fehlermeldung jetzt explizit, ob der P75B-Fallback gestartet oder wegen Header-/Schema-Metadaten uebersprungen wurde.
 // Keine OCR-Regel, kein Crop, keine Schwelle, keine Importentscheidung, keine Farberkennung und keine FLIGHT-008-/PLAN-/DISPO-/LIVE-Logik wird veraendert.
 // CORE-007D8A1F1D8P75B · 27.09.2026: COMPACT GRID ROW RECOVERY – wenn ein Bild eine sicher erkannte ATMS-Kopfzeile besitzt, die Primär-OCR aber trotzdem keine einzige sichere Fahrtzeile liefert, darf ATMS einmalig die sichtbaren horizontalen Tabellenlinien aus dem unveränderten Farbbild als reine Zeilengeometrie verwenden und genau diese Zeilen lokal erneut lesen. Der Fallback akzeptiert nur eine vollständig wiederhergestellte, gleichmäßig gerasterte Tabelle; schon eine nicht plausibel gelesene physische Zeile blockiert die Übernahme, damit keine Fahrt still verloren geht. Keine feste Fahrtenanzahl, keine Flug-/Fahrer-Hardcodes und keine Änderung an FLIGHT-008, PLAN, DISPO oder LIVE.
@@ -2947,10 +2949,181 @@
     return rideTimeValid && hasRoute && hasIdentity && priceOk && nonEmpty >= 5;
   }
 
+  function compactGridStrongHeaderMeta(imageMeta) {
+    return Boolean(
+      imageMeta?.safeHeaderDetected &&
+      !imageMeta?.headerlessAtms &&
+      Number(imageMeta?.headerDetectionScore || 0) >= 8 &&
+      Number(imageMeta?.headerDetectionAnchors || 0) >= 8 &&
+      Number(imageMeta?.schemaColumns || 0) >= 8
+    );
+  }
+
+  function compactGridSchemaForColumnCount(columnCount, observedAnchors) {
+    const observed = Array.isArray(observedAnchors) ? observedAnchors : [];
+    const hasPrice = observed.some(anchor => anchor?.key === 'preis' || anchor?.key === 'price');
+    if (columnCount === ATMS_IMAGE_SCHEMA_14_PRICE.length && hasPrice) return ATMS_IMAGE_SCHEMA_14_PRICE;
+    if (columnCount === ATMS_IMAGE_SCHEMA_13_PRICE.length) {
+      return hasPrice ? ATMS_IMAGE_SCHEMA_13_PRICE : ATMS_IMAGE_SCHEMA_13_MIRROR;
+    }
+    if (columnCount === ATMS_IMAGE_SCHEMA_12.length && !hasPrice) return ATMS_IMAGE_SCHEMA_12;
+    return null;
+  }
+
+  function compactGridSchemaKeyCompatible(schema, index, anchor) {
+    if (!schema || !anchor || index < 0 || index >= schema.length) return false;
+    const expected = schema[index]?.key;
+    const actual = anchor?.key;
+    if (expected === actual) return true;
+    if (index === schema.length - 1 && (actual === 'fahrer' || actual === 'name')) return true;
+    return false;
+  }
+
+  function detectCompactGridVerticalBoundaries(sourceCanvas, imageMeta) {
+    const fail = reason => ({ accepted: false, reason, boundaries: [], columnCount: 0 });
+    if (!sourceCanvas || !imageMeta?.headerLineMeta) return fail('missing_canvas_or_header_meta');
+    const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return fail('missing_2d_context');
+    const width = Number(sourceCanvas.width || 0);
+    const height = Number(sourceCanvas.height || 0);
+    if (width < 500 || height < 80) return fail('image_too_small');
+    const headerY0 = Number(imageMeta.headerLineMeta?.y0);
+    const y0 = Math.max(0, Math.floor((Number.isFinite(headerY0) ? headerY0 : 0) - 4));
+    const y1 = Math.max(y0 + 20, height - 1);
+    let pixels;
+    try { pixels = ctx.getImageData(0, 0, width, height).data; }
+    catch (_) { return fail('pixel_read_failed'); }
+    const regionHeight = y1 - y0 + 1;
+    const minRun = Math.max(24, Math.floor(regionHeight * 0.48));
+    const candidates = [];
+    for (let x = 0; x < width; x++) {
+      let run = 0, longest = 0;
+      for (let y = y0; y <= y1; y++) {
+        const idx = (y * width + x) * 4;
+        const r = Number(pixels[idx] || 0), g = Number(pixels[idx + 1] || 0), b = Number(pixels[idx + 2] || 0);
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const chroma = max - min;
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (luminance <= 225 && chroma <= 80) {
+          run++;
+          if (run > longest) longest = run;
+        } else {
+          run = 0;
+        }
+      }
+      if (longest >= minRun) candidates.push({ x, longest });
+    }
+    if (!candidates.length) return fail('no_vertical_rules');
+    const clusters = [];
+    candidates.forEach(item => {
+      const last = clusters[clusters.length - 1];
+      if (!last || item.x > last[last.length - 1].x + 2) clusters.push([item]);
+      else last.push(item);
+    });
+    let rules = clusters.map(cluster => {
+      const best = cluster.slice().sort((a,b) => b.longest - a.longest || a.x - b.x)[0];
+      return Number(best?.x);
+    }).filter(Number.isFinite).sort((a,b) => a-b);
+    const edgeTolerance = Math.max(3, width * 0.012);
+    if (!rules.length || rules[0] > edgeTolerance) rules.unshift(0);
+    if (!rules.length || rules[rules.length - 1] < width * 0.96) rules.push(width - 1);
+    const compact = [];
+    rules.forEach(value => {
+      if (!compact.length || value - compact[compact.length - 1] > 3) compact.push(value);
+      else if (value === 0 || value === width - 1) compact[compact.length - 1] = value;
+    });
+    rules = compact;
+    if (rules.length < 13 || rules.length > 15) {
+      return { ...fail('unsupported_vertical_rule_count'), boundaries: rules, columnCount: Math.max(0, rules.length - 1) };
+    }
+    if (rules[0] > width * 0.03 || rules[rules.length - 1] < width * 0.97) {
+      return { ...fail('vertical_rules_do_not_span_table'), boundaries: rules, columnCount: Math.max(0, rules.length - 1) };
+    }
+    const gaps = [];
+    for (let i = 1; i < rules.length; i++) gaps.push(rules[i] - rules[i - 1]);
+    const minGap = Math.max(7, width * 0.012);
+    if (gaps.some(gap => !Number.isFinite(gap) || gap < minGap || gap > width * 0.28)) {
+      return { ...fail('implausible_vertical_grid'), boundaries: rules, columnCount: Math.max(0, rules.length - 1) };
+    }
+    return { accepted: true, reason: 'ok', boundaries: rules, columnCount: rules.length - 1, minRun, regionHeight };
+  }
+
+  function repairCompactGridSchemaFromVerticalRules(sourceCanvas, imageMeta) {
+    const fail = (reason, extra = {}) => ({ accepted: false, reason, ...extra });
+    if (!compactGridStrongHeaderMeta(imageMeta)) return fail('strong_header_gate_failed');
+    const vertical = detectCompactGridVerticalBoundaries(sourceCanvas, imageMeta);
+    if (!vertical.accepted) return fail(vertical.reason, { vertical });
+    const observed = Array.isArray(imageMeta?.anchors) ? imageMeta.anchors.slice().sort((a,b)=>Number(a?.x||0)-Number(b?.x||0)) : [];
+    const schema = compactGridSchemaForColumnCount(vertical.columnCount, observed);
+    if (!schema) return fail('column_count_schema_mismatch', { vertical });
+    const boundaries = vertical.boundaries.slice();
+    const byColumn = new Map();
+    const alignedKeys = new Set();
+    for (const anchor of observed) {
+      const x = Number(anchor?.x);
+      if (!Number.isFinite(x)) continue;
+      let index = boundaries.findIndex((right, i) => i > 0 && x < right) - 1;
+      if (index < 0) index = 0;
+      if (index >= schema.length) index = schema.length - 1;
+      if (!compactGridSchemaKeyCompatible(schema, index, anchor)) continue;
+      if (!byColumn.has(index)) {
+        byColumn.set(index, anchor);
+        alignedKeys.add(anchor.key);
+      }
+    }
+    // Nur eindeutig verschiedene physische Spalten zaehlen. Mehrere OCR-Headerfragmente
+    // innerhalb derselben Zelle duerfen die Sicherheitsgrenze niemals kuenstlich erhoehen.
+    const aligned = byColumn.size;
+    const hasPrice = observed.some(anchor => anchor?.key === 'preis' || anchor?.key === 'price');
+    const routeAligned = alignedKeys.has('von') && alignedKeys.has('nach');
+    const priceAligned = !hasPrice || (byColumn.has(0) && (byColumn.get(0)?.key === 'preis' || byColumn.get(0)?.key === 'price'));
+    if (aligned < 7 || !routeAligned || !priceAligned) {
+      return fail('header_alignment_not_safe', { vertical, aligned, routeAligned, priceAligned });
+    }
+    const anchors = schema.map((slot, index) => {
+      const observedAnchor = byColumn.get(index);
+      if (observedAnchor) {
+        const lastDriver = index === schema.length - 1 && (observedAnchor.key === 'fahrer' || observedAnchor.key === 'name');
+        return {
+          ...observedAnchor,
+          label: lastDriver ? observedAnchor.label : slot.label,
+          key: lastDriver ? observedAnchor.key : slot.key,
+          synthetic: false
+        };
+      }
+      return {
+        label: slot.label,
+        key: slot.key,
+        x: (Number(boundaries[index]) + Number(boundaries[index + 1])) / 2,
+        synthetic: true,
+        compactGridSchemaRecovered: true
+      };
+    });
+    imageMeta.anchors = anchors;
+    imageMeta.boundaries = boundaries;
+    imageMeta.semantic = imageSemanticColumns(anchors);
+    imageMeta.standardAtms = true;
+    imageMeta.completedStandard = true;
+    imageMeta.completedAnchorCount = anchors.length;
+    imageMeta.schemaColumns = anchors.length;
+    imageMeta.syntheticAnchorCount = anchors.filter(anchor => anchor.synthetic).length;
+    imageMeta.compactGridSchemaRecovery = {
+      accepted: true,
+      reason: 'ok',
+      columnCount: vertical.columnCount,
+      alignedHeaders: aligned,
+      routeAligned,
+      priceAligned,
+      verticalRules: boundaries.slice(),
+      syntheticAnchors: imageMeta.syntheticAnchorCount
+    };
+    return { accepted: true, reason: 'ok', anchors, boundaries, aligned, vertical };
+  }
+
   async function recoverCompactGridRowsTargeted(file, matrix, imageCanvas) {
     if (!Array.isArray(matrix) || matrix.length > 1 || !imageCanvas || !window.Tesseract) return matrix;
     const imageMeta = matrix._atmsImageMeta;
-    if (!imageMeta?.standardAtms || imageMeta?.headerlessAtms) return matrix;
+    if (!imageMeta || imageMeta?.headerlessAtms) return matrix;
 
     let sourceCanvas;
     try { sourceCanvas = await buildSourceColorCanvas(file, imageCanvas.width, imageCanvas.height); }
@@ -2958,6 +3131,27 @@
       imageMeta.compactGridRecovery = { accepted: false, reason: 'source_color_canvas_failed' };
       return matrix;
     }
+
+    // P75D: nur der durch P75C belegte starke Header-Sonderfall darf vor P75B
+    // die Spaltengeometrie aus stabilen vertikalen Tabellenlinien reparieren.
+    if (!imageMeta.standardAtms) {
+      const schemaRepair = repairCompactGridSchemaFromVerticalRules(sourceCanvas, imageMeta);
+      if (!schemaRepair.accepted) {
+        imageMeta.compactGridSchemaRecovery = {
+          accepted: false,
+          reason: schemaRepair.reason || 'schema_recovery_failed',
+          columnCount: Number(schemaRepair?.vertical?.columnCount || 0),
+          alignedHeaders: Number(schemaRepair?.aligned || 0),
+          verticalRules: Array.isArray(schemaRepair?.vertical?.boundaries) ? schemaRepair.vertical.boundaries.slice() : []
+        };
+        imageMeta.compactGridRecovery = { accepted: false, reason: `schema_${schemaRepair.reason || 'recovery_failed'}`, detectedBands: 0, recoveredRows: 0 };
+        matrix._atmsImageMeta = imageMeta;
+        return matrix;
+      }
+      matrix[0] = imageMeta.anchors.map(anchor => anchor.label);
+    }
+    if (!imageMeta.standardAtms) return matrix;
+
     const grid = detectCompactGridRowBands(sourceCanvas, imageMeta);
     imageMeta.compactGridRecovery = {
       accepted: false,
@@ -5233,9 +5427,12 @@
     // entscheiden anschließend weiterhin über Annahme oder Abbruch.
     words = await measureAsync('headerless_price_anchor_check', () => recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width));
     let matrix = measureSync('image_words_to_matrix', () => imageWordsToMatrix(words, canvas.width));
-    // P75B: Nur der belegte Sonderfall "sichere Kopfzeile, aber 0 Fahrtzeilen" darf
-    // den kompakten Raster-Fallback starten. Der normale erfolgreiche OCR-Pfad bleibt unverändert.
-    if (matrix.length <= 1 && matrix._atmsImageMeta?.standardAtms && !matrix._atmsImageMeta?.headerlessAtms) {
+    // P75D: Der normale erfolgreiche OCR-Pfad bleibt unverändert. Bei 0 Fahrtzeilen darf
+    // P75B weiterhin sofort fuer standardAtms starten. Zusaetzlich darf der mit P75C
+    // belegte starke Header-Sonderfall den fail-closed Schema-Rastertest starten.
+    const compactMeta = matrix._atmsImageMeta;
+    const compactTriggerSafe = Boolean(compactMeta?.standardAtms || compactGridStrongHeaderMeta(compactMeta));
+    if (matrix.length <= 1 && compactTriggerSafe && !compactMeta?.headerlessAtms) {
       matrix = await measureAsync('compact_grid_row_recovery', () => recoverCompactGridRowsTargeted(file, matrix, canvas));
     }
     if (matrix.length <= 1) {
@@ -5250,7 +5447,9 @@
                 : (meta?.headerlessAtms ? 'uebersprungen_headerless' : 'uebersprungen_unbekannt')));
       const p75c = ` CORE-007D8A1F1D8P75C Diagnose: Trigger=${trigger} · Matrix=${Number(matrix?.length || 0)} · SafeHeader=${meta?.safeHeaderDetected ? 'ja' : 'nein'} · HeaderScore=${Number(meta?.headerDetectionScore || 0)} · HeaderAnker=${Number(meta?.headerDetectionAnchors || 0)} · Standard=${meta?.standardAtms ? 'ja' : 'nein'} · SchemaSpalten=${Number(meta?.schemaColumns || 0)} · CompletedAnker=${Number(meta?.completedAnchorCount || 0)} · SyntheticAnker=${Number(meta?.syntheticAnchorCount || 0)} · Headerless=${meta?.headerlessAtms ? 'ja' : 'nein'}.`;
       const p75b = compact ? ` P75B: Grund=${cellText(compact.reason) || 'unknown'} · Rasterzeilen=${Number(compact.detectedBands || 0)} · Wiederhergestellt=${Number(compact.recoveredRows || 0)}.` : '';
-      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75b}`);
+      const schemaRepair = meta?.compactGridSchemaRecovery;
+      const p75d = schemaRepair ? ` P75D: Schema=${schemaRepair.accepted ? 'repariert' : 'abgelehnt'} · Grund=${cellText(schemaRepair.reason) || 'unknown'} · Spalten=${Number(schemaRepair.columnCount || 0)} · HeaderAlign=${Number(schemaRepair.alignedHeaders || 0)} · Vertikalregeln=${Array.isArray(schemaRepair.verticalRules) ? schemaRepair.verticalRules.length : 0}.` : '';
+      throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75b}`);
     }
     if (matrix._atmsImageMeta) {
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
