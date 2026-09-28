@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P77 · 28.09.2026: LEGACY DEDUPE & CLEANUP PACK – führt genau einmal eine fail-closed Bereinigung historischer, durch überlappende Planversionen stehengebliebener Dubletten aus. Entfernt wird nur eine ältere Carryover-Fahrt, wenn zwei Nicht-Bundle-Fahrten in allen fachlich stabilen Merkmalen (Plantag, Flug, Richtung, Fahrer, Route, Firma/Kunde, Fahrzeug, Personen, Preis/Währung) identisch sind, aus unterschiedlichen Planquellen stammen und ausschließlich eine eng begrenzte Flugzeitkorrektur (≤15 Min.) ODER Planzeitkorrektur (≤45 Min.) vorliegt. Zusätzlich muss die neuere Planquelle den alten Zeitpunkt tatsächlich zeitlich überdecken. Gleiche Quelle/gleicher Plan, echte Bundles, Multi-Stop-Fahrten, parallele Fahrer und mehrdeutige Gruppen werden nicht angefasst. Vor jeder Änderung wird ein lokaler Rollback-Snapshot geschrieben; ohne Rollback kein Cleanup. P76A Backup-Export, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
 // CORE-007D8A1F1D8P76A · 28.09.2026: NATIVE BACKUP FILE EXPORT HOTFIX – „📤 Backup erstellen“ verwendet in der Android-App jetzt den bereits vorhandenen nativen Speichern-unter-Dialog statt des unbestätigten Browser-Downloads. Der sichtbare Sicherungszeitpunkt wird erst nach erfolgreich bestätigtem Dateischreiben aktualisiert; Abbruch/Fehler erzeugt keinen falschen „Letzte Sicherung“-Status. Web-Fallback sowie Backup-Inhalt, Wiederherstellung, Fahrten, OCR, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – übernimmt bei ausreichend eindeutigen Bild-/WhatsApp-Planlisten die erkannte Zeilenfarbe als persistente Fahrerfarbe, solange keine manuelle P74-Farbwahl Vorrang hat. Ergänzt in „Alle Fahrten“ eine Fahrer-Tagesübersicht mit echter Fahrtenanzahl nach bestehender Bündel-/Flugnummernlogik, Preis-Summe und Detailzeilen.
 // P74 manuelle Farbauswahl bleibt erhalten; Farbkollisionen, P73 Dedupe, P72 Multi-Stop, P71 Scrollposition, P70 Google-Maps-Handoff sowie OCR/FLIGHT-008/PLAN/DISPO/LIVE bleiben sonst unverändert.
@@ -88,6 +89,8 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
+const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77_legacy_dedupe_migration_v1';
+const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77_legacy_dedupe_rollback_v1';
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
@@ -3068,6 +3071,143 @@ function planImportStableRideIdentity(r){
     ? ['stable-flight',date,flight,dir,airport,rideTime,pickup,destination,driver].join('|')
     : ['stable-ride',date,rideTime,pickup,destination,driver].join('|');
 }
+// P77 – one-time Legacy-Dedupe mit fail-closed Beweiskette.
+// Die Migration ist absichtlich enger als P73: sie bereinigt nur bereits vorhandene
+// Altstände und verändert die normale Import-Matchinglogik nicht.
+function p77LegacyMinutes(value){
+  const m=String(value||'').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if(!m)return null;
+  const h=Number(m[1]),min=Number(m[2]);
+  return h>=0&&h<24&&min>=0&&min<60?h*60+min:null;
+}
+function p77LegacyMinuteDistance(a,b){
+  if(a===null||b===null)return null;
+  const d=Math.abs(a-b);return Math.min(d,1440-d);
+}
+function p77LegacyImportStamp(r){
+  const m=String(r?.id||'').match(/^import-(\d+)-/);
+  return m?Number(m[1]):0;
+}
+function p77LegacyIsBundle(r){
+  return Boolean(isBundleRide(r)||(Array.isArray(r?.bundleStops)&&r.bundleStops.length>1));
+}
+function p77LegacyRevisionKey(r){
+  const flight=flightCacheNumber(r?.flightNumber||'');
+  if(!flight)return'';
+  const date=String(first(r?.date,r?.datum)||'').trim();
+  const direction=String(first(r?.flightDirection,flightDirectionForGemini(r))||'').trim().toLowerCase();
+  const parts=[
+    date,flight,direction,
+    planImportNorm(r?.driver||r?.fahrer),
+    planImportNorm(r?.pickup||r?.abholort),
+    planImportNorm(r?.destination||r?.zielort||r?.ziel),
+    planImportNorm(r?.company||r?.firma||r?.partner),
+    planImportNorm(r?.customer||r?.kunde),
+    planImportNorm(r?.vehicle||r?.fahrzeug),
+    String(Number(r?.persons||r?.personen||0)),
+    String(Number(r?.price||r?.preis||0).toFixed(2)),
+    planImportNorm(r?.currency||'EUR')
+  ];
+  return parts.join('|');
+}
+function p77LegacySourceCoverage(current,date,sourceFile){
+  const times=(current||[])
+    .filter(r=>String(first(r?.date,r?.datum)||'').trim()===date&&String(r?.sourceFile||'').trim()===sourceFile)
+    .map(r=>p77LegacyMinutes(planTimeOf(r)))
+    .filter(v=>v!==null);
+  if(times.length<2)return null;
+  return{min:Math.min(...times),max:Math.max(...times),count:times.length};
+}
+function p77RunLegacyDedupeMigration(current){
+  const input=Array.isArray(current)?current:[];
+  let previous=null;
+  try{previous=JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_MIGRATION_KEY)||'null')}catch(_){ }
+  if(previous?.completed)return{rides:input,changed:false,removed:[],status:previous};
+
+  const buckets=new Map();
+  input.forEach(r=>{
+    const key=p77LegacyRevisionKey(r);if(!key)return;
+    if(!buckets.has(key))buckets.set(key,[]);
+    buckets.get(key).push(r);
+  });
+  const removals=[];
+  for(const group of buckets.values()){
+    // Mehrdeutige Gruppen sowie Einzelfahrten bleiben immer unangetastet.
+    if(group.length!==2)continue;
+    const [a,b]=group;
+    if(group.some(r=>p77LegacyIsBundle(r)))continue;
+    if(group.some(r=>r?._planCarryover!==true||r?._planMissingFromLatest!==true))continue;
+    const sourceA=String(a?.sourceFile||'').trim(),sourceB=String(b?.sourceFile||'').trim();
+    if(!sourceA||!sourceB||sourceA===sourceB)continue;
+    const stampA=p77LegacyImportStamp(a),stampB=p77LegacyImportStamp(b);
+    if(!stampA||!stampB||stampA===stampB)continue;
+    const newer=stampA>stampB?a:b,older=stampA>stampB?b:a;
+
+    const newerPlan=String(planTimeOf(newer)||'').trim(),olderPlan=String(planTimeOf(older)||'').trim();
+    const newerFlight=String(listedFlightTimeOf(newer)||'').trim(),olderFlight=String(listedFlightTimeOf(older)||'').trim();
+    const planSame=newerPlan===olderPlan,flightSame=newerFlight===olderFlight;
+    const planDelta=p77LegacyMinuteDistance(p77LegacyMinutes(newerPlan),p77LegacyMinutes(olderPlan));
+    const flightDelta=p77LegacyMinuteDistance(p77LegacyMinutes(newerFlight),p77LegacyMinutes(olderFlight));
+    const safeFlightCorrection=planSame&&!flightSame&&flightDelta!==null&&flightDelta>0&&flightDelta<=15;
+    const safePlanCorrection=flightSame&&!planSame&&planDelta!==null&&planDelta>0&&planDelta<=45;
+    // Wenn beide Zeitachsen gleichzeitig wechseln oder keine enge Korrektur beweisbar ist: nichts tun.
+    if(!(safeFlightCorrection||safePlanCorrection))continue;
+
+    const date=String(first(newer?.date,newer?.datum)||'').trim();
+    const coverage=p77LegacySourceCoverage(input,date,String(newer?.sourceFile||'').trim());
+    const oldPlanMinute=p77LegacyMinutes(olderPlan);
+    if(!coverage||oldPlanMinute===null||oldPlanMinute<coverage.min||oldPlanMinute>coverage.max)continue;
+
+    removals.push({
+      oldId:String(older.id),keepId:String(newer.id),
+      flightNumber:String(newer.flightNumber||''),date,
+      oldPlanTime:olderPlan,newPlanTime:newerPlan,
+      oldFlightTime:olderFlight,newFlightTime:newerFlight,
+      oldSource:sourceA===String(older?.sourceFile||'').trim()?sourceA:sourceB,
+      newSource:String(newer?.sourceFile||'').trim(),
+      reason:safeFlightCorrection?'flight_time_revision':'plan_time_revision'
+    });
+  }
+
+  // Unerwartet viele Treffer bedeuten eine zu breite Regel: fail closed, keine Datenänderung.
+  if(removals.length>10){
+    persistAudit('p77_legacy_dedupe_blocked',{reason:'too-many-candidates',candidateCount:removals.length});
+    return{rides:input,changed:false,removed:[],blocked:true};
+  }
+
+  if(!removals.length){
+    const status={completed:true,completedAt:new Date().toISOString(),removedCount:0,removed:[]};
+    try{localStorage.setItem(P77_LEGACY_DEDUPE_MIGRATION_KEY,JSON.stringify(status))}catch(_){ }
+    persistAudit('p77_legacy_dedupe_completed',{removedCount:0});
+    return{rides:input,changed:false,removed:[],status};
+  }
+
+  // Rollback ist Pflicht. Kann der Snapshot nicht geschrieben und wieder gelesen werden,
+  // wird die Migration vollständig abgebrochen.
+  const rollback={savedAt:new Date().toISOString(),reason:'P77 pre-migration rollback',rides:input,done:[...done],plannedRemovals:removals};
+  try{
+    localStorage.setItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY,JSON.stringify(rollback));
+    const verify=JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY)||'null');
+    if(!verify||!Array.isArray(verify.rides)||verify.rides.length!==input.length)throw Error('rollback verification failed');
+  }catch(error){
+    persistAudit('p77_legacy_dedupe_blocked',{reason:'rollback-failed',message:String(error?.message||error)});
+    return{rides:input,changed:false,removed:[],blocked:true};
+  }
+
+  const removeIds=new Set(removals.map(x=>x.oldId));
+  removals.forEach(item=>{
+    if(done.has(item.oldId))done.add(item.keepId);
+    done.delete(item.oldId);
+  });
+  const next=input.filter(r=>!removeIds.has(String(r.id)));
+  const status={completed:true,completedAt:new Date().toISOString(),removedCount:removals.length,removed:removals};
+  try{localStorage.setItem(P77_LEGACY_DEDUPE_MIGRATION_KEY,JSON.stringify(status))}catch(_){ }
+  persistAudit('p77_legacy_dedupe_completed',{removedCount:removals.length,removed:removals.map(x=>({oldId:x.oldId,keepId:x.keepId,flightNumber:x.flightNumber,reason:x.reason}))});
+  return{rides:next,changed:true,removed:removals,status};
+}
+function p77LegacyDedupeStatus(){try{return JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_MIGRATION_KEY)||'null')}catch(_){return null}}
+function p77LegacyDedupeRollback(){try{return JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY)||'null')}catch(_){return null}}
+
 function planImportPreserveMetadata(oldRide,newRide){
   const preserve=['id','flightLocation','iata','flightVerified','flightVerificationStatus','flightConfidence','flightSources','flightSourceNote','flightSourceConflict','flightResolutionMode','flightPrioritySourceUrl','flightCheckedAt','liveTime','actualLandingTime','actualDepartureTime','flightStatus','liveCheckedAt','liveSources','liveSourceNote','liveSourceConflict','liveResolutionMode','livePrioritySourceUrl','liveManualConfirmed','liveBufferOverrideMinutes'];
   const out={...newRide};
@@ -4512,11 +4652,13 @@ function initApp(){
     initPersistenceSafetyPanelObserver();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
+      const p77LegacyCleanup=p77RunLegacyDedupeMigration(rides);
+      rides=p77LegacyCleanup.rides;
       const overrideRestore=applyRideOverrides(rides);
       rides=overrideRestore.rides;
       const restored=applyFlightCacheToRides(rides);
       rides=restored.rides;
-      if(overrideRestore.changed||restored.changed)save();
+      if(p77LegacyCleanup.changed||overrideRestore.changed||restored.changed)save();
     }catch(e){rides=[]}
     scheduleLiveFreshnessRefresh();
     initLiveDisposition();
@@ -4531,7 +4673,7 @@ window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
 window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAddressBookEntry};
-window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.ATMSP77LegacyDedupeStatus=p77LegacyDedupeStatus;window.ATMSP77LegacyDedupeRollback=p77LegacyDedupeRollback;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;
