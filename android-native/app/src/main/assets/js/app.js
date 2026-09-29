@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P95-GATE3F4 · 29.09.2026: SETTINGS LIST SCROLL POSITION FIX – speichert beim Öffnen von Adress-/Fahrerdetails zusätzlich zum echten Android-WebView-Scrollwert den sichtbaren Listeneintrag als Anker samt Abstand zur festen Top-Bar und stellt beides bei Android-Zurück wieder her. Keine Änderung an Adress-/Fahrerdaten, History-Hierarchie, OCR, FLIGHT-008, PLAN/DISPO/LIVE, Routing oder Persistenz.
 // CORE-007D8A1F1D8P95-GATE3F1 · 29.09.2026: NATIVE MOBILE SETTINGS NAVIGATION – zentrale mobile Top-Bar mit Android-Safe-Area, einklappbarer Kopfzeile, WebView-History für Android-System-Zurück/Geste und gemerkter Listen-Scrollposition für Adressen/Fahrer. Keine Änderung an Daten-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
 // CORE-007D8A1F1D8P95-GATE3 · 29.09.2026: SETTINGS DRIVER SUBPAGE – echte kompakte Fahrer-Unterseite mit Suche, Alle/Aktiv/Inaktiv, Detailansicht und eigenem Editor auf bestehendem Fahrer-Datenspeicher. Keine Änderung an Adressdaten, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder Fahrtenpersistenz.
 // CORE-007D8A1F1D8P95-GATE2F1 · 29.09.2026: SETTINGS ADDRESS SUBPAGE NAV FIX – erzwingt die echte Adressen-Unterseite robust gegen die bestehende lange Settings-Seite; ersetzt ggf. ein altes Address-Panel und blendet während der Unterseite ausschließlich die Settings-Hauptblöcke aus. Keine Änderung an Adressdaten, Routing, OCR, FLIGHT-008, PLAN, DISPO, LIVE oder Persistenz.
@@ -1145,15 +1146,41 @@ function updateSettingsHub(){
 }
 const ATMS_SETTINGS_HISTORY_KEY='atmsP95SettingsNav';
 let atmsSettingsHistoryApplying=false,atmsSettingsRouteDepth=0,atmsSettingsLastScrollY=0;
-const atmsSettingsListScroll={address:0,driver:0};
+const atmsSettingsListScroll={address:null,driver:null};
 function atmsSettingsCurrentScroll(){
-  const view=$('settingsView');return Math.max(Number(window.scrollY)||0,Number(document.documentElement?.scrollTop)||0,Number(view?.scrollTop)||0)
+  const view=$('settingsView'),root=document.scrollingElement;
+  return Math.max(Number(window.scrollY)||0,Number(root?.scrollTop)||0,Number(document.documentElement?.scrollTop)||0,Number(document.body?.scrollTop)||0,Number(view?.scrollTop)||0)
 }
-function atmsSettingsSetScroll(value){
-  const y=Math.max(0,Number(value)||0),view=$('settingsView');
-  requestAnimationFrame(()=>{try{window.scrollTo({top:y,left:0,behavior:'auto'})}catch(_){try{window.scrollTo(0,y)}catch(__){ }}try{if(view)view.scrollTop=y}catch(_){ }atmsSettingsLastScrollY=y;atmsSettingsUpdateMobileHeader(true)})
+function atmsSettingsScrollMeta(kind){
+  if(kind==='address')return{rows:'#addressBookList [data-address-id]',attr:'addressId',bar:'#atmsAddressBookPanel > .atms-mobile-topbar'};
+  if(kind==='driver')return{rows:'#settingsDriverList [data-settings-driver-id]',attr:'settingsDriverId',bar:'#atmsDriverSettingsPanel > .atms-mobile-topbar'};
+  return null
 }
-function atmsSettingsRememberScroll(kind){if(kind==='address'||kind==='driver')atmsSettingsListScroll[kind]=atmsSettingsCurrentScroll()}
+function atmsSettingsVisibleAnchor(kind){
+  const meta=atmsSettingsScrollMeta(kind);if(!meta)return null;
+  const bar=document.querySelector(meta.bar),inset=Math.max(0,Number(bar?.getBoundingClientRect().bottom)||0),rows=[...document.querySelectorAll(meta.rows)];
+  for(const row of rows){const rect=row.getBoundingClientRect();if(rect.bottom<=inset)continue;if(rect.top>window.innerHeight)break;const id=String(row.dataset?.[meta.attr]||'');if(id)return{id,offset:rect.top-inset}}
+  return null
+}
+function atmsSettingsApplyRawScroll(y){
+  const target=Math.max(0,Number(y)||0),view=$('settingsView'),root=document.scrollingElement;
+  try{window.scrollTo({top:target,left:0,behavior:'auto'})}catch(_){try{window.scrollTo(0,target)}catch(__){ }}
+  try{if(root)root.scrollTop=target}catch(_){ }
+  try{if(document.documentElement)document.documentElement.scrollTop=target}catch(_){ }
+  try{if(document.body)document.body.scrollTop=target}catch(_){ }
+  try{if(view)view.scrollTop=target}catch(_){ }
+}
+function atmsSettingsSetScroll(value,kind=''){
+  const snap=value&&typeof value==='object'?value:{y:Number(value)||0,anchorId:'',anchorOffset:0},y=Math.max(0,Number(snap.y)||0);
+  requestAnimationFrame(()=>{atmsSettingsApplyRawScroll(y);requestAnimationFrame(()=>{
+    const meta=atmsSettingsScrollMeta(kind);if(meta&&snap.anchorId){const row=[...document.querySelectorAll(meta.rows)].find(el=>String(el.dataset?.[meta.attr]||'')===String(snap.anchorId));if(row){const bar=document.querySelector(meta.bar),inset=Math.max(0,Number(bar?.getBoundingClientRect().bottom)||0),current=row.getBoundingClientRect().top-inset,delta=current-(Number(snap.anchorOffset)||0);if(Math.abs(delta)>1)atmsSettingsApplyRawScroll(atmsSettingsCurrentScroll()+delta)}}
+    atmsSettingsLastScrollY=atmsSettingsCurrentScroll();atmsSettingsUpdateMobileHeader(true)
+  })})
+}
+function atmsSettingsRememberScroll(kind){
+  if(kind!=='address'&&kind!=='driver')return;
+  const anchor=atmsSettingsVisibleAnchor(kind);atmsSettingsListScroll[kind]={y:atmsSettingsCurrentScroll(),anchorId:anchor?.id||'',anchorOffset:Number(anchor?.offset)||0}
+}
 function atmsSettingsReadRoute(){try{return history.state?.[ATMS_SETTINGS_HISTORY_KEY]||null}catch(_){return null}}
 function atmsSettingsHubRoute(){return{kind:'hub',level:'hub',id:'',depth:0}}
 function atmsSettingsEnsureHubHistory(){
@@ -1494,7 +1521,7 @@ function renderSettingsDriverList(){
   host.innerHTML=list.length?list.map(d=>`<button type="button" class="driver-compact-item" data-settings-driver-id="${esc(d.id)}"><span class="driver-compact-main"><strong>${d.favorite?'⭐ ':''}${esc(d.name)}</strong><small>${esc(d.vehicle||'Kein Standardfahrzeug')}</small><em class="${d.active!==false?'active':'inactive'}">${d.active!==false?'Aktiv':'Inaktiv'}</em></span><span class="driver-compact-chevron">›</span></button>`).join(''):'<div class="setting-note driver-empty">Keine passenden Fahrer gefunden.</div>';
 }
 function resetSettingsDriverForm(){['settingsDriverEditId','settingsDriverName','settingsDriverPhone','settingsDriverVehicle','settingsDriverNote'].forEach(id=>{const el=$(id);if(el)el.value=''});if($('settingsDriverFavorite'))$('settingsDriverFavorite').checked=false;if($('settingsDriverActive'))$('settingsDriverActive').checked=true}
-function showSettingsDriverBrowse(opts={}){const panel=$('atmsDriverSettingsPanel');if(!panel)return;['settingsDriverBrowseView','settingsDriverEditorView','settingsDriverDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDriverBrowseView')?.classList.remove('hidden');renderSettingsDriverList();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.driver);else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function showSettingsDriverBrowse(opts={}){const panel=$('atmsDriverSettingsPanel');if(!panel)return;['settingsDriverBrowseView','settingsDriverEditorView','settingsDriverDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDriverBrowseView')?.classList.remove('hidden');renderSettingsDriverList();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.driver,'driver');else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
 function showSettingsDriverEditor(mode='new',id='',opts={}){
   const panel=$('atmsDriverSettingsPanel');if(!panel)return;if(opts.history!==false){atmsSettingsRememberScroll('driver');atmsSettingsPushRoute('driver','editor',mode==='edit'?id:'')}resetSettingsDriverForm();const d=mode==='edit'?getDriverContacts().find(x=>String(x.id)===String(id)):null;
   if(d){$('settingsDriverEditId').value=d.id;$('settingsDriverName').value=d.name;$('settingsDriverPhone').value=d.phone||'';$('settingsDriverVehicle').value=d.vehicle||'';$('settingsDriverNote').value=d.note||'';$('settingsDriverFavorite').checked=!!d.favorite;$('settingsDriverActive').checked=d.active!==false}
@@ -3992,7 +4019,7 @@ function renderAddressBook(){
   if(status)status.textContent=q?`${visible.length} Treffer von ${all.length} Adresse(n)`:`${all.length} Adresse(n) gespeichert · lokal auf diesem Gerät`;
   host.innerHTML=visible.length?visible.map(e=>{const meta=addressBookDisplayMeta(e);return`<button type="button" class="address-compact-item" data-address-id="${esc(e.id)}"><span class="address-compact-main"><strong>${esc(e.name)}</strong><small>${esc(e.address)}</small><em>${esc(meta.category)}</em></span><span class="address-compact-chevron">›</span></button>`}).join(''):'<div class="setting-note address-empty">Noch keine passenden Orte & Adressen gespeichert.</div>';
 }
-function showAddressBookBrowse(opts={}){const panel=$('atmsAddressBookPanel');if(!panel)return;['addressBookBrowseView','addressBookEditorView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookBrowseView')?.classList.remove('hidden');renderAddressBook();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.address);else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function showAddressBookBrowse(opts={}){const panel=$('atmsAddressBookPanel');if(!panel)return;['addressBookBrowseView','addressBookEditorView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookBrowseView')?.classList.remove('hidden');renderAddressBook();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.address,'address');else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
 function showAddressBookEditor(mode='new',opts={}){const panel=$('atmsAddressBookPanel');if(!panel)return;const id=String(opts.id||$('addressBookEditId')?.value||'');if(opts.history!==false){atmsSettingsRememberScroll('address');atmsSettingsPushRoute('address','editor',mode==='edit'?id:'')}['addressBookBrowseView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookEditorView')?.classList.remove('hidden');const title=$('addressBookEditorTitle');if(title)title.textContent=mode==='edit'?'Adresse bearbeiten':'Neue Adresse';panel.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>{panel.scrollIntoView({block:'start'});setTimeout(()=>$('addressBookName')?.focus(),80)})}
 function showAddressBookDetail(id,opts={}){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;if(opts.history!==false){atmsSettingsRememberScroll('address');atmsSettingsPushRoute('address','detail',id)}const meta=addressBookDisplayMeta(e),body=$('addressBookDetailBody');if(!body)return;body.dataset.addressId=e.id;body.innerHTML=`<div class="address-detail-hero"><div class="address-detail-type">${esc(meta.category)}</div><h3>${esc(e.name)}</h3><p>${esc(e.address)}</p></div>${addressBookFieldRow('Aliase',e.aliases.join(' · '))}${addressBookFieldRow('Telefon',meta.phone)}${addressBookFieldRow('Website',meta.website,{link:/^https?:/i.test(meta.website)})}${addressBookFieldRow('Google Maps',meta.maps,{link:/^https?:/i.test(meta.maps)})}${addressBookFieldRow('Hinweise',meta.hints)}${addressBookFieldRow('Quellen',meta.sources)}${meta.rawNote&&!Object.keys(meta).some(k=>k!=='rawNote'&&k!=='category'&&meta[k])?addressBookFieldRow('Notiz',meta.rawNote):''}`;const title=$('addressBookDetailTitle');if(title)title.textContent=e.name;['addressBookBrowseView','addressBookEditorView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookDetailView')?.classList.remove('hidden');$('atmsAddressBookPanel')?.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>$('atmsAddressBookPanel')?.scrollIntoView({block:'start'}))}
 function openSettingsAddressPage(mode='browse',opts={}){
