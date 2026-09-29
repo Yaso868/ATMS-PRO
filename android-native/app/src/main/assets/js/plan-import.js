@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P91 · 29.09.2026: MISSING ROUTE CELL TARGETED OCR – behebt den real reproduzierten Graustufen-/Schwarz-Weiß-Fall, dass eine Von-/Nach-Zelle in der Primär-OCR leer bleibt, obwohl die Roh-OCR innerhalb exakt derselben Tabellenzelle bereits einen schwachen Texttreffer enthält. Nur tatsächlich leere Routenfelder werden lokal in drei eng begrenzten Crops derselben Zelle nachgelesen. Übernahme ausschließlich bei mindestens zwei identischen Targeted-OCR-Treffern UND einem positionsgleichen Roh-OCR-Beleg derselben Zelle; sonst bleibt der bestehende Fehler „Abholort/Ziel fehlt“ unverändert bestehen. Keine Orts-, Hotel-, Airport-, Flug- oder Fahrer-Hardcodes; bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P76 · 28.09.2026: FLIGHT VERIFICATION SYNC & RETRY PACK – bündelt drei eng zusammengehörende Status-/Transportkorrekturen: (1) bei bereits identischer, gültiger IATA darf eine reine Ortsnamen-/Sprachvariante wie Geneva/Genf keinen verified/high-Nachweis mehr künstlich in einen Quellenkonflikt zurückstufen; (2) die Preview-Spalte „Status“ bewertet nur ungelöste Warnungen/Fehler – bereits gelöste info/ocr_recovery-Korrekturen bleiben sichtbar dokumentiert, markieren die Fahrt aber nicht mehr als „Prüfen“; (3) die offizielle Airportquelle erhält genau EINEN fail-safe Retry für eindeutig transiente technische Transportfehler (u. a. „transport returned no JSON“/Timeout/Netzwerk), ohne not_found/unsupported oder fachliche Konflikte erneut zu versuchen. FLIGHT-008, Zwei-Quellen-Pflicht, Datum/Airport/Richtung/IATA, PLAN/DISPO/LIVE, OCR-Inhalt und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75I · 28.09.2026: OCR INTEGRITY PACK – ergänzt drei eng zusammengehörende, fail-safe OCR-Sicherungen: (1) ein einzelner trailing Buchstabe an einer formal plausiblen Flugnummer wird nur dann entfernt, wenn mehrere enge OCR-Crops der originalen Flugzelle eindeutig dieselbe kürzere Flugnummer bestätigen; (2) eine einzelne 1-Zeichen-Abweichung in längeren Routenbezeichnungen wird nur bei starkem Wiederholungs-Konsens innerhalb derselben Liste vereinheitlicht; (3) automatische Korrekturen und ungeklärte Gegenprüfungen werden im OCR-Selbstcheck/Preview sichtbar, sodass relevante interne Abweichungen nicht mehr unsichtbar hinter „0 Hinweise · 0 Fehler“ verschwinden. Keine Flugnummern-, Airline-, Hotel- oder Orts-Hardcodes. P75H First-Row-Recovery, FLIGHT-008, PLAN/DISPO/LIVE, Fahrerfarben und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75H · 28.09.2026: FIRST POST-HEADER PRIMARY OCR ROW RECOVERY – P75G hat bewiesen, dass die verlorene erste Fahrt bereits in der Primär-OCR vollständig als eigene Zeile vorhanden ist, aber wegen der überlappenden Header-Bounding-Box nicht in das kompakte Raster gelangt. P75H darf ausschließlich im bereits P75E-reparierten starken 14-Spalten-Preis-Schema genau eine sichere Primär-OCR-Zeile unmittelbar unter dem Header vor die per P75B/P75E wiederhergestellten Rasterzeilen setzen.
@@ -1007,6 +1008,16 @@
       }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
+      ['pickup', 'destination'].forEach(field => {
+        if (!ride[`${field}RecoveredFromMissingTargetedOcr`]) return;
+        const label = field === 'pickup' ? 'Abholort' : 'Ziel';
+        issues.push({
+          level: 'info',
+          kind: 'ocr_recovery',
+          row,
+          text: `${label} „${cellText(ride[field])}“ aus leerer Routenzelle durch lokale Mehrfach-OCR + Roh-OCR-Beleg sicher wiederhergestellt`
+        });
+      });
       if (!ride.driver) {
         issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
       } else if (ride.driverNeedsManualCheck) {
@@ -4098,6 +4109,135 @@
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLocaleLowerCase('de-DE');
+  }
+
+
+  // P91: Nur leere Von-/Nach-Zellen gezielt erneut lesen. Die Primär-OCR muss
+  // innerhalb derselben Zelle bereits einen passenden Rohtext gesehen haben;
+  // zusätzlich müssen mindestens zwei unabhängige enge Crops exakt denselben
+  // Kandidaten liefern. Dadurch kann ein schwacher Ersttreffer (z. B. durch
+  // Graustufen-Kontrastverlust) sicher bestätigt werden, ohne Nachbarzellen zu raten.
+  function missingRouteCandidate(value) {
+    const text = routeOcrText(value);
+    if (!text || text.length < 3 || text.length > 64) return '';
+    if (!/[A-Za-zÄÖÜäöüßÀ-ÿ]/.test(text)) return '';
+    if (/^(?:null|none|n\/?a)$/i.test(text)) return '';
+    if (looksLikeTime(text) || looksLikeFlight(text)) return '';
+    return text;
+  }
+
+  function missingRouteCandidateFromOcrResult(result) {
+    const candidates = [];
+    const direct = missingRouteCandidate(result?.data?.text);
+    if (direct) candidates.push(direct);
+    const words = Array.isArray(result?.data?.words)
+      ? result.data.words.map(word => cellText(word?.text)).filter(Boolean)
+      : [];
+    const joined = missingRouteCandidate(words.join(' '));
+    if (joined) candidates.push(joined);
+    const unique = [...new Map(candidates.map(value => [routeOcrBase(value), value])).values()];
+    return unique.length === 1 ? unique[0] : '';
+  }
+
+  function rawRouteEvidenceForCell(imageMeta, rowMeta, left, right) {
+    const words = Array.isArray(imageMeta?.rawOcrWords) ? imageMeta.rawOcrWords : [];
+    const y0 = Number(rowMeta?.y0 || 0);
+    const y1 = Number(rowMeta?.y1 || 0);
+    if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 <= y0) return new Set();
+    const rowHeight = Math.max(8, y1 - y0);
+    const cyMin = y0 - rowHeight * 0.16;
+    const cyMax = y1 + rowHeight * 0.16;
+    const found = new Set();
+    words.forEach(word => {
+      const wx0 = Number(word?.x0);
+      const wx1 = Number(word?.x1);
+      const wy0 = Number(word?.y0);
+      const wy1 = Number(word?.y1);
+      if (![wx0, wx1, wy0, wy1].every(Number.isFinite) || wx1 <= wx0 || wy1 <= wy0) return;
+      const cx = (wx0 + wx1) / 2;
+      const cy = (wy0 + wy1) / 2;
+      if (cx < left || cx > right || cy < cyMin || cy > cyMax) return;
+      const candidate = missingRouteCandidate(word?.text);
+      if (candidate) found.add(routeOcrBase(candidate));
+    });
+    return found;
+  }
+
+  async function recoverMissingRouteCellsTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!Array.isArray(rides) || !imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const out = rides.map(ride => ({ ...ride }));
+    const status = $('importStatus');
+    const descriptors = [
+      { field: 'pickup', label: 'Abholort' },
+      { field: 'destination', label: 'Ziel' }
+    ];
+
+    for (const ride of out) {
+      const matrixIndex = Number(ride?.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+      const y0 = Number(rowMeta.y0 || 0);
+      const y1 = Number(rowMeta.y1 || 0);
+      if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 <= y0) continue;
+      const rowHeight = Math.max(8, y1 - y0);
+
+      for (const descriptor of descriptors) {
+        if (routeOcrText(ride?.[descriptor.field])) continue;
+        const column = mapping?.[descriptor.field];
+        if (column === undefined) continue;
+        const left = Number(boundaries[column]);
+        const right = Number(boundaries[Number(column) + 1]);
+        if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+
+        const cellWidth = Math.max(8, right - left);
+        const padX = Math.max(1, Math.min(8, cellWidth * 0.025));
+        const padY = Math.max(2, Math.min(8, rowHeight * 0.12));
+        const regions = [
+          [left + padX, y0 - padY, right - padX, y1 + padY, 2],
+          [left + padX * 1.6, y0 - padY * 0.45, right - padX * 1.6, y1 + padY * 0.45, 3],
+          [left + padX * 0.5, y0 + 1, right - padX * 0.5, y1 - 1, 2]
+        ];
+        const rawEvidence = rawRouteEvidenceForCell(imageMeta, rowMeta, left, right);
+        if (!rawEvidence.size) continue;
+
+        if (status) status.textContent = `${descriptor.label} Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+        const attempts = [];
+        const votes = new Map();
+        const displayByKey = new Map();
+        try {
+          const results = await Promise.allSettled(regions.map(async ([x0, cy0, x1, cy1, scale]) => {
+            const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+            const result = await Tesseract.recognize(crop, 'eng', { tessedit_pageseg_mode: '7' });
+            return missingRouteCandidateFromOcrResult(result);
+          }));
+          for (const result of results) {
+            const candidate = result.status === 'fulfilled' ? missingRouteCandidate(result.value) : '';
+            attempts.push(candidate);
+            if (!candidate) continue;
+            const key = routeOcrBase(candidate);
+            if (!rawEvidence.has(key)) continue;
+            votes.set(key, (votes.get(key) || 0) + 1);
+            if (!displayByKey.has(key)) displayByKey.set(key, candidate);
+          }
+        } catch (_) {
+          ride[`${descriptor.field}MissingTargetedOcrAttempts`] = attempts;
+          continue;
+        }
+        ride[`${descriptor.field}MissingTargetedOcrAttempts`] = attempts;
+        const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        if (!ranked.length || ranked[0][1] < 2) continue;
+        if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+        const recovered = missingRouteCandidate(displayByKey.get(ranked[0][0]));
+        if (!recovered) continue;
+
+        ride[descriptor.field] = recovered;
+        ride[`${descriptor.field}RecoveredFromMissingTargetedOcr`] = true;
+        ride[`${descriptor.field}MissingTargetedOcrEvidence`] = ranked[0][1];
+        ride[`${descriptor.field}MissingTargetedOcrSource`] = 'targeted_route_cell_consensus_plus_primary_raw';
+      }
+    }
+    return out;
   }
 
   function routeOcrDistance(leftValue, rightValue) {
@@ -7260,6 +7400,12 @@
           mappingInfo.mapping
         ));
         preparedRides = await p54MeasureAsync('price_targeted_ocr', () => recoverSuspiciousPricesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('missing_route_targeted_ocr', () => recoverMissingRouteCellsTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
