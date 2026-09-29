@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P92 · 29.09.2026: MISSING ROUTE RAW-WORD CONFIRMATION – der P91-Realtest belegt, dass missing_route_targeted_ocr ausgeführt wird und der positionsgleiche Roh-OCR-Beleg vorhanden ist, der breite Zell-Crop aber keinen Zwei-Treffer-Konsens erreicht. P92 setzt die beabsichtigte PSM-7-Zeilen-OCR über einen dedizierten Tesseract-Worker korrekt via setParameters() und ergänzt ausschließlich bei genau EINEM kompakten Rohwort in der leeren Routenzelle eine zweite, engere Bestätigung direkt um dessen bereits vorhandene Bounding-Box mit PSM 8. Übernahme weiterhin nur bei mindestens zwei identischen lokalen Bestätigungen desselben positionsgleichen Rohwerts; kein Einzel-Treffer, kein Nachbarzellen-Raten, keine Orts-/Airport-/Hotel-Hardcodes. Bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P91 · 29.09.2026: MISSING ROUTE CELL TARGETED OCR – behebt den real reproduzierten Graustufen-/Schwarz-Weiß-Fall, dass eine Von-/Nach-Zelle in der Primär-OCR leer bleibt, obwohl die Roh-OCR innerhalb exakt derselben Tabellenzelle bereits einen schwachen Texttreffer enthält. Nur tatsächlich leere Routenfelder werden lokal in drei eng begrenzten Crops derselben Zelle nachgelesen. Übernahme ausschließlich bei mindestens zwei identischen Targeted-OCR-Treffern UND einem positionsgleichen Roh-OCR-Beleg derselben Zelle; sonst bleibt der bestehende Fehler „Abholort/Ziel fehlt“ unverändert bestehen. Keine Orts-, Hotel-, Airport-, Flug- oder Fahrer-Hardcodes; bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P76 · 28.09.2026: FLIGHT VERIFICATION SYNC & RETRY PACK – bündelt drei eng zusammengehörende Status-/Transportkorrekturen: (1) bei bereits identischer, gültiger IATA darf eine reine Ortsnamen-/Sprachvariante wie Geneva/Genf keinen verified/high-Nachweis mehr künstlich in einen Quellenkonflikt zurückstufen; (2) die Preview-Spalte „Status“ bewertet nur ungelöste Warnungen/Fehler – bereits gelöste info/ocr_recovery-Korrekturen bleiben sichtbar dokumentiert, markieren die Fahrt aber nicht mehr als „Prüfen“; (3) die offizielle Airportquelle erhält genau EINEN fail-safe Retry für eindeutig transiente technische Transportfehler (u. a. „transport returned no JSON“/Timeout/Netzwerk), ohne not_found/unsupported oder fachliche Konflikte erneut zu versuchen. FLIGHT-008, Zwei-Quellen-Pflicht, Datum/Airport/Richtung/IATA, PLAN/DISPO/LIVE, OCR-Inhalt und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P75I · 28.09.2026: OCR INTEGRITY PACK – ergänzt drei eng zusammengehörende, fail-safe OCR-Sicherungen: (1) ein einzelner trailing Buchstabe an einer formal plausiblen Flugnummer wird nur dann entfernt, wenn mehrere enge OCR-Crops der originalen Flugzelle eindeutig dieselbe kürzere Flugnummer bestätigen; (2) eine einzelne 1-Zeichen-Abweichung in längeren Routenbezeichnungen wird nur bei starkem Wiederholungs-Konsens innerhalb derselben Liste vereinheitlicht; (3) automatische Korrekturen und ungeklärte Gegenprüfungen werden im OCR-Selbstcheck/Preview sichtbar, sodass relevante interne Abweichungen nicht mehr unsichtbar hinter „0 Hinweise · 0 Fehler“ verschwinden. Keine Flugnummern-, Airline-, Hotel- oder Orts-Hardcodes. P75H First-Row-Recovery, FLIGHT-008, PLAN/DISPO/LIVE, Fahrerfarben und Persistenz bleiben unverändert.
@@ -4139,15 +4140,15 @@
     return unique.length === 1 ? unique[0] : '';
   }
 
-  function rawRouteEvidenceForCell(imageMeta, rowMeta, left, right) {
+  function rawRouteEvidenceItemsForCell(imageMeta, rowMeta, left, right) {
     const words = Array.isArray(imageMeta?.rawOcrWords) ? imageMeta.rawOcrWords : [];
     const y0 = Number(rowMeta?.y0 || 0);
     const y1 = Number(rowMeta?.y1 || 0);
-    if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 <= y0) return new Set();
+    if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 <= y0) return [];
     const rowHeight = Math.max(8, y1 - y0);
     const cyMin = y0 - rowHeight * 0.16;
     const cyMax = y1 + rowHeight * 0.16;
-    const found = new Set();
+    const found = [];
     words.forEach(word => {
       const wx0 = Number(word?.x0);
       const wx1 = Number(word?.x1);
@@ -4158,9 +4159,24 @@
       const cy = (wy0 + wy1) / 2;
       if (cx < left || cx > right || cy < cyMin || cy > cyMax) return;
       const candidate = missingRouteCandidate(word?.text);
-      if (candidate) found.add(routeOcrBase(candidate));
+      if (!candidate) return;
+      const key = routeOcrBase(candidate);
+      if (!key) return;
+      found.push({
+        key,
+        candidate,
+        x0: wx0,
+        x1: wx1,
+        y0: wy0,
+        y1: wy1,
+        confidence: Number(word?.confidence || 0)
+      });
     });
     return found;
+  }
+
+  function rawRouteEvidenceForCell(imageMeta, rowMeta, left, right) {
+    return new Set(rawRouteEvidenceItemsForCell(imageMeta, rowMeta, left, right).map(item => item.key));
   }
 
   async function recoverMissingRouteCellsTargeted(rides, imageCanvas, imageMeta, mapping) {
@@ -4190,6 +4206,10 @@
         const right = Number(boundaries[Number(column) + 1]);
         if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
 
+        const rawItems = rawRouteEvidenceItemsForCell(imageMeta, rowMeta, left, right);
+        const rawEvidence = new Set(rawItems.map(item => item.key));
+        if (!rawEvidence.size) continue;
+
         const cellWidth = Math.max(8, right - left);
         const padX = Math.max(1, Math.min(8, cellWidth * 0.025));
         const padY = Math.max(2, Math.min(8, rowHeight * 0.12));
@@ -4198,43 +4218,139 @@
           [left + padX * 1.6, y0 - padY * 0.45, right - padX * 1.6, y1 + padY * 0.45, 3],
           [left + padX * 0.5, y0 + 1, right - padX * 0.5, y1 - 1, 2]
         ];
-        const rawEvidence = rawRouteEvidenceForCell(imageMeta, rowMeta, left, right);
-        if (!rawEvidence.size) continue;
 
         if (status) status.textContent = `${descriptor.label} Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
         const attempts = [];
         const votes = new Map();
         const displayByKey = new Map();
+        let lineWorker = null;
         try {
-          const results = await Promise.allSettled(regions.map(async ([x0, cy0, x1, cy1, scale]) => {
-            const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-            const result = await Tesseract.recognize(crop, 'eng', { tessedit_pageseg_mode: '7' });
-            return missingRouteCandidateFromOcrResult(result);
-          }));
-          for (const result of results) {
-            const candidate = result.status === 'fulfilled' ? missingRouteCandidate(result.value) : '';
-            attempts.push(candidate);
-            if (!candidate) continue;
-            const key = routeOcrBase(candidate);
-            if (!rawEvidence.has(key)) continue;
-            votes.set(key, (votes.get(key) || 0) + 1);
-            if (!displayByKey.has(key)) displayByKey.set(key, candidate);
+          if (typeof Tesseract.createWorker === 'function') {
+            lineWorker = await Tesseract.createWorker('eng');
+            if (lineWorker && typeof lineWorker.setParameters === 'function') {
+              await lineWorker.setParameters({ tessedit_pageseg_mode: '7' });
+            }
           }
-        } catch (_) {
-          ride[`${descriptor.field}MissingTargetedOcrAttempts`] = attempts;
-          continue;
+          for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
+            const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
+            const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+            const result = lineWorker && typeof lineWorker.recognize === 'function'
+              ? await lineWorker.recognize(crop)
+              : await Tesseract.recognize(crop, 'eng', { tessedit_pageseg_mode: '7' });
+            const candidate = missingRouteCandidateFromOcrResult(result);
+            const normalized = missingRouteCandidate(candidate);
+            const key = routeOcrBase(normalized);
+            attempts.push({
+              stage: 'cell-line',
+              crop: cropIndex + 1,
+              scale,
+              rawText: cellText(result?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
+              candidate: normalized || ''
+            });
+            if (!normalized || !key || !rawEvidence.has(key)) continue;
+            votes.set(key, (votes.get(key) || 0) + 1);
+            if (!displayByKey.has(key)) displayByKey.set(key, normalized);
+          }
+        } catch (error) {
+          attempts.push({ stage: 'cell-line-error', crop: 0, scale: 0, rawText: cellText(error?.message || error).slice(0, 80), candidate: '' });
+        } finally {
+          if (lineWorker && typeof lineWorker.terminate === 'function') {
+            try { await lineWorker.terminate(); } catch (_) {}
+          }
         }
+
+        let ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        let acceptedKey = (!ranked.length || ranked[0][1] < 2 || (ranked.length > 1 && ranked[0][1] === ranked[1][1]))
+          ? ''
+          : ranked[0][0];
+        let acceptedSource = acceptedKey ? 'targeted_route_cell_consensus_plus_primary_raw' : '';
+        let acceptedEvidence = acceptedKey ? ranked[0][1] : 0;
+
+        // P92: Wenn der breite Zell-Crop trotz vorhandener Roh-Evidenz nicht konsistent
+        // genug ist, darf NUR bei genau einem kompakten Rohwort in der Zelle dessen
+        // bereits vorhandene Bounding-Box separat bestaetigt werden. Der Rohwert selbst
+        // wird nie direkt uebernommen; zwei lokale PSM-8-Bestaetigungen bleiben Pflicht.
+        if (!acceptedKey) {
+          const rawByKey = new Map();
+          rawItems.forEach(item => {
+            if (!rawByKey.has(item.key)) rawByKey.set(item.key, []);
+            rawByKey.get(item.key).push(item);
+          });
+          if (rawByKey.size === 1) {
+            const [rawKey, sameKeyItems] = [...rawByKey.entries()][0];
+            const rawItem = sameKeyItems.slice().sort((a,b) => Number(b.confidence || 0) - Number(a.confidence || 0))[0];
+            const rawToken = missingRouteCandidate(rawItem?.candidate || '');
+            // Enger Sonderpfad nur fuer EIN einzelnes kompaktes alphanumerisches Rohwort.
+            // Mehrwort-Ziele/Hotels bleiben beim normalen Zell-Konsens und werden nicht geraten.
+            if (rawToken && /^[A-Za-z0-9]{3,16}$/.test(rawToken)) {
+              const wx0 = Number(rawItem.x0), wx1 = Number(rawItem.x1), wy0 = Number(rawItem.y0), wy1 = Number(rawItem.y1);
+              const ww = Math.max(4, wx1 - wx0), wh = Math.max(4, wy1 - wy0);
+              const wordRegions = [
+                [wx0 - ww * 0.32, wy0 - wh * 0.34, wx1 + ww * 0.32, wy1 + wh * 0.34, 3],
+                [wx0 - ww * 0.20, wy0 - wh * 0.22, wx1 + ww * 0.20, wy1 + wh * 0.22, 4],
+                [wx0 - ww * 0.10, wy0 - wh * 0.12, wx1 + ww * 0.10, wy1 + wh * 0.12, 5]
+              ];
+              let wordWorker = null;
+              let wordSupport = 0;
+              try {
+                if (typeof Tesseract.createWorker === 'function') {
+                  wordWorker = await Tesseract.createWorker('eng');
+                  if (wordWorker && typeof wordWorker.setParameters === 'function') {
+                    await wordWorker.setParameters({
+                      tessedit_pageseg_mode: '8',
+                      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+                    });
+                  }
+                }
+                for (let cropIndex = 0; cropIndex < wordRegions.length; cropIndex++) {
+                  const [x0, cy0, x1, cy1, scale] = wordRegions[cropIndex];
+                  const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+                  const result = wordWorker && typeof wordWorker.recognize === 'function'
+                    ? await wordWorker.recognize(crop)
+                    : await Tesseract.recognize(crop, 'eng', { tessedit_pageseg_mode: '8' });
+                  const candidate = missingRouteCandidateFromOcrResult(result);
+                  const normalized = missingRouteCandidate(candidate);
+                  const key = routeOcrBase(normalized);
+                  attempts.push({
+                    stage: 'raw-word',
+                    crop: cropIndex + 1,
+                    scale,
+                    rawText: cellText(result?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
+                    candidate: normalized || ''
+                  });
+                  if (normalized && key === rawKey) wordSupport += 1;
+                }
+              } catch (error) {
+                attempts.push({ stage: 'raw-word-error', crop: 0, scale: 0, rawText: cellText(error?.message || error).slice(0, 80), candidate: '' });
+              } finally {
+                if (wordWorker && typeof wordWorker.terminate === 'function') {
+                  try { await wordWorker.terminate(); } catch (_) {}
+                }
+              }
+              if (wordSupport >= 2) {
+                acceptedKey = rawKey;
+                displayByKey.set(rawKey, rawToken);
+                acceptedSource = 'targeted_raw_word_bbox_consensus_plus_primary_raw';
+                acceptedEvidence = wordSupport;
+              }
+            }
+          }
+        }
+
         ride[`${descriptor.field}MissingTargetedOcrAttempts`] = attempts;
-        const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-        if (!ranked.length || ranked[0][1] < 2) continue;
-        if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
-        const recovered = missingRouteCandidate(displayByKey.get(ranked[0][0]));
-        if (!recovered) continue;
+        ride[`${descriptor.field}MissingTargetedOcrRawEvidence`] = rawItems.map(item => ({
+          key: item.key,
+          candidate: item.candidate,
+          confidence: item.confidence
+        }));
+        if (!acceptedKey) continue;
+        const recovered = missingRouteCandidate(displayByKey.get(acceptedKey));
+        if (!recovered || !rawEvidence.has(routeOcrBase(recovered))) continue;
 
         ride[descriptor.field] = recovered;
         ride[`${descriptor.field}RecoveredFromMissingTargetedOcr`] = true;
-        ride[`${descriptor.field}MissingTargetedOcrEvidence`] = ranked[0][1];
-        ride[`${descriptor.field}MissingTargetedOcrSource`] = 'targeted_route_cell_consensus_plus_primary_raw';
+        ride[`${descriptor.field}MissingTargetedOcrEvidence`] = acceptedEvidence;
+        ride[`${descriptor.field}MissingTargetedOcrSource`] = acceptedSource;
       }
     }
     return out;
@@ -6010,6 +6126,23 @@
       });
     });
 
+    const missingRouteOcrTraces = [];
+    rideList.forEach(ride => {
+      ['pickup', 'destination'].forEach(field => {
+        const attempts = Array.isArray(ride?.[`${field}MissingTargetedOcrAttempts`])
+          ? ride[`${field}MissingTargetedOcrAttempts`]
+          : [];
+        const rawEvidence = Array.isArray(ride?.[`${field}MissingTargetedOcrRawEvidence`])
+          ? ride[`${field}MissingTargetedOcrRawEvidence`]
+          : [];
+        if (!attempts.length && !rawEvidence.length) return;
+        const rawText = rawEvidence.map(item => `${cellText(item?.candidate) || '?'}@${Math.round(Number(item?.confidence || 0))}`).join('/') || '∅';
+        const attemptText = attempts.map(item => `${cellText(item?.stage) || '?'}c${Number(item?.crop || 0)}=${cellText(item?.candidate) || '∅'}[${cellText(item?.rawText) || '∅'}]`).join(',') || '∅';
+        const recovered = ride?.[`${field}RecoveredFromMissingTargetedOcr`] ? `→${cellText(ride?.[field])}` : '→offen';
+        missingRouteOcrTraces.push(`${Number(ride?.sourceRow || 0)}:${field}{raw=${rawText};${attemptText};${recovered}}`);
+      });
+    });
+
     // CORE-007D8A1F1D3: Diagnose der lokalen
     // Flugzellen-Zweit-OCR. Zeigt Kandidaten/Stimmen je Crop+OCR-Modus, ohne
     // irgendeinen OCR-Wert oder eine Importentscheidung zu verändern.
@@ -6086,6 +6219,7 @@
       routeTextReviews,
       unresolvedSuspiciousFlights,
       routeBoundaryRecoveries,
+      missingRouteOcrTraces,
       flightPrefixRecoveries,
       flightPrefixRejects,
       flightOcrTraces,
@@ -6203,6 +6337,7 @@
       `matrixIndex=[${list(check.matrixIndexes)}]`,
       `matched=[${list(check.matchedMatrixIndexes)}]`,
       `RouteDiag=${check.routeDiagnostics}`,
+      `MissingRouteOCR=[${list(check.missingRouteOcrTraces)}]`,
       `FlightDiag=${check.flightDiagnostics}`,
       `RandRecoveries=[${list(check.routeBoundaryRecoveries)}]`,
       `FlightPrefixFix=[${list(check.flightPrefixRecoveries)}]`,
