@@ -832,3 +832,64 @@ html,body{
   #settingsView .settings-hub-meta{font-size:10px}
   #settingsView .settings-hub-chevron{font-size:21px}
 }
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE2 · ADRESSEN-UNTERSEITE
+   Kompakte, echte Unterseite. Bestehende Adressdaten/Route-Logik
+   bleiben unverändert; Import/Export bleibt bis Gate 4 erreichbar.
+   ========================================================== */
+#settingsView .settings-address-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px}
+#settingsView.settings-address-open>.settings-page>.cockHead,
+#settingsView.settings-address-open #settingsHub,
+#settingsView.settings-address-open #dispatcherSettingsCard,
+#settingsView.settings-address-open #driverSettingsCard,
+#settingsView.settings-address-open #backupCard,
+#settingsView.settings-address-open #infoCard{display:none!important}
+#settingsView.settings-address-open #settingsToolsHost{display:block}
+#settingsView .settings-subpage-head{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:2px 0 10px;border-bottom:1px solid rgba(38,92,113,.72)}
+#settingsView .settings-subpage-head h2{margin:0;font-size:22px;line-height:1.15}
+#settingsView .settings-subpage-head small{display:block;margin-top:3px;color:var(--muted);font-size:12px}
+#settingsView .settings-back-btn{width:42px;height:42px;flex:0 0 42px;border:1px solid rgba(89,159,190,.45);border-radius:12px;background:#082a39;color:var(--text);font-size:24px;font-weight:800;display:grid;place-items:center;padding:0}
+#settingsView .address-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;margin-bottom:6px}
+#settingsView .address-toolbar .setting-input{margin:0;height:46px}
+#settingsView .address-new-btn{height:46px;padding:0 14px;border:1px solid rgba(73,177,219,.52);border-radius:12px;background:#0b3d53;color:#fff;font-weight:900;white-space:nowrap}
+#settingsView .address-search-info{font-size:12px;color:var(--muted);margin:2px 2px 10px}
+#settingsView .address-compact-list{display:grid;gap:8px}
+#settingsView .address-compact-item{width:100%;border:1px solid rgba(47,106,130,.78);border-radius:14px;background:#082b3a;color:var(--text);padding:11px 12px;display:grid;grid-template-columns:minmax(0,1fr) 20px;gap:10px;align-items:center;text-align:left}
+#settingsView .address-compact-item:active{background:#0b3648}
+#settingsView .address-compact-main{min-width:0;display:grid;gap:3px}
+#settingsView .address-compact-main strong{font-size:15px;line-height:1.2;overflow-wrap:anywhere}
+#settingsView .address-compact-main small{font-size:12px;line-height:1.3;color:var(--muted);overflow-wrap:anywhere}
+#settingsView .address-compact-main em{font-size:10px;font-style:normal;font-weight:850;color:#9fc0cf;text-transform:uppercase;letter-spacing:.45px}
+#settingsView .address-compact-chevron{font-size:24px;line-height:1;color:#88a7b6;text-align:right}
+#settingsView .address-empty{padding:16px;border:1px dashed rgba(84,142,166,.45);border-radius:12px}
+#settingsView .address-inner-head{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+#settingsView .address-inner-head h3{margin:0;font-size:19px}
+#settingsView #addressBookEditorView .setting-label{display:block;margin:10px 0 5px}
+#settingsView #addressBookEditorView .setting-input{width:100%;margin:0}
+#settingsView .address-aliases{min-height:86px;resize:vertical}
+#settingsView .address-note-input{min-height:110px;resize:vertical}
+#settingsView .address-editor-actions,#settingsView .address-detail-actions,#settingsView .address-transfer-actions{display:grid;gap:9px;margin-top:14px}
+#settingsView .address-editor-actions{grid-template-columns:1fr 1fr}
+#settingsView .address-detail-body{display:grid;gap:9px}
+#settingsView .address-detail-hero{padding:14px;border:1px solid rgba(47,106,130,.75);border-radius:14px;background:#082b3a}
+#settingsView .address-detail-hero h3{margin:3px 0 5px;font-size:20px;overflow-wrap:anywhere}
+#settingsView .address-detail-hero p{margin:0;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+#settingsView .address-detail-type{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d4055;color:#a9c9d8;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px}
+#settingsView .address-detail-row{padding:11px 12px;border:1px solid rgba(47,106,130,.55);border-radius:12px;background:rgba(5,34,46,.72);display:grid;gap:4px}
+#settingsView .address-detail-row span{font-size:10px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#89a9b7}
+#settingsView .address-detail-row strong{font-size:13px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+#settingsView .address-detail-row a{color:#7ddfff;text-decoration:none;overflow-wrap:anywhere}
+#settingsView .address-detail-actions{grid-template-columns:1fr 1fr}
+#settingsView .address-transfer-actions .act{width:100%}
+#settingsView .address-transfer-status{font-size:12px;color:var(--muted);margin-top:10px}
+@media(max-width:520px){
+  #settingsView .settings-subpage-head{margin-bottom:12px}
+  #settingsView .settings-subpage-head h2{font-size:20px}
+  #settingsView .settings-back-btn{width:38px;height:38px;flex-basis:38px;font-size:22px}
+  #settingsView .address-toolbar{grid-template-columns:1fr}
+  #settingsView .address-new-btn{width:100%}
+  #settingsView .address-compact-item{padding:10px 11px}
+  #settingsView .address-editor-actions,#settingsView .address-detail-actions{grid-template-columns:1fr}
+}
