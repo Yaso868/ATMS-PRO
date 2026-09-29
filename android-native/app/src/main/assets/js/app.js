@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P93 · 29.09.2026: SIBLING-CONFIRMED ROUTE OCR NORMALIZATION – behebt den im P92-Realtest sichtbaren Rest-Duplikatfall, bei dem dieselbe Bündelfahrt nach einem Graustufen-Reimport einmal mit dem sicher wiederhergestellten Airportcode und einmal mit einem kompakten OCR-Symbolartefakt (z. B. zwei Buchstaben + ™) bestehen bleiben konnte. Eine solche kompakte Route wird ausschließlich dann normalisiert, wenn derselbe Plantag, dieselbe DISPO-Zeit, derselbe Flug, Fahrer und Partner/Firma in einer Geschwisterzeile exakt den daraus ableitbaren gültigen Drei-Buchstaben-Airportcode belegen. Keine Airport-/Hotel-/Flug-Hardcodes; ohne eindeutigen Geschwisterbeleg bleibt der Text unverändert. Die Normalisierung wird vor P73-Reimport-Matching sowohl auf Bestand als auch Neueingang angewendet, sodass bereits entstandene Carryover-Dubletten beim nächsten Import sicher zusammenfallen. P92 Missing-Route-Recovery, P77A Cleanup, P75/P75A Farben, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
 // CORE-007D8A1F1D8P77A · 28.09.2026: COMPACT LEGACY-DEDUPE ROLLBACK HOTFIX – behebt den auf dem Realgerät belegten P77-Fail-Closed-Abbruch beim Schreiben des vollständigen 120-Fahrten-Rollback-Snapshots. Statt alle Fahrten nochmals in localStorage zu duplizieren, sichert P77A nur die tatsächlich zu entfernenden Altzeilen plus deren Done-Zustand und die geplanten Ersetzungen. Die Dedupe-Beweiskette selbst bleibt unverändert streng. Neuer v2-Migrationsschlüssel erzwingt genau einen frischen Lauf nach dem blockierten P77-Versuch. P76A Backup-Export, Restore, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN, DISPO, LIVE und übrige Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P77 · 28.09.2026: LEGACY DEDUPE & CLEANUP PACK – führt genau einmal eine fail-closed Bereinigung historischer, durch überlappende Planversionen stehengebliebener Dubletten aus. Entfernt wird nur eine ältere Carryover-Fahrt, wenn zwei Nicht-Bundle-Fahrten in allen fachlich stabilen Merkmalen (Plantag, Flug, Richtung, Fahrer, Route, Firma/Kunde, Fahrzeug, Personen, Preis/Währung) identisch sind, aus unterschiedlichen Planquellen stammen und ausschließlich eine eng begrenzte Flugzeitkorrektur (≤15 Min.) ODER Planzeitkorrektur (≤45 Min.) vorliegt. Zusätzlich muss die neuere Planquelle den alten Zeitpunkt tatsächlich zeitlich überdecken. Gleiche Quelle/gleicher Plan, echte Bundles, Multi-Stop-Fahrten, parallele Fahrer und mehrdeutige Gruppen werden nicht angefasst. Vor jeder Änderung wird ein lokaler Rollback-Snapshot geschrieben; ohne Rollback kein Cleanup. P76A Backup-Export, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
 // CORE-007D8A1F1D8P76A · 28.09.2026: NATIVE BACKUP FILE EXPORT HOTFIX – „📤 Backup erstellen“ verwendet in der Android-App jetzt den bereits vorhandenen nativen Speichern-unter-Dialog statt des unbestätigten Browser-Downloads. Der sichtbare Sicherungszeitpunkt wird erst nach erfolgreich bestätigtem Dateischreiben aktualisiert; Abbruch/Fehler erzeugt keinen falschen „Letzte Sicherung“-Status. Web-Fallback sowie Backup-Inhalt, Wiederherstellung, Fahrten, OCR, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
@@ -3044,6 +3045,53 @@ function savePlanImportHistory(list,reason='plan-import-history'){const next=Arr
 function currentPlanImportSession(){try{return JSON.parse(localStorage.getItem(PLAN_IMPORT_CURRENT)||'null')}catch(_){return null}}
 function planImportSessionId(){return `plan-${Date.now()}-${Math.random().toString(36).slice(2,8)}`}
 function planImportNorm(v){return String(v??'').trim().toLowerCase().replace(/\s+/g,' ')}
+// P93: Ein sehr enges OCR-Symbolartefakt darf nur durch eine gleichzeitige Geschwisterzeile
+// derselben Fahrtengruppe bestätigt werden. Beispielklasse: zwei Buchstaben + ™, wobei die
+// exakt passende Geschwisterzeile den daraus abgeleiteten Drei-Buchstaben-IATA-Code trägt.
+// Ohne Geschwisterbeleg bleibt der Routentext unangetastet.
+function p93CompactAirportArtifactCandidate(value){
+  const raw=String(value??'').trim().toUpperCase().replace(/\s+/g,'');
+  const match=raw.match(/^([A-Z]{2})™$/u);
+  if(!match)return'';
+  const candidate=`${match[1]}M`;
+  return flightAirportIataFromPlace(candidate)===candidate?candidate:'';
+}
+function p93SiblingRouteGroupKey(r){
+  return [
+    String(first(r?.date,r?.datum)||'').trim()||berlinDate(),
+    String(planTimeOf(r)||'').trim(),
+    flightCacheNumber(r?.flightNumber||''),
+    planImportNorm(r?.driver||r?.fahrer),
+    planImportNorm(r?.company||r?.firma||r?.partner||r?.airline)
+  ].join('|');
+}
+function p93NormalizeSiblingRouteArtifacts(source){
+  const list=(Array.isArray(source)?source:[]).map(r=>({...r}));
+  if(list.length<2)return list;
+  const groups=new Map();
+  list.forEach((r,index)=>{const key=p93SiblingRouteGroupKey(r);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(index)});
+  for(const indexes of groups.values()){
+    if(indexes.length<2)continue;
+    for(const index of indexes){
+      const ride=list[index];
+      for(const field of ['pickup','destination']){
+        const candidate=p93CompactAirportArtifactCandidate(ride?.[field]);
+        if(!candidate)continue;
+        const confirmed=indexes.some(otherIndex=>{
+          if(otherIndex===index)return false;
+          const peer=list[otherIndex];
+          return flightAirportIataFromPlace(peer?.[field])===candidate;
+        });
+        if(!confirmed)continue;
+        ride[field]=candidate;
+        const trace=Array.isArray(ride._p93RouteOcrNormalized)?ride._p93RouteOcrNormalized.slice():[];
+        trace.push({field,from:String(source?.[index]?.[field]??''),to:candidate,reason:'sibling_confirmed_airport_ocr_artifact'});
+        ride._p93RouteOcrNormalized=trace;
+      }
+    }
+  }
+  return list;
+}
 function planImportRideIdentity(r){
   const date=String(first(r?.date,r?.datum)||'').trim()||berlinDate();
   const flight=flightCacheNumber(r?.flightNumber||'');
@@ -3484,18 +3532,23 @@ function applyImportedRides(newRides){
   // Datum bleibt unveraendert.
   const importedAt=new Date().toISOString();
   const assumedPlantDay=berlinDate();
-  const normalizedIncoming=newRides.map(r=>{
+  const normalizedIncomingBase=newRides.map(r=>{
     const explicitDate=String(first(r?.date,r?.datum)||'').trim();
     if(explicitDate)return r;
     return {...r,date:assumedPlantDay,dateAssumed:true,planDateAssumed:true,planImportedAt:importedAt};
   });
+  // P93: Nur durch eine gleichzeitige Geschwisterzeile bestätigte kompakte Airport-OCR-Artefakte
+  // werden vor dem Re-Import-Matching normalisiert. Bestand und Neueingang durchlaufen dieselbe
+  // enge Regel, damit bereits entstandene Carryover-Dubletten beim nächsten Import zusammenfallen.
+  const normalizedIncoming=p93NormalizeSiblingRouteArtifacts(normalizedIncomingBase);
+  const normalizedCurrent=p93NormalizeSiblingRouteArtifacts(rides);
   // P75: Fahrerfarben aus farbigen Bild-/WhatsApp-Planlisten nur als UI-Metadaten übernehmen.
   // Manuell in P74 gewählte/gesperrte Farben haben Vorrang; Fahrtdaten bleiben unverändert.
   applyImportedDriverPlanColors(normalizedIncoming);
   // P32: gleiche reale, noch offene Fahrt aus einer neuen Planversion behält ihre stabile ID
   // und bereits bestätigte Flug-/LIVE-Metadaten. Nicht sicher gematchte offene Alt-Fahrten
   // werden nicht blind gelöscht, sondern als Carryover markiert.
-  const planMerge=mergePlanImportByIdentity(rides,normalizedIncoming);
+  const planMerge=mergePlanImportByIdentity(normalizedCurrent,normalizedIncoming);
   rides=planMerge.rides;
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
