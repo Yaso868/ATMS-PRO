@@ -1086,3 +1086,24 @@ html,body{
   #settingsView .atms-mobile-icon-btn{width:36px;height:36px;font-size:21px}
   #settingsView .settings-subpage-head.atms-mobile-topbar{gap:8px}
 }
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3F2 · STICKY HEADER FIX
+   Der historische Mobile-Width-Guard verwendet overflow-x:hidden
+   auf #settingsView. In Android WebView wird der View dadurch zum
+   Overflow-Container und position:sticky verliert den Window-Scroll.
+   overflow-x:clip behält den horizontalen Breiten-Schutz, ohne einen
+   Scroll-Container zu erzeugen. Keine Daten-/Navigationslogik geändert.
+   ========================================================== */
+#settingsView.settings-address-open,
+#settingsView.settings-driver-open{
+  overflow-x:clip!important;
+  overflow-y:visible!important;
+}
+@supports not (overflow-x:clip){
+  #settingsView.settings-address-open,
+  #settingsView.settings-driver-open{
+    overflow-x:visible!important;
+    overflow-y:visible!important;
+  }
+}
