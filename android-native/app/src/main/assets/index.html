@@ -57,13 +57,42 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
 </div>
 <div class="card legacy-json"><details><summary>Erweiterter JSON-Import</summary><textarea id="jsonInput" placeholder="ATMS-JSON hier einfügen …"></textarea><div class="actions2"><button id="loadBtn" class="act green">JSON laden</button><button id="clearBtn" class="act dark">Leeren</button></div></details></div>
 </main></section>
-<section id="settingsView" class="hidden"><main class="settings-page"><div class="cockHead"><h1>Einstellungen</h1></div><div id="settingsToolsHost"></div>
-<div class="card"><h2>👤 Disponenten</h2><p class="setting-note">Name und Telefonnummer werden lokal gespeichert. Im Cockpit wählst du den aktuellen Disponenten. WhatsApp-Texte werden automatisch aus der Fahrt erzeugt.</p><div class="settings-grid">
+<section id="settingsView" class="hidden"><main class="settings-page"><div class="cockHead"><h1>Einstellungen</h1></div><!-- CORE-007D8A1F1D8P95 Gate 1: Settings Hub. Bestehende Einstellungslogik bleibt unverändert darunter erhalten. -->
+<div id="settingsHub" class="settings-hub" aria-label="Einstellungsbereiche">
+  <div class="settings-hub-group">
+    <div class="settings-hub-group-title">STAMMDATEN</div>
+    <button class="settings-hub-item" type="button" data-settings-jump="addresses">
+      <span class="settings-hub-icon">📍</span><span class="settings-hub-copy"><strong>Adressen</strong><small>Hotels, Flughäfen, Treffpunkte</small></span><span id="settingsAddressCount" class="settings-hub-meta">–</span><span class="settings-hub-chevron">›</span>
+    </button>
+    <button class="settings-hub-item" type="button" data-settings-jump="drivers">
+      <span class="settings-hub-icon">🚗</span><span class="settings-hub-copy"><strong>Fahrer</strong><small>Fahrer, Fahrzeuge, Status</small></span><span id="settingsDriverCount" class="settings-hub-meta">–</span><span class="settings-hub-chevron">›</span>
+    </button>
+    <button class="settings-hub-item" type="button" data-settings-jump="dispatchers">
+      <span class="settings-hub-icon">👤</span><span class="settings-hub-copy"><strong>Disponenten</strong><small>Kontakte und WhatsApp</small></span><span id="settingsDispatcherCount" class="settings-hub-meta">–</span><span class="settings-hub-chevron">›</span>
+    </button>
+  </div>
+  <div class="settings-hub-group">
+    <div class="settings-hub-group-title">DATEN</div>
+    <button class="settings-hub-item" type="button" data-settings-jump="transfer">
+      <span class="settings-hub-icon">📥</span><span class="settings-hub-copy"><strong>Import &amp; Export</strong><small>Planlisten, Excel und CSV</small></span><span class="settings-hub-meta">Daten</span><span class="settings-hub-chevron">›</span>
+    </button>
+    <button class="settings-hub-item" type="button" data-settings-jump="backup">
+      <span class="settings-hub-icon">💾</span><span class="settings-hub-copy"><strong>Backup &amp; Wiederherstellen</strong><small>Sicherung und Wiederherstellung</small></span><span class="settings-hub-meta">Backup</span><span class="settings-hub-chevron">›</span>
+    </button>
+  </div>
+  <div class="settings-hub-group">
+    <div class="settings-hub-group-title">SYSTEM</div>
+    <button class="settings-hub-item" type="button" data-settings-jump="about">
+      <span class="settings-hub-icon">ℹ️</span><span class="settings-hub-copy"><strong>Über ATMS PRO</strong><small>Version, Build und Systeminformationen</small></span><span class="settings-hub-meta">V1.4.0</span><span class="settings-hub-chevron">›</span>
+    </button>
+  </div>
+</div><div id="settingsToolsHost"></div>
+<div class="card" id="dispatcherSettingsCard"><h2>👤 Disponenten</h2><p class="setting-note">Name und Telefonnummer werden lokal gespeichert. Im Cockpit wählst du den aktuellen Disponenten. WhatsApp-Texte werden automatisch aus der Fahrt erzeugt.</p><div class="settings-grid">
 <div><label class="setting-label" for="dispatcherName">Disponent anlegen (max. 20)</label><input id="dispatcherName" class="setting-input" placeholder="z. B. Ewa"></div>
 <div><label class="setting-label" for="dispatcherPhone">Telefon-/WhatsApp-Nummer</label><input id="dispatcherPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"></div>
 <button id="addDispatcher" class="act dark full" type="button">+ Disponent speichern</button><div id="dispatcherList" class="dispatcher-list full"></div><div class="setting-note full">Disponenten erhalten nur selbst verfasste private Nachrichten.</div>
 </div></div>
-<div class="card driver-settings-card"><h2>🚘 Fahrerverwaltung</h2><p class="setting-note">Speichere beliebig viele Fahrer mit Telefonnummer, Fahrzeug, Notiz und Status. Favoriten stehen im Cockpit zuerst.</p>
+<div class="card driver-settings-card" id="driverSettingsCard"><h2>🚘 Fahrerverwaltung</h2><p class="setting-note">Speichere beliebig viele Fahrer mit Telefonnummer, Fahrzeug, Notiz und Status. Favoriten stehen im Cockpit zuerst.</p>
 <div class="driver-edit-grid">
 <div><label class="setting-label" for="driverContactName">Fahrername</label><input id="driverContactName" class="setting-input" placeholder="z. B. Lana"></div>
 <div><label class="setting-label" for="driverContactPhone">Telefon-/WhatsApp-Nummer</label><input id="driverContactPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"></div>
