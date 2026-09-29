@@ -1107,3 +1107,79 @@ html,body{
     overflow-y:visible!important;
   }
 }
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3F3 · FIXED MOBILE TOP BAR
+   Realgeraet-Fix: Die Navigation wird auf Mobilgeraeten direkt
+   am sichtbaren Viewport verankert. Damit bleibt Zurueck + Titel
+   unabhaengig vom tatsaechlichen Android-WebView-Scrollcontainer
+   immer erreichbar. Bestehende History-/Datenlogik unveraendert.
+   ========================================================== */
+@media(max-width:760px){
+  #settingsView{
+    --atms-fixed-topbar-space:calc(var(--atms-mobile-safe-top) + 58px);
+    --atms-fixed-innerbar-space:calc(var(--atms-mobile-safe-top) + 54px);
+  }
+
+  /* Hauptleiste der Adressen-/Fahrer-Liste: fest am Viewport. */
+  #settingsView.settings-address-open .settings-address-page>.settings-subpage-head,
+  #settingsView.settings-driver-open .settings-driver-page>.settings-subpage-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:130!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+
+  /* Der aus dem normalen Dokumentfluss geloeste Header bekommt
+     einen stabilen Platzhalter, damit Suche/Liste nicht darunter liegt. */
+  #settingsView.settings-address-open #addressBookBrowseView:not(.hidden),
+  #settingsView.settings-driver-open #settingsDriverBrowseView:not(.hidden){
+    padding-top:var(--atms-fixed-topbar-space)!important;
+  }
+
+  /* In Editor/Detail/Transfer wird nur die jeweilige innere Leiste gezeigt. */
+  #settingsView.settings-address-open .settings-address-page:has(#addressBookEditorView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-address-open .settings-address-page:has(#addressBookDetailView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-address-open .settings-address-page:has(#addressBookTransferView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-driver-open .settings-driver-page:has(#settingsDriverEditorView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-driver-open .settings-driver-page:has(#settingsDriverDetailView:not(.hidden))>.settings-subpage-head{
+    display:none!important;
+  }
+
+  #settingsView.settings-address-open #addressBookEditorView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-address-open #addressBookDetailView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-address-open #addressBookTransferView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-driver-open #settingsDriverEditorView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-driver-open #settingsDriverDetailView:not(.hidden)>.address-inner-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:132!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+
+  #settingsView.settings-address-open #addressBookEditorView:not(.hidden),
+  #settingsView.settings-address-open #addressBookDetailView:not(.hidden),
+  #settingsView.settings-address-open #addressBookTransferView:not(.hidden),
+  #settingsView.settings-driver-open #settingsDriverEditorView:not(.hidden),
+  #settingsView.settings-driver-open #settingsDriverDetailView:not(.hidden){
+    padding-top:var(--atms-fixed-innerbar-space)!important;
+  }
+
+  /* Die vorhandene F1-Scrolllogik darf weiterhin zwischen gross/kompakt
+     umschalten; fixed sorgt nur dafuer, dass die Leiste sichtbar bleibt. */
+  #settingsView .settings-address-page.atms-mobile-nav-collapsed>.settings-subpage-head,
+  #settingsView .settings-driver-page.atms-mobile-nav-collapsed>.settings-subpage-head{
+    position:fixed!important;
+    top:0!important;
+  }
+}
