@@ -948,3 +948,141 @@ html,body{
   #settingsView .driver-compact-item{padding:10px 11px}
   #settingsView .driver-detail-actions{grid-template-columns:1fr}
 }
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3F1 · NATIVE MOBILE NAVIGATION
+   Zentrale Safe-Area-Top-Bar + einklappbare Kopfzeile für
+   Adressen/Fahrer. Android-System-Zurück nutzt WebView-History.
+   ========================================================== */
+#settingsView{
+  --atms-mobile-safe-top:30px;
+  --atms-mobile-head-bg:rgba(4,27,39,.985);
+}
+@supports (padding-top:max(1px, env(safe-area-inset-top, 0px))){
+  #settingsView{--atms-mobile-safe-top:max(30px, env(safe-area-inset-top, 0px))}
+}
+#settingsView.settings-address-open .settings-subpage-head,
+#settingsView.settings-driver-open .settings-subpage-head,
+#settingsView.settings-address-open .address-inner-head,
+#settingsView.settings-driver-open .address-inner-head{
+  position:sticky;
+  top:0;
+  z-index:92;
+  box-sizing:border-box;
+  width:auto;
+  min-height:78px;
+  margin-left:-12px;
+  margin-right:-12px;
+  margin-bottom:12px;
+  padding:calc(var(--atms-mobile-safe-top) + 7px) 12px 9px;
+  background:linear-gradient(180deg,var(--atms-mobile-head-bg) 0%,rgba(5,34,47,.975) 100%);
+  border-bottom:1px solid rgba(71,135,160,.42);
+  box-shadow:0 7px 18px rgba(0,0,0,.16);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  transition:min-height .18s ease,padding .18s ease,box-shadow .18s ease;
+}
+#settingsView .settings-subpage-head.atms-mobile-topbar{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:10px;
+}
+#settingsView .address-inner-head.atms-mobile-topbar{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:10px;
+}
+#settingsView .atms-mobile-title{min-width:0;display:grid;gap:2px}
+#settingsView .atms-mobile-title h2,
+#settingsView .atms-mobile-innerbar h3{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+#settingsView .settings-back-btn{
+  width:40px;
+  height:40px;
+  flex:0 0 40px;
+  border-radius:12px;
+  font-size:29px;
+  line-height:1;
+  background:#082c3b;
+  border-color:rgba(92,171,203,.52);
+  box-shadow:0 2px 8px rgba(0,0,0,.14);
+  -webkit-tap-highlight-color:transparent;
+}
+#settingsView .settings-back-btn:active,
+#settingsView .atms-mobile-icon-btn:active{transform:scale(.96);background:#0d4054}
+#settingsView .atms-mobile-head-actions{
+  display:none;
+  align-items:center;
+  gap:7px;
+}
+#settingsView .atms-mobile-icon-btn{
+  display:grid;
+  width:38px;
+  height:38px;
+  border:1px solid rgba(80,156,188,.46);
+  border-radius:11px;
+  background:#082c3b;
+  color:var(--text);
+  font-size:22px;
+  font-weight:900;
+  line-height:1;
+  padding:0;
+  place-items:center;
+  -webkit-tap-highlight-color:transparent;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-subpage-head,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-subpage-head{
+  min-height:64px;
+  padding-top:calc(var(--atms-mobile-safe-top) + 3px);
+  padding-bottom:6px;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-subpage-head small,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-subpage-head small{
+  max-height:0;
+  opacity:0;
+  margin:0;
+  overflow:hidden;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-subpage-head h2,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-subpage-head h2{
+  font-size:18px;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .atms-mobile-head-actions,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .atms-mobile-head-actions{
+  display:flex;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-back-btn,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-back-btn{
+  width:38px;
+  height:38px;
+  flex-basis:38px;
+}
+#settingsView .atms-mobile-innerbar{
+  min-height:68px!important;
+  padding-top:calc(var(--atms-mobile-safe-top) + 5px)!important;
+  padding-bottom:7px!important;
+}
+#settingsView .atms-mobile-innerbar h3{margin:0;font-size:18px;line-height:1.2}
+#settingsView .settings-address-page,
+#settingsView .settings-driver-page{scroll-margin-top:0}
+@media(max-width:520px){
+  #settingsView.settings-address-open .settings-subpage-head,
+  #settingsView.settings-driver-open .settings-subpage-head,
+  #settingsView.settings-address-open .address-inner-head,
+  #settingsView.settings-driver-open .address-inner-head{
+    margin-left:-12px;
+    margin-right:-12px;
+    padding-left:12px;
+    padding-right:12px;
+  }
+  #settingsView .settings-back-btn{width:38px;height:38px;flex-basis:38px;font-size:27px}
+  #settingsView .atms-mobile-icon-btn{width:36px;height:36px;font-size:21px}
+  #settingsView .settings-subpage-head.atms-mobile-topbar{gap:8px}
+}
