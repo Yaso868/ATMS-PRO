@@ -893,3 +893,58 @@ html,body{
   #settingsView .address-compact-item{padding:10px 11px}
   #settingsView .address-editor-actions,#settingsView .address-detail-actions{grid-template-columns:1fr}
 }
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3 · FAHRER-UNTERSEITE
+   Echte kompakte Fahrer-Unterseite auf bestehendem Fahrer-Speicher.
+   Keine Änderung an Adressen, OCR, FLIGHT-008, PLAN/DISPO/LIVE.
+   ========================================================== */
+#settingsView.settings-driver-open>.settings-page>.cockHead,
+#settingsView.settings-driver-open #settingsHub,
+#settingsView.settings-driver-open #dispatcherSettingsCard,
+#settingsView.settings-driver-open #driverSettingsCard,
+#settingsView.settings-driver-open #backupCard,
+#settingsView.settings-driver-open #infoCard{display:none!important}
+#settingsView.settings-driver-open #settingsToolsHost{display:block!important}
+#settingsView .settings-driver-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px}
+#settingsView .driver-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;margin-bottom:10px}
+#settingsView .driver-toolbar .setting-input{margin:0;height:46px}
+#settingsView .driver-new-btn{height:46px;padding:0 14px;border:1px solid rgba(73,177,219,.52);border-radius:12px;background:#0b3d53;color:#fff;font-weight:900;white-space:nowrap}
+#settingsView .driver-filter-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}
+#settingsView .driver-filter-tabs button{min-height:38px;border:1px solid rgba(55,113,138,.7);border-radius:10px;background:#062737;color:#9eb7c3;font-weight:850;padding:7px 9px}
+#settingsView .driver-filter-tabs button.active{background:#0d4960;color:#fff;border-color:rgba(87,190,229,.72)}
+#settingsView .driver-search-info{font-size:12px;color:var(--muted);margin:2px 2px 10px}
+#settingsView .driver-compact-list{display:grid;gap:8px}
+#settingsView .driver-compact-item{width:100%;border:1px solid rgba(47,106,130,.78);border-radius:14px;background:#082b3a;color:var(--text);padding:11px 12px;display:grid;grid-template-columns:minmax(0,1fr) 20px;gap:10px;align-items:center;text-align:left}
+#settingsView .driver-compact-item:active{background:#0b3648}
+#settingsView .driver-compact-main{min-width:0;display:grid;gap:3px}
+#settingsView .driver-compact-main strong{font-size:15px;line-height:1.2;overflow-wrap:anywhere}
+#settingsView .driver-compact-main small{font-size:12px;line-height:1.3;color:var(--muted);overflow-wrap:anywhere}
+#settingsView .driver-compact-main em{width:max-content;font-size:10px;font-style:normal;font-weight:900;text-transform:uppercase;letter-spacing:.45px;padding:3px 7px;border-radius:999px}
+#settingsView .driver-compact-main em.active{background:rgba(41,199,111,.12);color:#69e49d;border:1px solid rgba(41,199,111,.35)}
+#settingsView .driver-compact-main em.inactive{background:rgba(255,92,109,.10);color:#ff9daa;border:1px solid rgba(255,92,109,.32)}
+#settingsView .driver-compact-chevron{font-size:24px;line-height:1;color:#88a7b6;text-align:right}
+#settingsView .driver-empty{padding:16px;border:1px dashed rgba(84,142,166,.45);border-radius:12px}
+#settingsView .driver-editor-checks{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:12px 0 4px}
+#settingsView .driver-note-input{min-height:110px;resize:vertical}
+#settingsView .driver-editor-actions{display:grid;gap:9px;margin-top:14px}
+#settingsView .driver-detail-body{display:grid;gap:9px}
+#settingsView .driver-detail-hero{padding:14px;border:1px solid rgba(47,106,130,.75);border-radius:14px;background:#082b3a}
+#settingsView .driver-detail-hero h3{margin:6px 0 5px;font-size:20px;overflow-wrap:anywhere}
+#settingsView .driver-detail-hero p{margin:0;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+#settingsView .driver-detail-status{display:inline-block;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px}
+#settingsView .driver-detail-status.active{background:rgba(41,199,111,.12);color:#69e49d;border:1px solid rgba(41,199,111,.35)}
+#settingsView .driver-detail-status.inactive{background:rgba(255,92,109,.10);color:#ff9daa;border:1px solid rgba(255,92,109,.32)}
+#settingsView .driver-detail-row{padding:11px 12px;border:1px solid rgba(47,106,130,.55);border-radius:12px;background:rgba(5,34,46,.72);display:grid;gap:4px}
+#settingsView .driver-detail-row span{font-size:10px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#89a9b7}
+#settingsView .driver-detail-row strong{font-size:13px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+#settingsView .driver-detail-row a{color:#7ddfff;text-decoration:none;overflow-wrap:anywhere}
+#settingsView .driver-detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+#settingsView .driver-detail-actions .act{display:flex;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box}
+@media(max-width:520px){
+  #settingsView .driver-toolbar{grid-template-columns:1fr}
+  #settingsView .driver-new-btn{width:100%}
+  #settingsView .driver-filter-tabs{gap:6px}
+  #settingsView .driver-compact-item{padding:10px 11px}
+  #settingsView .driver-detail-actions{grid-template-columns:1fr}
+}
