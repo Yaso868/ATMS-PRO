@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P95-GATE4 · 29.09.2026: SETTINGS DISPATCHER SUBPAGE – kompakte Disponenten-Unterseite mit Suche, Neu/Bearbeiten, Detailansicht, aktueller Disponent und zentraler Native-Mobile-Navigation auf bestehendem lokalen Disponenten-Datenspeicher. Keine Änderung an Adress-/Fahrer-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
 // CORE-007D8A1F1D8P95-GATE3F4 · 29.09.2026: SETTINGS LIST SCROLL POSITION FIX – speichert beim Öffnen von Adress-/Fahrerdetails zusätzlich zum echten Android-WebView-Scrollwert den sichtbaren Listeneintrag als Anker samt Abstand zur festen Top-Bar und stellt beides bei Android-Zurück wieder her. Keine Änderung an Adress-/Fahrerdaten, History-Hierarchie, OCR, FLIGHT-008, PLAN/DISPO/LIVE, Routing oder Persistenz.
 // CORE-007D8A1F1D8P95-GATE3F1 · 29.09.2026: NATIVE MOBILE SETTINGS NAVIGATION – zentrale mobile Top-Bar mit Android-Safe-Area, einklappbarer Kopfzeile, WebView-History für Android-System-Zurück/Geste und gemerkter Listen-Scrollposition für Adressen/Fahrer. Keine Änderung an Daten-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
 // CORE-007D8A1F1D8P95-GATE3 · 29.09.2026: SETTINGS DRIVER SUBPAGE – echte kompakte Fahrer-Unterseite mit Suche, Alle/Aktiv/Inaktiv, Detailansicht und eigenem Editor auf bestehendem Fahrer-Datenspeicher. Keine Änderung an Adressdaten, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder Fahrtenpersistenz.
@@ -1146,7 +1147,7 @@ function updateSettingsHub(){
 }
 const ATMS_SETTINGS_HISTORY_KEY='atmsP95SettingsNav';
 let atmsSettingsHistoryApplying=false,atmsSettingsRouteDepth=0,atmsSettingsLastScrollY=0;
-const atmsSettingsListScroll={address:null,driver:null};
+const atmsSettingsListScroll={address:null,driver:null,dispatcher:null};
 function atmsSettingsCurrentScroll(){
   const view=$('settingsView'),root=document.scrollingElement;
   return Math.max(Number(window.scrollY)||0,Number(root?.scrollTop)||0,Number(document.documentElement?.scrollTop)||0,Number(document.body?.scrollTop)||0,Number(view?.scrollTop)||0)
@@ -1154,6 +1155,7 @@ function atmsSettingsCurrentScroll(){
 function atmsSettingsScrollMeta(kind){
   if(kind==='address')return{rows:'#addressBookList [data-address-id]',attr:'addressId',bar:'#atmsAddressBookPanel > .atms-mobile-topbar'};
   if(kind==='driver')return{rows:'#settingsDriverList [data-settings-driver-id]',attr:'settingsDriverId',bar:'#atmsDriverSettingsPanel > .atms-mobile-topbar'};
+  if(kind==='dispatcher')return{rows:'#settingsDispatcherList [data-settings-dispatcher-id]',attr:'settingsDispatcherId',bar:'#atmsDispatcherSettingsPanel > .atms-mobile-topbar'};
   return null
 }
 function atmsSettingsVisibleAnchor(kind){
@@ -1178,7 +1180,7 @@ function atmsSettingsSetScroll(value,kind=''){
   })})
 }
 function atmsSettingsRememberScroll(kind){
-  if(kind!=='address'&&kind!=='driver')return;
+  if(kind!=='address'&&kind!=='driver'&&kind!=='dispatcher')return;
   const anchor=atmsSettingsVisibleAnchor(kind);atmsSettingsListScroll[kind]={y:atmsSettingsCurrentScroll(),anchorId:anchor?.id||'',anchorOffset:Number(anchor?.offset)||0}
 }
 function atmsSettingsReadRoute(){try{return history.state?.[ATMS_SETTINGS_HISTORY_KEY]||null}catch(_){return null}}
@@ -1197,7 +1199,7 @@ function atmsSettingsPushRoute(kind,level='browse',id=''){
   try{history.pushState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:route},'',location.href);atmsSettingsRouteDepth=depth}catch(_){atmsSettingsRouteDepth=depth}
 }
 function atmsSettingsShowHub({replaceHistory=false}={}){
-  closeSettingsAddressPage();closeSettingsDriverPage();showView('settings');updateSettingsHub();
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();showView('settings');updateSettingsHub();
   if(replaceHistory){try{history.replaceState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:atmsSettingsHubRoute()},'',location.href)}catch(_){ }}
   atmsSettingsRouteDepth=0;atmsSettingsSetScroll(0)
 }
@@ -1209,7 +1211,7 @@ function atmsSettingsBack(){
 function atmsSettingsReturnToBrowse(kind){
   const route=atmsSettingsReadRoute(),depth=Number(route?.depth)||0;
   if(route?.kind===kind&&depth>1){try{history.go(-(depth-1));return}catch(_){ }}
-  if(kind==='address')showAddressBookBrowse({restoreScroll:true});else if(kind==='driver')showSettingsDriverBrowse({restoreScroll:true})
+  if(kind==='address')showAddressBookBrowse({restoreScroll:true});else if(kind==='driver')showSettingsDriverBrowse({restoreScroll:true});else if(kind==='dispatcher')showSettingsDispatcherBrowse({restoreScroll:true})
 }
 function atmsSettingsApplyHistoryRoute(route){
   atmsSettingsHistoryApplying=true;
@@ -1228,6 +1230,12 @@ function atmsSettingsApplyHistoryRoute(route){
       else if(route.level==='editor')showSettingsDriverEditor(route.id?'edit':'new',route.id,{history:false});
       return
     }
+    if(route.kind==='dispatcher'){
+      openSettingsDispatcherPage('browse',{history:false,restoreScroll:route.level==='browse'});
+      if(route.level==='detail'&&route.id)showSettingsDispatcherDetail(route.id,{history:false});
+      else if(route.level==='editor')showSettingsDispatcherEditor(route.id?'edit':'new',route.id,{history:false});
+      return
+    }
     atmsSettingsShowHub()
   }finally{atmsSettingsHistoryApplying=false}
 }
@@ -1235,6 +1243,7 @@ function atmsSettingsActivePanel(){
   const view=$('settingsView');if(!view||view.classList.contains('hidden'))return null;
   if(view.classList.contains('settings-address-open'))return $('atmsAddressBookPanel');
   if(view.classList.contains('settings-driver-open'))return $('atmsDriverSettingsPanel');
+  if(view.classList.contains('settings-dispatcher-open'))return $('atmsDispatcherSettingsPanel');
   return null
 }
 function atmsSettingsUpdateMobileHeader(forceExpand=false){
@@ -1245,7 +1254,7 @@ function atmsSettingsUpdateMobileHeader(forceExpand=false){
   atmsSettingsLastScrollY=y
 }
 function atmsSettingsFocusBrowse(kind){
-  const panel=kind==='address'?$('atmsAddressBookPanel'):$('atmsDriverSettingsPanel'),input=kind==='address'?$('addressBookSearch'):$('settingsDriverSearch');
+  const panel=kind==='address'?$('atmsAddressBookPanel'):kind==='driver'?$('atmsDriverSettingsPanel'):$('atmsDispatcherSettingsPanel'),input=kind==='address'?$('addressBookSearch'):kind==='driver'?$('settingsDriverSearch'):$('settingsDispatcherSearch');
   panel?.classList.remove('atms-mobile-nav-collapsed');
   requestAnimationFrame(()=>{try{panel?.scrollIntoView({block:'start',behavior:'smooth'})}catch(_){ }setTimeout(()=>{try{input?.focus({preventScroll:true})}catch(__){input?.focus()}},180)})
 }
@@ -1253,7 +1262,7 @@ function installSettingsMobileNavigation(){
   const view=$('settingsView');if(!view||view.dataset.atmsP95Gate3F1Nav==='1')return;
   view.dataset.atmsP95Gate3F1Nav='1';
   const onScroll=()=>atmsSettingsUpdateMobileHeader(false);window.addEventListener('scroll',onScroll,{passive:true});view.addEventListener('scroll',onScroll,{passive:true});
-  window.addEventListener('popstate',e=>{const route=e.state?.[ATMS_SETTINGS_HISTORY_KEY]||null;if(route||$('settingsView')?.classList.contains('settings-address-open')||$('settingsView')?.classList.contains('settings-driver-open'))atmsSettingsApplyHistoryRoute(route)});
+  window.addEventListener('popstate',e=>{const route=e.state?.[ATMS_SETTINGS_HISTORY_KEY]||null;if(route||$('settingsView')?.classList.contains('settings-address-open')||$('settingsView')?.classList.contains('settings-driver-open')||$('settingsView')?.classList.contains('settings-dispatcher-open'))atmsSettingsApplyHistoryRoute(route)});
 }
 function atmsSettingsOpenHubFromPrimaryNav(){
   const route=atmsSettingsReadRoute(),depth=Number(route?.depth)||0;
@@ -1263,7 +1272,7 @@ function atmsSettingsOpenHubFromPrimaryNav(){
 }
 function setSettingsAddressPageActive(active){
   const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
-  if(active){view.classList.remove('settings-driver-open');$('atmsDriverSettingsPanel')?.classList.add('hidden')}
+  if(active){view.classList.remove('settings-driver-open','settings-dispatcher-open');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden')}
   view.classList.toggle('settings-address-open',Boolean(active));
   const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
   hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
@@ -1271,8 +1280,16 @@ function setSettingsAddressPageActive(active){
 }
 function setSettingsDriverPageActive(active){
   const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
-  if(active){view.classList.remove('settings-address-open');$('atmsAddressBookPanel')?.classList.add('hidden')}
+  if(active){view.classList.remove('settings-address-open','settings-dispatcher-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden')}
   view.classList.toggle('settings-driver-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function setSettingsDispatcherPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-address-open','settings-driver-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-dispatcher-open',Boolean(active));
   const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
   hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
   const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
@@ -1284,12 +1301,13 @@ function bindSettingsHubNavigation(){
 }
 function jumpToSettingsSection(section){
   const key=String(section||'').trim();
-  if(key==='addresses'){closeSettingsDriverPage();openSettingsAddressPage('browse');return}
-  if(key==='drivers'){closeSettingsAddressPage();openSettingsDriverPage('browse');return}
+  if(key==='addresses'){closeSettingsDriverPage();closeSettingsDispatcherPage();openSettingsAddressPage('browse');return}
+  if(key==='drivers'){closeSettingsAddressPage();closeSettingsDispatcherPage();openSettingsDriverPage('browse');return}
+  if(key==='dispatchers'){closeSettingsAddressPage();closeSettingsDriverPage();openSettingsDispatcherPage('browse');return}
   // Gate 3: vorhandene Adress-Import/Export-Werkzeuge bleiben bis zum eigenen Transfer-Gate erreichbar.
-  if(key==='transfer'){closeSettingsDriverPage();openSettingsAddressPage('transfer');return}
-  closeSettingsAddressPage();closeSettingsDriverPage();
-  const targets={dispatchers:'dispatcherSettingsCard',backup:'backupCard',about:'infoCard'};
+  if(key==='transfer'){closeSettingsDriverPage();closeSettingsDispatcherPage();openSettingsAddressPage('transfer');return}
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();
+  const targets={backup:'backupCard',about:'infoCard'};
   const target=$(targets[key]);
   if(!target)return;
   target.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1497,6 +1515,53 @@ function deleteDispatcher(id){let list=getDispatchers().filter(x=>x.id!==id);con
 function chooseDispatcher(id){setCurrentDispatcher(id);renderDispatcherList()}
 function renderDispatcherList(){const box=$('dispatcherList');if(!box)return;const list=getDispatchers(),current=currentDispatcherId()||(list[0]?.id||'');box.innerHTML=list.length?list.map(d=>`<div class="dispatcher-item"><div><b>${esc(d.name)}</b><small>${esc(d.phone)}</small>${d.id===current?'<div class="current-chip">✓ Aktueller Disponent</div>':''}</div><div class="dispatcher-item-actions"><button class="mini" type="button" onclick="chooseDispatcher('${d.id}')">Aktiv</button><a class="mini" href="tel:${cleanPhone(d.phone)}">📞</a><button class="mini danger" type="button" onclick="deleteDispatcher('${d.id}')">✕</button></div></div>`).join(''):'<div class="setting-note">Noch kein Disponent gespeichert.</div>'}
 function renderDispatcherControls(){const sel=$('cockpitDispatcherSelect'),list=getDispatchers();if(!sel)return;let current=currentDispatcherId();if(!current&&list[0]){current=list[0].id;saveDispatchers(list,current)}sel.innerHTML=list.length?list.map(d=>`<option value="${d.id}" ${d.id===current?'selected':''}>👤 ${esc(d.name)}</option>`).join(''):'<option value="">Kein Disponent</option>';const d=getCurrentDispatcher(),phone=d?cleanPhone(d.phone):'';$('cockpitDispatcherInfo').textContent=d?`${d.name} · ${d.phone}`:'Bitte zuerst in den Einstellungen einen Disponenten anlegen.';$('cockpitCallBtn').href=phone?'tel:'+phone:'#';$('cockpitCallBtn').classList.toggle('hidden',!phone);$('cockpitDispatcherMessageBtn').disabled=!phone}
+
+function settingsDispatcherSyncAfterChange(){renderDispatcherList();renderDispatcherControls();updateBackupUI();updateSettingsHub();renderSettingsDispatcherList()}
+function settingsDispatcherFieldRow(label,value,opts={}){if(!String(value||'').trim())return'';const v=String(value).trim();let content=esc(v);if(opts.tel)content=`<a href="tel:${esc(cleanPhone(v))}">${esc(v)}</a>`;else if(opts.mail)content=`<a href="mailto:${esc(v)}">${esc(v)}</a>`;return`<div class="driver-detail-row"><span>${esc(label)}</span><strong>${content}</strong></div>`}
+function renderSettingsDispatcherList(){
+  const host=$('settingsDispatcherList');if(!host)return;const all=getDispatchers(),q=normKey($('settingsDispatcherSearch')?.value||''),current=currentDispatcherId()||(all[0]?.id||'');
+  let list=all.filter(d=>!q||[d.name,d.phone,d.email,d.note,'Disposition'].some(v=>normKey(v).includes(q)));
+  list.sort((a,b)=>(Number(String(b.id)===String(current))-Number(String(a.id)===String(current)))||String(a.name||'').localeCompare(String(b.name||''),'de'));
+  const count=$('settingsDispatcherPageCount');if(count)count.textContent=`${all.length} gespeicherte Disponenten`;
+  const info=$('settingsDispatcherSearchInfo');if(info)info.textContent=q?`${list.length} Treffer von ${all.length}`:`${all.length} Disponenten verfügbar`;
+  host.innerHTML=list.length?list.map(d=>`<button type="button" class="driver-compact-item" data-settings-dispatcher-id="${esc(d.id)}"><span class="driver-compact-main"><strong>${esc(d.name)}</strong><small>Disposition</small>${String(d.id)===String(current)?'<em class="active">Aktuell</em>':''}</span><span class="driver-compact-chevron">›</span></button>`).join(''):'<div class="setting-note driver-empty">Keine passenden Disponenten gefunden.</div>';
+}
+function resetSettingsDispatcherForm(){['settingsDispatcherEditId','settingsDispatcherName','settingsDispatcherPhone','settingsDispatcherEmail','settingsDispatcherNote'].forEach(id=>{const el=$(id);if(el)el.value=''})}
+function showSettingsDispatcherBrowse(opts={}){const panel=$('atmsDispatcherSettingsPanel');if(!panel)return;['settingsDispatcherBrowseView','settingsDispatcherEditorView','settingsDispatcherDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDispatcherBrowseView')?.classList.remove('hidden');renderSettingsDispatcherList();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.dispatcher,'dispatcher');else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function showSettingsDispatcherEditor(mode='new',id='',opts={}){
+  const panel=$('atmsDispatcherSettingsPanel');if(!panel)return;if(opts.history!==false){atmsSettingsRememberScroll('dispatcher');atmsSettingsPushRoute('dispatcher','editor',mode==='edit'?id:'')}resetSettingsDispatcherForm();const d=mode==='edit'?getDispatchers().find(x=>String(x.id)===String(id)):null;
+  if(d){$('settingsDispatcherEditId').value=d.id;$('settingsDispatcherName').value=d.name||'';$('settingsDispatcherPhone').value=d.phone||'';$('settingsDispatcherEmail').value=d.email||'';$('settingsDispatcherNote').value=d.note||''}
+  const title=$('settingsDispatcherEditorTitle');if(title)title.textContent=d?'Disponent bearbeiten':'Neuer Disponent';['settingsDispatcherBrowseView','settingsDispatcherDetailView'].forEach(x=>$(x)?.classList.add('hidden'));$('settingsDispatcherEditorView')?.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>{panel.scrollIntoView({block:'start'});setTimeout(()=>$('settingsDispatcherName')?.focus(),80)})
+}
+function showSettingsDispatcherDetail(id,opts={}){
+  const list=getDispatchers(),d=list.find(x=>String(x.id)===String(id)),body=$('settingsDispatcherDetailBody');if(!d||!body)return;if(opts.history!==false){atmsSettingsRememberScroll('dispatcher');atmsSettingsPushRoute('dispatcher','detail',id)}body.dataset.dispatcherId=d.id;const current=String(currentDispatcherId()||(list[0]?.id||''))===String(d.id);
+  body.innerHTML=`<div class="driver-detail-hero">${current?'<div class="driver-detail-status active">● Aktueller Disponent</div>':''}<h3>${esc(d.name)}</h3><p>Disposition</p></div>${settingsDispatcherFieldRow('Telefon / WhatsApp',d.phone,{tel:!!cleanPhone(d.phone)})}${settingsDispatcherFieldRow('E-Mail',d.email,{mail:!!String(d.email||'').trim()})}${settingsDispatcherFieldRow('Notiz',d.note)}${settingsDispatcherFieldRow('Rolle','Disposition')}`;
+  const phone=cleanPhone(d.phone),call=$('settingsDispatcherCall'),wa=$('settingsDispatcherWhatsapp');if(call){call.classList.toggle('hidden',!phone);call.href=phone?'tel:'+phone:'#'}if(wa)wa.classList.toggle('hidden',!phone);
+  const currentBtn=$('settingsDispatcherCurrent');if(currentBtn){currentBtn.classList.toggle('hidden',current);currentBtn.textContent='✓ Als aktuellen Disponenten wählen'}const title=$('settingsDispatcherDetailTitle');if(title)title.textContent=d.name;
+  ['settingsDispatcherBrowseView','settingsDispatcherEditorView'].forEach(x=>$(x)?.classList.add('hidden'));$('settingsDispatcherDetailView')?.classList.remove('hidden');$('atmsDispatcherSettingsPanel')?.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>$('atmsDispatcherSettingsPanel')?.scrollIntoView({block:'start'}))
+}
+function saveSettingsDispatcherForm(){
+  const editId=String($('settingsDispatcherEditId')?.value||'').trim(),name=String($('settingsDispatcherName')?.value||'').trim(),phone=String($('settingsDispatcherPhone')?.value||'').trim(),email=String($('settingsDispatcherEmail')?.value||'').trim(),note=String($('settingsDispatcherNote')?.value||'').trim();
+  if(!name||!cleanPhone(phone)){showToast('Bitte Name und gültige Telefonnummer eingeben','warn');return}const list=getDispatchers();if(!editId&&list.length>=20){showToast('Es können maximal 20 Disponenten gespeichert werden','warn');return}
+  if(editId){const d=list.find(x=>String(x.id)===editId);if(!d){showToast('Disponent nicht gefunden','warn');return}Object.assign(d,{name,phone,email,note})}else{const id='disp-'+Date.now();list.push({id,name,phone,email,note});saveDispatchers(list,currentDispatcherId()||id);settingsDispatcherSyncAfterChange();resetSettingsDispatcherForm();atmsSettingsReturnToBrowse('dispatcher');showToast('Disponent gespeichert','ok');return}
+  saveDispatchers(list,currentDispatcherId());settingsDispatcherSyncAfterChange();resetSettingsDispatcherForm();atmsSettingsReturnToBrowse('dispatcher');showToast('Disponent aktualisiert','ok')
+}
+function chooseSettingsDispatcherCurrent(){const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId;if(!id)return;setCurrentDispatcher(id);settingsDispatcherSyncAfterChange();showSettingsDispatcherDetail(id,{history:false});showToast('Aktueller Disponent gesetzt','ok')}
+function deleteSettingsDispatcher(){const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId,list=getDispatchers(),d=list.find(x=>String(x.id)===String(id));if(!d)return;if(!confirm(`Disponent „${d.name}“ wirklich löschen?`))return;const next=list.filter(x=>String(x.id)!==String(id)),current=String(currentDispatcherId())===String(id)?(next[0]?.id||''):currentDispatcherId();saveDispatchers(next,current);settingsDispatcherSyncAfterChange();atmsSettingsReturnToBrowse('dispatcher');showToast('Disponent gelöscht','ok')}
+function ensureSettingsDispatcherPanel(){
+  const view=$('settingsView'),host=$('settingsToolsHost');if(!view)return false;let panel=$('atmsDispatcherSettingsPanel');if(panel)return true;
+  panel=document.createElement('section');panel.id='atmsDispatcherSettingsPanel';panel.dataset.atmsP95Gate4Panel='1';panel.className='settings-dispatcher-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="settingsDispatcherBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>👤 Disponenten</h2><small id="settingsDispatcherPageCount">0 gespeicherte Disponenten</small></div><div class="atms-mobile-head-actions"><button type="button" id="settingsDispatcherHeadSearch" class="atms-mobile-icon-btn" aria-label="Disponent suchen">⌕</button><button type="button" id="settingsDispatcherHeadAdd" class="atms-mobile-icon-btn" aria-label="Neuer Disponent">＋</button></div></div>
+  <div id="settingsDispatcherBrowseView"><div class="driver-toolbar"><input id="settingsDispatcherSearch" class="setting-input" placeholder="Disponent suchen …" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"><button type="button" id="settingsDispatcherNew" class="driver-new-btn">+ Neuer Disponent</button></div><div id="settingsDispatcherSearchInfo" class="driver-search-info">Disponentensuche bereit.</div><div id="settingsDispatcherList" class="driver-compact-list"></div></div>
+  <div id="settingsDispatcherEditorView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="settingsDispatcherEditorBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="settingsDispatcherEditorTitle">Neuer Disponent</h3></div><input id="settingsDispatcherEditId" type="hidden"><label class="setting-label" for="settingsDispatcherName">Name</label><input id="settingsDispatcherName" class="setting-input" placeholder="z. B. Lisa" autocomplete="off"><label class="setting-label" for="settingsDispatcherPhone">Telefon-/WhatsApp-Nummer</label><input id="settingsDispatcherPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"><label class="setting-label" for="settingsDispatcherEmail">E-Mail (optional)</label><input id="settingsDispatcherEmail" class="setting-input" inputmode="email" placeholder="z. B. dispo@firma.de"><label class="setting-label" for="settingsDispatcherNote">Notiz (optional)</label><textarea id="settingsDispatcherNote" class="setting-input driver-note-input" placeholder="z. B. Frühdienst / bevorzugt WhatsApp"></textarea><div class="driver-editor-actions"><button type="button" id="settingsDispatcherSave" class="act dark">Disponent speichern</button></div></div>
+  <div id="settingsDispatcherDetailView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="settingsDispatcherDetailBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="settingsDispatcherDetailTitle">Disponent</h3></div><div id="settingsDispatcherDetailBody" class="driver-detail-body"></div><div class="driver-detail-actions"><a id="settingsDispatcherCall" class="act dark hidden" href="#">📞 Anrufen</a><button type="button" id="settingsDispatcherWhatsapp" class="act dark hidden">💬 WhatsApp</button><button type="button" id="settingsDispatcherCurrent" class="act">✓ Als aktuellen Disponenten wählen</button><button type="button" id="settingsDispatcherEdit" class="act dark">✎ Bearbeiten</button><button type="button" id="settingsDispatcherDelete" class="act danger">🗑 Löschen</button></div></div>`;
+  if(host)host.appendChild(panel);else view.appendChild(panel);
+  $('settingsDispatcherBackSettings')?.addEventListener('click',atmsSettingsBack);$('settingsDispatcherNew')?.addEventListener('click',()=>showSettingsDispatcherEditor('new'));$('settingsDispatcherEditorBack')?.addEventListener('click',atmsSettingsBack);$('settingsDispatcherDetailBack')?.addEventListener('click',atmsSettingsBack);$('settingsDispatcherSave')?.addEventListener('click',saveSettingsDispatcherForm);$('settingsDispatcherHeadSearch')?.addEventListener('click',()=>atmsSettingsFocusBrowse('dispatcher'));$('settingsDispatcherHeadAdd')?.addEventListener('click',()=>showSettingsDispatcherEditor('new'));
+  $('settingsDispatcherSearch')?.addEventListener('input',renderSettingsDispatcherList);$('settingsDispatcherList')?.addEventListener('click',e=>{const row=e.target.closest('[data-settings-dispatcher-id]');if(row)showSettingsDispatcherDetail(row.dataset.settingsDispatcherId)});$('settingsDispatcherCurrent')?.addEventListener('click',chooseSettingsDispatcherCurrent);$('settingsDispatcherEdit')?.addEventListener('click',()=>{const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId;if(id)showSettingsDispatcherEditor('edit',id)});$('settingsDispatcherDelete')?.addEventListener('click',deleteSettingsDispatcher);$('settingsDispatcherWhatsapp')?.addEventListener('click',()=>{const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId,d=getDispatchers().find(x=>String(x.id)===String(id));if(d)openPrivateWhatsapp(d.phone,d.name,'')});renderSettingsDispatcherList();return true
+}
+function openSettingsDispatcherPage(mode='browse',opts={}){showView('settings');ensureSettingsDispatcherPanel();closeSettingsAddressPage();closeSettingsDriverPage();const view=$('settingsView'),panel=$('atmsDispatcherSettingsPanel');if(!view||!panel)return;setSettingsDispatcherPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');if(opts.history!==false)atmsSettingsPushRoute('dispatcher','browse');if(mode==='browse')showSettingsDispatcherBrowse({restoreScroll:!!opts.restoreScroll});if(!opts.restoreScroll)requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{view.scrollTop=0}catch(_){ }panel.scrollIntoView({block:'start'})})}
+function closeSettingsDispatcherPage(){const panel=$('atmsDispatcherSettingsPanel');setSettingsDispatcherPageActive(false);panel?.classList.add('hidden');['settingsDispatcherEditorView','settingsDispatcherDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDispatcherBrowseView')?.classList.remove('hidden');resetSettingsDispatcherForm();renderSettingsDispatcherList();requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})}
+
 function loadWhatsappSettings(){renderInfoChatSettings();renderDispatcherList();renderDispatcherControls();renderDriverContactList();renderDriverControls();updateBackupUI()}
 function cleanPhone(v){return String(v||'').replace(/[^0-9]/g,'')}
 function getDriverContacts(){let d=[];try{d=JSON.parse(localStorage.getItem(DRIVER_SETTINGS)||'[]')}catch{}if(!Array.isArray(d))d=[];return d.filter(x=>x&&x.name).map(x=>({id:x.id||('driver-'+Date.now()+Math.random()),name:String(x.name||'').trim(),phone:String(x.phone||''),vehicle:String(x.vehicle||''),note:String(x.note||''),favorite:!!x.favorite,active:x.active!==false}))}
