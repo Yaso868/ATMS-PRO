@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P95-GATE1 · 29.09.2026: SETTINGS HUB – ergänzt in Einstellungen eine kompakte, gruppierte Startübersicht mit Direktzugriff auf die unverändert vorhandenen P94-Einstellungsbereiche. Keine Änderung an Adress-/Fahrer-/Disponenten-/Backup-Datenlogik, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder Persistenz.
 // CORE-007D8A1F1D8P93 · 29.09.2026: SIBLING-CONFIRMED ROUTE OCR NORMALIZATION – behebt den im P92-Realtest sichtbaren Rest-Duplikatfall, bei dem dieselbe Bündelfahrt nach einem Graustufen-Reimport einmal mit dem sicher wiederhergestellten Airportcode und einmal mit einem kompakten OCR-Symbolartefakt (z. B. zwei Buchstaben + ™) bestehen bleiben konnte. Eine solche kompakte Route wird ausschließlich dann normalisiert, wenn derselbe Plantag, dieselbe DISPO-Zeit, derselbe Flug, Fahrer und Partner/Firma in einer Geschwisterzeile exakt den daraus ableitbaren gültigen Drei-Buchstaben-Airportcode belegen. Keine Airport-/Hotel-/Flug-Hardcodes; ohne eindeutigen Geschwisterbeleg bleibt der Text unverändert. Die Normalisierung wird vor P73-Reimport-Matching sowohl auf Bestand als auch Neueingang angewendet, sodass bereits entstandene Carryover-Dubletten beim nächsten Import sicher zusammenfallen. P92 Missing-Route-Recovery, P77A Cleanup, P75/P75A Farben, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
 // CORE-007D8A1F1D8P77A · 28.09.2026: COMPACT LEGACY-DEDUPE ROLLBACK HOTFIX – behebt den auf dem Realgerät belegten P77-Fail-Closed-Abbruch beim Schreiben des vollständigen 120-Fahrten-Rollback-Snapshots. Statt alle Fahrten nochmals in localStorage zu duplizieren, sichert P77A nur die tatsächlich zu entfernenden Altzeilen plus deren Done-Zustand und die geplanten Ersetzungen. Die Dedupe-Beweiskette selbst bleibt unverändert streng. Neuer v2-Migrationsschlüssel erzwingt genau einen frischen Lauf nach dem blockierten P77-Versuch. P76A Backup-Export, Restore, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN, DISPO, LIVE und übrige Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P77 · 28.09.2026: LEGACY DEDUPE & CLEANUP PACK – führt genau einmal eine fail-closed Bereinigung historischer, durch überlappende Planversionen stehengebliebener Dubletten aus. Entfernt wird nur eine ältere Carryover-Fahrt, wenn zwei Nicht-Bundle-Fahrten in allen fachlich stabilen Merkmalen (Plantag, Flug, Richtung, Fahrer, Route, Firma/Kunde, Fahrzeug, Personen, Preis/Währung) identisch sind, aus unterschiedlichen Planquellen stammen und ausschließlich eine eng begrenzte Flugzeitkorrektur (≤15 Min.) ODER Planzeitkorrektur (≤45 Min.) vorliegt. Zusätzlich muss die neuere Planquelle den alten Zeitpunkt tatsächlich zeitlich überdecken. Gleiche Quelle/gleicher Plan, echte Bundles, Multi-Stop-Fahrten, parallele Fahrer und mehrdeutige Gruppen werden nicht angefasst. Vor jeder Änderung wird ein lokaler Rollback-Snapshot geschrieben; ohne Rollback kein Cleanup. P76A Backup-Export, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
@@ -1133,6 +1134,20 @@ function restoreLiveBottomNavBaseline(){
   apply(b.host,b.hostStyle);
   b.items.forEach(item=>{if(!item.el?.isConnected)return;apply(item.el,item.style);item.children.forEach(c=>{if(!c.el?.isConnected)return;c.el.style.setProperty('display',c.display,'important');c.el.style.setProperty('font-size',c.fontSize,'important');c.el.style.setProperty('line-height',c.lineHeight,'important')})});
 }
+function updateSettingsHub(){
+  const put=(id,value)=>{const el=$(id);if(el)el.textContent=String(value)};
+  try{put('settingsAddressCount',getAddressBook().length)}catch(_){put('settingsAddressCount','–')}
+  try{put('settingsDriverCount',getDriverContacts().length)}catch(_){put('settingsDriverCount','–')}
+  try{put('settingsDispatcherCount',getDispatchers().length)}catch(_){put('settingsDispatcherCount','–')}
+}
+function jumpToSettingsSection(section){
+  const key=String(section||'').trim();
+  if(key==='addresses'||key==='transfer'){try{ensureAddressBookPanel();renderAddressBook()}catch(_){ }}
+  const targets={addresses:'atmsAddressBookPanel',transfer:'atmsAddressBookPanel',drivers:'driverSettingsCard',dispatchers:'dispatcherSettingsCard',backup:'backupCard',about:'infoCard'};
+  const target=$(targets[key]);
+  if(!target)return;
+  target.scrollIntoView({behavior:'smooth',block:'start'});
+}
 function showView(v){
   if(v==='live')captureLiveBottomNavBaseline();
   try{document.body?.classList.toggle('atms-live-target-active',v==='live')}catch(_){ }
@@ -1141,7 +1156,7 @@ function showView(v){
   if(v==='list')$('listView')?.classList.remove('hidden');
   if(v==='cockpit')$('cockpitView')?.classList.remove('hidden');
   if(v==='import'){$('importView')?.classList.remove('hidden');resetHorizontalViewport('importView')}
-  if(v==='settings'){$('settingsView')?.classList.remove('hidden');resetHorizontalViewport('settingsView')}
+  if(v==='settings'){$('settingsView')?.classList.remove('hidden');resetHorizontalViewport('settingsView');try{updateSettingsHub()}catch(_){ }}
   if(v==='live')$('liveDispositionView')?.classList.remove('hidden');
   if(v==='messages'){ensureMessagesView();$('messagesView')?.classList.remove('hidden');resetHorizontalViewport('messagesView')}
 }
@@ -4654,6 +4669,7 @@ function initApp(){
     capturePersistenceSafety('startup');
     initPersistenceDurableShadow();
     initPersistentFlightCheckStatus();
+    document.querySelectorAll('[data-settings-jump]').forEach(btn=>btn.addEventListener('click',()=>jumpToSettingsSection(btn.dataset.settingsJump)));
     bindClick('driverBtn',openDrivers);
     bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
     bindClick('cockpitDriverMessageBtn',openDriverMessage);
