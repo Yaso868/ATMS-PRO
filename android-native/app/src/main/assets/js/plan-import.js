@@ -1,3 +1,4 @@
+// P95 UX CORRECTIONS 30.09.2026: Strict near-primary OCR route recovery for empty same-cell route with unanimous cropped OCR and exact sibling.
 // CORE-007D8A1F1D8P92 · 29.09.2026: MISSING ROUTE RAW-WORD CONFIRMATION – der P91-Realtest belegt, dass missing_route_targeted_ocr ausgeführt wird und der positionsgleiche Roh-OCR-Beleg vorhanden ist, der breite Zell-Crop aber keinen Zwei-Treffer-Konsens erreicht. P92 setzt die beabsichtigte PSM-7-Zeilen-OCR über einen dedizierten Tesseract-Worker korrekt via setParameters() und ergänzt ausschließlich bei genau EINEM kompakten Rohwort in der leeren Routenzelle eine zweite, engere Bestätigung direkt um dessen bereits vorhandene Bounding-Box mit PSM 8. Übernahme weiterhin nur bei mindestens zwei identischen lokalen Bestätigungen desselben positionsgleichen Rohwerts; kein Einzel-Treffer, kein Nachbarzellen-Raten, keine Orts-/Airport-/Hotel-Hardcodes. Bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P91 · 29.09.2026: MISSING ROUTE CELL TARGETED OCR – behebt den real reproduzierten Graustufen-/Schwarz-Weiß-Fall, dass eine Von-/Nach-Zelle in der Primär-OCR leer bleibt, obwohl die Roh-OCR innerhalb exakt derselben Tabellenzelle bereits einen schwachen Texttreffer enthält. Nur tatsächlich leere Routenfelder werden lokal in drei eng begrenzten Crops derselben Zelle nachgelesen. Übernahme ausschließlich bei mindestens zwei identischen Targeted-OCR-Treffern UND einem positionsgleichen Roh-OCR-Beleg derselben Zelle; sonst bleibt der bestehende Fehler „Abholort/Ziel fehlt“ unverändert bestehen. Keine Orts-, Hotel-, Airport-, Flug- oder Fahrer-Hardcodes; bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P76 · 28.09.2026: FLIGHT VERIFICATION SYNC & RETRY PACK – bündelt drei eng zusammengehörende Status-/Transportkorrekturen: (1) bei bereits identischer, gültiger IATA darf eine reine Ortsnamen-/Sprachvariante wie Geneva/Genf keinen verified/high-Nachweis mehr künstlich in einen Quellenkonflikt zurückstufen; (2) die Preview-Spalte „Status“ bewertet nur ungelöste Warnungen/Fehler – bereits gelöste info/ocr_recovery-Korrekturen bleiben sichtbar dokumentiert, markieren die Fahrt aber nicht mehr als „Prüfen“; (3) die offizielle Airportquelle erhält genau EINEN fail-safe Retry für eindeutig transiente technische Transportfehler (u. a. „transport returned no JSON“/Timeout/Netzwerk), ohne not_found/unsupported oder fachliche Konflikte erneut zu versuchen. FLIGHT-008, Zwei-Quellen-Pflicht, Datum/Airport/Richtung/IATA, PLAN/DISPO/LIVE, OCR-Inhalt und Persistenz bleiben unverändert.
@@ -4222,6 +4223,9 @@
         if (status) status.textContent = `${descriptor.label} Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
         const attempts = [];
         const votes = new Map();
+        // P95: For a one-character weak primary word, preserve crop votes independently
+        // of exact raw-key agreement; later accept only after distinct sibling evidence.
+        const candidateVotes = new Map();
         const displayByKey = new Map();
         let lineWorker = null;
         try {
@@ -4247,9 +4251,11 @@
               rawText: cellText(result?.data?.text).replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80),
               candidate: normalized || ''
             });
-            if (!normalized || !key || !rawEvidence.has(key)) continue;
-            votes.set(key, (votes.get(key) || 0) + 1);
+            if (!normalized || !key) continue;
+            candidateVotes.set(key, (candidateVotes.get(key) || 0) + 1);
             if (!displayByKey.has(key)) displayByKey.set(key, normalized);
+            if (!rawEvidence.has(key)) continue;
+            votes.set(key, (votes.get(key) || 0) + 1);
           }
         } catch (error) {
           attempts.push({ stage: 'cell-line-error', crop: 0, scale: 0, rawText: cellText(error?.message || error).slice(0, 80), candidate: '' });
@@ -4265,6 +4271,39 @@
           : ranked[0][0];
         let acceptedSource = acceptedKey ? 'targeted_route_cell_consensus_plus_primary_raw' : '';
         let acceptedEvidence = acceptedKey ? ranked[0][1] : 0;
+
+        // P95: Fail-closed near-match for an already seen but weakly misspelled
+        // primary OCR word. Never infer an airport/hotel from a dictionary or flight.
+        // Require unanimous independent cell crops + one primary raw candidate within
+        // a single character + an EXACT existing same-column sibling in this image.
+        // Existing nonempty fields are never touched, and ambiguous raw cells fail.
+        if (!acceptedKey && rawEvidence.size === 1) {
+          const rankedCandidates = [...candidateVotes.entries()]
+            .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+          const best = rankedCandidates[0];
+          if (best && best[1] === regions.length &&
+              (!rankedCandidates[1] || rankedCandidates[1][1] < best[1])) {
+            const candidate = missingRouteCandidate(displayByKey.get(best[0]));
+            const compact = value => routeOcrBase(value).replace(/[^a-z0-9]/g, '');
+            const nearRaw = rawItems.length > 0 && rawItems.every(item => {
+              const left = compact(item.candidate);
+              const right = compact(candidate);
+              return left.length >= 7 && right.length >= 7 &&
+                routeOcrDistance(left, right) <= 1;
+            });
+            const confirmedSibling = out.some(other => other !== ride &&
+              Number(other.sourceRow) !== Number(ride.sourceRow) &&
+              routeOcrBase(other[descriptor.field]) === best[0]);
+            if (candidate && nearRaw && confirmedSibling) {
+              acceptedKey = best[0];
+              acceptedSource = 'p95_unanimous_cell_crops_plus_near_primary_raw_plus_exact_sibling';
+              acceptedEvidence = best[1];
+              attempts.push({stage:'p95-near-raw-sibling', crop:regions.length,
+                scale:0, rawText:rawItems.map(item => item.candidate).join(' | '),
+                candidate});
+            }
+          }
+        }
 
         // P92: Wenn der breite Zell-Crop trotz vorhandener Roh-Evidenz nicht konsistent
         // genug ist, darf NUR bei genau einem kompakten Rohwort in der Zelle dessen
@@ -4345,7 +4384,8 @@
         }));
         if (!acceptedKey) continue;
         const recovered = missingRouteCandidate(displayByKey.get(acceptedKey));
-        if (!recovered || !rawEvidence.has(routeOcrBase(recovered))) continue;
+        if (!recovered || (acceptedSource !== 'p95_unanimous_cell_crops_plus_near_primary_raw_plus_exact_sibling'
+          && !rawEvidence.has(routeOcrBase(recovered)))) continue;
 
         ride[descriptor.field] = recovered;
         ride[`${descriptor.field}RecoveredFromMissingTargetedOcr`] = true;
