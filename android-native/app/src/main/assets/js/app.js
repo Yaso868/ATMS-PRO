@@ -988,11 +988,64 @@ function rideCard(r,i){
   const driverColor=driverColorOf(r.driver);
   return `<article class="ride atms-driver-color ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}" style="--atms-driver-color:${driverColor.hex}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${liveFreshnessMarkup(r)}${stopRows}${airportConflictWarning}</div><div class="chev">›</div></article>`
 }
+// P95 bundled UI-only: maintain manual done list, and auto-collapse only truly past, non-done rides.
+// A missing/assumed date or uncertain current arrival cannot silently disappear from the active list.
+const ATMS_P95_PAST_OPEN='atms_p95_past_rides_open_v1';
+let atmsPastOpen=localStorage.getItem(ATMS_P95_PAST_OPEN)==='1';
+function atmsPastRideDecision(ride,now=new Date()){
+  const source=ride?._bundleMemberIds?.length?ride._bundleMemberIds.map(id=>rides.find(r=>String(r.id)===String(id))).filter(Boolean):[ride];
+  if(!source?.length)return false;
+  const nowStamp=berlinDateTimeMinuteStamp(now);
+  const today=berlinDate(now);
+  const grace=45;
+  for(const r of source){
+    const date=String(first(r?.date,r?.datum)||'').trim();
+    if(r?.dateAssumed===true||!/^\d{4}-\d{2}-\d{2}$/.test(date))return false;
+    const disp=atmsClockMinutes(first(dispoTimeOf(r),planTimeOf(r)));
+    if(disp===null)return false;
+    let rideStamp=Math.floor(Date.UTC(Number(date.slice(0,4)),Number(date.slice(5,7))-1,Number(date.slice(8,10)),0,disp)/60000);
+    if(!Number.isFinite(rideStamp))return false;
+    // If official, later same-day LIVE pickup crosses midnight, place it on the next ride day.
+    let dir='unknown';try{dir=flightDirectionForGemini(r)}catch(_){ }
+    if(dir==='arrival'){
+      const freshness=liveSnapshotFreshness(r);
+      const arrivalActual=Boolean(first(actualLandingTimeOf(r),r?.liveFlightActualTime));
+      const status=String(r?.liveFlightStatus||'').toLowerCase();
+      const rawConfirmed=freshness.usable||arrivalActual;
+      if(rawConfirmed){
+        const live=atmsClockMinutes(liveTimeOf(r));
+        if(live!==null){
+          const candidate=rideStamp-disp+live+(live<disp-720?1440:0);
+          rideStamp=Math.max(rideStamp,candidate);
+        }
+      }
+      // A delay without a usable later pickup time must NOT disappear on the old DISPO clock.
+      // Stale estimated times can change again; today's uncompleted pickup stays visible.
+      if(date>=today && !arrivalActual &&
+        ((['delayed','diverted','unknown_delay'].includes(status)&&atmsClockMinutes(liveTimeOf(r))===null)||
+        (!freshness.usable&&freshness.confirmed)))return false;
+    }
+    if(nowStamp<=rideStamp+grace)return false;
+  }
+  return true;
+}
+function atmsPastListSignature(){
+  const vr=visualRides(rides);
+  return vr.map(r=>String(r.id)+':'+(atmsPastRideDecision(r)?'P':'A')).join('|');
+}
+let atmsPastLastSignature='';
+function atmsPastClockTick(){
+  if($('listView')?.classList.contains('hidden'))return;
+  const signature=atmsPastListSignature();
+  if(signature!==atmsPastLastSignature){const y=window.scrollY||0;render();requestAnimationFrame(()=>window.scrollTo(0,y));}
+}
 function render(options={}){showView('list');ensureDriverColorCss();ensureDriverColorAssignments(rides);const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
   // CORE-006I: Fahrtenansicht folgt der Reihenfolge der importierten Planliste.
-  const open=vr.filter(r=>!isDone(r)&&matches(r));
+  const open=vr.filter(r=>!isDone(r)&&matches(r)&&!atmsPastRideDecision(r));
+  const past=vr.filter(r=>!isDone(r)&&matches(r)&&atmsPastRideDecision(r));
   const fin=vr.filter(r=>isDone(r)&&matches(r));
-$('summary').textContent=`${mode==='all'?open.length+fin.length:open.length} Fahrten · ${driverFilter||'Alle Fahrer'}`;
+  atmsPastLastSignature=atmsPastListSignature();
+$('summary').textContent=`${mode==='all'?open.length+fin.length+past.length:open.length} aktuell · ${past.length} vergangen · ${driverFilter||'Alle Fahrer'}`;
 
 const stats=$('dashboardStats');
 
@@ -1022,7 +1075,7 @@ if(stats){
  <span>Hinweise</span>
  </div>`;
 }
-let h=`<section class="donebar"><div class="donehead" id="doneHead"><b>✓ Erledigte Fahrten</b><span>${fin.length}</span><button id="toggleDone" class="doneToggle" aria-label="Erledigte Fahrten ein- oder ausklappen">${doneOpen?'⌃':'⌄'}</button></div><div id="doneWrap" class="donewrap ${doneOpen?'':'hidden'}">${fin.length?fin.map(rideCard).join(''):'<div class="done-empty">Noch keine erledigten Fahrten.</div>'}</div></section>`;if(mode==='all'){h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}else{h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}$('rideList').innerHTML=h;document.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>{rememberRideListPosition(x.dataset.id);openCockpit(x.dataset.id)});const t=$('toggleDone');if(t)t.onclick=e=>{e.stopPropagation();doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const dh=$('doneHead');if(dh)dh.onclick=e=>{if(e.target.closest('[data-id]'))return;if(e.target.id==='toggleDone')return;doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};if(options?.restoreRidePosition)restoreRideListPosition();}
+let h=`<section class="donebar"><div class="donehead" id="doneHead"><b>✓ Erledigte Fahrten</b><span>${fin.length}</span><button id="toggleDone" class="doneToggle" aria-label="Erledigte Fahrten ein- oder ausklappen">${doneOpen?'⌃':'⌄'}</button></div><div id="doneWrap" class="donewrap ${doneOpen?'':'hidden'}">${fin.length?fin.map(rideCard).join(''):'<div class="done-empty">Noch keine erledigten Fahrten.</div>'}</div></section>`;if(mode==='all'){h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}else{h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine aktuellen Fahrten vorhanden.</div>'}h+=`<section class="atms-pastbar"><div class="atms-pasthead" id="atmsPastHead" role="button" tabindex="0" aria-expanded="${atmsPastOpen?'true':'false'}"><b>◷ Vergangene Fahrten</b><span>${past.length}</span><button type="button" id="atmsTogglePast" aria-label="Vergangene Fahrten auf- oder zuklappen">${atmsPastOpen?'⌃':'⌄'}</button></div><div class="atms-pastwrap ${atmsPastOpen?'':'hidden'}">${past.length?past.map(rideCard).join(''):'<div class="done-empty">Keine vergangenen Fahrten.</div>'}</div></section>`;$('rideList').innerHTML=h;document.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>{rememberRideListPosition(x.dataset.id);openCockpit(x.dataset.id)});const t=$('toggleDone');if(t)t.onclick=e=>{e.stopPropagation();doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const dh=$('doneHead');if(dh)dh.onclick=e=>{if(e.target.closest('[data-id]'))return;if(e.target.id==='toggleDone')return;doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const pastToggle=$('atmsTogglePast'),pastHead=$('atmsPastHead');const togglePast=e=>{e?.stopPropagation();atmsPastOpen=!atmsPastOpen;localStorage.setItem(ATMS_P95_PAST_OPEN,atmsPastOpen?'1':'0');render({restoreRidePosition:true})};if(pastToggle)pastToggle.onclick=togglePast;if(pastHead){pastHead.onclick=e=>{if(e.target.closest('button'))return;togglePast(e)};pastHead.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();togglePast(e)}}}if(options?.restoreRidePosition)restoreRideListPosition();}
 function resetHorizontalViewport(viewId){
   try{document.documentElement.scrollLeft=0;document.body.scrollLeft=0;const view=$(viewId);if(view)view.scrollLeft=0;}catch(_){ }
 }
@@ -1281,7 +1334,7 @@ function installSettingsMobileNavigation(){
   const view=$('settingsView');if(!view||view.dataset.atmsP95Gate3F1Nav==='1')return;
   view.dataset.atmsP95Gate3F1Nav='1';
   const onScroll=()=>atmsSettingsUpdateMobileHeader(false);window.addEventListener('scroll',onScroll,{passive:true});view.addEventListener('scroll',onScroll,{passive:true});
-  window.addEventListener('popstate',e=>{const route=e.state?.[ATMS_SETTINGS_HISTORY_KEY]||null;if(route||$('settingsView')?.classList.contains('settings-address-open')||$('settingsView')?.classList.contains('settings-driver-open')||$('settingsView')?.classList.contains('settings-dispatcher-open')||$('settingsView')?.classList.contains('settings-transfer-open')||$('settingsView')?.classList.contains('settings-backup-open')||$('settingsView')?.classList.contains('settings-about-open'))atmsSettingsApplyHistoryRoute(route)});
+  window.addEventListener('popstate',e=>{const route=e.state?.[ATMS_SETTINGS_HISTORY_KEY]||null;const view=$('settingsView');const active=Boolean(view&&!view.classList.contains('hidden'));if(route||(active&&['settings-address-open','settings-driver-open','settings-dispatcher-open','settings-transfer-open','settings-backup-open','settings-about-open'].some(c=>view.classList.contains(c))))atmsSettingsApplyHistoryRoute(route)});
 }
 function atmsSettingsOpenHubFromPrimaryNav(){
   const route=atmsSettingsReadRoute(),depth=Number(route?.depth)||0;
@@ -1351,6 +1404,102 @@ function jumpToSettingsSection(section){
   if(key==='backup'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsAboutPage();openSettingsBackupPage();return}
   if(key==='about'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();openSettingsAboutPage();return}
   closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();closeSettingsAboutPage();
+}
+// P95: native Android Back works through browser history for main bottom navigation.
+// P95 settings subpage route history stays authoritative while inside Settings.
+const ATMS_P95_PRIMARY_KEY='atms_p95_primary_tab_v1';
+const ATMS_P95_PRIMARY_DEPTH='atms_p95_primary_depth_v1';
+const ATMS_P95_MODAL_KEY='atms_p95_modal_v1';
+let atmsPrimaryTab='rides';
+function atmsPrimaryEnsureState(){
+  try{
+    if(!history.state?.[ATMS_P95_PRIMARY_KEY])history.replaceState({...history.state,[ATMS_P95_PRIMARY_KEY]:atmsPrimaryTab,[ATMS_P95_PRIMARY_DEPTH]:Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0},'',location.href);
+  }catch(_){ }
+}
+function atmsPrimaryVisit(tab){
+  atmsPrimaryEnsureState();
+  const from=history.state?.[ATMS_P95_PRIMARY_KEY]||atmsPrimaryTab;
+  if(from!==tab){
+    const state={...history.state,[ATMS_P95_PRIMARY_KEY]:tab,[ATMS_P95_PRIMARY_DEPTH]:(Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0)+1,[ATMS_P95_MODAL_KEY]:null,[ATMS_SETTINGS_HISTORY_KEY]:tab==='settings'?atmsSettingsHubRoute():null};
+    try{history.pushState(state,'',location.href)}catch(_){ }
+  }
+  atmsPrimaryTab=tab;
+}
+function atmsPrimaryRestore(tab,route){
+  atmsPrimaryTab=tab;
+  const activate=n=>document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.nav===n));
+  if(tab==='settings'){
+    activate('settings');
+    if(route?.kind&&route.kind!=='hub')return; // Existing settings popstate listener restores this panel.
+    atmsSettingsShowHub();return;
+  }
+  if(tab==='import'){showView('import');activate('import');return;}
+  if(tab==='messages'){renderMessagesView();activate('messages');return;}
+  if(tab==='live'){renderLiveDisposition();activate('live');return;}
+  mode=tab==='all'?'all':'rides';activate(tab==='all'?'all':'rides');render({restoreRidePosition:true});
+}
+function atmsPrimaryOpenDriverDialogHistory(){
+  atmsPrimaryEnsureState();
+  if(history.state?.[ATMS_P95_MODAL_KEY]==='drivers')return;
+  try{history.pushState({...history.state,[ATMS_P95_MODAL_KEY]:'drivers'},'',location.href)}catch(_){ }
+}
+function atmsPrimaryCloseDriverDialog({selected=false}={}){
+  $('driverDialog')?.classList.add('hidden');
+  if(history.state?.[ATMS_P95_MODAL_KEY]==='drivers'){
+    if(selected){try{history.replaceState({...history.state,[ATMS_P95_MODAL_KEY]:null},'',location.href)}catch(_){ }}
+    else{try{history.back()}catch(_){ }}
+  }
+}
+function atmsPrimaryBack(){
+  if(!$('driverDialog')?.classList.contains('hidden')){atmsPrimaryCloseDriverDialog();return}
+  if($('settingsView')&&!$('settingsView').classList.contains('hidden')&&atmsSettingsActivePanel()){
+    atmsSettingsBack();return;
+  }
+  if(atmsPrimaryTab==='rides'&&(Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0)===0&&!history.state?.[ATMS_SETTINGS_HISTORY_KEY]){
+    // On root Fahrten Android's system Back may leave; the on-screen button doesn't
+    // unexpectedly close the native app.
+    showToast('Du bist bereits auf Fahrten.');return;
+  }
+  try{history.back()}catch(_){atmsPrimaryRestore('rides',null)}
+}
+function atmsInstallPrimaryBackNavigation(){
+  atmsPrimaryEnsureState();
+  window.addEventListener('popstate',e=>{
+    const state=e.state||{};
+    const dialog=$('driverDialog');
+    if(!dialog?.classList.contains('hidden'))dialog.classList.add('hidden');
+    if(state[ATMS_P95_MODAL_KEY]==='drivers'&&dialog){dialog.classList.remove('hidden');return}
+    const tab=state[ATMS_P95_PRIMARY_KEY]||'rides';
+    if(tab!==atmsPrimaryTab)atmsPrimaryRestore(tab,state[ATMS_SETTINGS_HISTORY_KEY]);
+  });
+}
+
+function atmsInstallRidesHeader(){
+  const top=$('atmsRidesTop')||document.querySelector('#listView > header.top'),search=$('search');if(!top||!search)return;
+  // Build the new topbar around the existing input to preserve all original search listeners.
+  if(!top.id)top.id='atmsRidesTop';top.classList.add('atms-rides-topbar');
+  if(!$('ridesSearchToggle')){
+    const bar=document.createElement('div');bar.className='atms-rides-bar';
+    bar.innerHTML='<button id="ridesTopBack" class="atms-rides-icon" type="button" aria-label="Zurück" title="Zurück">‹</button><h1>🚘 Fahrten</h1><button id="ridesSearchToggle" class="atms-rides-icon" type="button" aria-label="Suche einblenden" aria-expanded="true" title="Fahrten suchen">⌕</button>';
+    top.insertBefore(bar,top.firstChild);
+    const panel=document.createElement('div');panel.id='ridesSearchPanel';panel.className='atms-rides-search-panel';
+    panel.innerHTML='<label for="search" class="atms-rides-search-label">FAHRTEN DURCHSUCHEN</label><div class="atms-rides-search-input"><span aria-hidden="true">⌕</span></div>';
+    top.insertBefore(panel,search);panel.querySelector('.atms-rides-search-input').appendChild(search);
+  }
+  const button=$('ridesSearchToggle');if(!button)return;
+  $('ridesTopBack')?.addEventListener('click',atmsPrimaryBack);
+  let expanded=true;
+  const setExpanded=next=>{expanded=Boolean(next);top.classList.toggle('atms-rides-collapsed',!expanded);button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-label',expanded?'Suche ausblenden':'Suche einblenden')};
+  button.addEventListener('click',()=>{setExpanded(!expanded);if(expanded){try{search?.focus({preventScroll:true})}catch(_){search?.focus()}}});
+  let previousScroll=0;
+  window.addEventListener('scroll',()=>{
+    if($('listView')?.classList.contains('hidden'))return;
+    if(document.activeElement===search)return;
+    const y=window.scrollY||document.documentElement.scrollTop||0;
+    if(y<35)setExpanded(true);
+    else if(y>135&&y>previousScroll+5)setExpanded(false);
+    previousScroll=y;
+  },{passive:true});
 }
 function showView(v){
   if(v==='live')captureLiveBottomNavBaseline();
@@ -1453,11 +1602,11 @@ function openDrivers(){
     }
     const b=e.target.closest('[data-choice-index]');if(!b)return;
     const c=choices[Number(b.dataset.choiceIndex)];if(!c)return;
-    driverFilter=c.value;mode='all';dialog.classList.add('hidden');
+    driverFilter=c.value;mode='all';atmsPrimaryCloseDriverDialog({selected:true});atmsPrimaryVisit('all');
     document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.nav==='all'));
     render();
   };
-  dialog.classList.remove('hidden');
+  dialog.classList.remove('hidden');atmsPrimaryOpenDriverDialogHistory();
 }
 
 function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitDispo=first(dispoTimeOf(active),planTimeOf(active))||'--:--';const cockpitDirection=hasFlightNumber(active)?flightDirectionForGemini(active):'unknown';const cockpitLive=liveTimeOf(active);const cockpitLiveUsable=liveSnapshotFreshness(active).usable;const cockpitCurrent=cockpitLiveUsable&&cockpitLive?(cockpitLive||'--:--'):'--:--';$('planTime').textContent=cockpitDispo;const leftTimeLabel=$('planTime')?.parentElement?.querySelector('.lbl');if(leftTimeLabel)leftTimeLabel.textContent='DISPO-ZEIT';$('planTime').classList.toggle('plan-replaced',Boolean(cockpitDispo&&cockpitCurrent&&cockpitDispo!=='--:--'&&cockpitCurrent!==cockpitDispo));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=cockpitDirection==='arrival'?'LIVE-ABHOLZEIT':(source==='live'?'LIVE-ABHOLZEIT':'AKTUELLE ABHOLZEIT');$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';syncCockpitFlightAirportConflict(active);syncCockpitManualFlightReview(active);const flightTimeHost=$('flightLoc')?.parentElement;let flightListTime=$('flightListTime');if(flightTimeHost&&!flightListTime){flightListTime=document.createElement('div');flightListTime.id='flightListTime';flightListTime.style.cssText='font-size:14px;font-weight:800;margin-top:6px;opacity:.9';flightTimeHost.insertBefore(flightListTime,$('cockFlightStatus')||null)}if(flightListTime){const listedTime=listedFlightTimeOf(active),label=listedTimeLabel(active);flightListTime.textContent=listedTime?`🕒 ${label} ${listedTime}`:`🕒 ${label} –`;}const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=ridePriceLabel(active);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';const statusBadge=$('statusBadge');if(statusBadge){let badgeText='KEINE LIVE-DATEN';let badgeTone='neutral';if(activeDone){badgeText='ERLEDIGT';badgeTone='done'}else if(fsi.key==='on-time'){badgeText='PÜNKTLICH';badgeTone='ok'}else if(fsi.key==='delayed'){badgeText=String(fsi.label||'VERSPÄTET').toUpperCase();badgeTone='warn'}else if(fsi.key==='landed'){badgeText='GELANDET';badgeTone='landed'}else if(fsi.key==='departed'){badgeText='ABGEFLOGEN';badgeTone='landed'}else if(fsi.key==='stale'){badgeText='LIVE VERALTET';badgeTone='neutral'}else if(fsi.key==='cancelled'){badgeText='STORNIERT';badgeTone='warn'}statusBadge.textContent=badgeText;statusBadge.dataset.atmsTone=badgeTone;if(badgeTone==='neutral'){statusBadge.style.color='#aebfc9';statusBadge.style.borderColor='rgba(174,191,201,.45)';statusBadge.style.background='rgba(174,191,201,.08)'}else{statusBadge.style.removeProperty('color');statusBadge.style.removeProperty('border-color');statusBadge.style.removeProperty('background')}}renderDispatcherControls();renderDriverControls();const editFlightBtn=document.querySelector('#cockpitView .edit');if(editFlightBtn)editFlightBtn.onclick=openManualFlightEditor}
@@ -5105,6 +5254,9 @@ function initApp(){
     initPersistentFlightCheckStatus();
     bindSettingsHubNavigation();
     installSettingsMobileNavigation();
+    atmsInstallPrimaryBackNavigation();
+    atmsInstallRidesHeader();
+    setInterval(atmsPastClockTick,60000);
     bindClick('driverBtn',openDrivers);
     bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
     bindClick('cockpitDriverMessageBtn',openDriverMessage);
@@ -5122,14 +5274,14 @@ function initApp(){
     bindClick('importBackupBtn',chooseBackupFile);
     bindClick('resetDataBtn',resetAtmsData);
     const backupInput=safeEl('backupFileInput');if(backupInput)backupInput.addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f)importAtmsBackup(f)});
-    bindClick('closeDrivers',()=>safeEl('driverDialog')?.classList.add('hidden'));
+    bindClick('closeDrivers',()=>atmsPrimaryCloseDriverDialog());
     const driverDialog=safeEl('driverDialog');
-    if(driverDialog)driverDialog.addEventListener('click',e=>{if(e.target===driverDialog)driverDialog.classList.add('hidden')});
+    if(driverDialog)driverDialog.addEventListener('click',e=>{if(e.target===driverDialog)atmsPrimaryCloseDriverDialog()});
     const driverSheet=safeEl('driverSheet');if(driverSheet)driverSheet.addEventListener('click',e=>e.stopPropagation());
     bindClick('backBtn',()=>render({restoreRidePosition:true}));
     bindClick('importBack',atmsPlanImportBack);
     bindClick('settingsBack',render);
-    bindClick('plusBtn',()=>{document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));showView('import');const back=$('importBack');if(back)back.setAttribute('aria-label','Zurück')});
+    bindClick('plusBtn',()=>{atmsPrimaryVisit('import');document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));showView('import');const back=$('importBack');if(back)back.setAttribute('aria-label','Zurück')});
     const search=safeEl('search');if(search)search.addEventListener('input',render);
     bindClick('mapBtn',()=>{if(active)openGoogleMapsRoute(active,null)});
     bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));save();openCockpit(active.id)});
@@ -5153,7 +5305,7 @@ function initApp(){
     });
     bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
-    document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));atmsSettingsOpenHubFromPrimaryNav();safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
+    document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n!=='all')atmsPrimaryVisit(n);if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));atmsSettingsOpenHubFromPrimaryNav();safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
     try{loadWhatsappSettings();renderNavigationSettings();ensureAddressBookPanel();renderAddressBook();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){renderMessagesView()}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render({restoreRidePosition:true})}}));
 
