@@ -1523,3 +1523,138 @@ html,body{
 .atms-pasthead button{margin-left:auto;min-width:42px;min-height:42px;border:1px solid #28586f;border-radius:12px;background:#164157;color:#fff;font-size:22px}
 .atms-pastwrap{padding:0 7px 7px}
 .atms-pastwrap .ride{margin-bottom:7px}
+
+
+/* ===============================================================
+   P95 grouped corrective polish – based on Bundle Commit 67689a7.
+   Scoped to About page and ride-list cards; no other settings views.
+   Compact phones: full gold border within viewport when space allows.
+   Shorter/smaller displays remain naturally scrollable, never clipped.
+   =============================================================== */
+@media (max-width:760px) {
+  #settingsView.settings-about-open #settingsAboutBody{
+    padding-top:calc(var(--atms-fixed-topbar-space, 90px) + 5px)!important;
+    padding-left:12px!important;padding-right:12px!important;
+    padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))!important;
+    gap:0!important;
+  }
+  #settingsView.settings-about-open #infoCard{
+    max-width:660px!important;margin:0 auto 8px!important;
+    border:1px solid #a58248!important;border-radius:19px!important;
+    overflow:hidden!important;
+  }
+  #settingsView.settings-about-open #infoCard .info-hero{
+    min-height:0!important;padding:9px 10px 13px!important;
+    overflow:hidden!important;
+  }
+  #settingsView.settings-about-open .info-shield{
+    width:160px!important;height:100px!important;margin:0 auto 3px!important;
+  }
+  #settingsView.settings-about-open .info-shield:before{
+    inset:5px 22px 3px!important;border-width:3px!important;
+  }
+  #settingsView.settings-about-open .info-van{
+    width:148px!important;max-height:95px!important;transform:none!important;
+  }
+  #settingsView.settings-about-open .info-over{
+    margin-top:1px!important;font-size:12px!important;line-height:1.15;
+  }
+  #settingsView.settings-about-open .info-brand{
+    font-size:clamp(29px,8.2vw,38px)!important;line-height:1.06!important;margin:2px 0 0!important;
+  }
+  #settingsView.settings-about-open .info-subtitle{
+    font-size:clamp(8px,2.2vw,11px)!important;
+    letter-spacing:clamp(.7px,.4vw,2px)!important;margin-top:5px!important;
+    white-space:normal!important;
+  }
+  #settingsView.settings-about-open .info-slogan{
+    font-size:11px!important;margin-top:7px!important;line-height:1.2!important;
+  }
+  #settingsView.settings-about-open .info-details{
+    display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:0 8px;padding:5px 11px 4px!important;
+  }
+  #settingsView.settings-about-open .info-detail{
+    min-width:0;grid-template-columns:29px minmax(0,1fr)!important;
+    gap:7px!important;padding:8px 2px!important;
+    border-bottom:1px solid rgba(255,255,255,.09)!important;
+  }
+  #settingsView.settings-about-open .info-detail:nth-child(1),
+  #settingsView.settings-about-open .info-detail:nth-child(2){grid-column:1/-1;}
+  #settingsView.settings-about-open .info-detail:nth-child(3),
+  #settingsView.settings-about-open .info-detail:nth-child(5){border-right:1px solid rgba(255,255,255,.09)!important;}
+  #settingsView.settings-about-open .info-detail-icon{
+    width:28px!important;height:28px!important;font-size:16px!important;
+    border-radius:8px!important;
+  }
+  #settingsView.settings-about-open .info-detail-label{
+    font-size:10px!important;line-height:1.16!important;margin:0 0 3px!important;
+  }
+  #settingsView.settings-about-open .info-detail-value{
+    font-size:clamp(12px,3.4vw,15px)!important;line-height:1.18!important;
+    overflow-wrap:anywhere;word-break:normal;
+  }
+  #settingsView.settings-about-open .info-footer{
+    padding:6px 8px 8px!important;font-size:10px!important;line-height:1.15!important;
+  }
+  #settingsView.settings-about-open .info-footer b{
+    font-size:11px!important;margin-bottom:1px!important;
+  }
+}
+@media(max-width:760px) and (max-height:700px){
+  #settingsView.settings-about-open .info-shield{height:81px!important;width:142px!important}
+  #settingsView.settings-about-open .info-van{width:128px!important;max-height:79px!important}
+  #settingsView.settings-about-open #infoCard .info-hero{padding:5px 8px 8px!important}
+  #settingsView.settings-about-open .info-detail{padding:6px 2px!important}
+}
+/* Empty list has no tall placeholder separating the manual done and past groups. */
+#listView #rideList > .atms-no-current-rides{
+  padding:11px 8px 6px!important;margin:0!important;line-height:1.4;
+  font-size:14px;
+}
+#listView #rideList > .atms-no-current-rides + .atms-pastbar{
+  margin-top:8px!important;
+}
+/* Let route labels wrap instead of disappearing at narrow widths. */
+#listView .ride .route{
+  white-space:normal!important;overflow:visible!important;text-overflow:clip!important;
+  overflow-wrap:break-word;line-height:1.22!important;
+}
+#listView .ride .mid{min-width:0;}
+#listView .ride .meta{white-space:normal!important;overflow:visible!important;}
+/* Bundle left rail has sufficient space for price and 'BÜNDELFAHRT'. */
+#listView .ride.bundle{
+  grid-template-columns:102px minmax(0,1fr)!important;
+}
+#listView .ride.bundle .left{
+  min-width:0;overflow:hidden;padding:9px 5px 8px 12px!important;
+}
+#listView .ride.bundle .left .price{
+  font-size:15px!important;line-height:1.24;white-space:nowrap;
+  letter-spacing:-.35px;
+}
+#listView .ride.bundle .left .time-single,
+#listView .ride.bundle .left .time-stack .current-large{
+  font-size:18px!important;line-height:1.2;
+}
+#listView .ride.bundle .left .driver-left{
+  font-size:13px!important;white-space:normal!important;overflow-wrap:anywhere;
+}
+#listView .ride.bundle .bundle-badge{
+  font-size:9px!important;line-height:1.18!important;letter-spacing:0!important;
+  max-width:100%;white-space:normal!important;overflow-wrap:anywhere;
+  margin-top:5px;
+}
+#listView .ride.bundle .mid{padding:9px 20px 8px 9px!important;min-width:0;}
+#listView .ride.bundle .flightloc{margin-left:0!important;}
+#listView .ride.bundle .bundle-stop-row{align-items:flex-start;}
+#listView .ride.bundle .bundle-stop-row > span:last-child{
+  min-width:0;white-space:normal!important;overflow:visible!important;
+  text-overflow:clip!important;overflow-wrap:break-word;
+}
+@media(max-width:360px){
+  #listView .ride.bundle{grid-template-columns:94px minmax(0,1fr)!important;}
+  #listView .ride.bundle .left{padding-left:10px!important;}
+  #listView .ride.bundle .left .price{font-size:14px!important;}
+  #listView .ride.bundle .mid{padding-left:8px!important;padding-right:18px!important;}
+}
