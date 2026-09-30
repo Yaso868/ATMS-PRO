@@ -1456,3 +1456,70 @@ html,body{
 #settingsView > .settings-page > #infoCard{
   display:none!important;
 }
+
+/* P95 bundled UI polish: About frame, root ride toolbar/search, and separate past rides. */
+#settingsView.settings-about-open #settingsAboutBody{
+  padding-top:calc(var(--atms-fixed-topbar-space, 90px) + 20px)!important;
+  padding-left:12px!important;
+  padding-right:12px!important;
+}
+#settingsView.settings-about-open #infoCard{
+  width:100%;min-width:0;max-width:100%;margin:0 auto 16px!important;
+  border:1px solid #8b6e39;border-radius:27px;overflow:hidden;
+  box-shadow:0 14px 32px rgba(0,0,0,.28);
+}
+#settingsView.settings-about-open #infoCard .info-hero{
+  min-height:0!important;padding:31px 17px 26px!important;
+  overflow:hidden;
+}
+#settingsView.settings-about-open .info-shield{width:min(100%,245px);height:173px;margin:6px auto 12px}
+#settingsView.settings-about-open .info-shield:before{inset:7px 30px 9px}
+#settingsView.settings-about-open .info-van{width:min(100%,205px);max-height:131px;transform:translateY(0)}
+#settingsView.settings-about-open .info-over{margin-top:5px}
+#settingsView.settings-about-open .info-brand{font-size:clamp(34px,10vw,50px);line-height:1.13}
+#settingsView.settings-about-open .info-subtitle{font-size:clamp(9px,2.7vw,12px);letter-spacing:clamp(1px,.45vw,3px)}
+@media(max-width:760px){
+  #listView .atms-rides-topbar{
+    position:sticky;top:0;z-index:32;
+    padding:calc(max(28px,env(safe-area-inset-top,0px)) + 5px) 12px 10px!important;
+    background:linear-gradient(180deg,#082837 0%,#062331 100%);
+    border-bottom:1px solid #315669;box-shadow:0 9px 20px rgba(0,0,0,.24);
+  }
+  #listView .atms-rides-bar{display:flex;align-items:center;gap:12px;min-height:49px}
+  #listView .atms-rides-bar h1{margin:0;flex:1;min-width:0;color:#fff;font-size:23px;line-height:1.1}
+  #listView .atms-rides-icon{
+    width:46px;height:46px;min-width:46px;border-radius:14px;display:grid;place-items:center;
+    border:1px solid #467185;background:#12394b;color:#fff;font:800 31px system-ui;
+    box-shadow:0 2px 5px rgba(0,0,0,.13);cursor:pointer;
+  }
+  #listView #ridesTopBack{font-size:36px;padding-bottom:6px}
+  #listView #ridesSearchToggle{font-size:31px}
+  #listView .atms-rides-search-panel{margin-top:12px}
+  #listView .atms-rides-search-label{display:block;margin-bottom:5px;font-size:11px;letter-spacing:.9px;color:#b7ceda;font-weight:900}
+  #listView .atms-rides-search-input{display:flex;align-items:center;gap:9px;padding:0 12px;border:1px solid #35657c;border-radius:16px;background:#082736;min-height:52px}
+  #listView .atms-rides-search-input span{flex:0 0 auto;font-size:25px;color:#9bcadf}
+  #listView #search{display:block;width:100%;min-width:0;border:0!important;box-shadow:none!important;margin:0!important;background:transparent!important;padding:11px 0!important;font-size:16px;color:#fff;outline:0}
+  #listView #search::placeholder{color:#aec3ce;opacity:1}
+  #listView .summary-row{min-height:34px;margin-top:4px!important}
+  #listView.atms-rides-collapsed .atms-rides-search-panel,
+  #listView .atms-rides-collapsed .atms-rides-search-panel{display:none}
+  #listView .atms-rides-collapsed .summary-row{display:none}
+  #settingsView.settings-about-open #settingsAboutBody{padding-top:calc(var(--atms-fixed-topbar-space,90px) + 19px)!important}
+}
+@media(min-width:761px){
+  #listView .atms-rides-bar{display:flex;align-items:center;gap:12px}
+  #listView .atms-rides-bar h1{margin:0;flex:1}
+  #listView .atms-rides-icon{border:1px solid #467185;border-radius:12px;color:#fff;background:#12394b;min-width:44px;height:44px;cursor:pointer}
+  #listView .atms-rides-search-panel{margin-top:12px}
+  #listView .atms-rides-search-label{display:block;font-size:12px;font-weight:800;margin-bottom:5px;color:#b7ceda}
+  #listView .atms-rides-search-input{display:flex;align-items:center;gap:8px}
+  #listView .atms-rides-search-input span{font-size:24px}
+}
+#listView .atms-rides-collapsed .atms-rides-search-panel{display:none}
+.atms-pastbar{margin-top:14px;margin-bottom:14px;background:#092a38;border:1px solid #376177;border-left:7px solid #4ca1c8;border-radius:16px;overflow:hidden}
+.atms-pasthead{display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:56px;cursor:pointer}
+.atms-pasthead b{font-size:16px;color:#a6dbf3}
+.atms-pasthead span{font-size:14px;color:#d4e7ef}
+.atms-pasthead button{margin-left:auto;min-width:42px;min-height:42px;border:1px solid #28586f;border-radius:12px;background:#164157;color:#fff;font-size:22px}
+.atms-pastwrap{padding:0 7px 7px}
+.atms-pastwrap .ride{margin-bottom:7px}
