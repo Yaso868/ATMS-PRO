@@ -10,6 +10,9 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.util.Base64;
 import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
@@ -55,6 +58,23 @@ public final class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         webView = findViewById(R.id.atmsWebView);
+
+        // P97-2B: Android 13+ Predictive-Back / Randgeste explizit abfangen.
+        // Auf aktuellen Android-Versionen wird die Randgeste nicht verlaesslich
+        // ueber Activity.onBackPressed() zugestellt. Beide System-Randgesten
+        // sollen innerhalb von ATMS navigieren und die Activity niemals direkt beenden.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                    new OnBackInvokedCallback() {
+                        @Override
+                        public void onBackInvoked() {
+                            dispatchAtmsNativeBack();
+                        }
+                    }
+            );
+        }
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -457,16 +477,22 @@ public final class MainActivity extends Activity {
         view.evaluateJavascript(script, null);
     }
 
+    private void dispatchAtmsNativeBack() {
+        if (webView == null) {
+            return;
+        }
+        webView.evaluateJavascript(
+                "(function(){try{window.dispatchEvent(new CustomEvent('atms-native-back'));}catch(e){}})();",
+                null
+        );
+    }
+
     @Override
     public void onBackPressed() {
-        // P97: Android-Zurück-/Randgeste wird immer an ATMS weitergereicht.
-        // Dadurch kann eine Wischgeste die Activity auf der Hauptseite nicht mehr
-        // versehentlich schließen; Unterseiten navigiert die Web-App kontrolliert zurück.
+        // P97-2B: Fallback fuer Android 12 und aelter sowie Hardware-Zuruecktasten.
+        // Android 13+ wird ueber OnBackInvokedDispatcher abgefangen.
         if (webView != null) {
-            webView.evaluateJavascript(
-                    "(function(){try{window.dispatchEvent(new CustomEvent('atms-native-back'));}catch(e){}})();",
-                    null
-            );
+            dispatchAtmsNativeBack();
             return;
         }
         super.onBackPressed();
