@@ -1438,3 +1438,21 @@ html,body{
   #settingsView.settings-about-open #settingsAboutBody{padding-top:var(--atms-fixed-topbar-space)!important}
   #settingsView .settings-about-page.atms-mobile-nav-collapsed>.settings-subpage-head{position:fixed!important;top:0!important}
 }
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE8 · SETTINGS HUB LEGACY CLEANUP
+   Auf der Settings-Hauptseite bleibt nur der neue kompakte Hub
+   sichtbar. Die alten P94-Karten bleiben im DOM als bestehende
+   Funktions-/Datenbasis erhalten und werden ausschließlich dort
+   ausgeblendet, solange sie direkte Kinder der Hauptseite sind.
+   Backup und Über ATMS PRO werden in ihren bestätigten Unterseiten
+   weiterhin unverändert angezeigt, nachdem sie dorthin verschoben
+   wurden. Keine Änderung an Daten- oder Persistenzlogik.
+   ========================================================== */
+#settingsView > .settings-page > #dispatcherSettingsCard,
+#settingsView > .settings-page > #driverSettingsCard,
+#settingsView > .settings-page > #backupCard,
+#settingsView > .settings-page > #infoCard{
+  display:none!important;
+}
