@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P95-GATE6 · 30.09.2026: SETTINGS BACKUP & RESTORE SUBPAGE – verschiebt die bestehende, realgerätbestätigte Backup-/Restore-/Reset-Oberfläche in eine eigene kompakte Settings-Unterseite mit Native-Mobile-Top-Bar und Android-Zurück/History. Backup-Format, nativer Speichern-Dialog, Wiederherstellung, Reset-Sicherheitsabfragen und Persistenzlogik bleiben unverändert.
 // CORE-007D8A1F1D8P95-GATE5 · 29.09.2026: SETTINGS IMPORT & EXPORT SUBPAGE – eigene kompakte Daten-Unterseite mit bestehendem Planlisten-Import, unverändertem Adress-Excel/CSV-Import/Export und neuem Fahrer-Excel/CSV-Export über den vorhandenen nativen Datei-Dialog. Native-Mobile-Navigation und Rückkehr aus der Planliste bleiben integriert. Keine Änderung an OCR, FLIGHT-008, PLAN/DISPO/LIVE, Routing oder Persistenz.
 // CORE-007D8A1F1D8P95-GATE4 · 29.09.2026: SETTINGS DISPATCHER SUBPAGE – kompakte Disponenten-Unterseite mit Suche, Neu/Bearbeiten, Detailansicht, aktueller Disponent und zentraler Native-Mobile-Navigation auf bestehendem lokalen Disponenten-Datenspeicher. Keine Änderung an Adress-/Fahrer-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
 // CORE-007D8A1F1D8P95-GATE3F4 · 29.09.2026: SETTINGS LIST SCROLL POSITION FIX – speichert beim Öffnen von Adress-/Fahrerdetails zusätzlich zum echten Android-WebView-Scrollwert den sichtbaren Listeneintrag als Anker samt Abstand zur festen Top-Bar und stellt beides bei Android-Zurück wieder her. Keine Änderung an Adress-/Fahrerdaten, History-Hierarchie, OCR, FLIGHT-008, PLAN/DISPO/LIVE, Routing oder Persistenz.
@@ -1200,7 +1201,7 @@ function atmsSettingsPushRoute(kind,level='browse',id=''){
   try{history.pushState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:route},'',location.href);atmsSettingsRouteDepth=depth}catch(_){atmsSettingsRouteDepth=depth}
 }
 function atmsSettingsShowHub({replaceHistory=false}={}){
-  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();showView('settings');updateSettingsHub();
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();showView('settings');updateSettingsHub();
   if(replaceHistory){try{history.replaceState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:atmsSettingsHubRoute()},'',location.href)}catch(_){ }}
   atmsSettingsRouteDepth=0;atmsSettingsSetScroll(0)
 }
@@ -1212,7 +1213,7 @@ function atmsSettingsBack(){
 function atmsSettingsReturnToBrowse(kind){
   const route=atmsSettingsReadRoute(),depth=Number(route?.depth)||0;
   if(route?.kind===kind&&depth>1){try{history.go(-(depth-1));return}catch(_){ }}
-  if(kind==='address')showAddressBookBrowse({restoreScroll:true});else if(kind==='driver')showSettingsDriverBrowse({restoreScroll:true});else if(kind==='dispatcher')showSettingsDispatcherBrowse({restoreScroll:true});else if(kind==='transfer')showSettingsTransferBrowse()
+  if(kind==='address')showAddressBookBrowse({restoreScroll:true});else if(kind==='driver')showSettingsDriverBrowse({restoreScroll:true});else if(kind==='dispatcher')showSettingsDispatcherBrowse({restoreScroll:true});else if(kind==='transfer')showSettingsTransferBrowse();else if(kind==='backup')showSettingsBackupBrowse()
 }
 function atmsSettingsApplyHistoryRoute(route){
   atmsSettingsHistoryApplying=true;
@@ -1242,6 +1243,10 @@ function atmsSettingsApplyHistoryRoute(route){
       openSettingsTransferPage({history:false});
       return
     }
+    if(route.kind==='backup'){
+      openSettingsBackupPage({history:false});
+      return
+    }
     atmsSettingsShowHub()
   }finally{atmsSettingsHistoryApplying=false}
 }
@@ -1251,6 +1256,7 @@ function atmsSettingsActivePanel(){
   if(view.classList.contains('settings-driver-open'))return $('atmsDriverSettingsPanel');
   if(view.classList.contains('settings-dispatcher-open'))return $('atmsDispatcherSettingsPanel');
   if(view.classList.contains('settings-transfer-open'))return $('atmsSettingsTransferPanel');
+  if(view.classList.contains('settings-backup-open'))return $('atmsSettingsBackupPanel');
   return null
 }
 function atmsSettingsUpdateMobileHeader(forceExpand=false){
@@ -1269,7 +1275,7 @@ function installSettingsMobileNavigation(){
   const view=$('settingsView');if(!view||view.dataset.atmsP95Gate3F1Nav==='1')return;
   view.dataset.atmsP95Gate3F1Nav='1';
   const onScroll=()=>atmsSettingsUpdateMobileHeader(false);window.addEventListener('scroll',onScroll,{passive:true});view.addEventListener('scroll',onScroll,{passive:true});
-  window.addEventListener('popstate',e=>{const route=e.state?.[ATMS_SETTINGS_HISTORY_KEY]||null;if(route||$('settingsView')?.classList.contains('settings-address-open')||$('settingsView')?.classList.contains('settings-driver-open')||$('settingsView')?.classList.contains('settings-dispatcher-open')||$('settingsView')?.classList.contains('settings-transfer-open'))atmsSettingsApplyHistoryRoute(route)});
+  window.addEventListener('popstate',e=>{const route=e.state?.[ATMS_SETTINGS_HISTORY_KEY]||null;if(route||$('settingsView')?.classList.contains('settings-address-open')||$('settingsView')?.classList.contains('settings-driver-open')||$('settingsView')?.classList.contains('settings-dispatcher-open')||$('settingsView')?.classList.contains('settings-transfer-open')||$('settingsView')?.classList.contains('settings-backup-open'))atmsSettingsApplyHistoryRoute(route)});
 }
 function atmsSettingsOpenHubFromPrimaryNav(){
   const route=atmsSettingsReadRoute(),depth=Number(route?.depth)||0;
@@ -1279,7 +1285,7 @@ function atmsSettingsOpenHubFromPrimaryNav(){
 }
 function setSettingsAddressPageActive(active){
   const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
-  if(active){view.classList.remove('settings-driver-open','settings-dispatcher-open','settings-transfer-open');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden')}
+  if(active){view.classList.remove('settings-driver-open','settings-dispatcher-open','settings-transfer-open','settings-backup-open');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden')}
   view.classList.toggle('settings-address-open',Boolean(active));
   const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
   hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
@@ -1287,7 +1293,7 @@ function setSettingsAddressPageActive(active){
 }
 function setSettingsDriverPageActive(active){
   const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
-  if(active){view.classList.remove('settings-address-open','settings-dispatcher-open','settings-transfer-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden')}
+  if(active){view.classList.remove('settings-address-open','settings-dispatcher-open','settings-transfer-open','settings-backup-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden')}
   view.classList.toggle('settings-driver-open',Boolean(active));
   const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
   hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
@@ -1295,7 +1301,7 @@ function setSettingsDriverPageActive(active){
 }
 function setSettingsDispatcherPageActive(active){
   const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
-  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-transfer-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden')}
+  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-transfer-open','settings-backup-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden')}
   view.classList.toggle('settings-dispatcher-open',Boolean(active));
   const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
   hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
@@ -1303,9 +1309,17 @@ function setSettingsDispatcherPageActive(active){
 }
 function setSettingsTransferPageActive(active){
   const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
-  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-dispatcher-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden')}
+  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-dispatcher-open','settings-backup-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden')}
   view.classList.toggle('settings-transfer-open',Boolean(active));
   const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function setSettingsBackupPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-dispatcher-open','settings-transfer-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-backup-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('infoCard')].filter(Boolean);
   hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
   const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
 }
@@ -1316,12 +1330,13 @@ function bindSettingsHubNavigation(){
 }
 function jumpToSettingsSection(section){
   const key=String(section||'').trim();
-  if(key==='addresses'){closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();openSettingsAddressPage('browse');return}
-  if(key==='drivers'){closeSettingsAddressPage();closeSettingsDispatcherPage();closeSettingsTransferPage();openSettingsDriverPage('browse');return}
-  if(key==='dispatchers'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsTransferPage();openSettingsDispatcherPage('browse');return}
-  if(key==='transfer'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();openSettingsTransferPage();return}
-  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();
-  const targets={backup:'backupCard',about:'infoCard'};
+  if(key==='addresses'){closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();openSettingsAddressPage('browse');return}
+  if(key==='drivers'){closeSettingsAddressPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();openSettingsDriverPage('browse');return}
+  if(key==='dispatchers'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsTransferPage();closeSettingsBackupPage();openSettingsDispatcherPage('browse');return}
+  if(key==='transfer'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsBackupPage();openSettingsTransferPage();return}
+  if(key==='backup'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();openSettingsBackupPage();return}
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();
+  const targets={about:'infoCard'};
   const target=$(targets[key]);
   if(!target)return;
   target.scrollIntoView({behavior:'smooth',block:'start'});
@@ -4216,8 +4231,38 @@ function ensureSettingsTransferPanel(){
   $('settingsTransferDriverCsv')?.addEventListener('click',exportDriversCsv);
   renderSettingsTransferInfo();return true
 }
-function openSettingsTransferPage(opts={}){showView('settings');ensureSettingsTransferPanel();closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();const view=$('settingsView'),panel=$('atmsSettingsTransferPanel');if(!view||!panel)return;setSettingsTransferPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');if(opts.history!==false)atmsSettingsPushRoute('transfer','browse');showSettingsTransferBrowse();requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function openSettingsTransferPage(opts={}){showView('settings');ensureSettingsTransferPanel();closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsBackupPage();const view=$('settingsView'),panel=$('atmsSettingsTransferPanel');if(!view||!panel)return;setSettingsTransferPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');if(opts.history!==false)atmsSettingsPushRoute('transfer','browse');showSettingsTransferBrowse();requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
 function closeSettingsTransferPage(){const panel=$('atmsSettingsTransferPanel');setSettingsTransferPageActive(false);panel?.classList.add('hidden');requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})}
+
+// CORE-007D8A1F1D8P95-GATE6: bestehende Backup-Engine unverändert in eine eigene Settings-Unterseite verschieben.
+function showSettingsBackupBrowse(){
+  const panel=$('atmsSettingsBackupPanel');if(!panel)return;
+  panel.classList.remove('atms-mobile-nav-collapsed');
+  const legacy=$('backupCard');if(legacy)legacy.style.removeProperty('display');
+  updateBackupUI();
+  requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{$('settingsView').scrollTop=0}catch(_){ }})
+}
+function ensureSettingsBackupPanel(){
+  const view=$('settingsView'),host=$('settingsToolsHost'),legacy=$('backupCard');if(!view||!legacy)return false;
+  let panel=$('atmsSettingsBackupPanel');if(panel)return true;
+  panel=document.createElement('section');panel.id='atmsSettingsBackupPanel';panel.dataset.atmsP95Gate6Panel='1';panel.className='settings-backup-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="settingsBackupBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>💾 Backup &amp; Wiederherstellen</h2><small>ATMS-Daten sicher verwalten</small></div></div><div id="settingsBackupBody" class="settings-backup-body"></div>`;
+  if(host)host.appendChild(panel);else view.appendChild(panel);
+  $('settingsBackupBody')?.appendChild(legacy);
+  legacy.classList.add('settings-backup-card');legacy.style.removeProperty('display');
+  $('settingsBackupBackSettings')?.addEventListener('click',atmsSettingsBack);
+  updateBackupUI();return true
+}
+function openSettingsBackupPage(opts={}){
+  showView('settings');if(!ensureSettingsBackupPanel())return;
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();
+  const view=$('settingsView'),panel=$('atmsSettingsBackupPanel');if(!view||!panel)return;
+  setSettingsBackupPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');$('backupCard')?.style.removeProperty('display');
+  if(opts.history!==false)atmsSettingsPushRoute('backup','browse');showSettingsBackupBrowse();requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))
+}
+function closeSettingsBackupPage(){
+  const panel=$('atmsSettingsBackupPanel');setSettingsBackupPageActive(false);panel?.classList.add('hidden');requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})
+}
 function navigationResolvedPoint(name){const raw=String(name||'').trim();if(!raw)return{ok:false,name:raw,value:''};const entry=findAddressBookEntry(raw);if(entry)return{ok:true,name:raw,value:entry.address,entry};const iata=flightAirportIataFromPlace(raw);if(iata==='DUS')return{ok:true,name:raw,value:'Düsseldorf Airport (DUS), Düsseldorf, Germany',airportIata:iata};if(iata==='CGN')return{ok:true,name:raw,value:'Cologne Bonn Airport (CGN), Köln, Germany',airportIata:iata};if(iata)return{ok:true,name:raw,value:`${iata} Airport`,airportIata:iata};return{ok:false,name:raw,value:''}}
 function compositeRoutePointResolution(name){
   const raw=String(name||'').trim();if(!raw)return null;
