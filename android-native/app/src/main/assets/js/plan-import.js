@@ -446,15 +446,20 @@
         } catch (_) {}
       }
     }
-    const text = cellText(value);
-    const match = text.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?!\d)/);
-    if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
-    const compact = text.match(/^\d{3,4}$/);
-    if (compact) {
-      const padded = text.padStart(4, '0');
-      return `${padded.slice(0, 2)}:${padded.slice(2)}`;
+    const original=cellText(value);
+    // P96/S1: OCR darf die Tabellenkante | / ¦ / │ VOR einer eindeutigen
+    // reinen 3-/4-stelligen Uhrzeit verwerfen, keine anderen Zeichen raten.
+    const text=/^\s*(?:[|¦│]\s*)+\d{3,4}\s*$/.test(original)
+      ? original.replace(/^\s*(?:[|¦│]\s*)+/, '').trim() : original;
+    const canonical=(h,m)=>Number(h)<=23&&Number(m)<=59
+      ? `${String(Number(h)).padStart(2,'0')}:${m}` : '';
+    const match=text.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?!\d)/);
+    if(match){const result=canonical(match[1],match[2]);if(result)return result;}
+    if(/^\d{3,4}$/.test(text)){
+      const padded=text.padStart(4,'0'),result=canonical(padded.slice(0,2),padded.slice(2));
+      if(result)return result;
     }
-    return text;
+    return original;
   }
 
   function parseNumber(value) {
@@ -902,7 +907,9 @@
     const importNotes = [mappedNotes, locationNote].filter(Boolean).filter((value, index, list) => list.indexOf(value) === index).join(' · ');
 
     // CORE-006J: Verbindliche Zeitsemantik der aktuellen ATMS-Bildlisten.
+    const rawPrimaryTime=cellText(valueAt(row,mapping,'time'));
     const primaryDispoTime = normalizeTime(valueAt(row, mapping, 'time'));
+    const timeBorderAutoCorrected=Boolean(options.imageOcr&&/^\s*(?:[|¦│]\s*)+\d{3,4}\s*$/.test(rawPrimaryTime)&&/^\d{2}:\d{2}$/.test(primaryDispoTime));
     const mirroredDispoTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
     const dispoTime = primaryDispoTime || mirroredDispoTime;
     const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
@@ -946,6 +953,8 @@
       priceRequired: !(options.imageOcr && mapping.price === undefined),
       priceMissingFromSource: Boolean(options.imageOcr && mapping.price === undefined),
       sourceImageOcr: Boolean(options.imageOcr),
+      timeBorderAutoCorrected,
+      timeBorderOriginal:timeBorderAutoCorrected?rawPrimaryTime:'',
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
       notes: importNotes,
@@ -1002,6 +1011,12 @@
     rides.forEach(ride => {
       const row = ride.sourceRow;
       if (!ride.time) issues.push({ level: 'error', row, text: 'Abholzeit fehlt' });
+      else if(timeToMinutes(ride.time)===null)issues.push({level:'error',row,text:`Ungueltige Abholzeit „${cellText(ride.time)}“ – Original-Planliste pruefen`});
+      if(ride.dispoTime&&timeToMinutes(ride.dispoTime)===null)
+        issues.push({level:'error',row,text:`Ungueltige DISPO-Zeit „${cellText(ride.dispoTime)}“`});
+      if(ride.flightTime&&timeToMinutes(ride.flightTime)===null)
+        issues.push({level:'error',row,text:`Ungueltige Flugzeit „${cellText(ride.flightTime)}“`});
+      if(ride.timeBorderAutoCorrected)issues.push({level:'info',kind:'ocr_recovery',row,text:`OCR-Tabellenkante aus Uhrzeit „${cellText(ride.timeBorderOriginal)}“ entfernt; eindeutig ${cellText(ride.time)} erkannt`});
       // CORE-007A: Eine per eindeutigem Mehrfach-Konsens korrigierte Zeit ist bereits
       // gelöst. timeOcrInitial/timeRecoveredFromTargetedOcr bleiben als interne Diagnose
       // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
@@ -7741,17 +7756,21 @@
     } catch (_) {}
   });
 
-  function importRides(options = {}) {
+  async function importRides(options = {}) {
     if (!state.rides.length) return false;
     const auto = Boolean(options && options.auto);
     try {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
       if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
-      localStorage.removeItem('atms_beta_14_3_1_rides');
-       localStorage.removeItem('atms_beta_14_3_1_done');
-
-       const result = window.applyImportedRides(normalized);
+      // P96/S1: NIEMALS Bestandsfahrten/Erledigt-Status vor dem
+      // nachweislich erfolgreichen Zwei-Speicher-Import loeschen.
+      const result = await window.applyImportedRides(normalized);
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
+      if(!result.historySaved){
+        $('importStatus').textContent='Fahrten gesichert, aber Planlistenhistorie nicht gespeichert. Bitte sofort ein Backup erstellen.';
+        if(typeof window.showToast==='function')window.showToast('Fahrten gesichert, Historie nicht gespeichert','warn');
+        return true;
+      }
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
       $('importStatus').textContent = auto
         ? `${result.count} Fahrten automatisch übernommen · Morgen-Modus aktiv.`
@@ -7799,7 +7818,7 @@
         throw new Error('Sicherheitsblock: Die automatische Importfreigabe ist abgelaufen. Bitte die Planliste erneut analysieren.');
       }
 
-      const imported = importRides({ auto: true });
+      const imported = await importRides({ auto: true });
       if (!imported) return false;
 
       if (status) {

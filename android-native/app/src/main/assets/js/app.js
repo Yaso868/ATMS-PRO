@@ -103,7 +103,7 @@ const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -238,6 +238,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
       const tx=db.transaction(PERSIST_DURABLE_STORE,'readwrite');
       tx.oncomplete=()=>resolve();
       tx.onerror=()=>reject(tx.error||new Error('Durable-Shadow Schreibfehler'));
+      tx.onabort=()=>reject(tx.error||new Error('Durable-Shadow Transaktion abgebrochen'));
       tx.objectStore(PERSIST_DURABLE_STORE).put(payload,PERSIST_DURABLE_RECORD);
     });
     persistenceDurableShadow=payload;
@@ -249,22 +250,28 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK]){
+  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK]){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
   return storage;
 }
+// P96/S1: IndexedDB-Schreibvorgaenge serialisieren und NICHT vor dem
+// erfolgreichen transaction.oncomplete als dauerhaft gespeichert melden.
 function syncPersistenceDurableShadow(reason='sync'){
-  const storage=mergedCriticalShadowFromCurrent();
-  if(!Object.keys(storage).length)return Promise.resolve(null);
-  persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:String(reason||''),storage};
-  persistenceDurableReady=true;
-  return writePersistenceDurableShadow(storage,reason).catch(e=>{
+  // Startup: Vor dem Lesen eines vorhandenen IndexedDB-Backups niemals
+  // dessen letzte gute Fahrten mit einer noch leeren lokalen Sicht ueberschreiben.
+  if(!persistenceDurableReady)return Promise.resolve(null);
+  persistenceDurableSyncQueue=persistenceDurableSyncQueue.catch(()=>null).then(async()=>{
+    const storage=mergedCriticalShadowFromCurrent();
+    if(!Object.keys(storage).length)return null;
+    return await writePersistenceDurableShadow(storage,reason);
+  }).catch(e=>{
     persistenceDurableError=String(e?.message||e);
     persistAudit('durable_sync_failed',{reason:String(reason||''),message:persistenceDurableError});
     return null;
   });
+  return persistenceDurableSyncQueue;
 }
 async function initPersistenceDurableShadow(){
   try{
@@ -272,16 +279,41 @@ async function initPersistenceDurableShadow(){
     if(saved&&saved.storage&&typeof saved.storage==='object')persistenceDurableShadow=saved;
     persistenceDurableReady=true;
     persistenceDurableError='';
+    const startupLocalRides=localStorage.getItem(KEY),startupDurableRides=persistenceDurableShadow?.storage?.[KEY];
+    const startupRideConflict=startupLocalRides!==null&&typeof startupDurableRides==='string'&&startupLocalRides!==startupDurableRides;
+    if(startupRideConflict)persistAudit('rides_startup_conflict',{localLength:startupLocalRides.length,durableLength:startupDurableRides.length});
     const result=restoreMissingCriticalPersistence('startup-durable');
     if(result.restored){
+      if(result.keys.includes(KEY)){
+        // WICHTIG: Nach der Wiederherstellung nicht mit einem zuvor leeren
+        // JS-Arbeitsspeicher die gerade geretteten Fahrten ueberschreiben.
+        try{const recovered=JSON.parse(localStorage.getItem(KEY)||'[]');if(Array.isArray(recovered))rides=recovered.map(norm)}catch(e){persistAudit('startup_rides_reload_failed',{message:String(e?.message||e)})}
+      }
+      if(result.keys.includes(DONE)){
+        try{const recovered=JSON.parse(localStorage.getItem(DONE)||'[]');if(Array.isArray(recovered))done=new Set(recovered)}catch(_){ }
+      }
       recoverVerifiedFlightCache();
       const restoredRides=applyFlightCacheToRides(applyRideOverrides(rides).rides);
-      rides=restoredRides.rides;
-      save();
+      const correctedBorderTimes=p96RecoverPersistedBorderTimes(restoredRides.rides);
+      rides=correctedBorderTimes.rides;
+      if(correctedBorderTimes.changed)persistAudit('legacy_ocr_time_corrected',{count:correctedBorderTimes.changed,from:'durable-restore'});
+      if(!startupRideConflict){
+        if(!save({silent:true}))persistAudit('startup_recovery_save_failed',{restored:result.keys});
+      }
       render();
     }
-    capturePersistenceSafety('startup-durable-ready');
+    // Bei divergierenden Kopien einen Snapshot NUR lokal schreiben. Kein
+    // automatischer IndexedDB-Overwrite vor einer Benutzerentscheidung.
+    capturePersistenceSafety('startup-durable-ready',!startupRideConflict);
     if(persistenceDurableShadow)persistAudit('durable_loaded',{keys:Object.keys(persistenceDurableShadow.storage||{}).length,restored:result.restored});
+    // Migration alter Versionen: Nur initial seeden, wenn im Durable-Shadow
+    // noch keine Fahrten stehen. Uneinigkeit niemals still ueberschreiben.
+    const localRides=localStorage.getItem(KEY),indexedRides=persistenceDurableShadow?.storage?.[KEY];
+    if(!startupRideConflict&&localRides!==null&&(!indexedRides||indexedRides===localRides))await syncPersistenceDurableShadow('startup-rides-seed');
+    else if(localRides!==null&&indexedRides!==localRides){
+      persistAudit('rides_startup_conflict',{localLength:localRides.length,durableLength:indexedRides?.length||0});
+      showToast('ACHTUNG: Unterschiedliche Fahrtenspeicher erkannt. Bitte vor Import/Backup pruefen.','warn');
+    }
   }catch(e){
     persistenceDurableReady=true;
     persistenceDurableError=String(e?.message||e);
@@ -297,7 +329,7 @@ function clearPersistenceDurableShadow(){
     req.onsuccess=req.onerror=req.onblocked=()=>{};
   }catch(_){ }
 }
-function capturePersistenceSafety(reason='snapshot'){
+function capturePersistenceSafety(reason='snapshot',syncDurable=true){
   try{
     const previous=readPersistenceSafety();
     const storage={};
@@ -313,7 +345,7 @@ function capturePersistenceSafety(reason='snapshot'){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK];
+    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK];
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -326,7 +358,7 @@ function capturePersistenceSafety(reason='snapshot'){
 
     const payload=writePersistenceSafety(storage,reason);
     persistAudit('snapshot',{reason:String(reason||''),keys:Object.keys(storage).length,preservedCritical:preserved});
-    syncPersistenceDurableShadow('snapshot:'+reason);
+    if(syncDurable)void syncPersistenceDurableShadow('snapshot:'+reason);
     return payload;
   }catch(e){persistAudit('snapshot_failed',{reason:String(reason||''),message:String(e?.message||e)});return null}
 }
@@ -341,8 +373,8 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
     if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK].includes(key)){
-      const storage={...(persistenceDurableShadow?.storage||{})};storage[key]=value;persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:'verified-write:'+reason,storage};persistenceDurableReady=true;
-      writePersistenceDurableShadow(storage,'verified-write:'+reason).catch(e=>{persistenceDurableError=String(e?.message||e);persistAudit('durable_sync_failed',{reason:'verified-write:'+reason,message:persistenceDurableError})});
+      // Revisionssicher: keine unbestaetigten optimistischen Durable-Werte.
+      void syncPersistenceDurableShadow('verified-write:'+reason);
     }
     persistAudit('write_ok',{key,reason:String(reason||''),length:value.length});
     return true;
@@ -354,11 +386,18 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK];
+  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,...(persistenceDurableReady?[KEY,DONE]:[])];
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
-    const raw=(snap?.storage?.[key] ?? persistenceDurableShadow?.storage?.[key]);
+    const fromSnap=snap?.storage?.[key],fromDurable=persistenceDurableShadow?.storage?.[key];
+    // Unterschiedliche Fahrten-/Erledigt-Kopien sind ein Konflikt, keine
+    // automatische Aufforderung zur Datenueberschreibung.
+    if([KEY,DONE].includes(key)&&typeof fromSnap==='string'&&typeof fromDurable==='string'&&fromSnap!==fromDurable){
+      persistAudit('critical_restore_conflict',{key,reason:String(reason||''),safetyLength:fromSnap.length,durableLength:fromDurable.length});
+      continue;
+    }
+    const raw=(typeof fromDurable==='string'?fromDurable:fromSnap);
     if(typeof raw!=='string'||!raw.length)continue;
     try{
       localStorage.setItem(key,raw);
@@ -390,6 +429,7 @@ function persistenceDiagnosis(){
   return {
     diagnosis:'CORE-005V5 Durable Persistence Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
     selfTest:persistenceSelfTest(),
+    rideStatus:{inMemory:Array.isArray(rides)?rides.length:null,persisted:(()=>{try{const raw=localStorage.getItem(KEY);return raw===null?null:JSON.parse(raw).length}catch(_){return null}})(),durable:persistenceDurableShadow?.storage?.[KEY]?( ()=>{try{return JSON.parse(persistenceDurableShadow.storage[KEY]).length}catch(_){return null}})():null},
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK)},
@@ -646,18 +686,56 @@ window.norm=norm;
 function updateRideTimeField(rideId,patch){
   const id=String(rideId||'').trim();if(!id)return false;
   const idx=rides.findIndex(r=>String(r?.id||'')===id);if(idx<0)return false;
-  rides[idx]=norm({...rides[idx],...patch},idx);save();render();return true
+  const before=rides[idx];rides[idx]=norm({...rides[idx],...patch},idx);if(!save()){rides[idx]=before;return false}render();return true
 }
 window.ATMSSetDispoTime=function(rideId,time){return updateRideTimeField(rideId,{dispoTime:String(time||'').trim()})};
 window.ATMSSetLiveTime=function(rideId,time){return updateRideTimeField(rideId,{liveTime:String(time||'').trim(),liveTimeDerivedFromLanding:false})};
 window.ATMSSetActualLandingTime=function(rideId,landingTime,bufferMinutes){const patch={actualLandingTime:String(landingTime||'').trim(),liveTime:''};if(bufferMinutes!==undefined&&bufferMinutes!==null&&String(bufferMinutes).trim()!=='')patch.liveBufferOverrideMinutes=Math.max(0,Math.min(120,Math.round(Number(bufferMinutes)||0)));return updateRideTimeField(rideId,patch)};
 window.ATMSSetActualDepartureTime=function(rideId,departureTime){return updateRideTimeField(rideId,{actualDepartureTime:String(departureTime||'').trim(),liveTime:''})};
 window.ATMSTimeSnapshot=function(rideId){const r=rides.find(x=>String(x?.id||'')===String(rideId||''));if(!r)return null;return{planTime:planTimeOf(r),dispoTime:dispoTimeOf(r),timeMirror:first(r.timeMirror,r.time_mirror),flightTime:listedFlightTimeOf(r),actualLandingTime:actualLandingTimeOf(r),actualDepartureTime:actualDepartureTimeOf(r),liveTime:liveTimeOf(r),liveBufferMinutes:liveBufferMinutesOf(r),effectiveTime:effectiveTime(r),effectiveSource:effectiveSource(r)}};
-function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
+function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}// P96/S1: konservative Altbestands-Migration fuer sicher erkannte Tabellenkanten
+// in Bild-OCR-Zeiten. NIEMALS Flugzeit, LIVE, unabhaengig abweichende DISPO oder
+// nicht eindeutig numerische Zeichen interpretieren.
+function p96RecoverPersistedBorderTimes(source){
+  let changed=0;
+  const out=(Array.isArray(source)?source:[]).map(r=>{
+    if(r?.sourceImageOcr!==true)return r;
+    const raw=String(r.time||'').trim();
+    const hit=raw.match(/^(?:[|¦│]\s*)+(\d{3,4})$/);
+    if(!hit)return r;
+    const padded=hit[1].padStart(4,'0'),h=Number(padded.slice(0,2)),m=Number(padded.slice(2));
+    if(h>23||m>59)return r;
+    const fixed=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    const originalFields=['time','planTime','dispoTime','dispo_time'];
+    if(originalFields.some(k=>r[k]!=null&&String(r[k]).trim()&&! [raw,fixed].includes(String(r[k]).trim())))return r;
+    const mirror=String(r.timeMirror||r.time_mirror||'').trim();
+    if(mirror&&mirror!==raw&&mirror!==fixed)return r;
+    const next={...r,time:fixed,planTime:fixed,dispoTime:fixed,p96TimeBorderOriginal:raw,p96TimeBorderCorrectedAt:new Date().toISOString()};
+    if(Object.prototype.hasOwnProperty.call(r,'dispo_time'))next.dispo_time=fixed;
+    if(mirror===raw)next.timeMirror=fixed;
+    changed++;
+    return next;
+  });
+  return {rides:out,changed};
+}
+function save(options={}){
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
-  safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
-  safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
+  const rideOk=safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
+  // Bei fehlgeschlagenen Fahrten niemals eine neue Erledigt-Liste als zusammenpassend speichern.
+  if(!rideOk){
+    persistAudit('rides_save_blocked',{reason:'local-storage-write-failed',inMemory:rides.length});
+    if(!options.silent)showToast('SPEICHERFEHLER: Fahrten nicht gesichert! Bitte keine weiteren Aenderungen vornehmen.','warn');
+    return false;
+  }
+  const doneOk=safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
+  if(!doneOk){
+    persistAudit('rides_save_blocked',{reason:'done-storage-write-failed',inMemory:rides.length});
+    if(!options.silent)showToast('SPEICHERFEHLER: Erledigt-Status nicht gesichert.','warn');
+    return false;
+  }
+  if(!options.deferDurable)void syncPersistenceDurableShadow('rides-save');
+  return true;
 }function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}
 // CORE-007D8A1F1D8P71: Fahrerfarben sind personenbezogen statt kartenpositionsbezogen.
 const DRIVER_COLOR_PALETTE=[
@@ -1943,6 +2021,16 @@ function updateBackupUI(){
 }
 async function exportAtmsBackup(){
   try{
+    // P96/S1: Eine defekte Sicherung mit 0 Fahrten bei vorhandenen 140 Fahrten
+    // darf nicht als erfolgreich exportiert werden.
+    const ridesRaw=localStorage.getItem(KEY);
+    if(ridesRaw===null)throw Error('Fahrten-Speicher fehlt. Backup blockiert, damit keine unvollstaendige Sicherung entsteht.');
+    let storedRides,storedDone;
+    try{storedRides=JSON.parse(ridesRaw);storedDone=JSON.parse(localStorage.getItem(DONE)||'[]')}catch(_){throw Error('Fahrten-/Status-Speicher ungueltig. Backup blockiert.');}
+    if(!Array.isArray(storedRides)||!Array.isArray(storedDone)||storedRides.length!==rides.length)
+      throw Error(`Fahrten-Speicher nicht synchron: App ${rides.length}, gespeichert ${Array.isArray(storedRides)?storedRides.length:'ungueltig'}. Backup blockiert.`);
+    if(storedDone.length!==done.size||!storedDone.every(id=>done.has(id)))
+      throw Error('Erledigt-Status noch nicht vollstaendig gespeichert. Backup blockiert.');
     const payload=backupPayload();
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/octet-stream'});
     await saveExportBlob(blob,backupFileName(),'application/octet-stream');
@@ -1961,13 +2049,55 @@ function chooseBackupFile(){const input=$('backupFileInput');if(input){input.val
 async function importAtmsBackup(file){
   try{
     const obj=JSON.parse(await file.text());
-    if(!obj||obj.format!=='ATMS_BACKUP'||!obj.storage||typeof obj.storage!=='object') throw Error('Keine gültige ATMS-Backup-Datei.');
-    const keys=Object.keys(obj.storage);
-    if(!confirm(`Backup vom ${obj.createdAt?new Date(obj.createdAt).toLocaleString('de-DE'):'unbekannten Datum'} wiederherstellen?\n\n${keys.length} gespeicherte Bereiche werden übernommen.`))return;
-    keys.forEach(k=>{if(k.startsWith('atms_'))localStorage.setItem(k,String(obj.storage[k]??''));});
-    localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:new Date().toISOString(),restoredFrom:obj.createdAt||'',appVersion:obj.appVersion||''}));
-    alert('Backup wurde erfolgreich wiederhergestellt. ATMS wird neu geladen.');location.reload();
-  }catch(e){setBackupStatus('Wiederherstellung fehlgeschlagen: '+e.message,'warn');alert('Backup konnte nicht importiert werden.');}
+    if(!obj||obj.format!=='ATMS_BACKUP'||obj.formatVersion!==1||!obj.storage||typeof obj.storage!=='object')
+      throw Error('Keine gueltige ATMS-Backup-Datei (Version 1).');
+    // P96/S1: Ein Snapshot ohne Fahrten-Key ist KEIN vollstaendiges Backup.
+    const rideRaw=obj.storage[KEY],doneRaw=obj.storage[DONE];
+    if(typeof rideRaw!=='string'||typeof doneRaw!=='string')
+      throw Error('Backup unvollstaendig: Fahrten oder Erledigt-Status fehlen. Wiederherstellung abgebrochen.');
+    let incomingRides,incomingDone;
+    try{incomingRides=JSON.parse(rideRaw);incomingDone=JSON.parse(doneRaw)}catch(_){throw Error('Backup enthaelt ungueltige Fahrten-/Statusdaten.');}
+    if(!Array.isArray(incomingRides)||!Array.isArray(incomingDone)||new Set(incomingRides.map(r=>String(r?.id||''))).size!==incomingRides.length)
+      throw Error('Backup-Fahrten sind fehlerhaft oder enthalten doppelte IDs.');
+    const keys=Object.keys(obj.storage).filter(k=>k.startsWith('atms_'));
+    const existingCount=(()=>{try{return JSON.parse(localStorage.getItem(KEY)||'[]').length}catch(_){return 0}})();
+    const countWarning=incomingRides.length<existingCount
+      ? `\n\nACHTUNG: Dieses Backup enthaelt nur ${incomingRides.length} Fahrten; aktuell sind ${existingCount} Fahrten gespeichert. Du wuerdest einen aelteren Bestand wiederherstellen.` : '';
+    if(!confirm(`Backup vom ${obj.createdAt?new Date(obj.createdAt).toLocaleString('de-DE'):'unbekannten Datum'} wiederherstellen?\n\n${incomingRides.length} Fahrten, ${keys.length} Bereiche.${countWarning}`))return;
+    const durableBefore=await syncPersistenceDurableShadow('before-backup-restore');
+    if(!durableBefore)throw Error('Wiederherstellung blockiert: Aktueller Bestand konnte nicht in IndexedDB gesichert werden.');
+    const before={};for(const key of keys)before[key]=localStorage.getItem(key);
+    const touched=[];
+    try{
+      for(const key of keys){
+        const value=String(obj.storage[key]??'');
+        localStorage.setItem(key,value);
+        touched.push(key);
+        if(localStorage.getItem(key)!==value)throw Error('Backup-Wiederherstellung: Schreibpruefung bei '+key+' fehlgeschlagen.');
+      }
+      // Nur wenn ALLE lokalen Bereiche verifiziert sind, den Durable-Shadow umstellen.
+      const durableAfter=await syncPersistenceDurableShadow('after-backup-restore-verified');
+      if(!durableAfter)throw Error('IndexedDB-Bestaetigung der Wiederherstellung fehlgeschlagen.');
+    }catch(writeError){
+      let rollbackOk=true;
+      for(const key of touched.reverse()){
+        try{
+          if(before[key]===null)localStorage.removeItem(key);else localStorage.setItem(key,before[key]);
+          if(localStorage.getItem(key)!==before[key])rollbackOk=false;
+        }catch(_){rollbackOk=false}
+      }
+      // Bei fehlgeschlagenem Rollback den letzten verifizierten IndexedDB-Stand
+      // NICHT durch einen moeglichen Teilbestand ueberschreiben.
+      if(rollbackOk)await syncPersistenceDurableShadow('failed-backup-restore-rollback');
+      persistAudit('backup_restore_failed',{rollbackOk,message:String(writeError?.message||writeError)});
+      throw Error(rollbackOk
+        ? 'Wiederherstellung abgebrochen; alter Stand wieder eingesetzt. '+String(writeError?.message||writeError)
+        : 'KRITISCH: Wiederherstellung unvollstaendig, automatisches Zuruecksetzen gescheitert. App NICHT neu starten. Externes Backup aufbewahren.');
+    }
+    try{localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:new Date().toISOString(),restoredFrom:obj.createdAt||'',appVersion:obj.appVersion||''}))}catch(_){ }
+    alert('Backup vollstaendig wiederhergestellt und in beiden Speichern bestaetigt. ATMS wird neu geladen.');
+    location.reload();
+  }catch(e){setBackupStatus('Wiederherstellung fehlgeschlagen: '+e.message,'warn');alert(e.message||'Backup konnte nicht importiert werden.');}
 }
 function resetAtmsData(){
   if(!confirm('Wirklich alle lokal gespeicherten ATMS-Daten löschen?\n\nDisponenten, Fahrten, Erledigt-Status und Einstellungen werden entfernt.'))return;
@@ -3511,7 +3641,7 @@ function restoreCurrentRidesAfterBlockedImport(){
   }catch(_){}
 }
 function readPlanImportHistory(){try{const x=JSON.parse(localStorage.getItem(PLAN_IMPORT_HISTORY)||'[]');return Array.isArray(x)?x:[]}catch(_){return[]}}
-function savePlanImportHistory(list,reason='plan-import-history'){const next=Array.isArray(list)?list.slice(-40):[];safePersistentSetItem(PLAN_IMPORT_HISTORY,JSON.stringify(next),reason);return next}
+function savePlanImportHistory(list,reason='plan-import-history'){const next=Array.isArray(list)?list.slice(-40):[];return safePersistentSetItem(PLAN_IMPORT_HISTORY,JSON.stringify(next),reason)}
 function currentPlanImportSession(){try{return JSON.parse(localStorage.getItem(PLAN_IMPORT_CURRENT)||'null')}catch(_){return null}}
 function planImportSessionId(){return `plan-${Date.now()}-${Math.random().toString(36).slice(2,8)}`}
 function planImportNorm(v){return String(v??'').trim().toLowerCase().replace(/\s+/g,' ')}
@@ -3794,7 +3924,13 @@ function mergePlanImportByIdentity(current,incoming){
 function beginPlanImportSession(incoming,mergeInfo){
   const now=new Date().toISOString(),id=planImportSessionId();
   const session={id,createdAt:now,plantag:String((incoming||[]).map(r=>String(r?.date||'').trim()).find(Boolean)||berlinDate()),incomingCount:Number(mergeInfo?.incomingCount||incoming?.length||0),activeRideCount:rides.length,matchedCount:Number(mergeInfo?.matched||0),carryoverCount:Number(mergeInfo?.carryover||0),phases:{plan:true,ocr:true,imported:true,flightChecked:false,liveChecked:false}};
-  const history=readPlanImportHistory();history.push({...session,rides:rides.map(r=>({...r}))});savePlanImportHistory(history);safePersistentSetItem(PLAN_IMPORT_CURRENT,JSON.stringify(session),'plan-import-current');return session;
+  // P96/S1: nur Planversions-Metadaten. Vollstaendige Fahrten bleiben in
+  // KEY/IndexedDB und im exportierbaren Backup; keine N-fache Datenduplizierung.
+  const history=readPlanImportHistory();history.push({...session});
+  session.historySaved=savePlanImportHistory(history);
+  session.currentSaved=safePersistentSetItem(PLAN_IMPORT_CURRENT,JSON.stringify(session),'plan-import-current');
+  if(!session.historySaved||!session.currentSaved)persistAudit('plan_history_partial',{historySaved:session.historySaved,currentSaved:session.currentSaved});
+  return session;
 }
 function resetCurrentImportCheckDisplay(){
   try{localStorage.removeItem('atms_flight_check_last_status_v1')}catch(_){ }
@@ -3832,7 +3968,9 @@ function deletePlanHistorySession(sessionId){
   if(!target)return false;
   const when=planHistoryDateText(target.createdAt);
   if(!confirm(`Diese frühere Planliste aus der Historie löschen?\n\nImport: ${when}\nFahrten im Import: ${Number(target.incomingCount||0)}\n\nDer aktuelle Fahrtenbestand wird dadurch NICHT verändert.`))return false;
-  savePlanImportHistory(history.filter(x=>String(x?.id||'')!==id),'plan-history-delete-one');
+  if(!savePlanImportHistory(history.filter(x=>String(x?.id||'')!==id),'plan-history-delete-one')){
+    showToast('Planliste konnte nicht geloescht werden: Speicherfehler','warn');return false;
+  }
   const current=currentPlanImportSession();
   if(String(current?.id||'')===id)localStorage.removeItem(PLAN_IMPORT_CURRENT);
   renderPlanImportHistoryPanel();
@@ -3847,7 +3985,9 @@ function deleteEarlierPlanHistory(){
   const removeCount=history.length-keep.length;
   if(removeCount<=0){showToast('Keine früheren Planlisten vorhanden','warn');return false}
   if(!confirm(`${removeCount} frühere Planliste(n) aus der Historie löschen?\n\nDie aktuelle Planliste und der aktuelle Fahrtenbestand bleiben erhalten.`))return false;
-  savePlanImportHistory(keep,'plan-history-delete-earlier');
+  if(!savePlanImportHistory(keep,'plan-history-delete-earlier')){
+    showToast('Fruehere Planlisten konnten nicht geloescht werden: Speicherfehler','warn');return false;
+  }
   renderPlanImportHistoryPanel();
   capturePersistenceSafety('plan-history-delete-earlier');
   showToast(`${removeCount} frühere Planliste(n) gelöscht`,'ok');
@@ -3858,7 +3998,10 @@ function startPlanDataFreshFromNow(){
   const backup={savedAt:new Date().toISOString(),rides:Array.isArray(rides)?rides:[],done:[...done],history,current:currentPlanImportSession(),rideOverrides:getRideOverrides(),flightCache:getFlightCache()};
   const count=Array.isArray(rides)?rides.length:0;
   if(!confirm(`ATMS-Planbereich ab jetzt neu beginnen?\n\nGelöscht werden:\n• ${count} aktuelle/alte Fahrten\n• frühere Planlisten-Historie\n• planbezogene Flug-/LIVE-Prüfdaten und Fahrtenkorrekturen\n\nERHALTEN bleiben Fahrer, Disponenten, Einstellungen, Adressbuch und Standard-Abholpuffer.\n\nVorher wird lokal ein Sicherheits-Snapshot angelegt.`))return false;
-  safePersistentSetItem(PLAN_RESET_BACKUP,JSON.stringify(backup),'plan-clean-start-backup');
+  if(!safePersistentSetItem(PLAN_RESET_BACKUP,JSON.stringify(backup),'plan-clean-start-backup')){
+    showToast('Neustart abgebrochen: Der bisherige Fahrtenbestand konnte nicht lokal gesichert werden.','warn');
+    return false;
+  }
   rides=[];done.clear();
   [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
   save();
@@ -3961,7 +4104,7 @@ function mergeImportedRides(current,incoming){
   incoming.forEach(r=>map.set(String(r.id),r));
   return [...map.values()];
 }
-function applyImportedRides(newRides){
+async function applyImportedRides(newRides){
   if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
 
   const importAuthorization=consumePlanImportAuthorization();
@@ -3981,6 +4124,15 @@ function applyImportedRides(newRides){
     source:importAuthorization.source,
     incomingCount:newRides.length
   });
+  const beforeRides=rides.map(r=>({...r}));
+  const beforeDone=new Set(done);
+  // Nur bei nachweislich erfolgreich geschriebener VORHER-Version beginnen.
+  let persistedBefore=[];
+  try{persistedBefore=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(_){ }
+  if(!Array.isArray(persistedBefore)||persistedBefore.length!==beforeRides.length)
+    throw Error('Import blockiert: Der vorherige Fahrtenbestand ist nicht vollstaendig im lokalen Speicher. Bitte Sicherung pruefen.');
+  const durableBefore=await syncPersistenceDurableShadow('before-plan-import-verified');
+  if(!durableBefore)throw Error('Import blockiert: Die bestehende Fahrten-Sicherung in IndexedDB konnte nicht bestaetigt werden.');
 
   // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
   // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
@@ -4028,9 +4180,19 @@ function applyImportedRides(newRides){
   const restored=applyFlightCacheToRides(rides);
   rides=restored.rides;
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
-  save();
+  const stored=save({deferDurable:true,silent:true});
+  if(!stored){
+    rides=beforeRides;done=beforeDone;
+    if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'local-write'});
+    throw Error('Import abgebrochen: Neue Fahrten konnten nicht dauerhaft gespeichert werden. Alter Bestand bleibt erhalten.');
+  }
+  const durableAfter=await syncPersistenceDurableShadow('after-plan-import-verified');
+  if(!durableAfter){
+    rides=beforeRides;done=beforeDone;
+    if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'durable-write'});
+    throw Error('Import abgebrochen: IndexedDB-Sicherung fehlgeschlagen. Vorheriger Bestand wurde erneut gespeichert; bitte Backup pruefen.');
+  }
   capturePersistenceSafety('after-plan-import');
-  syncPersistenceDurableShadow('after-plan-import');
   const importSession=beginPlanImportSession(normalizedIncoming,planMerge);
   renderPlanImportHistoryPanel();
   resetCurrentImportCheckDisplay();
@@ -4041,6 +4203,7 @@ function applyImportedRides(newRides){
     mode:'merge',
     count:rides.length,
     importSessionId:importSession.id,
+    historySaved:Boolean(importSession.historySaved&&importSession.currentSaved),
     matchedRides:planMerge.matched,
     carryoverRides:planMerge.carryover,
     restoredFlightChecks:restored.changed,
@@ -5285,7 +5448,7 @@ function initApp(){
     bindClick('plusBtn',()=>{atmsPrimaryVisit('import');document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));showView('import');const back=$('importBack');if(back)back.setAttribute('aria-label','Zurück')});
     const search=safeEl('search');if(search)search.addEventListener('input',render);
     bindClick('mapBtn',()=>{if(active)openGoogleMapsRoute(active,null)});
-    bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));save();openCockpit(active.id)});
+    bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));if(!save()){ids.forEach(id=>allDone?done.add(id):done.delete(id));return}openCockpit(active.id)});
     // CORE-007D8A1F1D8P2: Der moderne Planlisten-Import (plan-import.js) besitzt den
     // fileInput vollständig. Der alte JSON-Fallback darf dessen Auswahlstatus nicht mehr
     // überschreiben und darf Bild-/Excel-/CSV-Dateien nicht mehr als Text einlesen.
@@ -5304,7 +5467,7 @@ function initApp(){
       const status=safeEl('importStatus');
       if(status)status.textContent='ATMS-JSON geladen. Jetzt „JSON laden“ tippen.';
     });
-    bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
+    bindClick('loadBtn',async()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=await applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=!result.historySaved?`Fahrten gesichert (${result.count}), aber Planlistenhistorie nicht vollstaendig gespeichert. Bitte Backup erstellen.`:result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(!result.historySaved?'Fahrten gesichert, Historie nicht gespeichert':result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,result.historySaved?'ok':'warn');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message;showToast('Import wurde nicht als erfolgreich bestaetigt','warn')}});
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
     document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n!=='all')atmsPrimaryVisit(n);if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));atmsSettingsOpenHubFromPrimaryNav();safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
@@ -5326,8 +5489,12 @@ function initApp(){
       const overrideRestore=applyRideOverrides(rides);
       rides=overrideRestore.rides;
       const restored=applyFlightCacheToRides(rides);
-      rides=restored.rides;
-      if(p77LegacyCleanup.changed||overrideRestore.changed||restored.changed)save();
+      const correctedBorderTimes=p96RecoverPersistedBorderTimes(restored.rides);
+      rides=correctedBorderTimes.rides;
+      if(p77LegacyCleanup.changed||overrideRestore.changed||restored.changed||correctedBorderTimes.changed){
+        if(!save())persistAudit('startup_ride_migration_unsaved',{p96:correctedBorderTimes.changed});
+        else if(correctedBorderTimes.changed)persistAudit('legacy_ocr_time_corrected',{count:correctedBorderTimes.changed,from:'startup'});
+      }
     }catch(e){rides=[]}
     scheduleLiveFreshnessRefresh();
     initLiveDisposition();
