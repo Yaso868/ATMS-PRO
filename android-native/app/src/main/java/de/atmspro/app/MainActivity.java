@@ -459,7 +459,16 @@ public final class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
+        // P97: Android-Zurück-/Randgeste wird immer an ATMS weitergereicht.
+        // Dadurch kann eine Wischgeste die Activity auf der Hauptseite nicht mehr
+        // versehentlich schließen; Unterseiten navigiert die Web-App kontrolliert zurück.
+        if (webView != null) {
+            webView.evaluateJavascript(
+                    "(function(){try{window.dispatchEvent(new CustomEvent('atms-native-back'));}catch(e){}})();",
+                    null
+            );
+            return;
+        }
+        super.onBackPressed();
     }
 }
