@@ -1,9 +1,14 @@
 -- Merging decision tree log ---
 manifest
-ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-20:12
-INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-20:12
-INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-20:12
-INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-20:12
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-23:12
+INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-23:12
+INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-23:12
+INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:2:1-23:12
+MERGED from [androidx.webkit:webkit:1.12.1] /home/runner/.gradle/caches/8.9/transforms/9febd1cf1c3effdc2e76418da84a7529/transformed/webkit-1.12.1/AndroidManifest.xml:2:1-7:12
+MERGED from [androidx.core:core:1.1.0] /home/runner/.gradle/caches/8.9/transforms/6f61606391ba590d6ca80cbdda7a3ded/transformed/core-1.1.0/AndroidManifest.xml:17:1-26:12
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] /home/runner/.gradle/caches/8.9/transforms/aae8672b60dc56ea86de13b8f1502c6d/transformed/versionedparcelable-1.1.0/AndroidManifest.xml:17:1-27:12
+MERGED from [androidx.annotation:annotation-experimental:1.4.1] /home/runner/.gradle/caches/8.9/transforms/ec2a3d141c180ad55e2138fcc3be2e8c/transformed/annotation-experimental-1.4.1/AndroidManifest.xml:2:1-7:12
+MERGED from [androidx.lifecycle:lifecycle-runtime:2.0.0] /home/runner/.gradle/caches/8.9/transforms/b33fcacb9a636acc74f01415264bb0f8/transformed/lifecycle-runtime-2.0.0/AndroidManifest.xml:17:1-22:12
 	package
 		INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml
 	android:versionName
@@ -16,41 +21,69 @@ uses-permission#android.permission.INTERNET
 ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:3:5-67
 	android:name
 		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:3:22-64
+uses-permission#android.permission.ACCESS_COARSE_LOCATION
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:4:5-81
+	android:name
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:4:22-78
+uses-permission#android.permission.ACCESS_FINE_LOCATION
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:5:5-79
+	android:name
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:5:22-76
 application
-ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:5:5-19:19
-INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:5:5-19:19
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:6:5-22:19
+INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:6:5-22:19
+MERGED from [androidx.core:core:1.1.0] /home/runner/.gradle/caches/8.9/transforms/6f61606391ba590d6ca80cbdda7a3ded/transformed/core-1.1.0/AndroidManifest.xml:24:5-89
+MERGED from [androidx.core:core:1.1.0] /home/runner/.gradle/caches/8.9/transforms/6f61606391ba590d6ca80cbdda7a3ded/transformed/core-1.1.0/AndroidManifest.xml:24:5-89
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] /home/runner/.gradle/caches/8.9/transforms/aae8672b60dc56ea86de13b8f1502c6d/transformed/versionedparcelable-1.1.0/AndroidManifest.xml:24:5-25:19
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] /home/runner/.gradle/caches/8.9/transforms/aae8672b60dc56ea86de13b8f1502c6d/transformed/versionedparcelable-1.1.0/AndroidManifest.xml:24:5-25:19
 	android:extractNativeLibs
 		INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml
+	android:appComponentFactory
+		ADDED from [androidx.core:core:1.1.0] /home/runner/.gradle/caches/8.9/transforms/6f61606391ba590d6ca80cbdda7a3ded/transformed/core-1.1.0/AndroidManifest.xml:24:18-86
 	android:label
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:7:9-33
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:10:9-33
+	android:roundIcon
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:9:9-59
+	android:icon
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:8:9-54
 	android:allowBackup
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:6:9-35
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:7:9-35
 	android:theme
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:10:9-45
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:13:9-45
 	android:networkSecurityConfig
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:8:9-69
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:11:9-69
 	android:usesCleartextTraffic
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:9:9-45
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:12:9-45
 activity#de.atmspro.app.MainActivity
-ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:11:9-18:20
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:14:9-21:20
 	android:exported
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:13:13-36
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:16:13-36
 	android:name
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:12:13-41
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:15:13-41
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
-ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:14:13-17:29
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:17:13-20:29
 action#android.intent.action.MAIN
-ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:15:17-69
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:18:17-69
 	android:name
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:15:25-66
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:18:25-66
 category#android.intent.category.LAUNCHER
-ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:16:17-77
+ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:19:17-77
 	android:name
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:16:27-74
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:19:27-74
 uses-sdk
 INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml
 INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml
+MERGED from [androidx.webkit:webkit:1.12.1] /home/runner/.gradle/caches/8.9/transforms/9febd1cf1c3effdc2e76418da84a7529/transformed/webkit-1.12.1/AndroidManifest.xml:5:5-44
+MERGED from [androidx.webkit:webkit:1.12.1] /home/runner/.gradle/caches/8.9/transforms/9febd1cf1c3effdc2e76418da84a7529/transformed/webkit-1.12.1/AndroidManifest.xml:5:5-44
+MERGED from [androidx.core:core:1.1.0] /home/runner/.gradle/caches/8.9/transforms/6f61606391ba590d6ca80cbdda7a3ded/transformed/core-1.1.0/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.core:core:1.1.0] /home/runner/.gradle/caches/8.9/transforms/6f61606391ba590d6ca80cbdda7a3ded/transformed/core-1.1.0/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] /home/runner/.gradle/caches/8.9/transforms/aae8672b60dc56ea86de13b8f1502c6d/transformed/versionedparcelable-1.1.0/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] /home/runner/.gradle/caches/8.9/transforms/aae8672b60dc56ea86de13b8f1502c6d/transformed/versionedparcelable-1.1.0/AndroidManifest.xml:20:5-22:41
+MERGED from [androidx.annotation:annotation-experimental:1.4.1] /home/runner/.gradle/caches/8.9/transforms/ec2a3d141c180ad55e2138fcc3be2e8c/transformed/annotation-experimental-1.4.1/AndroidManifest.xml:5:5-44
+MERGED from [androidx.annotation:annotation-experimental:1.4.1] /home/runner/.gradle/caches/8.9/transforms/ec2a3d141c180ad55e2138fcc3be2e8c/transformed/annotation-experimental-1.4.1/AndroidManifest.xml:5:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime:2.0.0] /home/runner/.gradle/caches/8.9/transforms/b33fcacb9a636acc74f01415264bb0f8/transformed/lifecycle-runtime-2.0.0/AndroidManifest.xml:20:5-44
+MERGED from [androidx.lifecycle:lifecycle-runtime:2.0.0] /home/runner/.gradle/caches/8.9/transforms/b33fcacb9a636acc74f01415264bb0f8/transformed/lifecycle-runtime-2.0.0/AndroidManifest.xml:20:5-44
 	android:targetSdkVersion
 		INJECTED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml
 	android:minSdkVersion

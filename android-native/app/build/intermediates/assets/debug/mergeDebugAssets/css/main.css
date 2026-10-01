@@ -801,3 +801,860 @@ html,body{
     max-width:100%;
   }
 }
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE1 · SETTINGS HUB
+   Nur neue Einstellungs-Startübersicht / Direktnavigation.
+   Bestehende P94-Unterbereiche und Datenlogik bleiben erhalten.
+   ========================================================== */
+#settingsView .settings-hub{display:grid;gap:14px;margin:2px 0 18px}
+#settingsView .settings-hub-group{display:grid;gap:0}
+#settingsView .settings-hub-group-title{padding:0 4px 7px;color:#7f9aaa;font-size:11px;font-weight:900;letter-spacing:.9px}
+#settingsView .settings-hub-group{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:linear-gradient(180deg,#082736,#05202d)}
+#settingsView .settings-hub-group-title{border-bottom:1px solid rgba(23,66,85,.65);background:#041c28;padding:10px 13px 8px}
+#settingsView .settings-hub-item{width:100%;min-height:66px;border:0;border-bottom:1px solid rgba(23,66,85,.72);background:transparent;color:var(--text);display:grid;grid-template-columns:38px minmax(0,1fr) auto 18px;gap:10px;align-items:center;padding:10px 12px;text-align:left;cursor:pointer}
+#settingsView .settings-hub-item:last-child{border-bottom:0}
+#settingsView .settings-hub-item:active{background:#0a3141}
+#settingsView .settings-hub-icon{width:36px;height:36px;border-radius:11px;background:#0a3243;display:grid;place-items:center;font-size:19px;line-height:1}
+#settingsView .settings-hub-copy{min-width:0;display:grid;gap:3px}
+#settingsView .settings-hub-copy strong{font-size:15px;line-height:1.15}
+#settingsView .settings-hub-copy small{color:var(--muted);font-size:11px;line-height:1.25;white-space:normal}
+#settingsView .settings-hub-meta{color:#8ca6b5;font-size:11px;font-weight:800;white-space:nowrap}
+#settingsView .settings-hub-chevron{color:#8ca6b5;font-size:24px;line-height:1;text-align:right}
+#dispatcherSettingsCard,#driverSettingsCard,#backupCard,#infoCard,#atmsAddressBookPanel{scroll-margin-top:12px}
+@media(max-width:520px){
+  #settingsView .settings-hub{gap:12px;margin-top:0}
+  #settingsView .settings-hub-item{min-height:61px;grid-template-columns:34px minmax(0,1fr) auto 15px;gap:8px;padding:9px 10px}
+  #settingsView .settings-hub-icon{width:32px;height:32px;border-radius:10px;font-size:17px}
+  #settingsView .settings-hub-copy strong{font-size:14px}
+  #settingsView .settings-hub-copy small{font-size:10px}
+  #settingsView .settings-hub-meta{font-size:10px}
+  #settingsView .settings-hub-chevron{font-size:21px}
+}
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE2 · ADRESSEN-UNTERSEITE
+   Kompakte, echte Unterseite. Bestehende Adressdaten/Route-Logik
+   bleiben unverändert; Import/Export bleibt bis Gate 4 erreichbar.
+   ========================================================== */
+#settingsView .settings-address-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px}
+#settingsView.settings-address-open>.settings-page>.cockHead,
+#settingsView.settings-address-open #settingsHub,
+#settingsView.settings-address-open #dispatcherSettingsCard,
+#settingsView.settings-address-open #driverSettingsCard,
+#settingsView.settings-address-open #backupCard,
+#settingsView.settings-address-open #infoCard{display:none!important}
+#settingsView.settings-address-open #settingsToolsHost{display:block}
+#settingsView .settings-subpage-head{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:2px 0 10px;border-bottom:1px solid rgba(38,92,113,.72)}
+#settingsView .settings-subpage-head h2{margin:0;font-size:22px;line-height:1.15}
+#settingsView .settings-subpage-head small{display:block;margin-top:3px;color:var(--muted);font-size:12px}
+#settingsView .settings-back-btn{width:42px;height:42px;flex:0 0 42px;border:1px solid rgba(89,159,190,.45);border-radius:12px;background:#082a39;color:var(--text);font-size:24px;font-weight:800;display:grid;place-items:center;padding:0}
+#settingsView .address-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;margin-bottom:6px}
+#settingsView .address-toolbar .setting-input{margin:0;height:46px}
+#settingsView .address-new-btn{height:46px;padding:0 14px;border:1px solid rgba(73,177,219,.52);border-radius:12px;background:#0b3d53;color:#fff;font-weight:900;white-space:nowrap}
+#settingsView .address-search-info{font-size:12px;color:var(--muted);margin:2px 2px 10px}
+#settingsView .address-compact-list{display:grid;gap:8px}
+#settingsView .address-compact-item{width:100%;border:1px solid rgba(47,106,130,.78);border-radius:14px;background:#082b3a;color:var(--text);padding:11px 12px;display:grid;grid-template-columns:minmax(0,1fr) 20px;gap:10px;align-items:center;text-align:left}
+#settingsView .address-compact-item:active{background:#0b3648}
+#settingsView .address-compact-main{min-width:0;display:grid;gap:3px}
+#settingsView .address-compact-main strong{font-size:15px;line-height:1.2;overflow-wrap:anywhere}
+#settingsView .address-compact-main small{font-size:12px;line-height:1.3;color:var(--muted);overflow-wrap:anywhere}
+#settingsView .address-compact-main em{font-size:10px;font-style:normal;font-weight:850;color:#9fc0cf;text-transform:uppercase;letter-spacing:.45px}
+#settingsView .address-compact-chevron{font-size:24px;line-height:1;color:#88a7b6;text-align:right}
+#settingsView .address-empty{padding:16px;border:1px dashed rgba(84,142,166,.45);border-radius:12px}
+#settingsView .address-inner-head{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+#settingsView .address-inner-head h3{margin:0;font-size:19px}
+#settingsView #addressBookEditorView .setting-label{display:block;margin:10px 0 5px}
+#settingsView #addressBookEditorView .setting-input{width:100%;margin:0}
+#settingsView .address-aliases{min-height:86px;resize:vertical}
+#settingsView .address-note-input{min-height:110px;resize:vertical}
+#settingsView .address-editor-actions,#settingsView .address-detail-actions,#settingsView .address-transfer-actions{display:grid;gap:9px;margin-top:14px}
+#settingsView .address-editor-actions{grid-template-columns:1fr 1fr}
+#settingsView .address-detail-body{display:grid;gap:9px}
+#settingsView .address-detail-hero{padding:14px;border:1px solid rgba(47,106,130,.75);border-radius:14px;background:#082b3a}
+#settingsView .address-detail-hero h3{margin:3px 0 5px;font-size:20px;overflow-wrap:anywhere}
+#settingsView .address-detail-hero p{margin:0;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+#settingsView .address-detail-type{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d4055;color:#a9c9d8;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px}
+#settingsView .address-detail-row{padding:11px 12px;border:1px solid rgba(47,106,130,.55);border-radius:12px;background:rgba(5,34,46,.72);display:grid;gap:4px}
+#settingsView .address-detail-row span{font-size:10px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#89a9b7}
+#settingsView .address-detail-row strong{font-size:13px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+#settingsView .address-detail-row a{color:#7ddfff;text-decoration:none;overflow-wrap:anywhere}
+#settingsView .address-detail-actions{grid-template-columns:1fr 1fr}
+#settingsView .address-transfer-actions .act{width:100%}
+#settingsView .address-transfer-status{font-size:12px;color:var(--muted);margin-top:10px}
+@media(max-width:520px){
+  #settingsView .settings-subpage-head{margin-bottom:12px}
+  #settingsView .settings-subpage-head h2{font-size:20px}
+  #settingsView .settings-back-btn{width:38px;height:38px;flex-basis:38px;font-size:22px}
+  #settingsView .address-toolbar{grid-template-columns:1fr}
+  #settingsView .address-new-btn{width:100%}
+  #settingsView .address-compact-item{padding:10px 11px}
+  #settingsView .address-editor-actions,#settingsView .address-detail-actions{grid-template-columns:1fr}
+}
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3 · FAHRER-UNTERSEITE
+   Echte kompakte Fahrer-Unterseite auf bestehendem Fahrer-Speicher.
+   Keine Änderung an Adressen, OCR, FLIGHT-008, PLAN/DISPO/LIVE.
+   ========================================================== */
+#settingsView.settings-driver-open>.settings-page>.cockHead,
+#settingsView.settings-driver-open #settingsHub,
+#settingsView.settings-driver-open #dispatcherSettingsCard,
+#settingsView.settings-driver-open #driverSettingsCard,
+#settingsView.settings-driver-open #backupCard,
+#settingsView.settings-driver-open #infoCard{display:none!important}
+#settingsView.settings-driver-open #settingsToolsHost{display:block!important}
+#settingsView .settings-driver-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px}
+#settingsView .driver-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;margin-bottom:10px}
+#settingsView .driver-toolbar .setting-input{margin:0;height:46px}
+#settingsView .driver-new-btn{height:46px;padding:0 14px;border:1px solid rgba(73,177,219,.52);border-radius:12px;background:#0b3d53;color:#fff;font-weight:900;white-space:nowrap}
+#settingsView .driver-filter-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:8px}
+#settingsView .driver-filter-tabs button{min-height:38px;border:1px solid rgba(55,113,138,.7);border-radius:10px;background:#062737;color:#9eb7c3;font-weight:850;padding:7px 9px}
+#settingsView .driver-filter-tabs button.active{background:#0d4960;color:#fff;border-color:rgba(87,190,229,.72)}
+#settingsView .driver-search-info{font-size:12px;color:var(--muted);margin:2px 2px 10px}
+#settingsView .driver-compact-list{display:grid;gap:8px}
+#settingsView .driver-compact-item{width:100%;border:1px solid rgba(47,106,130,.78);border-radius:14px;background:#082b3a;color:var(--text);padding:11px 12px;display:grid;grid-template-columns:minmax(0,1fr) 20px;gap:10px;align-items:center;text-align:left}
+#settingsView .driver-compact-item:active{background:#0b3648}
+#settingsView .driver-compact-main{min-width:0;display:grid;gap:3px}
+#settingsView .driver-compact-main strong{font-size:15px;line-height:1.2;overflow-wrap:anywhere}
+#settingsView .driver-compact-main small{font-size:12px;line-height:1.3;color:var(--muted);overflow-wrap:anywhere}
+#settingsView .driver-compact-main em{width:max-content;font-size:10px;font-style:normal;font-weight:900;text-transform:uppercase;letter-spacing:.45px;padding:3px 7px;border-radius:999px}
+#settingsView .driver-compact-main em.active{background:rgba(41,199,111,.12);color:#69e49d;border:1px solid rgba(41,199,111,.35)}
+#settingsView .driver-compact-main em.inactive{background:rgba(255,92,109,.10);color:#ff9daa;border:1px solid rgba(255,92,109,.32)}
+#settingsView .driver-compact-chevron{font-size:24px;line-height:1;color:#88a7b6;text-align:right}
+#settingsView .driver-empty{padding:16px;border:1px dashed rgba(84,142,166,.45);border-radius:12px}
+#settingsView .driver-editor-checks{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:12px 0 4px}
+#settingsView .driver-note-input{min-height:110px;resize:vertical}
+#settingsView .driver-editor-actions{display:grid;gap:9px;margin-top:14px}
+#settingsView .driver-detail-body{display:grid;gap:9px}
+#settingsView .driver-detail-hero{padding:14px;border:1px solid rgba(47,106,130,.75);border-radius:14px;background:#082b3a}
+#settingsView .driver-detail-hero h3{margin:6px 0 5px;font-size:20px;overflow-wrap:anywhere}
+#settingsView .driver-detail-hero p{margin:0;color:var(--muted);line-height:1.4;overflow-wrap:anywhere}
+#settingsView .driver-detail-status{display:inline-block;padding:4px 8px;border-radius:999px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.5px}
+#settingsView .driver-detail-status.active{background:rgba(41,199,111,.12);color:#69e49d;border:1px solid rgba(41,199,111,.35)}
+#settingsView .driver-detail-status.inactive{background:rgba(255,92,109,.10);color:#ff9daa;border:1px solid rgba(255,92,109,.32)}
+#settingsView .driver-detail-row{padding:11px 12px;border:1px solid rgba(47,106,130,.55);border-radius:12px;background:rgba(5,34,46,.72);display:grid;gap:4px}
+#settingsView .driver-detail-row span{font-size:10px;font-weight:900;letter-spacing:.5px;text-transform:uppercase;color:#89a9b7}
+#settingsView .driver-detail-row strong{font-size:13px;line-height:1.45;overflow-wrap:anywhere;white-space:pre-wrap}
+#settingsView .driver-detail-row a{color:#7ddfff;text-decoration:none;overflow-wrap:anywhere}
+#settingsView .driver-detail-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:14px}
+#settingsView .driver-detail-actions .act{display:flex;align-items:center;justify-content:center;text-decoration:none;box-sizing:border-box}
+@media(max-width:520px){
+  #settingsView .driver-toolbar{grid-template-columns:1fr}
+  #settingsView .driver-new-btn{width:100%}
+  #settingsView .driver-filter-tabs{gap:6px}
+  #settingsView .driver-compact-item{padding:10px 11px}
+  #settingsView .driver-detail-actions{grid-template-columns:1fr}
+}
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3F1 · NATIVE MOBILE NAVIGATION
+   Zentrale Safe-Area-Top-Bar + einklappbare Kopfzeile für
+   Adressen/Fahrer. Android-System-Zurück nutzt WebView-History.
+   ========================================================== */
+#settingsView{
+  --atms-mobile-safe-top:30px;
+  --atms-mobile-head-bg:rgba(4,27,39,.985);
+}
+@supports (padding-top:max(1px, env(safe-area-inset-top, 0px))){
+  #settingsView{--atms-mobile-safe-top:max(30px, env(safe-area-inset-top, 0px))}
+}
+#settingsView.settings-address-open .settings-subpage-head,
+#settingsView.settings-driver-open .settings-subpage-head,
+#settingsView.settings-address-open .address-inner-head,
+#settingsView.settings-driver-open .address-inner-head{
+  position:sticky;
+  top:0;
+  z-index:92;
+  box-sizing:border-box;
+  width:auto;
+  min-height:78px;
+  margin-left:-12px;
+  margin-right:-12px;
+  margin-bottom:12px;
+  padding:calc(var(--atms-mobile-safe-top) + 7px) 12px 9px;
+  background:linear-gradient(180deg,var(--atms-mobile-head-bg) 0%,rgba(5,34,47,.975) 100%);
+  border-bottom:1px solid rgba(71,135,160,.42);
+  box-shadow:0 7px 18px rgba(0,0,0,.16);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  transition:min-height .18s ease,padding .18s ease,box-shadow .18s ease;
+}
+#settingsView .settings-subpage-head.atms-mobile-topbar{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:10px;
+}
+#settingsView .address-inner-head.atms-mobile-topbar{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:10px;
+}
+#settingsView .atms-mobile-title{min-width:0;display:grid;gap:2px}
+#settingsView .atms-mobile-title h2,
+#settingsView .atms-mobile-innerbar h3{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+#settingsView .settings-back-btn{
+  width:40px;
+  height:40px;
+  flex:0 0 40px;
+  border-radius:12px;
+  font-size:29px;
+  line-height:1;
+  background:#082c3b;
+  border-color:rgba(92,171,203,.52);
+  box-shadow:0 2px 8px rgba(0,0,0,.14);
+  -webkit-tap-highlight-color:transparent;
+}
+#settingsView .settings-back-btn:active,
+#settingsView .atms-mobile-icon-btn:active{transform:scale(.96);background:#0d4054}
+#settingsView .atms-mobile-head-actions{
+  display:none;
+  align-items:center;
+  gap:7px;
+}
+#settingsView .atms-mobile-icon-btn{
+  display:grid;
+  width:38px;
+  height:38px;
+  border:1px solid rgba(80,156,188,.46);
+  border-radius:11px;
+  background:#082c3b;
+  color:var(--text);
+  font-size:22px;
+  font-weight:900;
+  line-height:1;
+  padding:0;
+  place-items:center;
+  -webkit-tap-highlight-color:transparent;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-subpage-head,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-subpage-head{
+  min-height:64px;
+  padding-top:calc(var(--atms-mobile-safe-top) + 3px);
+  padding-bottom:6px;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-subpage-head small,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-subpage-head small{
+  max-height:0;
+  opacity:0;
+  margin:0;
+  overflow:hidden;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-subpage-head h2,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-subpage-head h2{
+  font-size:18px;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .atms-mobile-head-actions,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .atms-mobile-head-actions{
+  display:flex;
+}
+#settingsView .settings-address-page.atms-mobile-nav-collapsed .settings-back-btn,
+#settingsView .settings-driver-page.atms-mobile-nav-collapsed .settings-back-btn{
+  width:38px;
+  height:38px;
+  flex-basis:38px;
+}
+#settingsView .atms-mobile-innerbar{
+  min-height:68px!important;
+  padding-top:calc(var(--atms-mobile-safe-top) + 5px)!important;
+  padding-bottom:7px!important;
+}
+#settingsView .atms-mobile-innerbar h3{margin:0;font-size:18px;line-height:1.2}
+#settingsView .settings-address-page,
+#settingsView .settings-driver-page{scroll-margin-top:0}
+@media(max-width:520px){
+  #settingsView.settings-address-open .settings-subpage-head,
+  #settingsView.settings-driver-open .settings-subpage-head,
+  #settingsView.settings-address-open .address-inner-head,
+  #settingsView.settings-driver-open .address-inner-head{
+    margin-left:-12px;
+    margin-right:-12px;
+    padding-left:12px;
+    padding-right:12px;
+  }
+  #settingsView .settings-back-btn{width:38px;height:38px;flex-basis:38px;font-size:27px}
+  #settingsView .atms-mobile-icon-btn{width:36px;height:36px;font-size:21px}
+  #settingsView .settings-subpage-head.atms-mobile-topbar{gap:8px}
+}
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3F2 · STICKY HEADER FIX
+   Der historische Mobile-Width-Guard verwendet overflow-x:hidden
+   auf #settingsView. In Android WebView wird der View dadurch zum
+   Overflow-Container und position:sticky verliert den Window-Scroll.
+   overflow-x:clip behält den horizontalen Breiten-Schutz, ohne einen
+   Scroll-Container zu erzeugen. Keine Daten-/Navigationslogik geändert.
+   ========================================================== */
+#settingsView.settings-address-open,
+#settingsView.settings-driver-open{
+  overflow-x:clip!important;
+  overflow-y:visible!important;
+}
+@supports not (overflow-x:clip){
+  #settingsView.settings-address-open,
+  #settingsView.settings-driver-open{
+    overflow-x:visible!important;
+    overflow-y:visible!important;
+  }
+}
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE3F3 · FIXED MOBILE TOP BAR
+   Realgeraet-Fix: Die Navigation wird auf Mobilgeraeten direkt
+   am sichtbaren Viewport verankert. Damit bleibt Zurueck + Titel
+   unabhaengig vom tatsaechlichen Android-WebView-Scrollcontainer
+   immer erreichbar. Bestehende History-/Datenlogik unveraendert.
+   ========================================================== */
+@media(max-width:760px){
+  #settingsView{
+    --atms-fixed-topbar-space:calc(var(--atms-mobile-safe-top) + 58px);
+    --atms-fixed-innerbar-space:calc(var(--atms-mobile-safe-top) + 54px);
+  }
+
+  /* Hauptleiste der Adressen-/Fahrer-Liste: fest am Viewport. */
+  #settingsView.settings-address-open .settings-address-page>.settings-subpage-head,
+  #settingsView.settings-driver-open .settings-driver-page>.settings-subpage-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:130!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+
+  /* Der aus dem normalen Dokumentfluss geloeste Header bekommt
+     einen stabilen Platzhalter, damit Suche/Liste nicht darunter liegt. */
+  #settingsView.settings-address-open #addressBookBrowseView:not(.hidden),
+  #settingsView.settings-driver-open #settingsDriverBrowseView:not(.hidden){
+    padding-top:var(--atms-fixed-topbar-space)!important;
+  }
+
+  /* In Editor/Detail/Transfer wird nur die jeweilige innere Leiste gezeigt. */
+  #settingsView.settings-address-open .settings-address-page:has(#addressBookEditorView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-address-open .settings-address-page:has(#addressBookDetailView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-address-open .settings-address-page:has(#addressBookTransferView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-driver-open .settings-driver-page:has(#settingsDriverEditorView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-driver-open .settings-driver-page:has(#settingsDriverDetailView:not(.hidden))>.settings-subpage-head{
+    display:none!important;
+  }
+
+  #settingsView.settings-address-open #addressBookEditorView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-address-open #addressBookDetailView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-address-open #addressBookTransferView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-driver-open #settingsDriverEditorView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-driver-open #settingsDriverDetailView:not(.hidden)>.address-inner-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:132!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+
+  #settingsView.settings-address-open #addressBookEditorView:not(.hidden),
+  #settingsView.settings-address-open #addressBookDetailView:not(.hidden),
+  #settingsView.settings-address-open #addressBookTransferView:not(.hidden),
+  #settingsView.settings-driver-open #settingsDriverEditorView:not(.hidden),
+  #settingsView.settings-driver-open #settingsDriverDetailView:not(.hidden){
+    padding-top:var(--atms-fixed-innerbar-space)!important;
+  }
+
+  /* Die vorhandene F1-Scrolllogik darf weiterhin zwischen gross/kompakt
+     umschalten; fixed sorgt nur dafuer, dass die Leiste sichtbar bleibt. */
+  #settingsView .settings-address-page.atms-mobile-nav-collapsed>.settings-subpage-head,
+  #settingsView .settings-driver-page.atms-mobile-nav-collapsed>.settings-subpage-head{
+    position:fixed!important;
+    top:0!important;
+  }
+}
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE4 · SETTINGS DISPATCHER SUBPAGE
+   Kompakte Disponenten-Unterseite auf der bereits bestätigten
+   Native-Mobile-Navigation. Adressen/Fahrer bleiben unverändert.
+   ========================================================== */
+#settingsView .settings-dispatcher-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px;scroll-margin-top:0}
+#settingsView.settings-dispatcher-open{overflow-x:clip!important;overflow-y:visible!important}
+@supports not (overflow-x:clip){
+  #settingsView.settings-dispatcher-open{overflow-x:visible!important;overflow-y:visible!important}
+}
+#settingsView.settings-dispatcher-open .settings-subpage-head,
+#settingsView.settings-dispatcher-open .address-inner-head{
+  position:sticky;
+  top:0;
+  z-index:92;
+  box-sizing:border-box;
+  width:auto;
+  min-height:78px;
+  margin-left:-12px;
+  margin-right:-12px;
+  margin-bottom:12px;
+  padding:calc(var(--atms-mobile-safe-top) + 7px) 12px 9px;
+  background:linear-gradient(180deg,var(--atms-mobile-head-bg) 0%,rgba(5,34,47,.975) 100%);
+  border-bottom:1px solid rgba(71,135,160,.42);
+  box-shadow:0 7px 18px rgba(0,0,0,.16);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  transition:min-height .18s ease,padding .18s ease,box-shadow .18s ease;
+}
+#settingsView .settings-dispatcher-page.atms-mobile-nav-collapsed .settings-subpage-head{
+  min-height:64px;
+  padding-top:calc(var(--atms-mobile-safe-top) + 3px);
+  padding-bottom:6px;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+}
+#settingsView .settings-dispatcher-page.atms-mobile-nav-collapsed .settings-subpage-head small{max-height:0;opacity:0;margin:0;overflow:hidden}
+#settingsView .settings-dispatcher-page.atms-mobile-nav-collapsed .settings-subpage-head h2{font-size:18px}
+#settingsView .settings-dispatcher-page.atms-mobile-nav-collapsed .atms-mobile-head-actions{display:flex}
+#settingsView .settings-dispatcher-page.atms-mobile-nav-collapsed .settings-back-btn{width:38px;height:38px;flex-basis:38px}
+@media(max-width:520px){
+  #settingsView.settings-dispatcher-open .settings-subpage-head,
+  #settingsView.settings-dispatcher-open .address-inner-head{margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px}
+}
+@media(max-width:760px){
+  #settingsView.settings-dispatcher-open .settings-dispatcher-page>.settings-subpage-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:130!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+  #settingsView.settings-dispatcher-open #settingsDispatcherBrowseView:not(.hidden){padding-top:var(--atms-fixed-topbar-space)!important}
+  #settingsView.settings-dispatcher-open .settings-dispatcher-page:has(#settingsDispatcherEditorView:not(.hidden))>.settings-subpage-head,
+  #settingsView.settings-dispatcher-open .settings-dispatcher-page:has(#settingsDispatcherDetailView:not(.hidden))>.settings-subpage-head{display:none!important}
+  #settingsView.settings-dispatcher-open #settingsDispatcherEditorView:not(.hidden)>.address-inner-head,
+  #settingsView.settings-dispatcher-open #settingsDispatcherDetailView:not(.hidden)>.address-inner-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:132!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+  #settingsView.settings-dispatcher-open #settingsDispatcherEditorView:not(.hidden),
+  #settingsView.settings-dispatcher-open #settingsDispatcherDetailView:not(.hidden){padding-top:var(--atms-fixed-innerbar-space)!important}
+  #settingsView .settings-dispatcher-page.atms-mobile-nav-collapsed>.settings-subpage-head{position:fixed!important;top:0!important}
+}
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE5 · SETTINGS IMPORT & EXPORT
+   Eigene kompakte Datenaustausch-Unterseite. Bestehende Import-
+   und Export-Engines werden wiederverwendet; nur Fahrer-Export neu.
+   ========================================================== */
+#settingsView .settings-transfer-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px;scroll-margin-top:0}
+#settingsView.settings-transfer-open{overflow-x:clip!important;overflow-y:visible!important}
+@supports not (overflow-x:clip){
+  #settingsView.settings-transfer-open{overflow-x:visible!important;overflow-y:visible!important}
+}
+#settingsView.settings-transfer-open .settings-subpage-head{
+  position:sticky;
+  top:0;
+  z-index:92;
+  box-sizing:border-box;
+  width:auto;
+  min-height:78px;
+  margin-left:-12px;
+  margin-right:-12px;
+  margin-bottom:12px;
+  padding:calc(var(--atms-mobile-safe-top) + 7px) 12px 9px;
+  background:linear-gradient(180deg,var(--atms-mobile-head-bg) 0%,rgba(5,34,47,.975) 100%);
+  border-bottom:1px solid rgba(71,135,160,.42);
+  box-shadow:0 7px 18px rgba(0,0,0,.16);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  transition:min-height .18s ease,padding .18s ease,box-shadow .18s ease;
+}
+#settingsView .settings-transfer-page.atms-mobile-nav-collapsed .settings-subpage-head{
+  min-height:64px;
+  padding-top:calc(var(--atms-mobile-safe-top) + 3px);
+  padding-bottom:6px;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+}
+#settingsView .settings-transfer-page.atms-mobile-nav-collapsed .settings-subpage-head small{max-height:0;opacity:0;margin:0;overflow:hidden}
+#settingsView .settings-transfer-page.atms-mobile-nav-collapsed .settings-subpage-head h2{font-size:18px}
+#settingsView .settings-transfer-page.atms-mobile-nav-collapsed .settings-back-btn{width:38px;height:38px;flex-basis:38px}
+#settingsView .settings-transfer-body{display:grid;gap:14px;padding-bottom:14px}
+#settingsView .settings-transfer-card{border:1px solid rgba(55,126,151,.48);border-radius:22px;background:linear-gradient(180deg,rgba(15,68,87,.72),rgba(8,47,63,.76));padding:18px;box-shadow:0 10px 24px rgba(0,0,0,.10)}
+#settingsView .settings-transfer-card-head{display:flex;align-items:flex-start;gap:13px;margin-bottom:15px}
+#settingsView .settings-transfer-icon{display:flex;align-items:center;justify-content:center;flex:0 0 48px;width:48px;height:48px;border-radius:15px;background:rgba(15,89,116,.72);font-size:24px}
+#settingsView .settings-transfer-card h3{margin:1px 0 4px;font-size:19px;line-height:1.2}
+#settingsView .settings-transfer-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.45}
+#settingsView .settings-transfer-card p strong{color:#fff;font-size:15px}
+#settingsView .settings-transfer-primary{width:100%;min-height:52px;border:1px solid rgba(82,184,221,.68);border-radius:16px;background:#14536c;color:#fff;font:inherit;font-weight:900;font-size:15px;padding:12px 14px}
+#settingsView .settings-transfer-actions{display:grid;grid-template-columns:1fr;gap:9px}
+#settingsView .settings-transfer-actions.two{grid-template-columns:1fr 1fr}
+#settingsView .settings-transfer-actions .act{width:100%;min-width:0;margin:0;min-height:48px;border-radius:14px;font-size:14px}
+#settingsView .settings-transfer-status{border:1px solid rgba(63,132,156,.52);border-radius:14px;padding:13px 14px;color:var(--muted);font-size:13px;line-height:1.45;background:rgba(2,29,41,.62)}
+#settingsView .settings-transfer-status.ok{border-color:rgba(37,190,106,.48);color:#79dda0}
+#settingsView .settings-transfer-status.warn{border-color:rgba(239,183,67,.52);color:#f2c86c}
+@media(max-width:520px){
+  #settingsView.settings-transfer-open .settings-subpage-head{margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px}
+  #settingsView .settings-transfer-card{padding:15px;border-radius:19px}
+  #settingsView .settings-transfer-actions.two{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  #settingsView.settings-transfer-open .settings-transfer-page>.settings-subpage-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:130!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+  #settingsView.settings-transfer-open #settingsTransferBrowseView:not(.hidden){padding-top:var(--atms-fixed-topbar-space)!important}
+  #settingsView .settings-transfer-page.atms-mobile-nav-collapsed>.settings-subpage-head{position:fixed!important;top:0!important}
+}
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE6 · SETTINGS BACKUP & RESTORE
+   Bestehende Backup-/Restore-/Reset-Engine als eigene kompakte
+   Settings-Unterseite; keine Änderung am Backup-Dateiformat.
+   ========================================================== */
+#settingsView .settings-backup-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px;scroll-margin-top:0}
+#settingsView.settings-backup-open{overflow-x:clip!important;overflow-y:visible!important}
+@supports not (overflow-x:clip){
+  #settingsView.settings-backup-open{overflow-x:visible!important;overflow-y:visible!important}
+}
+#settingsView.settings-backup-open .settings-subpage-head{
+  position:sticky;
+  top:0;
+  z-index:92;
+  box-sizing:border-box;
+  width:auto;
+  min-height:78px;
+  margin-left:-12px;
+  margin-right:-12px;
+  margin-bottom:12px;
+  padding:calc(var(--atms-mobile-safe-top) + 7px) 12px 9px;
+  background:linear-gradient(180deg,var(--atms-mobile-head-bg) 0%,rgba(5,34,47,.975) 100%);
+  border-bottom:1px solid rgba(71,135,160,.42);
+  box-shadow:0 7px 18px rgba(0,0,0,.16);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  transition:min-height .18s ease,padding .18s ease,box-shadow .18s ease;
+}
+#settingsView .settings-backup-page.atms-mobile-nav-collapsed .settings-subpage-head{
+  min-height:64px;
+  padding-top:calc(var(--atms-mobile-safe-top) + 3px);
+  padding-bottom:6px;
+  box-shadow:0 8px 20px rgba(0,0,0,.24);
+}
+#settingsView .settings-backup-page.atms-mobile-nav-collapsed .settings-subpage-head small{max-height:0;opacity:0;margin:0;overflow:hidden}
+#settingsView .settings-backup-page.atms-mobile-nav-collapsed .settings-subpage-head h2{font-size:18px}
+#settingsView .settings-backup-page.atms-mobile-nav-collapsed .settings-back-btn{width:38px;height:38px;flex-basis:38px}
+#settingsView .settings-backup-body{display:grid;gap:14px;padding-bottom:14px}
+#settingsView.settings-backup-open #backupCard{display:block!important;width:100%;max-width:100%;box-sizing:border-box;margin:0;border-radius:22px;padding:18px;background:linear-gradient(180deg,rgba(15,68,87,.72),rgba(8,47,63,.76));border-color:rgba(55,126,151,.48);box-shadow:0 10px 24px rgba(0,0,0,.10)}
+#settingsView.settings-backup-open #backupCard>h2{display:none!important}
+#settingsView.settings-backup-open #backupCard>.setting-note{margin-top:0;line-height:1.45}
+#settingsView.settings-backup-open #backupCard .backup-summary{margin-top:14px;gap:10px}
+#settingsView.settings-backup-open #backupCard .backup-stat{padding:12px 13px;border-radius:14px}
+#settingsView.settings-backup-open #backupCard .backup-stat b{font-size:20px}
+#settingsView.settings-backup-open #backupCard .backup-stat span{font-size:11px}
+#settingsView.settings-backup-open #backupCard .backup-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:14px}
+#settingsView.settings-backup-open #backupCard .backup-btn{width:100%;min-height:52px;border-radius:16px;font-size:15px}
+#settingsView.settings-backup-open #backupCard .backup-status{margin-top:14px;border-radius:14px;padding:13px 14px;font-size:13px;line-height:1.45}
+@media(max-width:520px){
+  #settingsView.settings-backup-open .settings-subpage-head{margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px}
+  #settingsView.settings-backup-open #backupCard{padding:15px;border-radius:19px}
+  #settingsView.settings-backup-open #backupCard .backup-summary{grid-template-columns:1fr 1fr}
+}
+@media(max-width:760px){
+  #settingsView.settings-backup-open .settings-backup-page>.settings-subpage-head{
+    position:fixed!important;
+    top:0!important;
+    left:0!important;
+    right:0!important;
+    z-index:130!important;
+    width:100%!important;
+    max-width:760px!important;
+    margin:0 auto!important;
+    border-radius:0!important;
+  }
+  #settingsView.settings-backup-open #settingsBackupBody{padding-top:var(--atms-fixed-topbar-space)!important}
+  #settingsView .settings-backup-page.atms-mobile-nav-collapsed>.settings-subpage-head{position:fixed!important;top:0!important}
+}
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE7 · SETTINGS ABOUT ATMS PRO
+   Bestehende Über-ATMS-PRO-Karte als eigene System-Unterseite;
+   keine Änderung an Versions-/Build- oder Datensicherungsdaten.
+   ========================================================== */
+#settingsView .settings-about-page{width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:0 0 18px;scroll-margin-top:0}
+#settingsView.settings-about-open{overflow-x:clip!important;overflow-y:visible!important}
+@supports not (overflow-x:clip){
+  #settingsView.settings-about-open{overflow-x:visible!important;overflow-y:visible!important}
+}
+#settingsView.settings-about-open .settings-subpage-head{
+  position:sticky;top:0;z-index:92;box-sizing:border-box;width:auto;min-height:78px;
+  margin-left:-12px;margin-right:-12px;margin-bottom:12px;
+  padding:calc(var(--atms-mobile-safe-top) + 7px) 12px 9px;
+  background:linear-gradient(180deg,var(--atms-mobile-head-bg) 0%,rgba(5,34,47,.975) 100%);
+  border-bottom:1px solid rgba(71,135,160,.42);box-shadow:0 7px 18px rgba(0,0,0,.16);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  transition:min-height .18s ease,padding .18s ease,box-shadow .18s ease
+}
+#settingsView .settings-about-page.atms-mobile-nav-collapsed .settings-subpage-head{min-height:64px;padding-top:calc(var(--atms-mobile-safe-top) + 3px);padding-bottom:6px;box-shadow:0 8px 20px rgba(0,0,0,.24)}
+#settingsView .settings-about-page.atms-mobile-nav-collapsed .settings-subpage-head small{max-height:0;opacity:0;margin:0;overflow:hidden}
+#settingsView .settings-about-page.atms-mobile-nav-collapsed .settings-subpage-head h2{font-size:18px}
+#settingsView .settings-about-page.atms-mobile-nav-collapsed .settings-back-btn{width:38px;height:38px;flex-basis:38px}
+#settingsView .settings-about-body{display:grid;gap:14px;padding-bottom:14px}
+#settingsView.settings-about-open #infoCard{display:block!important;width:100%;max-width:100%;box-sizing:border-box;margin:0}
+@media(max-width:520px){
+  #settingsView.settings-about-open .settings-subpage-head{margin-left:-12px;margin-right:-12px;padding-left:12px;padding-right:12px}
+}
+@media(max-width:760px){
+  #settingsView.settings-about-open .settings-about-page>.settings-subpage-head{
+    position:fixed!important;top:0!important;left:0!important;right:0!important;z-index:130!important;
+    width:100%!important;max-width:760px!important;margin:0 auto!important;border-radius:0!important
+  }
+  #settingsView.settings-about-open #settingsAboutBody{padding-top:var(--atms-fixed-topbar-space)!important}
+  #settingsView .settings-about-page.atms-mobile-nav-collapsed>.settings-subpage-head{position:fixed!important;top:0!important}
+}
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P95-GATE8 · SETTINGS HUB LEGACY CLEANUP
+   Auf der Settings-Hauptseite bleibt nur der neue kompakte Hub
+   sichtbar. Die alten P94-Karten bleiben im DOM als bestehende
+   Funktions-/Datenbasis erhalten und werden ausschließlich dort
+   ausgeblendet, solange sie direkte Kinder der Hauptseite sind.
+   Backup und Über ATMS PRO werden in ihren bestätigten Unterseiten
+   weiterhin unverändert angezeigt, nachdem sie dorthin verschoben
+   wurden. Keine Änderung an Daten- oder Persistenzlogik.
+   ========================================================== */
+#settingsView > .settings-page > #dispatcherSettingsCard,
+#settingsView > .settings-page > #driverSettingsCard,
+#settingsView > .settings-page > #backupCard,
+#settingsView > .settings-page > #infoCard{
+  display:none!important;
+}
+
+/* P95 bundled UI polish: About frame, root ride toolbar/search, and separate past rides. */
+#settingsView.settings-about-open #settingsAboutBody{
+  padding-top:calc(var(--atms-fixed-topbar-space, 90px) + 20px)!important;
+  padding-left:12px!important;
+  padding-right:12px!important;
+}
+#settingsView.settings-about-open #infoCard{
+  width:100%;min-width:0;max-width:100%;margin:0 auto 16px!important;
+  border:1px solid #8b6e39;border-radius:27px;overflow:hidden;
+  box-shadow:0 14px 32px rgba(0,0,0,.28);
+}
+#settingsView.settings-about-open #infoCard .info-hero{
+  min-height:0!important;padding:31px 17px 26px!important;
+  overflow:hidden;
+}
+#settingsView.settings-about-open .info-shield{width:min(100%,245px);height:173px;margin:6px auto 12px}
+#settingsView.settings-about-open .info-shield:before{inset:7px 30px 9px}
+#settingsView.settings-about-open .info-van{width:min(100%,205px);max-height:131px;transform:translateY(0)}
+#settingsView.settings-about-open .info-over{margin-top:5px}
+#settingsView.settings-about-open .info-brand{font-size:clamp(34px,10vw,50px);line-height:1.13}
+#settingsView.settings-about-open .info-subtitle{font-size:clamp(9px,2.7vw,12px);letter-spacing:clamp(1px,.45vw,3px)}
+@media(max-width:760px){
+  #listView .atms-rides-topbar{
+    position:sticky;top:0;z-index:32;
+    padding:calc(max(28px,env(safe-area-inset-top,0px)) + 5px) 12px 10px!important;
+    background:linear-gradient(180deg,#082837 0%,#062331 100%);
+    border-bottom:1px solid #315669;box-shadow:0 9px 20px rgba(0,0,0,.24);
+  }
+  #listView .atms-rides-bar{display:flex;align-items:center;gap:12px;min-height:49px}
+  #listView .atms-rides-bar h1{margin:0;flex:1;min-width:0;color:#fff;font-size:23px;line-height:1.1}
+  #listView .atms-rides-icon{
+    width:46px;height:46px;min-width:46px;border-radius:14px;display:grid;place-items:center;
+    border:1px solid #467185;background:#12394b;color:#fff;font:800 31px system-ui;
+    box-shadow:0 2px 5px rgba(0,0,0,.13);cursor:pointer;
+  }
+  #listView #ridesTopBack{font-size:36px;padding-bottom:6px}
+  #listView #ridesSearchToggle{font-size:31px}
+  #listView .atms-rides-search-panel{margin-top:12px}
+  #listView .atms-rides-search-label{display:block;margin-bottom:5px;font-size:11px;letter-spacing:.9px;color:#b7ceda;font-weight:900}
+  #listView .atms-rides-search-input{display:flex;align-items:center;gap:9px;padding:0 12px;border:1px solid #35657c;border-radius:16px;background:#082736;min-height:52px}
+  #listView .atms-rides-search-input span{flex:0 0 auto;font-size:25px;color:#9bcadf}
+  #listView #search{display:block;width:100%;min-width:0;border:0!important;box-shadow:none!important;margin:0!important;background:transparent!important;padding:11px 0!important;font-size:16px;color:#fff;outline:0}
+  #listView #search::placeholder{color:#aec3ce;opacity:1}
+  #listView .summary-row{min-height:34px;margin-top:4px!important}
+  #listView.atms-rides-collapsed .atms-rides-search-panel,
+  #listView .atms-rides-collapsed .atms-rides-search-panel{display:none}
+  #listView .atms-rides-collapsed .summary-row{display:none}
+  #settingsView.settings-about-open #settingsAboutBody{padding-top:calc(var(--atms-fixed-topbar-space,90px) + 19px)!important}
+}
+@media(min-width:761px){
+  #listView .atms-rides-bar{display:flex;align-items:center;gap:12px}
+  #listView .atms-rides-bar h1{margin:0;flex:1}
+  #listView .atms-rides-icon{border:1px solid #467185;border-radius:12px;color:#fff;background:#12394b;min-width:44px;height:44px;cursor:pointer}
+  #listView .atms-rides-search-panel{margin-top:12px}
+  #listView .atms-rides-search-label{display:block;font-size:12px;font-weight:800;margin-bottom:5px;color:#b7ceda}
+  #listView .atms-rides-search-input{display:flex;align-items:center;gap:8px}
+  #listView .atms-rides-search-input span{font-size:24px}
+}
+#listView .atms-rides-collapsed .atms-rides-search-panel{display:none}
+.atms-pastbar{margin-top:14px;margin-bottom:14px;background:#092a38;border:1px solid #376177;border-left:7px solid #4ca1c8;border-radius:16px;overflow:hidden}
+.atms-pasthead{display:flex;align-items:center;gap:10px;padding:10px 12px;min-height:56px;cursor:pointer}
+.atms-pasthead b{font-size:16px;color:#a6dbf3}
+.atms-pasthead span{font-size:14px;color:#d4e7ef}
+.atms-pasthead button{margin-left:auto;min-width:42px;min-height:42px;border:1px solid #28586f;border-radius:12px;background:#164157;color:#fff;font-size:22px}
+.atms-pastwrap{padding:0 7px 7px}
+.atms-pastwrap .ride{margin-bottom:7px}
+
+
+/* ===============================================================
+   P95 grouped corrective polish – based on Bundle Commit 67689a7.
+   Scoped to About page and ride-list cards; no other settings views.
+   Compact phones: full gold border within viewport when space allows.
+   Shorter/smaller displays remain naturally scrollable, never clipped.
+   =============================================================== */
+@media (max-width:760px) {
+  #settingsView.settings-about-open #settingsAboutBody{
+    padding-top:calc(var(--atms-fixed-topbar-space, 90px) + 5px)!important;
+    padding-left:12px!important;padding-right:12px!important;
+    padding-bottom:calc(10px + env(safe-area-inset-bottom,0px))!important;
+    gap:0!important;
+  }
+  #settingsView.settings-about-open #infoCard{
+    max-width:660px!important;margin:0 auto 8px!important;
+    border:1px solid #a58248!important;border-radius:19px!important;
+    overflow:hidden!important;
+  }
+  #settingsView.settings-about-open #infoCard .info-hero{
+    min-height:0!important;padding:9px 10px 13px!important;
+    overflow:hidden!important;
+  }
+  #settingsView.settings-about-open .info-shield{
+    width:160px!important;height:100px!important;margin:0 auto 3px!important;
+  }
+  #settingsView.settings-about-open .info-shield:before{
+    inset:5px 22px 3px!important;border-width:3px!important;
+  }
+  #settingsView.settings-about-open .info-van{
+    width:148px!important;max-height:95px!important;transform:none!important;
+  }
+  #settingsView.settings-about-open .info-over{
+    margin-top:1px!important;font-size:12px!important;line-height:1.15;
+  }
+  #settingsView.settings-about-open .info-brand{
+    font-size:clamp(29px,8.2vw,38px)!important;line-height:1.06!important;margin:2px 0 0!important;
+  }
+  #settingsView.settings-about-open .info-subtitle{
+    font-size:clamp(8px,2.2vw,11px)!important;
+    letter-spacing:clamp(.7px,.4vw,2px)!important;margin-top:5px!important;
+    white-space:normal!important;
+  }
+  #settingsView.settings-about-open .info-slogan{
+    font-size:11px!important;margin-top:7px!important;line-height:1.2!important;
+  }
+  #settingsView.settings-about-open .info-details{
+    display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:0 8px;padding:5px 11px 4px!important;
+  }
+  #settingsView.settings-about-open .info-detail{
+    min-width:0;grid-template-columns:29px minmax(0,1fr)!important;
+    gap:7px!important;padding:8px 2px!important;
+    border-bottom:1px solid rgba(255,255,255,.09)!important;
+  }
+  #settingsView.settings-about-open .info-detail:nth-child(1),
+  #settingsView.settings-about-open .info-detail:nth-child(2){grid-column:1/-1;}
+  #settingsView.settings-about-open .info-detail:nth-child(3),
+  #settingsView.settings-about-open .info-detail:nth-child(5){border-right:1px solid rgba(255,255,255,.09)!important;}
+  #settingsView.settings-about-open .info-detail-icon{
+    width:28px!important;height:28px!important;font-size:16px!important;
+    border-radius:8px!important;
+  }
+  #settingsView.settings-about-open .info-detail-label{
+    font-size:10px!important;line-height:1.16!important;margin:0 0 3px!important;
+  }
+  #settingsView.settings-about-open .info-detail-value{
+    font-size:clamp(12px,3.4vw,15px)!important;line-height:1.18!important;
+    overflow-wrap:anywhere;word-break:normal;
+  }
+  #settingsView.settings-about-open .info-footer{
+    padding:6px 8px 8px!important;font-size:10px!important;line-height:1.15!important;
+  }
+  #settingsView.settings-about-open .info-footer b{
+    font-size:11px!important;margin-bottom:1px!important;
+  }
+}
+@media(max-width:760px) and (max-height:700px){
+  #settingsView.settings-about-open .info-shield{height:81px!important;width:142px!important}
+  #settingsView.settings-about-open .info-van{width:128px!important;max-height:79px!important}
+  #settingsView.settings-about-open #infoCard .info-hero{padding:5px 8px 8px!important}
+  #settingsView.settings-about-open .info-detail{padding:6px 2px!important}
+}
+/* Empty list has no tall placeholder separating the manual done and past groups. */
+#listView #rideList > .atms-no-current-rides{
+  padding:11px 8px 6px!important;margin:0!important;line-height:1.4;
+  font-size:14px;
+}
+#listView #rideList > .atms-no-current-rides + .atms-pastbar{
+  margin-top:8px!important;
+}
+/* Let route labels wrap instead of disappearing at narrow widths. */
+#listView .ride .route{
+  white-space:normal!important;overflow:visible!important;text-overflow:clip!important;
+  overflow-wrap:break-word;line-height:1.22!important;
+}
+#listView .ride .mid{min-width:0;}
+#listView .ride .meta{white-space:normal!important;overflow:visible!important;}
+/* Bundle left rail has sufficient space for price and 'BÜNDELFAHRT'. */
+#listView .ride.bundle{
+  grid-template-columns:102px minmax(0,1fr)!important;
+}
+#listView .ride.bundle .left{
+  min-width:0;overflow:hidden;padding:9px 5px 8px 12px!important;
+}
+#listView .ride.bundle .left .price{
+  font-size:15px!important;line-height:1.24;white-space:nowrap;
+  letter-spacing:-.35px;
+}
+#listView .ride.bundle .left .time-single,
+#listView .ride.bundle .left .time-stack .current-large{
+  font-size:18px!important;line-height:1.2;
+}
+#listView .ride.bundle .left .driver-left{
+  font-size:13px!important;white-space:normal!important;overflow-wrap:anywhere;
+}
+#listView .ride.bundle .bundle-badge{
+  font-size:9px!important;line-height:1.18!important;letter-spacing:0!important;
+  max-width:100%;white-space:normal!important;overflow-wrap:anywhere;
+  margin-top:5px;
+}
+#listView .ride.bundle .mid{padding:9px 20px 8px 9px!important;min-width:0;}
+#listView .ride.bundle .flightloc{margin-left:0!important;}
+#listView .ride.bundle .bundle-stop-row{align-items:flex-start;}
+#listView .ride.bundle .bundle-stop-row > span:last-child{
+  min-width:0;white-space:normal!important;overflow:visible!important;
+  text-overflow:clip!important;overflow-wrap:break-word;
+}
+@media(max-width:360px){
+  #listView .ride.bundle{grid-template-columns:94px minmax(0,1fr)!important;}
+  #listView .ride.bundle .left{padding-left:10px!important;}
+  #listView .ride.bundle .left .price{font-size:14px!important;}
+  #listView .ride.bundle .mid{padding-left:8px!important;padding-right:18px!important;}
+}

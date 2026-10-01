@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Dunkelblauer Premium-Hintergrund -->
+    <path
+        android:fillColor="#071B2A"
+        android:pathData="M20,4 L88,4 C96.8,4 104,11.2 104,20 L104,88 C104,96.8 96.8,104 88,104 L20,104 C11.2,104 4,96.8 4,88 L4,20 C4,11.2 11.2,4 20,4 Z" />
+
+    <!-- Goldener Rahmen -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#D7B252"
+        android:strokeWidth="3"
+        android:pathData="M20,7 L88,7 C95.2,7 101,12.8 101,20 L101,88 C101,95.2 95.2,101 88,101 L20,101 C12.8,101 7,95.2 7,88 L7,20 C7,12.8 12.8,7 20,7 Z" />
+
+    <!-- ATMS-Monogramm / stilisierte Straße -->
+    <path
+        android:fillColor="#F2D37A"
+        android:pathData="M51,16 L57,16 L63,34 L58,34 L56.6,29.5 L51.4,29.5 L50,34 L45,34 Z M52.8,25.2 L55.2,25.2 L54,21 Z" />
+    <path
+        android:fillColor="#D7B252"
+        android:pathData="M51.5,34 L56.5,34 L59,43 L49,43 Z" />
+
+    <!-- Fahrzeug-Silhouette -->
+    <path
+        android:fillColor="#D7B252"
+        android:pathData="M27,64 L31.5,50.5 C32.8,46.5 36.5,43 41,42 L67,42 C71.5,43 75.2,46.5 76.5,50.5 L81,64 L82.5,67 L82.5,78 C82.5,81 80,83.5 77,83.5 L73.5,83.5 C70.8,83.5 69,81.8 69,79.5 L39,79.5 C39,81.8 37.2,83.5 34.5,83.5 L31,83.5 C28,83.5 25.5,81 25.5,78 L25.5,67 Z" />
+
+    <!-- Frontscheibe -->
+    <path
+        android:fillColor="#0B2C40"
+        android:pathData="M37,49 L42.5,44.5 L65.5,44.5 L71,49 L73.5,58.5 L34.5,58.5 Z" />
+
+    <!-- Kühlergrill -->
+    <path
+        android:fillColor="#0A2232"
+        android:pathData="M40,64 L68,64 L68,74 L40,74 Z" />
+    <path
+        android:fillColor="#F2D37A"
+        android:pathData="M43,66 L65,66 L65,68 L43,68 Z M43,70 L65,70 L65,72 L43,72 Z" />
+
+    <!-- Scheinwerfer -->
+    <path
+        android:fillColor="#FFF0B8"
+        android:pathData="M29.5,63 L39,61.5 L39,66.5 L29.5,68 Z" />
+    <path
+        android:fillColor="#FFF0B8"
+        android:pathData="M69,61.5 L78.5,63 L78.5,68 L69,66.5 Z" />
+
+    <!-- Straßen-/PRO-Akzent -->
+    <path
+        android:fillColor="#D7B252"
+        android:pathData="M35,91 L73,91 L78,96 L30,96 Z" />
+    <path
+        android:fillColor="#071B2A"
+        android:pathData="M52,91 L56,91 L57,96 L51,96 Z" />
+</vector>

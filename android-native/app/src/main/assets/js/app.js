@@ -1,3 +1,4 @@
+// STORAGE V2 PHASE 1 · 01.10.2026: Additiver IndexedDB-Paralleltest für Fahrten + Erledigt-Status. localStorage bleibt Source of Truth; keine automatische Löschung, Archivierung, Reparatur oder Umschaltung. Sichtbare Verifikation in Backup & Wiederherstellen.
 // P95 BUNDLED UI 01.10.2026: Past rides default closed on fresh entry; driver color opens by tapping the color dot, redundant palette button removed.
 // P95 UX CORRECTIONS 30.09.2026: Compact empty ride list before separate past-rides section; visual only.
 // CORE-007D8A1F1D8P95-GATE7 · 30.09.2026: SETTINGS ABOUT SUBPAGE – verschiebt die bestehende „Über ATMS PRO“-Karte unverändert in eine eigene System-Unterseite mit Native-Mobile-Top-Bar und Android-Zurück/History. Versions-, Build-, Entwickler-, Status-, Aktualisierungs- und Datensicherungsanzeige bleiben unverändert. Keine Änderung an Daten-, Backup-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
@@ -104,7 +105,7 @@ const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -330,6 +331,164 @@ function clearPersistenceDurableShadow(){
     req.onsuccess=req.onerror=req.onblocked=()=>{};
   }catch(_){ }
 }
+
+// STORAGE V2 PHASE 1: eigener, rein additiver IndexedDB-Spiegel fuer Fahrten + DONE.
+// Wichtig: Diese Phase liest niemals automatisch zurueck in localStorage, loescht nichts
+// und ersetzt keinen bestehenden Speicher. Abweichungen werden nur sichtbar gemeldet.
+function storageV2Hash(value){
+  const s=String(value??'');let h=2166136261>>>0;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
+  return h.toString(16).padStart(8,'0');
+}
+function storageV2LocalSnapshot(reason='local'){
+  const ridesRaw=localStorage.getItem(KEY)??'[]',doneRaw=localStorage.getItem(DONE)??'[]';
+  let rideList,doneList;
+  try{rideList=JSON.parse(ridesRaw)}catch(e){throw new Error('Storage V2: Fahrten-JSON unlesbar')}
+  try{doneList=JSON.parse(doneRaw)}catch(e){throw new Error('Storage V2: Erledigt-JSON unlesbar')}
+  if(!Array.isArray(rideList)||!Array.isArray(doneList))throw new Error('Storage V2: Erwartete Listenstruktur fehlt');
+  const rideIds=rideList.map(r=>String(r?.id||'').trim()).filter(Boolean).sort();
+  const doneIds=doneList.map(x=>String(x||'').trim()).filter(Boolean).sort();
+  return {
+    schema:STORAGE_V2_SCHEMA,createdAt:new Date().toISOString(),reason:String(reason||''),
+    ridesRaw,doneRaw,rideCount:rideList.length,doneCount:doneList.length,
+    rideIdsHash:storageV2Hash(JSON.stringify(rideIds)),doneIdsHash:storageV2Hash(JSON.stringify(doneIds)),
+    contentHash:storageV2Hash(ridesRaw+'\u241e'+doneRaw)
+  };
+}
+function storageV2SnapshotsMatch(saved,current){
+  return Boolean(saved&&current
+    && saved.schema===STORAGE_V2_SCHEMA
+    && saved.ridesRaw===current.ridesRaw
+    && saved.doneRaw===current.doneRaw
+    && Number(saved.rideCount)===Number(current.rideCount)
+    && Number(saved.doneCount)===Number(current.doneCount)
+    && saved.rideIdsHash===current.rideIdsHash
+    && saved.doneIdsHash===current.doneIdsHash
+    && saved.contentHash===current.contentHash);
+}
+function openStorageV2Db(){
+  return new Promise((resolve,reject)=>{
+    try{
+      if(!('indexedDB' in window))return reject(new Error('IndexedDB nicht verfuegbar'));
+      const req=indexedDB.open(STORAGE_V2_DB,1);
+      req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(STORAGE_V2_STORE))db.createObjectStore(STORAGE_V2_STORE)};
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error('Storage V2 konnte nicht geoeffnet werden'));
+    }catch(e){reject(e)}
+  });
+}
+async function readStorageV2Latest(){
+  const db=await openStorageV2Db();
+  try{
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORAGE_V2_STORE,'readonly');
+      const req=tx.objectStore(STORAGE_V2_STORE).get(STORAGE_V2_RECORD);
+      req.onsuccess=()=>resolve(req.result&&typeof req.result==='object'?req.result:null);
+      req.onerror=()=>reject(req.error||new Error('Storage V2 konnte nicht gelesen werden'));
+    });
+  }finally{try{db.close()}catch(_){}}
+}
+async function writeStorageV2Latest(snapshot){
+  const db=await openStorageV2Db();
+  try{
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORAGE_V2_STORE,'readwrite');
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error||new Error('Storage V2 Schreibfehler'));
+      tx.onabort=()=>reject(tx.error||new Error('Storage V2 Transaktion abgebrochen'));
+      tx.objectStore(STORAGE_V2_STORE).put({...snapshot,storedAt:new Date().toISOString()},STORAGE_V2_RECORD);
+    });
+  }finally{try{db.close()}catch(_){}}
+  return await readStorageV2Latest();
+}
+function storageV2SetState(status,detail={}){
+  storageV2State={...storageV2State,...detail,status:String(status||'unknown'),lastCheckedAt:new Date().toISOString()};
+  renderStorageV2StatusCard();
+  return storageV2State;
+}
+function storageV2Diagnosis(){
+  let local=null,error='';
+  try{local=storageV2LocalSnapshot('diagnosis')}catch(e){error=String(e?.message||e)}
+  const latest=storageV2State.latest;
+  return {
+    phase:'Storage V2 Phase 1 · Sicherheitsmodus',schema:STORAGE_V2_SCHEMA,
+    sourceOfTruth:'localStorage',automaticDelete:false,automaticRestore:false,automaticArchive:false,
+    status:storageV2State.status,ready:storageV2State.ready,available:storageV2State.available,
+    error:storageV2State.error||error,lastCheckedAt:storageV2State.lastCheckedAt,lastReason:storageV2State.lastReason,
+    local:local?{rideCount:local.rideCount,doneCount:local.doneCount,contentHash:local.contentHash,rideIdsHash:local.rideIdsHash,doneIdsHash:local.doneIdsHash}:null,
+    storageV2:latest?{rideCount:latest.rideCount,doneCount:latest.doneCount,contentHash:latest.contentHash,rideIdsHash:latest.rideIdsHash,doneIdsHash:latest.doneIdsHash,storedAt:latest.storedAt||latest.createdAt||'',reason:latest.reason||''}:null,
+    exactMatch:Boolean(local&&latest&&storageV2SnapshotsMatch(latest,local))
+  };
+}
+async function checkStorageV2Phase1(reason='check',toast=false){
+  try{
+    const local=storageV2LocalSnapshot(reason),latest=await readStorageV2Latest(),match=storageV2SnapshotsMatch(latest,local);
+    storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=latest;storageV2State.error='';storageV2State.lastReason=String(reason||'');
+    storageV2SetState(latest?(match?'synced':'mismatch'):'empty');
+    persistAudit(match?'storage_v2_check_ok':'storage_v2_check_mismatch',{reason:String(reason||''),localRides:local.rideCount,v2Rides:latest?.rideCount??null,localDone:local.doneCount,v2Done:latest?.doneCount??null});
+    if(toast)showToast(match?'Storage V2 ist synchron':latest?'Storage V2: Abweichung erkannt – nichts wurde automatisch geaendert':'Storage V2 ist noch leer',match?'ok':'warn');
+    return {ok:match,local,latest};
+  }catch(e){
+    const msg=String(e?.message||e);storageV2State.ready=true;storageV2State.available=false;storageV2State.error=msg;storageV2State.lastReason=String(reason||'');storageV2SetState('error');persistAudit('storage_v2_check_failed',{reason:String(reason||''),message:msg});if(toast)showToast('Storage V2 Prüfung fehlgeschlagen: '+msg,'warn');return{ok:false,error:msg};
+  }
+}
+function syncStorageV2Phase1(reason='sync'){
+  storageV2SyncQueue=storageV2SyncQueue.catch(()=>null).then(async()=>{
+    const local=storageV2LocalSnapshot(reason);
+    const written=await writeStorageV2Latest(local);
+    const match=storageV2SnapshotsMatch(written,local);
+    storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=written;storageV2State.error='';storageV2State.lastReason=String(reason||'');
+    storageV2SetState(match?'synced':'mismatch');
+    persistAudit(match?'storage_v2_sync_ok':'storage_v2_sync_verify_failed',{reason:String(reason||''),rideCount:local.rideCount,doneCount:local.doneCount,hash:local.contentHash});
+    return{ok:match,local,latest:written};
+  }).catch(e=>{
+    const msg=String(e?.message||e);storageV2State.ready=true;storageV2State.available=false;storageV2State.error=msg;storageV2State.lastReason=String(reason||'');storageV2SetState('error');persistAudit('storage_v2_sync_failed',{reason:String(reason||''),message:msg});return{ok:false,error:msg};
+  });
+  return storageV2SyncQueue;
+}
+async function initStorageV2Phase1(){
+  try{
+    const local=storageV2LocalSnapshot('startup'),latest=await readStorageV2Latest();
+    storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=latest;storageV2State.error='';storageV2State.lastReason='startup';
+    if(!latest){
+      const seeded=await syncStorageV2Phase1('startup-initial-seed');
+      if(!seeded?.ok)showToast('Storage V2 Sicherheitskopie konnte nicht bestaetigt werden. Bestehender Speicher bleibt unveraendert.','warn');
+      return seeded;
+    }
+    const match=storageV2SnapshotsMatch(latest,local);storageV2SetState(match?'synced':'mismatch');
+    persistAudit(match?'storage_v2_startup_ok':'storage_v2_startup_mismatch',{localRides:local.rideCount,v2Rides:latest.rideCount,localDone:local.doneCount,v2Done:latest.doneCount});
+    if(!match)showToast('Storage V2: Abweichung erkannt. Keine automatische Reparatur oder Löschung.','warn');
+    return{ok:match,local,latest};
+  }catch(e){
+    const msg=String(e?.message||e);storageV2State.ready=true;storageV2State.available=false;storageV2State.error=msg;storageV2State.lastReason='startup';storageV2SetState('error');persistAudit('storage_v2_startup_failed',{message:msg});return{ok:false,error:msg};
+  }
+}
+function ensureStorageV2StatusCard(){
+  const body=$('settingsBackupBody');if(!body)return false;
+  let card=$('atmsStorageV2Card');
+  if(!card){
+    card=document.createElement('section');card.id='atmsStorageV2Card';
+    card.style.cssText='margin:14px 0 0;padding:16px;border:1px solid rgba(74,191,255,.34);border-radius:18px;background:linear-gradient(180deg,rgba(8,48,68,.92),rgba(5,31,45,.96));box-sizing:border-box';
+    card.innerHTML=`<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-size:18px;font-weight:900;color:#fff">🗄️ Storage V2 · Sicherheitsmodus</div><div style="font-size:12px;opacity:.72;margin-top:3px">Phase 1 · Paralleltest ohne automatische Löschung</div></div><span id="atmsStorageV2Badge" style="padding:6px 9px;border-radius:999px;font-size:11px;font-weight:900;background:rgba(255,255,255,.10)">PRÜFUNG</span></div><p style="margin:12px 0;font-size:13px;line-height:1.45;opacity:.86">Der bisherige localStorage bleibt Hauptspeicher. Fahrten und Erledigt-Status werden zusätzlich in IndexedDB gespiegelt und danach exakt verglichen. Bei Abweichung wird nichts automatisch überschrieben.</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="padding:11px;border-radius:12px;background:rgba(0,0,0,.18)"><b id="atmsStorageV2RideCount" style="font-size:22px">–</b><div style="font-size:11px;opacity:.72">Fahrten · lokal / V2</div></div><div style="padding:11px;border-radius:12px;background:rgba(0,0,0,.18)"><b id="atmsStorageV2DoneCount" style="font-size:22px">–</b><div style="font-size:11px;opacity:.72">Erledigt · lokal / V2</div></div></div><div id="atmsStorageV2Detail" style="margin-top:10px;padding:10px;border-radius:11px;background:rgba(0,0,0,.16);font-size:12px;line-height:1.4">Initialisierung …</div><button type="button" id="atmsStorageV2CheckBtn" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.08);color:#fff;font-weight:900">🔎 Synchronisierung prüfen</button>`;
+    body.appendChild(card);
+    $('atmsStorageV2CheckBtn')?.addEventListener('click',async e=>{const btn=e.currentTarget;btn.disabled=true;try{await checkStorageV2Phase1('manual-check',true)}finally{btn.disabled=false}});
+  }
+  renderStorageV2StatusCard();return true;
+}
+function renderStorageV2StatusCard(){
+  const card=$('atmsStorageV2Card');if(!card)return;
+  const d=storageV2Diagnosis(),badge=$('atmsStorageV2Badge'),ridesEl=$('atmsStorageV2RideCount'),doneEl=$('atmsStorageV2DoneCount'),detail=$('atmsStorageV2Detail');
+  if(ridesEl)ridesEl.textContent=`${d.local?.rideCount??'–'} / ${d.storageV2?.rideCount??'–'}`;
+  if(doneEl)doneEl.textContent=`${d.local?.doneCount??'–'} / ${d.storageV2?.doneCount??'–'}`;
+  const status=d.status;
+  if(badge){badge.textContent=status==='synced'?'SYNCHRON':status==='mismatch'?'ABWEICHUNG':status==='error'?'FEHLER':status==='empty'?'LEER':'PRÜFUNG';badge.style.background=status==='synced'?'rgba(33,196,111,.20)':status==='mismatch'||status==='error'?'rgba(255,94,94,.20)':'rgba(255,193,66,.18)';badge.style.color=status==='synced'?'#67f0a5':status==='mismatch'||status==='error'?'#ff9090':'#ffd36e'}
+  if(detail){
+    if(status==='synced')detail.textContent=`✓ Exakter Abgleich bestätigt${d.lastCheckedAt?' · '+new Date(d.lastCheckedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):''}. localStorage bleibt weiterhin Hauptspeicher.`;
+    else if(status==='mismatch')detail.textContent='⚠ Unterschiedliche Stände erkannt. Sicherheitsmodus aktiv: Keine automatische Reparatur, Löschung oder Umschaltung.';
+    else if(status==='error')detail.textContent='⚠ Storage V2 nicht bestätigt: '+(d.error||'unbekannter Fehler')+'. Bestehender localStorage bleibt unverändert.';
+    else detail.textContent='Storage V2 wird geprüft. Es werden keine aktiven Daten gelöscht.';
+  }
+}
 function capturePersistenceSafety(reason='snapshot',syncDurable=true){
   try{
     const previous=readPersistenceSafety();
@@ -433,6 +592,7 @@ function persistenceDiagnosis(){
     rideStatus:{inMemory:Array.isArray(rides)?rides.length:null,persisted:(()=>{try{const raw=localStorage.getItem(KEY);return raw===null?null:JSON.parse(raw).length}catch(_){return null}})(),durable:persistenceDurableShadow?.storage?.[KEY]?( ()=>{try{return JSON.parse(persistenceDurableShadow.storage[KEY]).length}catch(_){return null}})():null},
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
+    storageV2:storageV2Diagnosis(),
     critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK)},
     recentAudit:audit.slice(0,30)
   };
@@ -735,7 +895,10 @@ function save(options={}){
     if(!options.silent)showToast('SPEICHERFEHLER: Erledigt-Status nicht gesichert.','warn');
     return false;
   }
-  if(!options.deferDurable)void syncPersistenceDurableShadow('rides-save');
+  if(!options.deferDurable){
+    void syncPersistenceDurableShadow('rides-save');
+    void syncStorageV2Phase1('rides-save');
+  }
   return true;
 }function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}
 // CORE-007D8A1F1D8P71: Fahrerfarben sind personenbezogen statt kartenpositionsbezogen.
@@ -2085,6 +2248,8 @@ async function importAtmsBackup(file){
       // Nur wenn ALLE lokalen Bereiche verifiziert sind, den Durable-Shadow umstellen.
       const durableAfter=await syncPersistenceDurableShadow('after-backup-restore-verified');
       if(!durableAfter)throw Error('IndexedDB-Bestaetigung der Wiederherstellung fehlgeschlagen.');
+      // Storage V2 bleibt in Phase 1 rein additiv: Fehler blockieren keine bestaetigte Wiederherstellung.
+      void syncStorageV2Phase1('after-backup-restore-verified');
     }catch(writeError){
       let rollbackOk=true;
       for(const key of touched.reverse()){
@@ -4199,6 +4364,8 @@ async function applyImportedRides(newRides){
     if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'durable-write'});
     throw Error('Import abgebrochen: IndexedDB-Sicherung fehlgeschlagen. Vorheriger Bestand wurde erneut gespeichert; bitte Backup pruefen.');
   }
+  // Storage V2 ist noch kein Freigabe-Gate: nur paralleles Spiegeln + Verifikation.
+  void syncStorageV2Phase1('after-plan-import-verified');
   capturePersistenceSafety('after-plan-import');
   const importSession=beginPlanImportSession(normalizedIncoming,planMerge);
   renderPlanImportHistoryPanel();
@@ -4570,7 +4737,7 @@ function showSettingsBackupBrowse(){
   const panel=$('atmsSettingsBackupPanel');if(!panel)return;
   panel.classList.remove('atms-mobile-nav-collapsed');
   const legacy=$('backupCard');if(legacy)legacy.style.removeProperty('display');
-  updateBackupUI();
+  updateBackupUI();ensureStorageV2StatusCard();renderStorageV2StatusCard();
   requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{$('settingsView').scrollTop=0}catch(_){ }})
 }
 function ensureSettingsBackupPanel(){
@@ -4582,7 +4749,7 @@ function ensureSettingsBackupPanel(){
   $('settingsBackupBody')?.appendChild(legacy);
   legacy.classList.add('settings-backup-card');legacy.style.removeProperty('display');
   $('settingsBackupBackSettings')?.addEventListener('click',atmsSettingsBack);
-  updateBackupUI();return true
+  updateBackupUI();ensureStorageV2StatusCard();return true
 }
 function openSettingsBackupPage(opts={}){
   showView('settings');if(!ensureSettingsBackupPanel())return;
@@ -5503,6 +5670,8 @@ function initApp(){
         else if(correctedBorderTimes.changed)persistAudit('legacy_ocr_time_corrected',{count:correctedBorderTimes.changed,from:'startup'});
       }
     }catch(e){rides=[]}
+    // Phase 1 erst nach dem bestehenden lokalen Startup/Migrationspfad starten.
+    void initStorageV2Phase1();
     scheduleLiveFreshnessRefresh();
     initLiveDisposition();
     if(getDriverSession().active)startLiveGeoWatch();
@@ -5516,7 +5685,7 @@ window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
 window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAddressBookEntry};
-window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.ATMSP77LegacyDedupeStatus=p77LegacyDedupeStatus;window.ATMSP77LegacyDedupeRollback=p77LegacyDedupeRollback;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSStorageV2Diagnosis=storageV2Diagnosis;window.ATMSStorageV2Check=checkStorageV2Phase1;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.ATMSP77LegacyDedupeStatus=p77LegacyDedupeStatus;window.ATMSP77LegacyDedupeRollback=p77LegacyDedupeRollback;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;

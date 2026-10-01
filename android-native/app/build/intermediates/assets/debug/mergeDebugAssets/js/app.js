@@ -1,3 +1,33 @@
+// STORAGE V2 PHASE 1 · 01.10.2026: Additiver IndexedDB-Paralleltest für Fahrten + Erledigt-Status. localStorage bleibt Source of Truth; keine automatische Löschung, Archivierung, Reparatur oder Umschaltung. Sichtbare Verifikation in Backup & Wiederherstellen.
+// P95 BUNDLED UI 01.10.2026: Past rides default closed on fresh entry; driver color opens by tapping the color dot, redundant palette button removed.
+// P95 UX CORRECTIONS 30.09.2026: Compact empty ride list before separate past-rides section; visual only.
+// CORE-007D8A1F1D8P95-GATE7 · 30.09.2026: SETTINGS ABOUT SUBPAGE – verschiebt die bestehende „Über ATMS PRO“-Karte unverändert in eine eigene System-Unterseite mit Native-Mobile-Top-Bar und Android-Zurück/History. Versions-, Build-, Entwickler-, Status-, Aktualisierungs- und Datensicherungsanzeige bleiben unverändert. Keine Änderung an Daten-, Backup-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
+// CORE-007D8A1F1D8P95-GATE6 · 30.09.2026: SETTINGS BACKUP & RESTORE SUBPAGE – verschiebt die bestehende, realgerätbestätigte Backup-/Restore-/Reset-Oberfläche in eine eigene kompakte Settings-Unterseite mit Native-Mobile-Top-Bar und Android-Zurück/History. Backup-Format, nativer Speichern-Dialog, Wiederherstellung, Reset-Sicherheitsabfragen und Persistenzlogik bleiben unverändert.
+// CORE-007D8A1F1D8P95-GATE5 · 29.09.2026: SETTINGS IMPORT & EXPORT SUBPAGE – eigene kompakte Daten-Unterseite mit bestehendem Planlisten-Import, unverändertem Adress-Excel/CSV-Import/Export und neuem Fahrer-Excel/CSV-Export über den vorhandenen nativen Datei-Dialog. Native-Mobile-Navigation und Rückkehr aus der Planliste bleiben integriert. Keine Änderung an OCR, FLIGHT-008, PLAN/DISPO/LIVE, Routing oder Persistenz.
+// CORE-007D8A1F1D8P95-GATE4 · 29.09.2026: SETTINGS DISPATCHER SUBPAGE – kompakte Disponenten-Unterseite mit Suche, Neu/Bearbeiten, Detailansicht, aktueller Disponent und zentraler Native-Mobile-Navigation auf bestehendem lokalen Disponenten-Datenspeicher. Keine Änderung an Adress-/Fahrer-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
+// CORE-007D8A1F1D8P95-GATE3F4 · 29.09.2026: SETTINGS LIST SCROLL POSITION FIX – speichert beim Öffnen von Adress-/Fahrerdetails zusätzlich zum echten Android-WebView-Scrollwert den sichtbaren Listeneintrag als Anker samt Abstand zur festen Top-Bar und stellt beides bei Android-Zurück wieder her. Keine Änderung an Adress-/Fahrerdaten, History-Hierarchie, OCR, FLIGHT-008, PLAN/DISPO/LIVE, Routing oder Persistenz.
+// CORE-007D8A1F1D8P95-GATE3F1 · 29.09.2026: NATIVE MOBILE SETTINGS NAVIGATION – zentrale mobile Top-Bar mit Android-Safe-Area, einklappbarer Kopfzeile, WebView-History für Android-System-Zurück/Geste und gemerkter Listen-Scrollposition für Adressen/Fahrer. Keine Änderung an Daten-, OCR-, FLIGHT-008-, PLAN/DISPO/LIVE- oder Routing-Logik.
+// CORE-007D8A1F1D8P95-GATE3 · 29.09.2026: SETTINGS DRIVER SUBPAGE – echte kompakte Fahrer-Unterseite mit Suche, Alle/Aktiv/Inaktiv, Detailansicht und eigenem Editor auf bestehendem Fahrer-Datenspeicher. Keine Änderung an Adressdaten, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder Fahrtenpersistenz.
+// CORE-007D8A1F1D8P95-GATE2F1 · 29.09.2026: SETTINGS ADDRESS SUBPAGE NAV FIX – erzwingt die echte Adressen-Unterseite robust gegen die bestehende lange Settings-Seite; ersetzt ggf. ein altes Address-Panel und blendet während der Unterseite ausschließlich die Settings-Hauptblöcke aus. Keine Änderung an Adressdaten, Routing, OCR, FLIGHT-008, PLAN, DISPO, LIVE oder Persistenz.
+// CORE-007D8A1F1D8P95-GATE1 · 29.09.2026: SETTINGS HUB – ergänzt in Einstellungen eine kompakte, gruppierte Startübersicht mit Direktzugriff auf die unverändert vorhandenen P94-Einstellungsbereiche. Keine Änderung an Adress-/Fahrer-/Disponenten-/Backup-Datenlogik, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder Persistenz.
+// CORE-007D8A1F1D8P93 · 29.09.2026: SIBLING-CONFIRMED ROUTE OCR NORMALIZATION – behebt den im P92-Realtest sichtbaren Rest-Duplikatfall, bei dem dieselbe Bündelfahrt nach einem Graustufen-Reimport einmal mit dem sicher wiederhergestellten Airportcode und einmal mit einem kompakten OCR-Symbolartefakt (z. B. zwei Buchstaben + ™) bestehen bleiben konnte. Eine solche kompakte Route wird ausschließlich dann normalisiert, wenn derselbe Plantag, dieselbe DISPO-Zeit, derselbe Flug, Fahrer und Partner/Firma in einer Geschwisterzeile exakt den daraus ableitbaren gültigen Drei-Buchstaben-Airportcode belegen. Keine Airport-/Hotel-/Flug-Hardcodes; ohne eindeutigen Geschwisterbeleg bleibt der Text unverändert. Die Normalisierung wird vor P73-Reimport-Matching sowohl auf Bestand als auch Neueingang angewendet, sodass bereits entstandene Carryover-Dubletten beim nächsten Import sicher zusammenfallen. P92 Missing-Route-Recovery, P77A Cleanup, P75/P75A Farben, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
+// CORE-007D8A1F1D8P77A · 28.09.2026: COMPACT LEGACY-DEDUPE ROLLBACK HOTFIX – behebt den auf dem Realgerät belegten P77-Fail-Closed-Abbruch beim Schreiben des vollständigen 120-Fahrten-Rollback-Snapshots. Statt alle Fahrten nochmals in localStorage zu duplizieren, sichert P77A nur die tatsächlich zu entfernenden Altzeilen plus deren Done-Zustand und die geplanten Ersetzungen. Die Dedupe-Beweiskette selbst bleibt unverändert streng. Neuer v2-Migrationsschlüssel erzwingt genau einen frischen Lauf nach dem blockierten P77-Versuch. P76A Backup-Export, Restore, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN, DISPO, LIVE und übrige Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P77 · 28.09.2026: LEGACY DEDUPE & CLEANUP PACK – führt genau einmal eine fail-closed Bereinigung historischer, durch überlappende Planversionen stehengebliebener Dubletten aus. Entfernt wird nur eine ältere Carryover-Fahrt, wenn zwei Nicht-Bundle-Fahrten in allen fachlich stabilen Merkmalen (Plantag, Flug, Richtung, Fahrer, Route, Firma/Kunde, Fahrzeug, Personen, Preis/Währung) identisch sind, aus unterschiedlichen Planquellen stammen und ausschließlich eine eng begrenzte Flugzeitkorrektur (≤15 Min.) ODER Planzeitkorrektur (≤45 Min.) vorliegt. Zusätzlich muss die neuere Planquelle den alten Zeitpunkt tatsächlich zeitlich überdecken. Gleiche Quelle/gleicher Plan, echte Bundles, Multi-Stop-Fahrten, parallele Fahrer und mehrdeutige Gruppen werden nicht angefasst. Vor jeder Änderung wird ein lokaler Rollback-Snapshot geschrieben; ohne Rollback kein Cleanup. P76A Backup-Export, P73 Re-Import-Dedupe, OCR, FLIGHT-008, PLAN/DISPO/LIVE und Persistenz bleiben sonst unverändert.
+// CORE-007D8A1F1D8P76A · 28.09.2026: NATIVE BACKUP FILE EXPORT HOTFIX – „📤 Backup erstellen“ verwendet in der Android-App jetzt den bereits vorhandenen nativen Speichern-unter-Dialog statt des unbestätigten Browser-Downloads. Der sichtbare Sicherungszeitpunkt wird erst nach erfolgreich bestätigtem Dateischreiben aktualisiert; Abbruch/Fehler erzeugt keinen falschen „Letzte Sicherung“-Status. Web-Fallback sowie Backup-Inhalt, Wiederherstellung, Fahrten, OCR, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
+// CORE-007D8A1F1D8P75 · 27.09.2026: DRIVER PACK – übernimmt bei ausreichend eindeutigen Bild-/WhatsApp-Planlisten die erkannte Zeilenfarbe als persistente Fahrerfarbe, solange keine manuelle P74-Farbwahl Vorrang hat. Ergänzt in „Alle Fahrten“ eine Fahrer-Tagesübersicht mit echter Fahrtenanzahl nach bestehender Bündel-/Flugnummernlogik, Preis-Summe und Detailzeilen.
+// P74 manuelle Farbauswahl bleibt erhalten; Farbkollisionen, P73 Dedupe, P72 Multi-Stop, P71 Scrollposition, P70 Google-Maps-Handoff sowie OCR/FLIGHT-008/PLAN/DISPO/LIVE bleiben sonst unverändert.
+// CORE-007D8A1F1D8P74 · 27.09.2026: MANUAL DRIVER COLOR PICKER – In „Alle Fahrten“ kann jedem Fahrer seine feste Farbe manuell zugewiesen werden. Bei Farbkollision wird die bisherige Farbe des gewählten Fahrers mit dem betroffenen Fahrer getauscht, damit die Fahrerfarben eindeutig bleiben. Auswahl wird im bestehenden DRIVER_COLOR_KEY dauerhaft lokal gespeichert. P73 Dedupe, P72 Multi-Stop, P71 Scrollposition/Farbpersistenz, P70 Google-Maps-Handoff sowie OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
+// CORE-007D8A1F1D8P73 · 27.09.2026: OVERLAPPING PLAN RE-IMPORT DEDUPE – Überlappende Planlisten desselben Plantags erkennen dieselbe reale Fahrt auch dann wieder, wenn sich nur die Listen-Flugzeit zwischen Planversionen geändert hat. Fahrer + DISPO-Zeit + Route + Flug bleiben stabiler Match; vorhandene Alt-Duplikate derselben stabilen Fahrt werden beim nächsten Import entfernt statt fälschlich als Bündelfahrt/Pax-Dopplung weitergeführt. Parallele Fahrten verschiedener Fahrer und echte Bündelfahrten mit unterschiedlichen Stopps bleiben getrennt. Bei geändertem Flugzeit-Tupel wird nur die stabile Ride-ID übernommen; strikte Flug-/LIVE-Verifikation wird nicht blind übertragen. P72 Multi-Stop-Routing, P71 Fahrerfarben/Scrollposition, P70 Google-Maps-Handoff, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben sonst unverändert.
+// CORE-007D8A1F1D8P72 · 27.09.2026: SAFE COMPOSITE MULTI-STOP ROUTING – Zusammengesetzte Planziele wie „NH Nord-Holiday Inn“ werden nur dann in mehrere Stopps zerlegt, wenn der Gesamtname nicht direkt auflösbar ist und jedes Teilziel exakt über das lokale Adressbuch bzw. einen bekannten Airport aufgelöst werden kann. Reihenfolge aus der Planliste bleibt unverändert; keine geratenen Adressen. P71 Fahrerfarben/Scrollposition, P70 Google-Maps-App-Handoff, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO und LIVE bleiben unverändert.
+// CORE-007D8A1F1D8P71 · 27.09.2026: FIXED DRIVER COLORS + RIDE LIST RETURN POSITION – Jeder Fahrer erhält eine lokal persistente, eindeutige Farbe (solange freie Farben vorhanden sind), die in Fahrtenkarten und Fahrerauswahl stabil bleibt. Beim Wechsel Fahrten → Cockpit → Fahrten wird die zuvor sichtbare Fahrt an derselben Bildschirmposition wiederhergestellt. P70 Google-Maps-Routing, CSV/Excel-Export, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Adressbuch und Nachrichten bleiben unverändert.
+// CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – CSV-/Excel-Adresslisten werden in der Android-App über einen nativen Speichern-unter-Dialog geschrieben und erst nach bestätigtem Schreibvorgang als exportiert gemeldet. Web-Fallback bleibt erhalten; Adressdaten, Import, Persistenz, OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing und Nachrichten bleiben unverändert.
+// CORE-007D8A1F1D8P65 · 26.09.2026: NATIVE ADDRESS BOOK DURABLE PERSISTENCE – Schützt das lokale Orte-&-Adressen-Adressbuch zusätzlich im bestehenden Safety-Snapshot und im unabhängigen IndexedDB-Durable-Shadow. Fehlende Adressbuchdaten werden wie die bereits geschützten Flug-/Ride-Daten automatisch wiederhergestellt; absichtlicher kompletter ATMS-Reset löscht den Schutz weiterhin. Keine Änderung an OCR, FLIGHT-008, PLAN, DISPO, LIVE, Routing oder bestehenden Adressinhalten.
+// CORE-007D8A1F1D8P52 · 25.09.2026: MANUAL-REVIEW VISIBILITY CONSISTENCY FIX – Offene Flugprüfungen werden auch bei Bündelfahrten ohne Flugort sowie im Cockpit sichtbar als „⚠ manuell prüfen“ dargestellt. Airport-Konflikte behalten ihre eigene Warnung. Keine Änderung an OCR, FLIGHT-008, PLAN, DISPO, LIVE, Bündelbildung oder Persistenz.
+// CORE-007D8A1F1D8P50 · 25.09.2026: MANUAL-CHECK WITHOUT FLIGHT NUMBER FIX – Explizite Konflikt-/Manual-Check-Sicherheitsflags werden vor dem Vorhandensein einer Flugnummer ausgewertet. Dadurch bleibt eine OCR-Fahrt ohne erkannte Flugnummer bei flightNeedsManualCheck=true sichtbar „⚠ manuell prüfen“. Keine Änderung an OCR, PLAN, DISPO, LIVE oder FLIGHT-008-Verifikationsregeln.
+// CORE-007D8A1F1D8P44 · 24.09.2026: NATIVE DUS ACTUAL ARRIVAL APPLY – Übernimmt bei DUS-Ankünften ausschließlich die vom P44-Gate freigegebene offizielle DUS-Actual-Zeit als operative LIVE-Landungszeit und berechnet daraus den bestehenden Arrival-Puffer. Voraussetzung bleibt die unabhängige FlightStats-Bestätigung von exakter Identität/Route + Status landed. Die Minute selbst gilt nicht als Zwei-Quellen-minutengenau bestätigt; FR24 bleibt manuelle Zusatzkontrolle. PLAN/DISPO und Abflug-Abholzeiten bleiben unverändert.
+// CORE-007D8A1F1D8P40 · 24.09.2026: NATIVE LIVE STATUS AUTO-CONFIRM – ergänzt im Native-LIVE-Bereich eine registrierungsfreie Zwei-Quellen-Statusprüfung über die vorhandene DUS-/FlightStats-Bridge. Automatisch übernommen werden ausschließlich exakt übereinstimmende, im P39/P39F1-Realtest belegte Status departed/landed/cancelled; scheduled/on_time/delayed bleiben ohne eigene Zweitquellenzeit offen. Estimated/Actual/LIVE-Zeit bleiben leer, PLAN/DISPO unverändert und manuell bestätigte Landungen/Abflüge geschützt.
+// CORE-007D8A1F1D8P36F22 · 24.09.2026: NATIVE AIRPORT-CONFLICT USER WARNING – Zeigt einen von der strikten Importprüfung gesetzten datumsspezifischen Airport-Konflikt sichtbar in Fahrtenkarte und Cockpit. Die Fremdroute bleibt reine Warn-/Diagnoseinformation und wird niemals als Flugort übernommen. Nur verified/high bleibt warnungsfrei.
+// CORE-007D8A1F1D8P36F7 · 23.09.2026: NATIVE MANUAL CHECK SAFETY RESTORE – Stellt die FLIGHT-008-Sicherheitsanzeige wieder her: nur verified/high (mindestens zwei unabhaengige datumsspezifische Quellen) ist warnungsfrei. source_confirmed aus genau einer Quelle, unsichere/manuelle Pruefungen, Quellenkonflikte und Fluege ohne verifizierten Flugort zeigen sichtbar "⚠ manuell prüfen". Die Einquellen-Route darf weiterhin als source_confirmed angezeigt werden; PLAN/DISPO/LIVE, OCR, Airport-Bridge, Persistenz, GPS, Routing und Nachrichten bleiben unverändert.
 // CORE-007D8A1F1D8P36F1 · 23.09.2026: NATIVE CLEAN-PLAN AUTO-IMPORT AUTH BRIDGE – Der echte Nutzer-Klick auf „Planliste analysieren“ autorisiert die bestehende asynchrone Morgen-Modus-/Auto-Flight-Pipeline sicher bis zur finalen Übernahme. Programmgesteuerte Klicks bleiben blockiert; die finale Freigabe erzeugt unmittelbar vor applyImportedRides() die bestehende kurzlebige CORE-006A-Importfreigabe. Keine Änderung an OCR, Flugmatching, PLAN/DISPO/LIVE, Persistenz oder Signing.
 // CORE-007D8A1F1D8P33F1 · 22.09.2026: CLEAN START FLIGHT CACHE FIX – Clean-Start-Sicherheits-Snapshot verwendet die vorhandene getFlightCache()-API statt der nicht definierten readFlightCache-Referenz. P33-Historie, P32-Merge, P31-Flugsemantik sowie PLAN/DISPO/LIVE bleiben unverändert.
 // CORE-007D8A1F1D8P33 · 22.09.2026: VISIBLE PLAN HISTORY & CLEAN START – sichtbare Planlisten-Historie, gezieltes Historien-Löschen und sicherer Neustart des Planbereichs; P32-Merge, P31-Flugsemantik, PLAN/DISPO/LIVE-Trennung und Grund-Einstellungen bleiben geschützt.
@@ -73,7 +103,9 @@
 const ATMS_LIVE_FRESHNESS_MINUTES=15;
 const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
+const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -208,6 +240,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
       const tx=db.transaction(PERSIST_DURABLE_STORE,'readwrite');
       tx.oncomplete=()=>resolve();
       tx.onerror=()=>reject(tx.error||new Error('Durable-Shadow Schreibfehler'));
+      tx.onabort=()=>reject(tx.error||new Error('Durable-Shadow Transaktion abgebrochen'));
       tx.objectStore(PERSIST_DURABLE_STORE).put(payload,PERSIST_DURABLE_RECORD);
     });
     persistenceDurableShadow=payload;
@@ -219,22 +252,28 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY]){
+  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK]){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
   return storage;
 }
+// P96/S1: IndexedDB-Schreibvorgaenge serialisieren und NICHT vor dem
+// erfolgreichen transaction.oncomplete als dauerhaft gespeichert melden.
 function syncPersistenceDurableShadow(reason='sync'){
-  const storage=mergedCriticalShadowFromCurrent();
-  if(!Object.keys(storage).length)return Promise.resolve(null);
-  persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:String(reason||''),storage};
-  persistenceDurableReady=true;
-  return writePersistenceDurableShadow(storage,reason).catch(e=>{
+  // Startup: Vor dem Lesen eines vorhandenen IndexedDB-Backups niemals
+  // dessen letzte gute Fahrten mit einer noch leeren lokalen Sicht ueberschreiben.
+  if(!persistenceDurableReady)return Promise.resolve(null);
+  persistenceDurableSyncQueue=persistenceDurableSyncQueue.catch(()=>null).then(async()=>{
+    const storage=mergedCriticalShadowFromCurrent();
+    if(!Object.keys(storage).length)return null;
+    return await writePersistenceDurableShadow(storage,reason);
+  }).catch(e=>{
     persistenceDurableError=String(e?.message||e);
     persistAudit('durable_sync_failed',{reason:String(reason||''),message:persistenceDurableError});
     return null;
   });
+  return persistenceDurableSyncQueue;
 }
 async function initPersistenceDurableShadow(){
   try{
@@ -242,16 +281,41 @@ async function initPersistenceDurableShadow(){
     if(saved&&saved.storage&&typeof saved.storage==='object')persistenceDurableShadow=saved;
     persistenceDurableReady=true;
     persistenceDurableError='';
+    const startupLocalRides=localStorage.getItem(KEY),startupDurableRides=persistenceDurableShadow?.storage?.[KEY];
+    const startupRideConflict=startupLocalRides!==null&&typeof startupDurableRides==='string'&&startupLocalRides!==startupDurableRides;
+    if(startupRideConflict)persistAudit('rides_startup_conflict',{localLength:startupLocalRides.length,durableLength:startupDurableRides.length});
     const result=restoreMissingCriticalPersistence('startup-durable');
     if(result.restored){
+      if(result.keys.includes(KEY)){
+        // WICHTIG: Nach der Wiederherstellung nicht mit einem zuvor leeren
+        // JS-Arbeitsspeicher die gerade geretteten Fahrten ueberschreiben.
+        try{const recovered=JSON.parse(localStorage.getItem(KEY)||'[]');if(Array.isArray(recovered))rides=recovered.map(norm)}catch(e){persistAudit('startup_rides_reload_failed',{message:String(e?.message||e)})}
+      }
+      if(result.keys.includes(DONE)){
+        try{const recovered=JSON.parse(localStorage.getItem(DONE)||'[]');if(Array.isArray(recovered))done=new Set(recovered)}catch(_){ }
+      }
       recoverVerifiedFlightCache();
       const restoredRides=applyFlightCacheToRides(applyRideOverrides(rides).rides);
-      rides=restoredRides.rides;
-      save();
+      const correctedBorderTimes=p96RecoverPersistedBorderTimes(restoredRides.rides);
+      rides=correctedBorderTimes.rides;
+      if(correctedBorderTimes.changed)persistAudit('legacy_ocr_time_corrected',{count:correctedBorderTimes.changed,from:'durable-restore'});
+      if(!startupRideConflict){
+        if(!save({silent:true}))persistAudit('startup_recovery_save_failed',{restored:result.keys});
+      }
       render();
     }
-    capturePersistenceSafety('startup-durable-ready');
+    // Bei divergierenden Kopien einen Snapshot NUR lokal schreiben. Kein
+    // automatischer IndexedDB-Overwrite vor einer Benutzerentscheidung.
+    capturePersistenceSafety('startup-durable-ready',!startupRideConflict);
     if(persistenceDurableShadow)persistAudit('durable_loaded',{keys:Object.keys(persistenceDurableShadow.storage||{}).length,restored:result.restored});
+    // Migration alter Versionen: Nur initial seeden, wenn im Durable-Shadow
+    // noch keine Fahrten stehen. Uneinigkeit niemals still ueberschreiben.
+    const localRides=localStorage.getItem(KEY),indexedRides=persistenceDurableShadow?.storage?.[KEY];
+    if(!startupRideConflict&&localRides!==null&&(!indexedRides||indexedRides===localRides))await syncPersistenceDurableShadow('startup-rides-seed');
+    else if(localRides!==null&&indexedRides!==localRides){
+      persistAudit('rides_startup_conflict',{localLength:localRides.length,durableLength:indexedRides?.length||0});
+      showToast('ACHTUNG: Unterschiedliche Fahrtenspeicher erkannt. Bitte vor Import/Backup pruefen.','warn');
+    }
   }catch(e){
     persistenceDurableReady=true;
     persistenceDurableError=String(e?.message||e);
@@ -267,7 +331,165 @@ function clearPersistenceDurableShadow(){
     req.onsuccess=req.onerror=req.onblocked=()=>{};
   }catch(_){ }
 }
-function capturePersistenceSafety(reason='snapshot'){
+
+// STORAGE V2 PHASE 1: eigener, rein additiver IndexedDB-Spiegel fuer Fahrten + DONE.
+// Wichtig: Diese Phase liest niemals automatisch zurueck in localStorage, loescht nichts
+// und ersetzt keinen bestehenden Speicher. Abweichungen werden nur sichtbar gemeldet.
+function storageV2Hash(value){
+  const s=String(value??'');let h=2166136261>>>0;
+  for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
+  return h.toString(16).padStart(8,'0');
+}
+function storageV2LocalSnapshot(reason='local'){
+  const ridesRaw=localStorage.getItem(KEY)??'[]',doneRaw=localStorage.getItem(DONE)??'[]';
+  let rideList,doneList;
+  try{rideList=JSON.parse(ridesRaw)}catch(e){throw new Error('Storage V2: Fahrten-JSON unlesbar')}
+  try{doneList=JSON.parse(doneRaw)}catch(e){throw new Error('Storage V2: Erledigt-JSON unlesbar')}
+  if(!Array.isArray(rideList)||!Array.isArray(doneList))throw new Error('Storage V2: Erwartete Listenstruktur fehlt');
+  const rideIds=rideList.map(r=>String(r?.id||'').trim()).filter(Boolean).sort();
+  const doneIds=doneList.map(x=>String(x||'').trim()).filter(Boolean).sort();
+  return {
+    schema:STORAGE_V2_SCHEMA,createdAt:new Date().toISOString(),reason:String(reason||''),
+    ridesRaw,doneRaw,rideCount:rideList.length,doneCount:doneList.length,
+    rideIdsHash:storageV2Hash(JSON.stringify(rideIds)),doneIdsHash:storageV2Hash(JSON.stringify(doneIds)),
+    contentHash:storageV2Hash(ridesRaw+'\u241e'+doneRaw)
+  };
+}
+function storageV2SnapshotsMatch(saved,current){
+  return Boolean(saved&&current
+    && saved.schema===STORAGE_V2_SCHEMA
+    && saved.ridesRaw===current.ridesRaw
+    && saved.doneRaw===current.doneRaw
+    && Number(saved.rideCount)===Number(current.rideCount)
+    && Number(saved.doneCount)===Number(current.doneCount)
+    && saved.rideIdsHash===current.rideIdsHash
+    && saved.doneIdsHash===current.doneIdsHash
+    && saved.contentHash===current.contentHash);
+}
+function openStorageV2Db(){
+  return new Promise((resolve,reject)=>{
+    try{
+      if(!('indexedDB' in window))return reject(new Error('IndexedDB nicht verfuegbar'));
+      const req=indexedDB.open(STORAGE_V2_DB,1);
+      req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(STORAGE_V2_STORE))db.createObjectStore(STORAGE_V2_STORE)};
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error||new Error('Storage V2 konnte nicht geoeffnet werden'));
+    }catch(e){reject(e)}
+  });
+}
+async function readStorageV2Latest(){
+  const db=await openStorageV2Db();
+  try{
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORAGE_V2_STORE,'readonly');
+      const req=tx.objectStore(STORAGE_V2_STORE).get(STORAGE_V2_RECORD);
+      req.onsuccess=()=>resolve(req.result&&typeof req.result==='object'?req.result:null);
+      req.onerror=()=>reject(req.error||new Error('Storage V2 konnte nicht gelesen werden'));
+    });
+  }finally{try{db.close()}catch(_){}}
+}
+async function writeStorageV2Latest(snapshot){
+  const db=await openStorageV2Db();
+  try{
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORAGE_V2_STORE,'readwrite');
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error||new Error('Storage V2 Schreibfehler'));
+      tx.onabort=()=>reject(tx.error||new Error('Storage V2 Transaktion abgebrochen'));
+      tx.objectStore(STORAGE_V2_STORE).put({...snapshot,storedAt:new Date().toISOString()},STORAGE_V2_RECORD);
+    });
+  }finally{try{db.close()}catch(_){}}
+  return await readStorageV2Latest();
+}
+function storageV2SetState(status,detail={}){
+  storageV2State={...storageV2State,...detail,status:String(status||'unknown'),lastCheckedAt:new Date().toISOString()};
+  renderStorageV2StatusCard();
+  return storageV2State;
+}
+function storageV2Diagnosis(){
+  let local=null,error='';
+  try{local=storageV2LocalSnapshot('diagnosis')}catch(e){error=String(e?.message||e)}
+  const latest=storageV2State.latest;
+  return {
+    phase:'Storage V2 Phase 1 · Sicherheitsmodus',schema:STORAGE_V2_SCHEMA,
+    sourceOfTruth:'localStorage',automaticDelete:false,automaticRestore:false,automaticArchive:false,
+    status:storageV2State.status,ready:storageV2State.ready,available:storageV2State.available,
+    error:storageV2State.error||error,lastCheckedAt:storageV2State.lastCheckedAt,lastReason:storageV2State.lastReason,
+    local:local?{rideCount:local.rideCount,doneCount:local.doneCount,contentHash:local.contentHash,rideIdsHash:local.rideIdsHash,doneIdsHash:local.doneIdsHash}:null,
+    storageV2:latest?{rideCount:latest.rideCount,doneCount:latest.doneCount,contentHash:latest.contentHash,rideIdsHash:latest.rideIdsHash,doneIdsHash:latest.doneIdsHash,storedAt:latest.storedAt||latest.createdAt||'',reason:latest.reason||''}:null,
+    exactMatch:Boolean(local&&latest&&storageV2SnapshotsMatch(latest,local))
+  };
+}
+async function checkStorageV2Phase1(reason='check',toast=false){
+  try{
+    const local=storageV2LocalSnapshot(reason),latest=await readStorageV2Latest(),match=storageV2SnapshotsMatch(latest,local);
+    storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=latest;storageV2State.error='';storageV2State.lastReason=String(reason||'');
+    storageV2SetState(latest?(match?'synced':'mismatch'):'empty');
+    persistAudit(match?'storage_v2_check_ok':'storage_v2_check_mismatch',{reason:String(reason||''),localRides:local.rideCount,v2Rides:latest?.rideCount??null,localDone:local.doneCount,v2Done:latest?.doneCount??null});
+    if(toast)showToast(match?'Storage V2 ist synchron':latest?'Storage V2: Abweichung erkannt – nichts wurde automatisch geaendert':'Storage V2 ist noch leer',match?'ok':'warn');
+    return {ok:match,local,latest};
+  }catch(e){
+    const msg=String(e?.message||e);storageV2State.ready=true;storageV2State.available=false;storageV2State.error=msg;storageV2State.lastReason=String(reason||'');storageV2SetState('error');persistAudit('storage_v2_check_failed',{reason:String(reason||''),message:msg});if(toast)showToast('Storage V2 Prüfung fehlgeschlagen: '+msg,'warn');return{ok:false,error:msg};
+  }
+}
+function syncStorageV2Phase1(reason='sync'){
+  storageV2SyncQueue=storageV2SyncQueue.catch(()=>null).then(async()=>{
+    const local=storageV2LocalSnapshot(reason);
+    const written=await writeStorageV2Latest(local);
+    const match=storageV2SnapshotsMatch(written,local);
+    storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=written;storageV2State.error='';storageV2State.lastReason=String(reason||'');
+    storageV2SetState(match?'synced':'mismatch');
+    persistAudit(match?'storage_v2_sync_ok':'storage_v2_sync_verify_failed',{reason:String(reason||''),rideCount:local.rideCount,doneCount:local.doneCount,hash:local.contentHash});
+    return{ok:match,local,latest:written};
+  }).catch(e=>{
+    const msg=String(e?.message||e);storageV2State.ready=true;storageV2State.available=false;storageV2State.error=msg;storageV2State.lastReason=String(reason||'');storageV2SetState('error');persistAudit('storage_v2_sync_failed',{reason:String(reason||''),message:msg});return{ok:false,error:msg};
+  });
+  return storageV2SyncQueue;
+}
+async function initStorageV2Phase1(){
+  try{
+    const local=storageV2LocalSnapshot('startup'),latest=await readStorageV2Latest();
+    storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=latest;storageV2State.error='';storageV2State.lastReason='startup';
+    if(!latest){
+      const seeded=await syncStorageV2Phase1('startup-initial-seed');
+      if(!seeded?.ok)showToast('Storage V2 Sicherheitskopie konnte nicht bestaetigt werden. Bestehender Speicher bleibt unveraendert.','warn');
+      return seeded;
+    }
+    const match=storageV2SnapshotsMatch(latest,local);storageV2SetState(match?'synced':'mismatch');
+    persistAudit(match?'storage_v2_startup_ok':'storage_v2_startup_mismatch',{localRides:local.rideCount,v2Rides:latest.rideCount,localDone:local.doneCount,v2Done:latest.doneCount});
+    if(!match)showToast('Storage V2: Abweichung erkannt. Keine automatische Reparatur oder Löschung.','warn');
+    return{ok:match,local,latest};
+  }catch(e){
+    const msg=String(e?.message||e);storageV2State.ready=true;storageV2State.available=false;storageV2State.error=msg;storageV2State.lastReason='startup';storageV2SetState('error');persistAudit('storage_v2_startup_failed',{message:msg});return{ok:false,error:msg};
+  }
+}
+function ensureStorageV2StatusCard(){
+  const body=$('settingsBackupBody');if(!body)return false;
+  let card=$('atmsStorageV2Card');
+  if(!card){
+    card=document.createElement('section');card.id='atmsStorageV2Card';
+    card.style.cssText='margin:14px 0 0;padding:16px;border:1px solid rgba(74,191,255,.34);border-radius:18px;background:linear-gradient(180deg,rgba(8,48,68,.92),rgba(5,31,45,.96));box-sizing:border-box';
+    card.innerHTML=`<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-size:18px;font-weight:900;color:#fff">🗄️ Storage V2 · Sicherheitsmodus</div><div style="font-size:12px;opacity:.72;margin-top:3px">Phase 1 · Paralleltest ohne automatische Löschung</div></div><span id="atmsStorageV2Badge" style="padding:6px 9px;border-radius:999px;font-size:11px;font-weight:900;background:rgba(255,255,255,.10)">PRÜFUNG</span></div><p style="margin:12px 0;font-size:13px;line-height:1.45;opacity:.86">Der bisherige localStorage bleibt Hauptspeicher. Fahrten und Erledigt-Status werden zusätzlich in IndexedDB gespiegelt und danach exakt verglichen. Bei Abweichung wird nichts automatisch überschrieben.</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="padding:11px;border-radius:12px;background:rgba(0,0,0,.18)"><b id="atmsStorageV2RideCount" style="font-size:22px">–</b><div style="font-size:11px;opacity:.72">Fahrten · lokal / V2</div></div><div style="padding:11px;border-radius:12px;background:rgba(0,0,0,.18)"><b id="atmsStorageV2DoneCount" style="font-size:22px">–</b><div style="font-size:11px;opacity:.72">Erledigt · lokal / V2</div></div></div><div id="atmsStorageV2Detail" style="margin-top:10px;padding:10px;border-radius:11px;background:rgba(0,0,0,.16);font-size:12px;line-height:1.4">Initialisierung …</div><button type="button" id="atmsStorageV2CheckBtn" style="width:100%;margin-top:10px;padding:12px;border-radius:11px;border:1px solid rgba(255,255,255,.20);background:rgba(255,255,255,.08);color:#fff;font-weight:900">🔎 Synchronisierung prüfen</button>`;
+    body.appendChild(card);
+    $('atmsStorageV2CheckBtn')?.addEventListener('click',async e=>{const btn=e.currentTarget;btn.disabled=true;try{await checkStorageV2Phase1('manual-check',true)}finally{btn.disabled=false}});
+  }
+  renderStorageV2StatusCard();return true;
+}
+function renderStorageV2StatusCard(){
+  const card=$('atmsStorageV2Card');if(!card)return;
+  const d=storageV2Diagnosis(),badge=$('atmsStorageV2Badge'),ridesEl=$('atmsStorageV2RideCount'),doneEl=$('atmsStorageV2DoneCount'),detail=$('atmsStorageV2Detail');
+  if(ridesEl)ridesEl.textContent=`${d.local?.rideCount??'–'} / ${d.storageV2?.rideCount??'–'}`;
+  if(doneEl)doneEl.textContent=`${d.local?.doneCount??'–'} / ${d.storageV2?.doneCount??'–'}`;
+  const status=d.status;
+  if(badge){badge.textContent=status==='synced'?'SYNCHRON':status==='mismatch'?'ABWEICHUNG':status==='error'?'FEHLER':status==='empty'?'LEER':'PRÜFUNG';badge.style.background=status==='synced'?'rgba(33,196,111,.20)':status==='mismatch'||status==='error'?'rgba(255,94,94,.20)':'rgba(255,193,66,.18)';badge.style.color=status==='synced'?'#67f0a5':status==='mismatch'||status==='error'?'#ff9090':'#ffd36e'}
+  if(detail){
+    if(status==='synced')detail.textContent=`✓ Exakter Abgleich bestätigt${d.lastCheckedAt?' · '+new Date(d.lastCheckedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):''}. localStorage bleibt weiterhin Hauptspeicher.`;
+    else if(status==='mismatch')detail.textContent='⚠ Unterschiedliche Stände erkannt. Sicherheitsmodus aktiv: Keine automatische Reparatur, Löschung oder Umschaltung.';
+    else if(status==='error')detail.textContent='⚠ Storage V2 nicht bestätigt: '+(d.error||'unbekannter Fehler')+'. Bestehender localStorage bleibt unverändert.';
+    else detail.textContent='Storage V2 wird geprüft. Es werden keine aktiven Daten gelöscht.';
+  }
+}
+function capturePersistenceSafety(reason='snapshot',syncDurable=true){
   try{
     const previous=readPersistenceSafety();
     const storage={};
@@ -283,7 +505,7 @@ function capturePersistenceSafety(reason='snapshot'){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK];
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -296,7 +518,7 @@ function capturePersistenceSafety(reason='snapshot'){
 
     const payload=writePersistenceSafety(storage,reason);
     persistAudit('snapshot',{reason:String(reason||''),keys:Object.keys(storage).length,preservedCritical:preserved});
-    syncPersistenceDurableShadow('snapshot:'+reason);
+    if(syncDurable)void syncPersistenceDurableShadow('snapshot:'+reason);
     return payload;
   }catch(e){persistAudit('snapshot_failed',{reason:String(reason||''),message:String(e?.message||e)});return null}
 }
@@ -310,9 +532,9 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
-    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY].includes(key)){
-      const storage={...(persistenceDurableShadow?.storage||{})};storage[key]=value;persistenceDurableShadow={schema:PERSIST_SCHEMA,updatedAt:new Date().toISOString(),reason:'verified-write:'+reason,storage};persistenceDurableReady=true;
-      writePersistenceDurableShadow(storage,'verified-write:'+reason).catch(e=>{persistenceDurableError=String(e?.message||e);persistAudit('durable_sync_failed',{reason:'verified-write:'+reason,message:persistenceDurableError})});
+    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK].includes(key)){
+      // Revisionssicher: keine unbestaetigten optimistischen Durable-Werte.
+      void syncPersistenceDurableShadow('verified-write:'+reason);
     }
     persistAudit('write_ok',{key,reason:String(reason||''),length:value.length});
     return true;
@@ -324,11 +546,18 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY];
+  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,...(persistenceDurableReady?[KEY,DONE]:[])];
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
-    const raw=(snap?.storage?.[key] ?? persistenceDurableShadow?.storage?.[key]);
+    const fromSnap=snap?.storage?.[key],fromDurable=persistenceDurableShadow?.storage?.[key];
+    // Unterschiedliche Fahrten-/Erledigt-Kopien sind ein Konflikt, keine
+    // automatische Aufforderung zur Datenueberschreibung.
+    if([KEY,DONE].includes(key)&&typeof fromSnap==='string'&&typeof fromDurable==='string'&&fromSnap!==fromDurable){
+      persistAudit('critical_restore_conflict',{key,reason:String(reason||''),safetyLength:fromSnap.length,durableLength:fromDurable.length});
+      continue;
+    }
+    const raw=(typeof fromDurable==='string'?fromDurable:fromSnap);
     if(typeof raw!=='string'||!raw.length)continue;
     try{
       localStorage.setItem(key,raw);
@@ -360,9 +589,11 @@ function persistenceDiagnosis(){
   return {
     diagnosis:'CORE-005V5 Durable Persistence Safety',generatedAt:new Date().toISOString(),schema:PERSIST_SCHEMA,
     selfTest:persistenceSelfTest(),
+    rideStatus:{inMemory:Array.isArray(rides)?rides.length:null,persisted:(()=>{try{const raw=localStorage.getItem(KEY);return raw===null?null:JSON.parse(raw).length}catch(_){return null}})(),durable:persistenceDurableShadow?.storage?.[KEY]?( ()=>{try{return JSON.parse(persistenceDurableShadow.storage[KEY]).length}catch(_){return null}})():null},
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
-    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY)},
+    storageV2:storageV2Diagnosis(),
+    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK)},
     recentAudit:audit.slice(0,30)
   };
 }
@@ -616,19 +847,231 @@ window.norm=norm;
 function updateRideTimeField(rideId,patch){
   const id=String(rideId||'').trim();if(!id)return false;
   const idx=rides.findIndex(r=>String(r?.id||'')===id);if(idx<0)return false;
-  rides[idx]=norm({...rides[idx],...patch},idx);save();render();return true
+  const before=rides[idx];rides[idx]=norm({...rides[idx],...patch},idx);if(!save()){rides[idx]=before;return false}render();return true
 }
 window.ATMSSetDispoTime=function(rideId,time){return updateRideTimeField(rideId,{dispoTime:String(time||'').trim()})};
 window.ATMSSetLiveTime=function(rideId,time){return updateRideTimeField(rideId,{liveTime:String(time||'').trim(),liveTimeDerivedFromLanding:false})};
 window.ATMSSetActualLandingTime=function(rideId,landingTime,bufferMinutes){const patch={actualLandingTime:String(landingTime||'').trim(),liveTime:''};if(bufferMinutes!==undefined&&bufferMinutes!==null&&String(bufferMinutes).trim()!=='')patch.liveBufferOverrideMinutes=Math.max(0,Math.min(120,Math.round(Number(bufferMinutes)||0)));return updateRideTimeField(rideId,patch)};
 window.ATMSSetActualDepartureTime=function(rideId,departureTime){return updateRideTimeField(rideId,{actualDepartureTime:String(departureTime||'').trim(),liveTime:''})};
 window.ATMSTimeSnapshot=function(rideId){const r=rides.find(x=>String(x?.id||'')===String(rideId||''));if(!r)return null;return{planTime:planTimeOf(r),dispoTime:dispoTimeOf(r),timeMirror:first(r.timeMirror,r.time_mirror),flightTime:listedFlightTimeOf(r),actualLandingTime:actualLandingTimeOf(r),actualDepartureTime:actualDepartureTimeOf(r),liveTime:liveTimeOf(r),liveBufferMinutes:liveBufferMinutesOf(r),effectiveTime:effectiveTime(r),effectiveSource:effectiveSource(r)}};
-function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}function save(){
+function effectiveTime(r){return first(liveTimeOf(r),dispoTimeOf(r),planTimeOf(r))}function effectiveSource(r){if(liveTimeOf(r))return'live';if(dispoTimeOf(r))return'dispo';return'plan'}function parse(t){let p=JSON.parse(clean(t));if(p.rides)p=p.rides;if(!Array.isArray(p)||!p.length)throw Error('Keine Fahrten gefunden');return p.map(norm)}// P96/S1: konservative Altbestands-Migration fuer sicher erkannte Tabellenkanten
+// in Bild-OCR-Zeiten. NIEMALS Flugzeit, LIVE, unabhaengig abweichende DISPO oder
+// nicht eindeutig numerische Zeichen interpretieren.
+function p96RecoverPersistedBorderTimes(source){
+  let changed=0;
+  const out=(Array.isArray(source)?source:[]).map(r=>{
+    if(r?.sourceImageOcr!==true)return r;
+    const raw=String(r.time||'').trim();
+    const hit=raw.match(/^(?:[|¦│]\s*)+(\d{3,4})$/);
+    if(!hit)return r;
+    const padded=hit[1].padStart(4,'0'),h=Number(padded.slice(0,2)),m=Number(padded.slice(2));
+    if(h>23||m>59)return r;
+    const fixed=`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    const originalFields=['time','planTime','dispoTime','dispo_time'];
+    if(originalFields.some(k=>r[k]!=null&&String(r[k]).trim()&&! [raw,fixed].includes(String(r[k]).trim())))return r;
+    const mirror=String(r.timeMirror||r.time_mirror||'').trim();
+    if(mirror&&mirror!==raw&&mirror!==fixed)return r;
+    const next={...r,time:fixed,planTime:fixed,dispoTime:fixed,p96TimeBorderOriginal:raw,p96TimeBorderCorrectedAt:new Date().toISOString()};
+    if(Object.prototype.hasOwnProperty.call(r,'dispo_time'))next.dispo_time=fixed;
+    if(mirror===raw)next.timeMirror=fixed;
+    changed++;
+    return next;
+  });
+  return {rides:out,changed};
+}
+function save(options={}){
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
-  safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
-  safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
-}function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}function cls(i){return ['','cyan','red','yellow'][i%4]}function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
+  const rideOk=safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
+  // Bei fehlgeschlagenen Fahrten niemals eine neue Erledigt-Liste als zusammenpassend speichern.
+  if(!rideOk){
+    persistAudit('rides_save_blocked',{reason:'local-storage-write-failed',inMemory:rides.length});
+    if(!options.silent)showToast('SPEICHERFEHLER: Fahrten nicht gesichert! Bitte keine weiteren Aenderungen vornehmen.','warn');
+    return false;
+  }
+  const doneOk=safePersistentSetItem(DONE,JSON.stringify([...done]),'done');
+  if(!doneOk){
+    persistAudit('rides_save_blocked',{reason:'done-storage-write-failed',inMemory:rides.length});
+    if(!options.silent)showToast('SPEICHERFEHLER: Erledigt-Status nicht gesichert.','warn');
+    return false;
+  }
+  if(!options.deferDurable){
+    void syncPersistenceDurableShadow('rides-save');
+    void syncStorageV2Phase1('rides-save');
+  }
+  return true;
+}function money(v){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v||0)}function ridePriceLabel(r){return r&&r.priceMissingFromSource&&!(Number(r.price)>0)?'Preis fehlt':money(r?.price)}
+// CORE-007D8A1F1D8P71: Fahrerfarben sind personenbezogen statt kartenpositionsbezogen.
+const DRIVER_COLOR_PALETTE=[
+  {id:'green',hex:'#54e20f'},{id:'cyan',hex:'#19d8df'},{id:'red',hex:'#ff3155'},{id:'yellow',hex:'#ffbd17'},
+  {id:'purple',hex:'#b45cff'},{id:'orange',hex:'#ff8a3d'},{id:'pink',hex:'#ff5fd1'},{id:'blue',hex:'#4f8cff'},
+  {id:'mint',hex:'#33e6a6'},{id:'violet',hex:'#d56cff'},{id:'amber',hex:'#ffd166'},{id:'coral',hex:'#ff6b6b'}
+];
+const DRIVER_COLOR_UNASSIGNED={id:'unassigned',hex:'#91a8b7'};
+driverColorMap=loadDriverColorMap();
+driverPlanColorMap=loadDriverPlanColorMap();
+driverColorManualMap=loadDriverColorManualMap();
+function driverColorKey(name){return String(name||'').trim().toLocaleLowerCase('de-DE')}
+function normalizeDriverHex(value){const m=String(value||'').trim().match(/^#?([0-9a-f]{6})$/i);return m?`#${m[1].toLowerCase()}`:''}
+function driverRgb(hex){const h=normalizeDriverHex(hex);if(!h)return null;return{r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)}}
+function driverRgbDistance(a,b){const x=driverRgb(a),y=driverRgb(b);if(!x||!y)return Infinity;return Math.hypot(x.r-y.r,x.g-y.g,x.b-y.b)}
+function driverHexFromRgb(r,g,b){const c=v=>Math.max(0,Math.min(255,Math.round(Number(v)||0))).toString(16).padStart(2,'0');return`#${c(r)}${c(g)}${c(b)}`}
+function driverPlanHexUsable(hex){const rgb=driverRgb(hex);if(!rgb)return false;const max=Math.max(rgb.r,rgb.g,rgb.b),min=Math.min(rgb.r,rgb.g,rgb.b);return max-min>=32&&((rgb.r+rgb.g+rgb.b)/3)>=100}
+function loadDriverColorMap(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(DRIVER_COLOR_KEY)||'{}');
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return{};
+    const valid=new Set(DRIVER_COLOR_PALETTE.map(x=>x.id));
+    return Object.fromEntries(Object.entries(parsed).filter(([key,value])=>key&&valid.has(String(value))));
+  }catch(_){return{}}
+}
+function loadDriverPlanColorMap(){
+  try{const parsed=JSON.parse(localStorage.getItem(DRIVER_PLAN_COLOR_KEY)||'{}');if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return{};return Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,normalizeDriverHex(v)]).filter(([k,v])=>k&&driverPlanHexUsable(v)))}catch(_){return{}}
+}
+function loadDriverColorManualMap(){
+  try{const parsed=JSON.parse(localStorage.getItem(DRIVER_COLOR_MANUAL_KEY)||'{}');if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return{};return Object.fromEntries(Object.entries(parsed).filter(([k,v])=>k&&v).map(([k])=>[k,true]))}catch(_){return{}}
+}
+function saveDriverColorMap(){try{localStorage.setItem(DRIVER_COLOR_KEY,JSON.stringify(driverColorMap))}catch(_){}}
+function saveDriverPlanColorMap(){try{localStorage.setItem(DRIVER_PLAN_COLOR_KEY,JSON.stringify(driverPlanColorMap))}catch(_){}}
+function saveDriverColorManualMap(){try{localStorage.setItem(DRIVER_COLOR_MANUAL_KEY,JSON.stringify(driverColorManualMap))}catch(_){}}
+function migrateLegacyManualDriverColors(){
+  try{if(localStorage.getItem(DRIVER_COLOR_MANUAL_MIGRATION_KEY)==='1')return}catch(_){}
+  const keys=Object.keys(driverColorMap);
+  for(let i=0;i<Math.min(keys.length,DRIVER_COLOR_PALETTE.length);i++){
+    const key=keys[i],expected=DRIVER_COLOR_PALETTE[i]?.id;
+    if(expected&&driverColorMap[key]&&driverColorMap[key]!==expected)driverColorManualMap[key]=true;
+  }
+  saveDriverColorManualMap();
+  try{localStorage.setItem(DRIVER_COLOR_MANUAL_MIGRATION_KEY,'1')}catch(_){}
+}
+migrateLegacyManualDriverColors();
+function ensureDriverColorAssignments(source=rides){
+  let changed=false;
+  const validIds=new Set(DRIVER_COLOR_PALETTE.map(x=>x.id));
+  const used=new Set(Object.values(driverColorMap).filter(id=>validIds.has(id)));
+  const names=[];
+  for(const r of (Array.isArray(source)?source:[])){
+    const name=String(r?.driver||'').trim(),key=driverColorKey(name);
+    if(name&&key&&!names.some(x=>x.key===key))names.push({name,key});
+  }
+  for(const item of names){
+    if(validIds.has(driverColorMap[item.key]))continue;
+    let color=DRIVER_COLOR_PALETTE.find(x=>!used.has(x.id));
+    if(!color){
+      let hash=0;for(const ch of item.key)hash=((hash*31)+ch.codePointAt(0))>>>0;
+      color=DRIVER_COLOR_PALETTE[hash%DRIVER_COLOR_PALETTE.length];
+    }
+    driverColorMap[item.key]=color.id;used.add(color.id);changed=true;
+  }
+  if(changed)saveDriverColorMap();
+}
+function driverPlanColorOf(name){const key=driverColorKey(name),hex=normalizeDriverHex(driverPlanColorMap[key]);return driverPlanHexUsable(hex)?hex:''}
+function driverColorOf(name){
+  const key=driverColorKey(name);if(!key)return DRIVER_COLOR_UNASSIGNED;
+  ensureDriverColorAssignments([{driver:name}]);
+  if(!driverColorManualMap[key]){const planHex=driverPlanColorOf(name);if(planHex)return{id:'plan',hex:planHex}}
+  return DRIVER_COLOR_PALETTE.find(x=>x.id===driverColorMap[key])||DRIVER_COLOR_UNASSIGNED;
+}
+function setDriverColorManual(name,colorId){
+  const key=driverColorKey(name);
+  const target=DRIVER_COLOR_PALETTE.find(x=>x.id===String(colorId||''));
+  if(!key||!target)return false;
+  ensureDriverColorAssignments(rides);
+  const previous=driverColorMap[key];
+  if(previous===target.id){driverColorManualMap[key]=true;saveDriverColorManualMap();return true}
+  const currentKeys=[...new Set(rides.map(r=>driverColorKey(r?.driver)).filter(Boolean))];
+  const conflictKey=Object.keys(driverColorMap).find(k=>k!==key&&driverColorMap[k]===target.id);
+  driverColorMap[key]=target.id;driverColorManualMap[key]=true;
+  if(conflictKey){
+    const fallback=DRIVER_COLOR_PALETTE.find(c=>c.id===previous)
+      || DRIVER_COLOR_PALETTE.find(c=>!currentKeys.some(k=>k!==conflictKey&&driverColorMap[k]===c.id));
+    if(fallback){driverColorMap[conflictKey]=fallback.id;driverColorManualMap[conflictKey]=true}
+  }
+  saveDriverColorMap();saveDriverColorManualMap();
+  return true;
+}
+function useDriverPlanColor(name){
+  const key=driverColorKey(name);if(!key||!driverPlanColorOf(name))return false;
+  delete driverColorManualMap[key];saveDriverColorManualMap();return true;
+}
+function driverPlanColorConsensus(items){
+  const usable=(Array.isArray(items)?items:[]).map(x=>({hex:normalizeDriverHex(x?.hex),confidence:Number(x?.confidence||0)})).filter(x=>driverPlanHexUsable(x.hex)&&x.confidence>=0.25);
+  if(!usable.length)return'';
+  const rgbs=usable.map(x=>driverRgb(x.hex)).filter(Boolean);if(!rgbs.length)return'';
+  const avg={r:rgbs.reduce((a,x)=>a+x.r,0)/rgbs.length,g:rgbs.reduce((a,x)=>a+x.g,0)/rgbs.length,b:rgbs.reduce((a,x)=>a+x.b,0)/rgbs.length};
+  const hex=driverHexFromRgb(avg.r,avg.g,avg.b);
+  const spread=Math.max(...usable.map(x=>driverRgbDistance(x.hex,hex)));
+  return spread<=58?hex:'';
+}
+function reassignAutomaticPaletteConflicts(){
+  const reserved=[...Object.entries(driverPlanColorMap).filter(([k,h])=>!driverColorManualMap[k]&&driverPlanHexUsable(h)).map(([key,hex])=>({key,hex})),...Object.entries(driverColorManualMap).filter(([,v])=>v).map(([key])=>({key,hex:DRIVER_COLOR_PALETTE.find(c=>c.id===driverColorMap[key])?.hex||''})).filter(x=>x.hex)];
+  const keys=Object.keys(driverColorMap);
+  let changed=false;
+  for(const key of keys){
+    if(driverColorManualMap[key]||driverPlanColorMap[key])continue;
+    const currentId=driverColorMap[key],current=DRIVER_COLOR_PALETTE.find(c=>c.id===currentId);if(!current)continue;
+    if(!reserved.some(x=>x.key!==key&&driverRgbDistance(x.hex,current.hex)<42))continue;
+    const used=new Set(keys.filter(k=>k!==key).map(k=>driverColorMap[k]).filter(Boolean));
+    const candidate=DRIVER_COLOR_PALETTE.find(c=>!used.has(c.id)&&reserved.every(x=>driverRgbDistance(x.hex,c.hex)>=42));
+    if(candidate){driverColorMap[key]=candidate.id;changed=true}
+  }
+  if(changed)saveDriverColorMap();
+  return changed;
+}
+function applyImportedDriverPlanColors(source){
+  const byDriver=new Map();
+  for(const ride of (Array.isArray(source)?source:[])){
+    const name=String(ride?.driver||'').trim(),key=driverColorKey(name),hex=normalizeDriverHex(ride?.sourcePlanColorHex);
+    if(!key||!driverPlanHexUsable(hex))continue;
+    if(!byDriver.has(key))byDriver.set(key,{name,items:[]});
+    byDriver.get(key).items.push({hex,confidence:Number(ride?.sourcePlanColorConfidence||0)});
+  }
+  if(!byDriver.size)return{changed:0,skippedManual:0,skippedConflict:0};
+  ensureDriverColorAssignments(source);
+  let changed=0,skippedManual=0,skippedConflict=0;
+  const reserved=[];
+  const allKeys=[...new Set([...Object.keys(driverColorMap),...Object.keys(driverPlanColorMap),...byDriver.keys()])];
+  allKeys.forEach(key=>{
+    if(!driverColorManualMap[key])return;
+    const id=driverColorMap[key],hex=DRIVER_COLOR_PALETTE.find(c=>c.id===id)?.hex;
+    if(hex)reserved.push({key,hex});
+  });
+  for(const [key,entry] of byDriver){
+    if(driverColorManualMap[key]){skippedManual++;continue}
+    const hex=driverPlanColorConsensus(entry.items);if(!hex)continue;
+    const conflict=reserved.find(x=>x.key!==key&&driverRgbDistance(x.hex,hex)<30)
+      || [...byDriver.keys()].filter(k=>k!==key&&driverPlanColorMap[k]).map(k=>({key:k,hex:driverPlanColorMap[k]})).find(x=>driverRgbDistance(x.hex,hex)<24);
+    if(conflict){skippedConflict++;continue}
+    if(driverPlanColorMap[key]!==hex){driverPlanColorMap[key]=hex;changed++}
+    reserved.push({key,hex});
+  }
+  if(changed)saveDriverPlanColorMap();
+  reassignAutomaticPaletteConflicts();
+  return{changed,skippedManual,skippedConflict};
+}
+function ensureDriverColorCss(){
+  if(document.getElementById('atmsDriverColorStyles'))return;
+  const style=document.createElement('style');style.id='atmsDriverColorStyles';
+  style.textContent='.ride.atms-driver-color .stripe{background:var(--atms-driver-color)!important}.ride.atms-driver-color .price,.ride.atms-driver-color .time,.ride.atms-driver-color .driver-left,.ride.atms-driver-color .driver,.ride.atms-driver-color .time-single,.ride.atms-driver-color .time-stack .current-large{color:var(--atms-driver-color)!important}.driver-choice-item{display:grid;grid-template-columns:36px minmax(0,1fr) 44px;gap:8px;align-items:stretch;margin-bottom:7px}.driver-choice-item>.choice{margin:0!important;width:100%}.driver-color-dot-btn{border:0;background:transparent;min-height:42px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:11px}.driver-color-dot-btn .dot{width:22px;height:22px;min-width:22px;margin:0;box-shadow:0 0 0 2px rgba(255,255,255,.16)}.driver-color-dot-btn:active,.driver-day-summary-btn:active{transform:scale(.97)}.driver-day-summary-btn{border:1px solid rgba(255,255,255,.18);border-radius:11px;background:rgba(255,255,255,.07);color:#fff;font-size:18px;min-height:42px;padding:0;display:flex;align-items:center;justify-content:center}.driver-color-palette{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px;padding:9px;border-radius:11px;background:rgba(7,20,31,.96);border:1px solid rgba(255,255,255,.14)}.driver-color-palette.hidden{display:none}.driver-color-swatch{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.40);padding:0;box-shadow:0 0 0 1px rgba(0,0,0,.22)}.driver-color-swatch.selected{border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.22)}.driver-plan-swatch{width:auto;min-width:88px;padding:0 10px;border-radius:18px;color:#06121b;font-size:12px;font-weight:900}.driver-day-summary-overlay{position:fixed;inset:0;z-index:12000;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center}.driver-day-summary-sheet{width:min(720px,100%);max-height:88vh;overflow:auto;background:#071b27;border:1px solid rgba(255,255,255,.15);border-radius:20px 20px 0 0;padding:18px 16px 28px;color:#fff}.driver-day-summary-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.driver-day-summary-close{border:0;background:rgba(255,255,255,.1);color:#fff;border-radius:10px;font-size:20px;width:42px;height:42px}.driver-day-summary-controls{display:flex;gap:10px;align-items:center;margin:14px 0}.driver-day-summary-controls select{flex:1;background:#0d2b3b;color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px}.driver-day-summary-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}.driver-day-summary-kpi{background:rgba(255,255,255,.06);border-radius:12px;padding:12px}.driver-day-summary-kpi b{display:block;font-size:22px}.driver-day-summary-row{padding:12px 0;border-top:1px solid rgba(255,255,255,.12)}.driver-day-summary-row .top{display:flex;justify-content:space-between;gap:10px;font-weight:900}.driver-day-summary-row .meta{font-size:13px;opacity:.8;margin-top:3px}.driver-day-summary-row .route{font-size:14px;margin-top:5px}.driver-day-summary-bundle{display:inline-block;margin-left:6px;font-size:11px;color:#dba6ff}';
+  document.head.appendChild(style);
+}
+function rideCardElementById(id){return [...document.querySelectorAll('#rideList [data-id]')].find(el=>String(el.dataset.id||'')===String(id||''))||null}
+function rememberRideListPosition(rideId){
+  const card=rideCardElementById(rideId);
+  rideListReturnState={rideId:String(rideId||''),viewportTop:card?card.getBoundingClientRect().top:null,scrollY:window.scrollY||document.documentElement.scrollTop||0};
+}
+function restoreRideListPosition(){
+  const state=rideListReturnState;rideListReturnState=null;if(!state)return;
+  const apply=()=>{
+    const card=rideCardElementById(state.rideId);
+    if(card&&Number.isFinite(Number(state.viewportTop))){
+      const delta=card.getBoundingClientRect().top-Number(state.viewportTop);
+      if(Math.abs(delta)>0.5)window.scrollTo(0,Math.max(0,(window.scrollY||0)+delta));
+    }else if(Number.isFinite(Number(state.scrollY))){window.scrollTo(0,Math.max(0,Number(state.scrollY)))}
+  };
+  requestAnimationFrame(()=>requestAnimationFrame(apply));
+}
+function matches(r){const q=$('search').value.toLowerCase().trim();return(!driverFilter||r.driver===driverFilter)&&(!q||[r.driver,r.pickup,r.destination,r.flightNumber,r.flightLocation,r.airline].join(' ').toLowerCase().includes(q))}
 // CORE-007C: Karten-/Cockpit-Status folgt derselben konservativen LIVE-Semantik wie Live-Dispo.
 // Ein bestätigter scheduled-Datensatz ist nur dann sichtbares LIVE-Signal, wenn zusätzlich
 // eine Estimated-/Actual-Zeit vorliegt. Ist diese aktuelle Zeit identisch zur Planzeit,
@@ -663,6 +1106,28 @@ function timeMarkup(r){
 function hasFlightNumber(r){
   const value=String(r?.flightNumber||'').trim();
   return Boolean(value&&value!=='-'&&value!=='–');
+}
+// P36F7: Nur eine wirklich verifizierte Zwei-Quellen-Pruefung ist warnungsfrei.
+// source_confirmed bleibt absichtlich sichtbar manuell pruefpflichtig; ein vorhandener
+// Planort allein ist ebenfalls keine Verifikation. Alte explizite flightVerified=true-
+// Datensaetze bleiben kompatibel, sofern ein Flugort vorhanden und kein Konflikt gesetzt ist.
+// CORE-007D8A1F1D8P50 · 25.09.2026: MANUAL-CHECK WITHOUT FLIGHT NUMBER FIX
+// Explizite Sicherheitskennzeichen haben Vorrang vor dem Vorhandensein einer Flugnummer.
+// Fahrt ohne Flugnummer bleibt nur dann warnungsfrei, wenn weder Konflikt noch flightNeedsManualCheck gesetzt ist.
+function flightNeedsManualReview(r){
+  const conflict=Boolean(r?.flightConflict===true||r?.flightSourceConflict===true||r?.conflict===true);
+  if(conflict)return true;
+  if(r?.flightNeedsManualCheck===true)return true;
+  if(!hasFlightNumber(r))return false;
+  const location=String(r?.flightLocation||'').trim();
+  const confidence=String(r?.flightCheckConfidence||r?.flightConfidence||'').trim().toLowerCase();
+  const status=String(r?.flightVerificationStatus||'').trim().toLowerCase();
+  const explicitlyVerified=Boolean(location)&&(
+    r?.flightVerified===true ||
+    confidence==='verified' ||
+    (status==='verified'&&(confidence==='high'||confidence==='verified'))
+  );
+  return !explicitlyVerified;
 }
 function listedTimeLabel(r){return hasFlightNumber(r)?'Flugzeit Liste':'Listenzeit'}
 function listedFlightTimeMarkup(r){
@@ -721,32 +1186,117 @@ function rideAirportStopName(r,routeStops){
   const iata=String(r?.sourcePlanAirportIata||flightAirportForGemini(r)||'').trim().toUpperCase();
   return iata?`${iata} Airport`:'Airport';
 }
+function flightAirportConflictInfo(r){
+  if(r?.flightAirportConflict!==true)return null;
+  const airport=String(r?.flightAirportConflictAirportIata||'').trim().toUpperCase();
+  const origin=String(r?.flightAirportConflictOriginIata||'').trim().toUpperCase();
+  const destination=String(r?.flightAirportConflictDestinationIata||'').trim().toUpperCase();
+  if(!/^[A-Z]{3}$/.test(airport)||!/^[A-Z]{3}$/.test(origin)||!/^[A-Z]{3}$/.test(destination))return null;
+  return{airport,origin,destination,route:`${origin}→${destination}`};
+}
+function flightAirportConflictWarningMarkup(r){
+  const info=flightAirportConflictInfo(r);if(!info)return'';
+  return `<div style="margin-top:6px;padding:7px 9px;border-radius:9px;background:rgba(255,111,97,.10);border:1px solid rgba(255,111,97,.38);color:#ffb0a8;font-size:11px;font-weight:850;line-height:1.35">⚠ Flugroute ${esc(info.route)} passt nicht zum Fahrt-Airport ${esc(info.airport)} · manuell prüfen</div>`;
+}
+function syncCockpitFlightAirportConflict(r){
+  const host=$('flightLoc')?.parentElement;if(!host)return;
+  let box=$('flightAirportConflictWarning');
+  if(!box){box=document.createElement('div');box.id='flightAirportConflictWarning';box.style.cssText='display:none;margin-top:8px;padding:9px 10px;border-radius:9px;background:rgba(255,111,97,.10);border:1px solid rgba(255,111,97,.38);color:#ffb0a8;font-size:12px;font-weight:850;line-height:1.4';host.appendChild(box)}
+  const info=flightAirportConflictInfo(r);
+  if(!info){box.style.display='none';box.textContent='';return}
+  box.style.display='block';box.textContent=`⚠ Airport-Konflikt: Flugroute ${info.route} passt nicht zum Fahrt-Airport ${info.airport}. Flugort nicht automatisch übernommen – manuell prüfen.`;
+}
+// CORE-007D8A1F1D8P52: Cockpit zeigt denselben offenen Manual-Review-Status wie die Fahrtenkarte.
+function syncCockpitManualFlightReview(r){
+  const host=$('flightLoc')?.parentElement;if(!host)return;
+  let box=$('flightManualReviewWarning');
+  if(!box){box=document.createElement('div');box.id='flightManualReviewWarning';box.style.cssText='display:none;margin-top:8px;padding:7px 9px;border-radius:9px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d;font-size:12px;font-weight:850;line-height:1.35';host.appendChild(box)}
+  const show=flightNeedsManualReview(r)&&!flightAirportConflictInfo(r);
+  if(!show){box.style.display='none';box.textContent='';return}
+  box.style.display='block';box.textContent='⚠ manuell prüfen';
+}
 function rideCard(r,i){
   const routeStops=Array.isArray(r.routeStops)?[...r.routeStops].sort((a,b)=>a.order-b.order):[];
   const airportStopName=rideAirportStopName(r,routeStops);
   const bundleRoute=r.isBundle?(r.bundleDirection==='airport_to_hotels'?`${airportStopName} → Divers (${Math.max(0,routeStops.length-1)} Ziele)`:`Divers (${Math.max(0,routeStops.length-1)} Abholungen) → ${airportStopName}`):`${r.pickup||'Start'} → ${r.destination||'Ziel'}`;
   const bundleFlightLabel=r.bundleDirection==='airport_to_hotels'?'Herkunft':'Zielort';
-  const manualFlightCheck=Boolean(r.flightNeedsManualCheck||r.flightCheckConfidence==='uncertain');
-  const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">⚠ manuell prüfen</span>`:'';
-  const bundleFlightLocation=r.isBundle&&r.flightLocation?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}</span><span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>${manualFlightBadge}</div>`:'';
+  const manualFlightCheck=flightNeedsManualReview(r);
+  const airportConflict=flightAirportConflictInfo(r);
+  const manualFlightBadge=manualFlightCheck?`<span style="font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(255,176,32,.14);border:1px solid rgba(255,176,32,.38);color:#ffc14d">${airportConflict?'⚠ Airport-Konflikt':'⚠ manuell prüfen'}</span>`:'';
+  const airportConflictWarning=flightAirportConflictWarningMarkup(r);
+  // CORE-007D8A1F1D8P52: Bündelfahrten zeigen Flugort-/Prüfstatus auch ohne vorhandenen Flugort.
+  const bundleFlightLocationText=r.flightLocation?`✈ ${esc(r.flightLocation)}${r.iata?' ('+esc(r.iata)+')':''}`:'Flugort nicht verfügbar';
+  const bundleFlightLocation=r.isBundle?`<div class="flightloc" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:5px 0 4px"><span>${bundleFlightLocationText}</span>${r.flightLocation?`<span style="font-size:12px;font-weight:800;padding:2px 7px;border-radius:7px;background:rgba(0,168,255,.15);border:1px solid rgba(0,168,255,.35);color:#16b8ff">${bundleFlightLabel}</span>`:''}${manualFlightBadge}</div>`:'';
   const stopRows=r.isBundle&&routeStops.length?`<div class="bundle-stops">${routeStops.map((st,idx)=>`<div class="bundle-stop-row"><span class="bundle-stop-dot" style="background:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><span><b>${idx+1}. ${esc(st.name)}</b> <span class="bundle-stop-pax">· ${st.persons||'–'} Pers.${st.type==='destination'?' · Ziel':st.type==='start'?' · Start':st.type==='pickup'?` · ${idx+1}. Abholung`:''}</span></span></div>`).join('')}</div>`:`<div class="flightloc" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>${esc(r.flightLocation||'Flugort nicht verfügbar')}${r.iata?' ('+esc(r.iata)+')':''}</span>${manualFlightBadge}</div>`;
-  return `<article class="ride ${cls(i)} ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${liveFreshnessMarkup(r)}${stopRows}</div><div class="chev">›</div></article>`
+  const driverColor=driverColorOf(r.driver);
+  return `<article class="ride atms-driver-color ${r.isBundle?'bundle':''}" data-id="${esc(r.id)}" style="--atms-driver-color:${driverColor.hex}"><span class="stripe"></span><div class="left"><div class="price">${ridePriceLabel(r)}</div>${timeMarkup(r)}<div class="driver-left">${esc(r.driver||'Offen')}</div>${r.isBundle?'<div class="bundle-badge">BÜNDELFAHRT</div>':''}</div><div class="mid"><div class="route">${esc(bundleRoute)}</div><div class="partner">${esc(ridePartnerLabel(r))}</div><div class="meta" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span>✈ ${esc(r.flightNumber||'–')} ${flightStatusMarkup(r)} &nbsp; 🚘 ${esc(r.vehicle)} &nbsp; 👤 ${r.persons||'–'}</span>${rideAirportBadge(r)}</div>${bundleFlightLocation}${listedFlightTimeMarkup(r)}${liveFreshnessMarkup(r)}${stopRows}${airportConflictWarning}</div><div class="chev">›</div></article>`
 }
-function render(){showView('list');const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
+// P95 bundled UI-only: maintain manual done list, and auto-collapse only truly past, non-done rides.
+// A missing/assumed date or uncertain current arrival cannot silently disappear from the active list.
+const ATMS_P95_PAST_OPEN='atms_p95_past_rides_open_v1';
+let atmsPastOpen=false;
+try{localStorage.removeItem(ATMS_P95_PAST_OPEN)}catch(_){ }
+function atmsPastRideDecision(ride,now=new Date()){
+  const source=ride?._bundleMemberIds?.length?ride._bundleMemberIds.map(id=>rides.find(r=>String(r.id)===String(id))).filter(Boolean):[ride];
+  if(!source?.length)return false;
+  const nowStamp=berlinDateTimeMinuteStamp(now);
+  const today=berlinDate(now);
+  const grace=45;
+  for(const r of source){
+    const date=String(first(r?.date,r?.datum)||'').trim();
+    if(r?.dateAssumed===true||!/^\d{4}-\d{2}-\d{2}$/.test(date))return false;
+    const disp=atmsClockMinutes(first(dispoTimeOf(r),planTimeOf(r)));
+    if(disp===null)return false;
+    let rideStamp=Math.floor(Date.UTC(Number(date.slice(0,4)),Number(date.slice(5,7))-1,Number(date.slice(8,10)),0,disp)/60000);
+    if(!Number.isFinite(rideStamp))return false;
+    // If official, later same-day LIVE pickup crosses midnight, place it on the next ride day.
+    let dir='unknown';try{dir=flightDirectionForGemini(r)}catch(_){ }
+    if(dir==='arrival'){
+      const freshness=liveSnapshotFreshness(r);
+      const arrivalActual=Boolean(first(actualLandingTimeOf(r),r?.liveFlightActualTime));
+      const status=String(r?.liveFlightStatus||'').toLowerCase();
+      const rawConfirmed=freshness.usable||arrivalActual;
+      if(rawConfirmed){
+        const live=atmsClockMinutes(liveTimeOf(r));
+        if(live!==null){
+          const candidate=rideStamp-disp+live+(live<disp-720?1440:0);
+          rideStamp=Math.max(rideStamp,candidate);
+        }
+      }
+      // A delay without a usable later pickup time must NOT disappear on the old DISPO clock.
+      // Stale estimated times can change again; today's uncompleted pickup stays visible.
+      if(date>=today && !arrivalActual &&
+        ((['delayed','diverted','unknown_delay'].includes(status)&&atmsClockMinutes(liveTimeOf(r))===null)||
+        (!freshness.usable&&freshness.confirmed)))return false;
+    }
+    if(nowStamp<=rideStamp+grace)return false;
+  }
+  return true;
+}
+function atmsPastListSignature(){
+  const vr=visualRides(rides);
+  return vr.map(r=>String(r.id)+':'+(atmsPastRideDecision(r)?'P':'A')).join('|');
+}
+let atmsPastLastSignature='';
+function atmsPastClockTick(){
+  if($('listView')?.classList.contains('hidden'))return;
+  const signature=atmsPastListSignature();
+  if(signature!==atmsPastLastSignature){const y=window.scrollY||0;render();requestAnimationFrame(()=>window.scrollTo(0,y));}
+}
+function render(options={}){const listWasHidden=Boolean($('listView')?.classList.contains('hidden'));if(listWasHidden)atmsPastOpen=false;showView('list');ensureDriverColorCss();ensureDriverColorAssignments(rides);const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
   // CORE-006I: Fahrtenansicht folgt der Reihenfolge der importierten Planliste.
-  const open=vr.filter(r=>!isDone(r)&&matches(r));
+  const open=vr.filter(r=>!isDone(r)&&matches(r)&&!atmsPastRideDecision(r));
+  const past=vr.filter(r=>!isDone(r)&&matches(r)&&atmsPastRideDecision(r));
   const fin=vr.filter(r=>isDone(r)&&matches(r));
-$('summary').textContent=`${mode==='all'?open.length+fin.length:open.length} Fahrten · ${driverFilter||'Alle Fahrer'}`;
+  atmsPastLastSignature=atmsPastListSignature();
+$('summary').textContent=`${mode==='all'?open.length+fin.length+past.length:open.length} aktuell · ${past.length} vergangen · ${driverFilter||'Alle Fahrer'}`;
 
 const stats=$('dashboardStats');
 
 if(stats){
  const drivers=[...new Set(rides.map(r=>r.driver).filter(Boolean))];
  const flights=[...new Set(rides.map(r=>r.flightNumber).filter(Boolean))];
- const notices=rides.filter(r=>{
-   const confidence=String(r?.flightCheckConfidence||'').trim().toLowerCase();
-   return Boolean(r?.flightNeedsManualCheck || confidence==='uncertain' || r?.flightConflict===true || r?.conflict===true);
- }).length;
+ const notices=rides.filter(flightNeedsManualReview).length;
 
  stats.innerHTML=`
  <div class="dashboard-stat">
@@ -769,7 +1319,7 @@ if(stats){
  <span>Hinweise</span>
  </div>`;
 }
-let h=`<section class="donebar"><div class="donehead" id="doneHead"><b>✓ Erledigte Fahrten</b><span>${fin.length}</span><button id="toggleDone" class="doneToggle" aria-label="Erledigte Fahrten ein- oder ausklappen">${doneOpen?'⌃':'⌄'}</button></div><div id="doneWrap" class="donewrap ${doneOpen?'':'hidden'}">${fin.length?fin.map(rideCard).join(''):'<div class="done-empty">Noch keine erledigten Fahrten.</div>'}</div></section>`;if(mode==='all'){h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}else{h+=open.length?open.map(rideCard).join(''):'<div class="empty">Keine offenen Fahrten vorhanden.</div>'}$('rideList').innerHTML=h;document.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>openCockpit(x.dataset.id));const t=$('toggleDone');if(t)t.onclick=e=>{e.stopPropagation();doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const dh=$('doneHead');if(dh)dh.onclick=e=>{if(e.target.closest('[data-id]'))return;if(e.target.id==='toggleDone')return;doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};}
+let h=`<section class="donebar"><div class="donehead" id="doneHead"><b>✓ Erledigte Fahrten</b><span>${fin.length}</span><button id="toggleDone" class="doneToggle" aria-label="Erledigte Fahrten ein- oder ausklappen">${doneOpen?'⌃':'⌄'}</button></div><div id="doneWrap" class="donewrap ${doneOpen?'':'hidden'}">${fin.length?fin.map(rideCard).join(''):'<div class="done-empty">Noch keine erledigten Fahrten.</div>'}</div></section>`;if(mode==='all'){h+=open.length?open.map(rideCard).join(''):'<div class="empty atms-no-current-rides">Keine offenen Fahrten vorhanden.</div>'}else{h+=open.length?open.map(rideCard).join(''):'<div class="empty atms-no-current-rides">Keine aktuellen Fahrten vorhanden.</div>'}h+=`<section class="atms-pastbar"><div class="atms-pasthead" id="atmsPastHead" role="button" tabindex="0" aria-expanded="${atmsPastOpen?'true':'false'}"><b>◷ Vergangene Fahrten</b><span>${past.length}</span><button type="button" id="atmsTogglePast" aria-label="Vergangene Fahrten auf- oder zuklappen">${atmsPastOpen?'⌃':'⌄'}</button></div><div class="atms-pastwrap ${atmsPastOpen?'':'hidden'}">${past.length?past.map(rideCard).join(''):'<div class="done-empty">Keine vergangenen Fahrten.</div>'}</div></section>`;$('rideList').innerHTML=h;document.querySelectorAll('[data-id]').forEach(x=>x.onclick=()=>{rememberRideListPosition(x.dataset.id);openCockpit(x.dataset.id)});const t=$('toggleDone');if(t)t.onclick=e=>{e.stopPropagation();doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const dh=$('doneHead');if(dh)dh.onclick=e=>{if(e.target.closest('[data-id]'))return;if(e.target.id==='toggleDone')return;doneOpen=!doneOpen;localStorage.setItem(DONE_OPEN,doneOpen?'1':'0');render()};const pastToggle=$('atmsTogglePast'),pastHead=$('atmsPastHead');const togglePast=e=>{e?.stopPropagation();atmsPastOpen=!atmsPastOpen;render({restoreRidePosition:true})};if(pastToggle)pastToggle.onclick=togglePast;if(pastHead){pastHead.onclick=e=>{if(e.target.closest('button'))return;togglePast(e)};pastHead.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();togglePast(e)}}}if(options?.restoreRidePosition)restoreRideListPosition();}
 function resetHorizontalViewport(viewId){
   try{document.documentElement.scrollLeft=0;document.body.scrollLeft=0;const view=$(viewId);if(view)view.scrollLeft=0;}catch(_){ }
 }
@@ -889,6 +1439,317 @@ function restoreLiveBottomNavBaseline(){
   apply(b.host,b.hostStyle);
   b.items.forEach(item=>{if(!item.el?.isConnected)return;apply(item.el,item.style);item.children.forEach(c=>{if(!c.el?.isConnected)return;c.el.style.setProperty('display',c.display,'important');c.el.style.setProperty('font-size',c.fontSize,'important');c.el.style.setProperty('line-height',c.lineHeight,'important')})});
 }
+function updateSettingsHub(){
+  const put=(id,value)=>{const el=$(id);if(el)el.textContent=String(value)};
+  try{put('settingsAddressCount',getAddressBook().length)}catch(_){put('settingsAddressCount','–')}
+  try{put('settingsDriverCount',getDriverContacts().length)}catch(_){put('settingsDriverCount','–')}
+  try{put('settingsDispatcherCount',getDispatchers().length)}catch(_){put('settingsDispatcherCount','–')}
+}
+const ATMS_SETTINGS_HISTORY_KEY='atmsP95SettingsNav';
+let atmsSettingsHistoryApplying=false,atmsSettingsRouteDepth=0,atmsSettingsLastScrollY=0;
+const atmsSettingsListScroll={address:null,driver:null,dispatcher:null};
+function atmsSettingsCurrentScroll(){
+  const view=$('settingsView'),root=document.scrollingElement;
+  return Math.max(Number(window.scrollY)||0,Number(root?.scrollTop)||0,Number(document.documentElement?.scrollTop)||0,Number(document.body?.scrollTop)||0,Number(view?.scrollTop)||0)
+}
+function atmsSettingsScrollMeta(kind){
+  if(kind==='address')return{rows:'#addressBookList [data-address-id]',attr:'addressId',bar:'#atmsAddressBookPanel > .atms-mobile-topbar'};
+  if(kind==='driver')return{rows:'#settingsDriverList [data-settings-driver-id]',attr:'settingsDriverId',bar:'#atmsDriverSettingsPanel > .atms-mobile-topbar'};
+  if(kind==='dispatcher')return{rows:'#settingsDispatcherList [data-settings-dispatcher-id]',attr:'settingsDispatcherId',bar:'#atmsDispatcherSettingsPanel > .atms-mobile-topbar'};
+  return null
+}
+function atmsSettingsVisibleAnchor(kind){
+  const meta=atmsSettingsScrollMeta(kind);if(!meta)return null;
+  const bar=document.querySelector(meta.bar),inset=Math.max(0,Number(bar?.getBoundingClientRect().bottom)||0),rows=[...document.querySelectorAll(meta.rows)];
+  for(const row of rows){const rect=row.getBoundingClientRect();if(rect.bottom<=inset)continue;if(rect.top>window.innerHeight)break;const id=String(row.dataset?.[meta.attr]||'');if(id)return{id,offset:rect.top-inset}}
+  return null
+}
+function atmsSettingsApplyRawScroll(y){
+  const target=Math.max(0,Number(y)||0),view=$('settingsView'),root=document.scrollingElement;
+  try{window.scrollTo({top:target,left:0,behavior:'auto'})}catch(_){try{window.scrollTo(0,target)}catch(__){ }}
+  try{if(root)root.scrollTop=target}catch(_){ }
+  try{if(document.documentElement)document.documentElement.scrollTop=target}catch(_){ }
+  try{if(document.body)document.body.scrollTop=target}catch(_){ }
+  try{if(view)view.scrollTop=target}catch(_){ }
+}
+function atmsSettingsSetScroll(value,kind=''){
+  const snap=value&&typeof value==='object'?value:{y:Number(value)||0,anchorId:'',anchorOffset:0},y=Math.max(0,Number(snap.y)||0);
+  requestAnimationFrame(()=>{atmsSettingsApplyRawScroll(y);requestAnimationFrame(()=>{
+    const meta=atmsSettingsScrollMeta(kind);if(meta&&snap.anchorId){const row=[...document.querySelectorAll(meta.rows)].find(el=>String(el.dataset?.[meta.attr]||'')===String(snap.anchorId));if(row){const bar=document.querySelector(meta.bar),inset=Math.max(0,Number(bar?.getBoundingClientRect().bottom)||0),current=row.getBoundingClientRect().top-inset,delta=current-(Number(snap.anchorOffset)||0);if(Math.abs(delta)>1)atmsSettingsApplyRawScroll(atmsSettingsCurrentScroll()+delta)}}
+    atmsSettingsLastScrollY=atmsSettingsCurrentScroll();atmsSettingsUpdateMobileHeader(true)
+  })})
+}
+function atmsSettingsRememberScroll(kind){
+  if(kind!=='address'&&kind!=='driver'&&kind!=='dispatcher')return;
+  const anchor=atmsSettingsVisibleAnchor(kind);atmsSettingsListScroll[kind]={y:atmsSettingsCurrentScroll(),anchorId:anchor?.id||'',anchorOffset:Number(anchor?.offset)||0}
+}
+function atmsSettingsReadRoute(){try{return history.state?.[ATMS_SETTINGS_HISTORY_KEY]||null}catch(_){return null}}
+function atmsSettingsHubRoute(){return{kind:'hub',level:'hub',id:'',depth:0}}
+function atmsSettingsEnsureHubHistory(){
+  if(atmsSettingsHistoryApplying)return;
+  const current=atmsSettingsReadRoute();
+  if(current?.kind==='hub'&&Number(current.depth)===0){atmsSettingsRouteDepth=0;return}
+  try{history.replaceState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:atmsSettingsHubRoute()},'',location.href);atmsSettingsRouteDepth=0}catch(_){ }
+}
+function atmsSettingsPushRoute(kind,level='browse',id=''){
+  if(atmsSettingsHistoryApplying)return;
+  atmsSettingsEnsureHubHistory();
+  const current=atmsSettingsReadRoute(),same=current&&current.kind===kind&&current.level===level&&String(current.id||'')===String(id||'');if(same){atmsSettingsRouteDepth=Number(current.depth)||0;return}
+  const depth=(Number(current?.depth)||0)+1,route={kind,level,id:String(id||''),depth};
+  try{history.pushState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:route},'',location.href);atmsSettingsRouteDepth=depth}catch(_){atmsSettingsRouteDepth=depth}
+}
+function atmsSettingsShowHub({replaceHistory=false}={}){
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();closeSettingsAboutPage();showView('settings');updateSettingsHub();
+  if(replaceHistory){try{history.replaceState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:atmsSettingsHubRoute()},'',location.href)}catch(_){ }}
+  atmsSettingsRouteDepth=0;atmsSettingsSetScroll(0)
+}
+function atmsSettingsBack(){
+  const route=atmsSettingsReadRoute();
+  if(route&&Number(route.depth)>0){try{history.back();return true}catch(_){ }}
+  atmsSettingsShowHub({replaceHistory:true});return true
+}
+function atmsSettingsReturnToBrowse(kind){
+  const route=atmsSettingsReadRoute(),depth=Number(route?.depth)||0;
+  if(route?.kind===kind&&depth>1){try{history.go(-(depth-1));return}catch(_){ }}
+  if(kind==='address')showAddressBookBrowse({restoreScroll:true});else if(kind==='driver')showSettingsDriverBrowse({restoreScroll:true});else if(kind==='dispatcher')showSettingsDispatcherBrowse({restoreScroll:true});else if(kind==='transfer')showSettingsTransferBrowse();else if(kind==='backup')showSettingsBackupBrowse();else if(kind==='about')showSettingsAboutBrowse()
+}
+function atmsSettingsApplyHistoryRoute(route){
+  atmsSettingsHistoryApplying=true;
+  try{
+    if(!route||route.kind==='hub'||Number(route.depth)===0){atmsSettingsRouteDepth=0;atmsSettingsShowHub();return}
+    atmsSettingsRouteDepth=Number(route.depth)||0;
+    if(route.kind==='address'){
+      openSettingsAddressPage(route.level==='transfer'?'transfer':'browse',{history:false,restoreScroll:route.level==='browse'});
+      if(route.level==='detail'&&route.id)showAddressBookDetail(route.id,{history:false});
+      else if(route.level==='editor')showAddressBookEditor(route.id?'edit':'new',{history:false,id:route.id});
+      return
+    }
+    if(route.kind==='driver'){
+      openSettingsDriverPage('browse',{history:false,restoreScroll:route.level==='browse'});
+      if(route.level==='detail'&&route.id)showSettingsDriverDetail(route.id,{history:false});
+      else if(route.level==='editor')showSettingsDriverEditor(route.id?'edit':'new',route.id,{history:false});
+      return
+    }
+    if(route.kind==='dispatcher'){
+      openSettingsDispatcherPage('browse',{history:false,restoreScroll:route.level==='browse'});
+      if(route.level==='detail'&&route.id)showSettingsDispatcherDetail(route.id,{history:false});
+      else if(route.level==='editor')showSettingsDispatcherEditor(route.id?'edit':'new',route.id,{history:false});
+      return
+    }
+    if(route.kind==='transfer'){
+      if(route.level==='planimport'){showSettingsPlanImport({history:false});return}
+      openSettingsTransferPage({history:false});
+      return
+    }
+    if(route.kind==='backup'){
+      openSettingsBackupPage({history:false});
+      return
+    }
+    if(route.kind==='about'){
+      openSettingsAboutPage({history:false});
+      return
+    }
+    atmsSettingsShowHub()
+  }finally{atmsSettingsHistoryApplying=false}
+}
+function atmsSettingsActivePanel(){
+  const view=$('settingsView');if(!view||view.classList.contains('hidden'))return null;
+  if(view.classList.contains('settings-address-open'))return $('atmsAddressBookPanel');
+  if(view.classList.contains('settings-driver-open'))return $('atmsDriverSettingsPanel');
+  if(view.classList.contains('settings-dispatcher-open'))return $('atmsDispatcherSettingsPanel');
+  if(view.classList.contains('settings-transfer-open'))return $('atmsSettingsTransferPanel');
+  if(view.classList.contains('settings-backup-open'))return $('atmsSettingsBackupPanel');
+  if(view.classList.contains('settings-about-open'))return $('atmsSettingsAboutPanel');
+  return null
+}
+function atmsSettingsUpdateMobileHeader(forceExpand=false){
+  const panel=atmsSettingsActivePanel();if(!panel)return;
+  const y=atmsSettingsCurrentScroll(),delta=y-atmsSettingsLastScrollY;
+  if(forceExpand||y<64||delta<-8)panel.classList.remove('atms-mobile-nav-collapsed');
+  else if(delta>8&&y>96)panel.classList.add('atms-mobile-nav-collapsed');
+  atmsSettingsLastScrollY=y
+}
+function atmsSettingsFocusBrowse(kind){
+  const panel=kind==='address'?$('atmsAddressBookPanel'):kind==='driver'?$('atmsDriverSettingsPanel'):$('atmsDispatcherSettingsPanel'),input=kind==='address'?$('addressBookSearch'):kind==='driver'?$('settingsDriverSearch'):$('settingsDispatcherSearch');
+  panel?.classList.remove('atms-mobile-nav-collapsed');
+  requestAnimationFrame(()=>{try{panel?.scrollIntoView({block:'start',behavior:'smooth'})}catch(_){ }setTimeout(()=>{try{input?.focus({preventScroll:true})}catch(__){input?.focus()}},180)})
+}
+function installSettingsMobileNavigation(){
+  const view=$('settingsView');if(!view||view.dataset.atmsP95Gate3F1Nav==='1')return;
+  view.dataset.atmsP95Gate3F1Nav='1';
+  const onScroll=()=>atmsSettingsUpdateMobileHeader(false);window.addEventListener('scroll',onScroll,{passive:true});view.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('popstate',e=>{const route=e.state?.[ATMS_SETTINGS_HISTORY_KEY]||null;const view=$('settingsView');const active=Boolean(view&&!view.classList.contains('hidden'));if(route||(active&&['settings-address-open','settings-driver-open','settings-dispatcher-open','settings-transfer-open','settings-backup-open','settings-about-open'].some(c=>view.classList.contains(c))))atmsSettingsApplyHistoryRoute(route)});
+}
+function atmsSettingsOpenHubFromPrimaryNav(){
+  const route=atmsSettingsReadRoute(),depth=Number(route?.depth)||0;
+  atmsSettingsShowHub({replaceHistory:depth===0});
+  if(depth>0){try{history.go(-depth)}catch(_){try{history.replaceState({...history.state,[ATMS_SETTINGS_HISTORY_KEY]:atmsSettingsHubRoute()},'',location.href)}catch(__){ }}}
+  else atmsSettingsEnsureHubHistory()
+}
+function setSettingsAddressPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-driver-open','settings-dispatcher-open','settings-transfer-open','settings-backup-open','settings-about-open');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden');$('atmsSettingsAboutPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-address-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function setSettingsDriverPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-address-open','settings-dispatcher-open','settings-transfer-open','settings-backup-open','settings-about-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden');$('atmsSettingsAboutPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-driver-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function setSettingsDispatcherPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-transfer-open','settings-backup-open','settings-about-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden');$('atmsSettingsAboutPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-dispatcher-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function setSettingsTransferPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-dispatcher-open','settings-backup-open','settings-about-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden');$('atmsSettingsAboutPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-transfer-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard'),$('infoCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function setSettingsBackupPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-dispatcher-open','settings-transfer-open','settings-about-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsAboutPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-backup-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('infoCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function setSettingsAboutPageActive(active){
+  const view=$('settingsView'),page=view?.querySelector('.settings-page');if(!view||!page)return;
+  if(active){view.classList.remove('settings-address-open','settings-driver-open','settings-dispatcher-open','settings-transfer-open','settings-backup-open');$('atmsAddressBookPanel')?.classList.add('hidden');$('atmsDriverSettingsPanel')?.classList.add('hidden');$('atmsDispatcherSettingsPanel')?.classList.add('hidden');$('atmsSettingsTransferPanel')?.classList.add('hidden');$('atmsSettingsBackupPanel')?.classList.add('hidden')}
+  view.classList.toggle('settings-about-open',Boolean(active));
+  const hideWhenOpen=[page.querySelector(':scope > .cockHead'),$('settingsHub'),$('dispatcherSettingsCard'),$('driverSettingsCard'),$('backupCard')].filter(Boolean);
+  hideWhenOpen.forEach(el=>{if(active)el.style.setProperty('display','none','important');else el.style.removeProperty('display')});
+  const host=$('settingsToolsHost');if(host){if(active)host.style.setProperty('display','block','important');else host.style.removeProperty('display')}
+}
+function bindSettingsHubNavigation(){
+  const hub=$('settingsHub');if(!hub||hub.dataset.atmsP95Gate2Nav==='1')return;
+  hub.dataset.atmsP95Gate2Nav='1';
+  hub.addEventListener('click',e=>{const btn=e.target.closest('[data-settings-jump]');if(!btn||!hub.contains(btn))return;e.preventDefault();jumpToSettingsSection(btn.dataset.settingsJump)});
+}
+function jumpToSettingsSection(section){
+  const key=String(section||'').trim();
+  if(key==='addresses'){closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();closeSettingsAboutPage();openSettingsAddressPage('browse');return}
+  if(key==='drivers'){closeSettingsAddressPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();closeSettingsAboutPage();openSettingsDriverPage('browse');return}
+  if(key==='dispatchers'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsTransferPage();closeSettingsBackupPage();closeSettingsAboutPage();openSettingsDispatcherPage('browse');return}
+  if(key==='transfer'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsBackupPage();closeSettingsAboutPage();openSettingsTransferPage();return}
+  if(key==='backup'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsAboutPage();openSettingsBackupPage();return}
+  if(key==='about'){closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();openSettingsAboutPage();return}
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();closeSettingsAboutPage();
+}
+// P95: native Android Back works through browser history for main bottom navigation.
+// P95 settings subpage route history stays authoritative while inside Settings.
+const ATMS_P95_PRIMARY_KEY='atms_p95_primary_tab_v1';
+const ATMS_P95_PRIMARY_DEPTH='atms_p95_primary_depth_v1';
+const ATMS_P95_MODAL_KEY='atms_p95_modal_v1';
+let atmsPrimaryTab='rides';
+function atmsPrimaryEnsureState(){
+  try{
+    if(!history.state?.[ATMS_P95_PRIMARY_KEY])history.replaceState({...history.state,[ATMS_P95_PRIMARY_KEY]:atmsPrimaryTab,[ATMS_P95_PRIMARY_DEPTH]:Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0},'',location.href);
+  }catch(_){ }
+}
+function atmsPrimaryVisit(tab){
+  atmsPrimaryEnsureState();
+  const from=history.state?.[ATMS_P95_PRIMARY_KEY]||atmsPrimaryTab;
+  if(from!==tab){
+    const state={...history.state,[ATMS_P95_PRIMARY_KEY]:tab,[ATMS_P95_PRIMARY_DEPTH]:(Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0)+1,[ATMS_P95_MODAL_KEY]:null,[ATMS_SETTINGS_HISTORY_KEY]:tab==='settings'?atmsSettingsHubRoute():null};
+    try{history.pushState(state,'',location.href)}catch(_){ }
+  }
+  atmsPrimaryTab=tab;
+}
+function atmsPrimaryRestore(tab,route){
+  atmsPrimaryTab=tab;
+  const activate=n=>document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.nav===n));
+  if(tab==='settings'){
+    activate('settings');
+    if(route?.kind&&route.kind!=='hub')return; // Existing settings popstate listener restores this panel.
+    atmsSettingsShowHub();return;
+  }
+  if(tab==='import'){showView('import');activate('import');return;}
+  if(tab==='messages'){renderMessagesView();activate('messages');return;}
+  if(tab==='live'){renderLiveDisposition();activate('live');return;}
+  mode=tab==='all'?'all':'rides';activate(tab==='all'?'all':'rides');render({restoreRidePosition:true});
+}
+function atmsPrimaryOpenDriverDialogHistory(){
+  atmsPrimaryEnsureState();
+  if(history.state?.[ATMS_P95_MODAL_KEY]==='drivers')return;
+  try{history.pushState({...history.state,[ATMS_P95_MODAL_KEY]:'drivers'},'',location.href)}catch(_){ }
+}
+function atmsPrimaryCloseDriverDialog({selected=false}={}){
+  $('driverDialog')?.classList.add('hidden');
+  if(history.state?.[ATMS_P95_MODAL_KEY]==='drivers'){
+    if(selected){try{history.replaceState({...history.state,[ATMS_P95_MODAL_KEY]:null},'',location.href)}catch(_){ }}
+    else{try{history.back()}catch(_){ }}
+  }
+}
+function atmsPrimaryBack(){
+  if(!$('driverDialog')?.classList.contains('hidden')){atmsPrimaryCloseDriverDialog();return}
+  if($('settingsView')&&!$('settingsView').classList.contains('hidden')&&atmsSettingsActivePanel()){
+    atmsSettingsBack();return;
+  }
+  if(atmsPrimaryTab==='rides'&&(Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0)===0&&!history.state?.[ATMS_SETTINGS_HISTORY_KEY]){
+    // On root Fahrten Android's system Back may leave; the on-screen button doesn't
+    // unexpectedly close the native app.
+    showToast('Du bist bereits auf Fahrten.');return;
+  }
+  try{history.back()}catch(_){atmsPrimaryRestore('rides',null)}
+}
+function atmsInstallPrimaryBackNavigation(){
+  atmsPrimaryEnsureState();
+  // P97-2C: bridge Android native Back / edge gesture into the existing ATMS back navigation.
+  if(!window.__ATMS_P97_NATIVE_BACK_BOUND){
+    window.__ATMS_P97_NATIVE_BACK_BOUND=true;
+    window.addEventListener('atms-native-back',atmsPrimaryBack);
+  }
+  window.addEventListener('popstate',e=>{
+    const state=e.state||{};
+    const dialog=$('driverDialog');
+    if(!dialog?.classList.contains('hidden'))dialog.classList.add('hidden');
+    if(state[ATMS_P95_MODAL_KEY]==='drivers'&&dialog){dialog.classList.remove('hidden');return}
+    const tab=state[ATMS_P95_PRIMARY_KEY]||'rides';
+    if(tab!==atmsPrimaryTab)atmsPrimaryRestore(tab,state[ATMS_SETTINGS_HISTORY_KEY]);
+  });
+}
+
+function atmsInstallRidesHeader(){
+  const top=$('atmsRidesTop')||document.querySelector('#listView > header.top'),search=$('search');if(!top||!search)return;
+  // Build the new topbar around the existing input to preserve all original search listeners.
+  if(!top.id)top.id='atmsRidesTop';top.classList.add('atms-rides-topbar');
+  if(!$('ridesSearchToggle')){
+    const bar=document.createElement('div');bar.className='atms-rides-bar';
+    bar.innerHTML='<button id="ridesTopBack" class="atms-rides-icon" type="button" aria-label="Zurück" title="Zurück">‹</button><h1>🚘 Fahrten</h1><button id="ridesSearchToggle" class="atms-rides-icon" type="button" aria-label="Suche einblenden" aria-expanded="true" title="Fahrten suchen">⌕</button>';
+    top.insertBefore(bar,top.firstChild);
+    const panel=document.createElement('div');panel.id='ridesSearchPanel';panel.className='atms-rides-search-panel';
+    panel.innerHTML='<label for="search" class="atms-rides-search-label">FAHRTEN DURCHSUCHEN</label><div class="atms-rides-search-input"><span aria-hidden="true">⌕</span></div>';
+    top.insertBefore(panel,search);panel.querySelector('.atms-rides-search-input').appendChild(search);
+  }
+  const button=$('ridesSearchToggle');if(!button)return;
+  $('ridesTopBack')?.addEventListener('click',atmsPrimaryBack);
+  let expanded=true;
+  const setExpanded=next=>{expanded=Boolean(next);top.classList.toggle('atms-rides-collapsed',!expanded);button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-label',expanded?'Suche ausblenden':'Suche einblenden')};
+  button.addEventListener('click',()=>{setExpanded(!expanded);if(expanded){try{search?.focus({preventScroll:true})}catch(_){search?.focus()}}});
+  let previousScroll=0;
+  window.addEventListener('scroll',()=>{
+    if($('listView')?.classList.contains('hidden'))return;
+    if(document.activeElement===search)return;
+    const y=window.scrollY||document.documentElement.scrollTop||0;
+    if(y<35)setExpanded(true);
+    else if(y>135&&y>previousScroll+5)setExpanded(false);
+    previousScroll=y;
+  },{passive:true});
+}
 function showView(v){
   if(v==='live')captureLiveBottomNavBaseline();
   try{document.body?.classList.toggle('atms-live-target-active',v==='live')}catch(_){ }
@@ -897,10 +1758,43 @@ function showView(v){
   if(v==='list')$('listView')?.classList.remove('hidden');
   if(v==='cockpit')$('cockpitView')?.classList.remove('hidden');
   if(v==='import'){$('importView')?.classList.remove('hidden');resetHorizontalViewport('importView')}
-  if(v==='settings'){$('settingsView')?.classList.remove('hidden');resetHorizontalViewport('settingsView')}
+  if(v==='settings'){$('settingsView')?.classList.remove('hidden');resetHorizontalViewport('settingsView');try{updateSettingsHub()}catch(_){ }}
   if(v==='live')$('liveDispositionView')?.classList.remove('hidden');
   if(v==='messages'){ensureMessagesView();$('messagesView')?.classList.remove('hidden');resetHorizontalViewport('messagesView')}
 }
+function driverRideDate(r){return String(first(r?.date,r?.planDate,r?.datum)||'').trim()}
+function driverSummaryRoute(r){
+  if(r?.isBundle&&Array.isArray(r.routeStops)&&r.routeStops.length)return r.routeStops.slice().sort((a,b)=>a.order-b.order).map(x=>x.name).filter(Boolean).join(' → ');
+  return `${String(r?.pickup||'–').trim()||'–'} → ${String(r?.destination||'–').trim()||'–'}`;
+}
+function driverSummaryFlightsForDay(name,date){
+  const source=rides.filter(r=>driverColorKey(r?.driver)===driverColorKey(name)&&driverRideDate(r)===date);
+  return visualRides(source).slice().sort((a,b)=>{
+    const ta=String(planTimeOf(a)||'99:99'),tb=String(planTimeOf(b)||'99:99');
+    return ta.localeCompare(tb)||String(a.flightNumber||'').localeCompare(String(b.flightNumber||''));
+  });
+}
+function renderDriverDaySummary(name,date){
+  const overlay=document.getElementById('driverDaySummaryOverlay');if(!overlay)return;
+  const dates=[...new Set(rides.filter(r=>driverColorKey(r?.driver)===driverColorKey(name)).map(driverRideDate).filter(Boolean))].sort().reverse();
+  const selected=dates.includes(date)?date:(dates[0]||'');
+  const rows=selected?driverSummaryFlightsForDay(name,selected):[];
+  const total=rows.reduce((sum,r)=>sum+(Number(r?.price)||0),0);
+  const color=driverColorOf(name).hex;
+  const list=rows.length?rows.map(r=>`<div class="driver-day-summary-row"><div class="top"><span>${esc(planTimeOf(r)||'--:--')} · ${esc(r.flightNumber||'ohne Flugnr.')}${r.isBundle?'<span class="driver-day-summary-bundle">BÜNDELFAHRT</span>':''}</span><span>${esc(money(Number(r.price)||0))}</span></div><div class="meta">${esc(ridePartnerLabel(r)||'–')} · ${esc(r.vehicle||'–')} · ${Number(r.persons)||0} Pers.</div><div class="route">${esc(driverSummaryRoute(r))}</div></div>`).join(''):'<div class="empty">Keine Fahrten für diesen Tag.</div>';
+  overlay.innerHTML=`<div class="driver-day-summary-sheet"><div class="driver-day-summary-head"><div><div style="font-size:13px;opacity:.72">Fahrer-Tagesübersicht</div><h3 style="margin:2px 0 0;color:${esc(color)}">${esc(name)}</h3></div><button type="button" class="driver-day-summary-close" aria-label="Schließen">×</button></div><div class="driver-day-summary-controls"><label for="driverDaySummaryDate">Tag</label><select id="driverDaySummaryDate">${dates.map(d=>`<option value="${esc(d)}" ${d===selected?'selected':''}>${esc(d)}</option>`).join('')}</select></div><div class="driver-day-summary-kpis"><div class="driver-day-summary-kpi"><span>Fahrten</span><b>${rows.length}</b></div><div class="driver-day-summary-kpi"><span>Gesamtsumme</span><b>${esc(money(total))}</b></div></div><div>${list}</div></div>`;
+  overlay.querySelector('.driver-day-summary-close')?.addEventListener('click',()=>overlay.remove());
+  overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
+  overlay.querySelector('#driverDaySummaryDate')?.addEventListener('change',e=>renderDriverDaySummary(name,e.target.value));
+}
+function openDriverDaySummary(name){
+  ensureDriverColorCss();
+  let overlay=document.getElementById('driverDaySummaryOverlay');
+  if(!overlay){overlay=document.createElement('div');overlay.id='driverDaySummaryOverlay';overlay.className='driver-day-summary-overlay';document.body.appendChild(overlay)}
+  const dates=[...new Set(rides.filter(r=>driverColorKey(r?.driver)===driverColorKey(name)).map(driverRideDate).filter(Boolean))].sort().reverse();
+  renderDriverDaySummary(name,dates[0]||'');
+}
+
 function openDrivers(){
   const names=[...new Set(rides.map(r=>String(r.driver||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
   const choices=[{label:'Alle Fahrten',value:''},...names.map(n=>({label:n,value:n}))];
@@ -908,18 +1802,63 @@ function openDrivers(){
   const dialog=$('driverDialog');
   if(!box||!dialog){showAppError(new Error('Fahrerauswahl ist nicht verfügbar.'));return}
   box.className=choices.length>10?'ultra':choices.length>6?'dense':'';
-  box.innerHTML=choices.map((c,i)=>`<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:${i===0?'#00a8ff':['#ffbd17','#54e20f','#ff3155','#19d8df'][(i-1)%4]}"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`).join('');
+  ensureDriverColorCss();
+  ensureDriverColorAssignments(rides);
+  const paletteHtml=(driver)=>{
+    const current=driverColorOf(driver).id;
+    const planHex=driverPlanColorOf(driver);
+    const planButton=planHex?`<button type="button" class="driver-color-swatch driver-plan-swatch ${!driverColorManualMap[driverColorKey(driver)]?'selected':''}" data-driver-plan-color="1" title="Planfarbe verwenden" aria-label="Planfarbe verwenden" style="background:${planHex}">Plan</button>`:'';
+    return planButton+DRIVER_COLOR_PALETTE.map(c=>`<button type="button" class="driver-color-swatch ${current===c.id?'selected':''}" data-driver-color-id="${esc(c.id)}" title="Farbe wählen" aria-label="Farbe ${esc(c.id)} wählen" style="background:${c.hex}"></button>`).join('');
+  };
+  box.innerHTML=choices.map((c,i)=>{
+    if(i===0)return `<button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}"><span class="dot" style="background:#00a8ff"></span>${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>`;
+    const color=driverColorOf(c.value);
+    return `<div class="driver-choice-item" data-driver-item-index="${i}">
+      <button type="button" class="driver-color-dot-btn" data-driver-color-toggle="${i}" title="Farbe für ${esc(c.label)} auswählen" aria-label="Farbe für ${esc(c.label)} auswählen"><span class="dot" style="background:${color.hex}"></span></button>
+      <button type="button" class="choice ${driverFilter===c.value?'selected':''}" data-choice-index="${i}">${esc(c.label)}<span class="grow"></span>${driverFilter===c.value?'✓':''}</button>
+      <button type="button" class="driver-day-summary-btn" data-driver-summary="${i}" title="Tagesübersicht für ${esc(c.label)}" aria-label="Tagesübersicht für ${esc(c.label)}">📊</button>
+      <div class="driver-color-palette hidden" data-driver-color-palette="${i}">${paletteHtml(c.value)}</div>
+    </div>`;
+  }).join('');
   box.onclick=e=>{
+    const swatch=e.target.closest('[data-driver-color-id]');
+    if(swatch){
+      const palette=swatch.closest('[data-driver-color-palette]');
+      const idx=Number(palette?.dataset.driverColorPalette);
+      const c=choices[idx];
+      if(c?.value&&setDriverColorManual(c.value,swatch.dataset.driverColorId)){
+        render();
+        openDrivers();
+      }
+      return;
+    }
+    const plan=e.target.closest('[data-driver-plan-color]');
+    if(plan){
+      const palette=plan.closest('[data-driver-color-palette]');
+      const idx=Number(palette?.dataset.driverColorPalette);const c=choices[idx];
+      if(c?.value&&useDriverPlanColor(c.value)){render();openDrivers()}return;
+    }
+    const summary=e.target.closest('[data-driver-summary]');
+    if(summary){const c=choices[Number(summary.dataset.driverSummary)];if(c?.value)openDriverDaySummary(c.value);return;}
+    const toggle=e.target.closest('[data-driver-color-toggle]');
+    if(toggle){
+      const idx=Number(toggle.dataset.driverColorToggle);
+      const palette=box.querySelector(`[data-driver-color-palette="${idx}"]`);
+      const willOpen=Boolean(palette?.classList.contains('hidden'));
+      box.querySelectorAll('[data-driver-color-palette]').forEach(p=>p.classList.add('hidden'));
+      if(palette&&willOpen)palette.classList.remove('hidden');
+      return;
+    }
     const b=e.target.closest('[data-choice-index]');if(!b)return;
     const c=choices[Number(b.dataset.choiceIndex)];if(!c)return;
-    driverFilter=c.value;mode='all';dialog.classList.add('hidden');
+    driverFilter=c.value;mode='all';atmsPrimaryCloseDriverDialog({selected:true});atmsPrimaryVisit('all');
     document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.nav==='all'));
     render();
   };
-  dialog.classList.remove('hidden');
+  dialog.classList.remove('hidden');atmsPrimaryOpenDriverDialogHistory();
 }
 
-function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitDispo=first(dispoTimeOf(active),planTimeOf(active))||'--:--';const cockpitDirection=hasFlightNumber(active)?flightDirectionForGemini(active):'unknown';const cockpitLive=liveTimeOf(active);const cockpitLiveUsable=liveSnapshotFreshness(active).usable;const cockpitCurrent=cockpitLiveUsable&&cockpitLive?(cockpitLive||'--:--'):'--:--';$('planTime').textContent=cockpitDispo;const leftTimeLabel=$('planTime')?.parentElement?.querySelector('.lbl');if(leftTimeLabel)leftTimeLabel.textContent='DISPO-ZEIT';$('planTime').classList.toggle('plan-replaced',Boolean(cockpitDispo&&cockpitCurrent&&cockpitDispo!=='--:--'&&cockpitCurrent!==cockpitDispo));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=cockpitDirection==='arrival'?'LIVE-ABHOLZEIT':(source==='live'?'LIVE-ABHOLZEIT':'AKTUELLE ABHOLZEIT');$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';const flightTimeHost=$('flightLoc')?.parentElement;let flightListTime=$('flightListTime');if(flightTimeHost&&!flightListTime){flightListTime=document.createElement('div');flightListTime.id='flightListTime';flightListTime.style.cssText='font-size:14px;font-weight:800;margin-top:6px;opacity:.9';flightTimeHost.insertBefore(flightListTime,$('cockFlightStatus')||null)}if(flightListTime){const listedTime=listedFlightTimeOf(active),label=listedTimeLabel(active);flightListTime.textContent=listedTime?`🕒 ${label} ${listedTime}`:`🕒 ${label} –`;}const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=ridePriceLabel(active);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';const statusBadge=$('statusBadge');if(statusBadge){let badgeText='KEINE LIVE-DATEN';let badgeTone='neutral';if(activeDone){badgeText='ERLEDIGT';badgeTone='done'}else if(fsi.key==='on-time'){badgeText='PÜNKTLICH';badgeTone='ok'}else if(fsi.key==='delayed'){badgeText=String(fsi.label||'VERSPÄTET').toUpperCase();badgeTone='warn'}else if(fsi.key==='landed'){badgeText='GELANDET';badgeTone='landed'}else if(fsi.key==='departed'){badgeText='ABGEFLOGEN';badgeTone='landed'}else if(fsi.key==='stale'){badgeText='LIVE VERALTET';badgeTone='neutral'}else if(fsi.key==='cancelled'){badgeText='STORNIERT';badgeTone='warn'}statusBadge.textContent=badgeText;statusBadge.dataset.atmsTone=badgeTone;if(badgeTone==='neutral'){statusBadge.style.color='#aebfc9';statusBadge.style.borderColor='rgba(174,191,201,.45)';statusBadge.style.background='rgba(174,191,201,.08)'}else{statusBadge.style.removeProperty('color');statusBadge.style.removeProperty('border-color');statusBadge.style.removeProperty('background')}}renderDispatcherControls();renderDriverControls();const editFlightBtn=document.querySelector('#cockpitView .edit');if(editFlightBtn)editFlightBtn.onclick=openManualFlightEditor}
+function openCockpit(id){active=visualRides(rides).find(r=>r.id===id)||rides.find(r=>r.id===id);if(!active)return;showView('cockpit');const cockpitDispo=first(dispoTimeOf(active),planTimeOf(active))||'--:--';const cockpitDirection=hasFlightNumber(active)?flightDirectionForGemini(active):'unknown';const cockpitLive=liveTimeOf(active);const cockpitLiveUsable=liveSnapshotFreshness(active).usable;const cockpitCurrent=cockpitLiveUsable&&cockpitLive?(cockpitLive||'--:--'):'--:--';$('planTime').textContent=cockpitDispo;const leftTimeLabel=$('planTime')?.parentElement?.querySelector('.lbl');if(leftTimeLabel)leftTimeLabel.textContent='DISPO-ZEIT';$('planTime').classList.toggle('plan-replaced',Boolean(cockpitDispo&&cockpitCurrent&&cockpitDispo!=='--:--'&&cockpitCurrent!==cockpitDispo));$('currentTime').textContent=cockpitCurrent;const source=effectiveSource(active);$('currentTimeLabel').textContent=cockpitDirection==='arrival'?'LIVE-ABHOLZEIT':(source==='live'?'LIVE-ABHOLZEIT':'AKTUELLE ABHOLZEIT');$('driverA').textContent=$('driverB').textContent=active.driver||'Offen';$('overdue').textContent='';$('flightNum').textContent='✈ '+(active.flightNumber||'–');$('flightLoc').textContent=active.flightLocation?active.flightLocation+(active.iata?' ('+active.iata+')':''):'Flugort nicht verfügbar';syncCockpitFlightAirportConflict(active);syncCockpitManualFlightReview(active);const flightTimeHost=$('flightLoc')?.parentElement;let flightListTime=$('flightListTime');if(flightTimeHost&&!flightListTime){flightListTime=document.createElement('div');flightListTime.id='flightListTime';flightListTime.style.cssText='font-size:14px;font-weight:800;margin-top:6px;opacity:.9';flightTimeHost.insertBefore(flightListTime,$('cockFlightStatus')||null)}if(flightListTime){const listedTime=listedFlightTimeOf(active),label=listedTimeLabel(active);flightListTime.textContent=listedTime?`🕒 ${label} ${listedTime}`:`🕒 ${label} –`;}const fsi=flightStatusInfo(active);$('cockFlightStatus').className='flight-status cock-flight-status '+fsi.key;$('cockFlightStatus').textContent=fsi.label;$('partner').textContent=active.partner||active.airline||'–';$('company').textContent=active.company||'–';const routeStops=Array.isArray(active.routeStops)?[...active.routeStops].sort((a,b)=>a.order-b.order):[];const routeBox=$('routeBox');if(active.isBundle&&routeStops.length){const stopHtml=routeStops.map((st,i)=>`<div class="bundle-route-stop ${i===routeStops.length-1?'final':''}"><span class="bundle-route-marker" style="border-color:${isAirport(st.name)?'#00a8ff':'#b45cff'}"></span><div><div class="bundle-route-name">${i+1}. ${esc(st.name)}</div><div class="bundle-route-meta">${st.persons||'–'} Pers. · ${st.type==='destination'?'Ziel':st.type==='start'?'Start':st.type==='pickup'?`${i+1}. Abholung`:`${i+1}. Stopp`}</div></div></div>`).join('');routeBox.innerHTML=`<div style="grid-column:1/-1;width:100%"><div class="bundle-route-title">BÜNDELFAHRT · ${routeStops.length} STOPPS</div><div class="bundle-route-list">${stopHtml}</div></div>`}else{routeBox.innerHTML=`<div class="timeline"><div class="circle"></div><div class="dash"></div><div class="circle bluec"></div></div><div><div id="pickup" class="place">${esc(active.pickup||'–')}</div><div id="pickupMeta" class="small">${active.persons||'–'} Pers. · Abholung</div><div id="destination" class="place">${esc(active.destination||'–')}</div><div id="destMeta" class="small">${active.persons||'–'} Pers. · Ziel</div></div>`;}$('persons').textContent=active.persons||'–';$('vehicle').textContent=active.vehicle||'–';$('price').textContent=ridePriceLabel(active);$('price').title=active.isBundle?`${active.invoiceCount||1} Rechnung${(active.invoiceCount||1)===1?'':'en'}`:'';const activeDone=(active._bundleMemberIds||[active.id]).every(id=>done.has(id));$('doneBtn').textContent=activeDone?'Wieder öffnen':'Erledigt';const statusBadge=$('statusBadge');if(statusBadge){let badgeText='KEINE LIVE-DATEN';let badgeTone='neutral';if(activeDone){badgeText='ERLEDIGT';badgeTone='done'}else if(fsi.key==='on-time'){badgeText='PÜNKTLICH';badgeTone='ok'}else if(fsi.key==='delayed'){badgeText=String(fsi.label||'VERSPÄTET').toUpperCase();badgeTone='warn'}else if(fsi.key==='landed'){badgeText='GELANDET';badgeTone='landed'}else if(fsi.key==='departed'){badgeText='ABGEFLOGEN';badgeTone='landed'}else if(fsi.key==='stale'){badgeText='LIVE VERALTET';badgeTone='neutral'}else if(fsi.key==='cancelled'){badgeText='STORNIERT';badgeTone='warn'}statusBadge.textContent=badgeText;statusBadge.dataset.atmsTone=badgeTone;if(badgeTone==='neutral'){statusBadge.style.color='#aebfc9';statusBadge.style.borderColor='rgba(174,191,201,.45)';statusBadge.style.background='rgba(174,191,201,.08)'}else{statusBadge.style.removeProperty('color');statusBadge.style.removeProperty('border-color');statusBadge.style.removeProperty('background')}}renderDispatcherControls();renderDriverControls();const editFlightBtn=document.querySelector('#cockpitView .edit');if(editFlightBtn)editFlightBtn.onclick=openManualFlightEditor}
 
 function fullMessagePlace(name){
   const raw=String(name||'').trim();
@@ -1014,6 +1953,53 @@ function deleteDispatcher(id){let list=getDispatchers().filter(x=>x.id!==id);con
 function chooseDispatcher(id){setCurrentDispatcher(id);renderDispatcherList()}
 function renderDispatcherList(){const box=$('dispatcherList');if(!box)return;const list=getDispatchers(),current=currentDispatcherId()||(list[0]?.id||'');box.innerHTML=list.length?list.map(d=>`<div class="dispatcher-item"><div><b>${esc(d.name)}</b><small>${esc(d.phone)}</small>${d.id===current?'<div class="current-chip">✓ Aktueller Disponent</div>':''}</div><div class="dispatcher-item-actions"><button class="mini" type="button" onclick="chooseDispatcher('${d.id}')">Aktiv</button><a class="mini" href="tel:${cleanPhone(d.phone)}">📞</a><button class="mini danger" type="button" onclick="deleteDispatcher('${d.id}')">✕</button></div></div>`).join(''):'<div class="setting-note">Noch kein Disponent gespeichert.</div>'}
 function renderDispatcherControls(){const sel=$('cockpitDispatcherSelect'),list=getDispatchers();if(!sel)return;let current=currentDispatcherId();if(!current&&list[0]){current=list[0].id;saveDispatchers(list,current)}sel.innerHTML=list.length?list.map(d=>`<option value="${d.id}" ${d.id===current?'selected':''}>👤 ${esc(d.name)}</option>`).join(''):'<option value="">Kein Disponent</option>';const d=getCurrentDispatcher(),phone=d?cleanPhone(d.phone):'';$('cockpitDispatcherInfo').textContent=d?`${d.name} · ${d.phone}`:'Bitte zuerst in den Einstellungen einen Disponenten anlegen.';$('cockpitCallBtn').href=phone?'tel:'+phone:'#';$('cockpitCallBtn').classList.toggle('hidden',!phone);$('cockpitDispatcherMessageBtn').disabled=!phone}
+
+function settingsDispatcherSyncAfterChange(){renderDispatcherList();renderDispatcherControls();updateBackupUI();updateSettingsHub();renderSettingsDispatcherList()}
+function settingsDispatcherFieldRow(label,value,opts={}){if(!String(value||'').trim())return'';const v=String(value).trim();let content=esc(v);if(opts.tel)content=`<a href="tel:${esc(cleanPhone(v))}">${esc(v)}</a>`;else if(opts.mail)content=`<a href="mailto:${esc(v)}">${esc(v)}</a>`;return`<div class="driver-detail-row"><span>${esc(label)}</span><strong>${content}</strong></div>`}
+function renderSettingsDispatcherList(){
+  const host=$('settingsDispatcherList');if(!host)return;const all=getDispatchers(),q=normKey($('settingsDispatcherSearch')?.value||''),current=currentDispatcherId()||(all[0]?.id||'');
+  let list=all.filter(d=>!q||[d.name,d.phone,d.email,d.note,'Disposition'].some(v=>normKey(v).includes(q)));
+  list.sort((a,b)=>(Number(String(b.id)===String(current))-Number(String(a.id)===String(current)))||String(a.name||'').localeCompare(String(b.name||''),'de'));
+  const count=$('settingsDispatcherPageCount');if(count)count.textContent=`${all.length} gespeicherte Disponenten`;
+  const info=$('settingsDispatcherSearchInfo');if(info)info.textContent=q?`${list.length} Treffer von ${all.length}`:`${all.length} Disponenten verfügbar`;
+  host.innerHTML=list.length?list.map(d=>`<button type="button" class="driver-compact-item" data-settings-dispatcher-id="${esc(d.id)}"><span class="driver-compact-main"><strong>${esc(d.name)}</strong><small>Disposition</small>${String(d.id)===String(current)?'<em class="active">Aktuell</em>':''}</span><span class="driver-compact-chevron">›</span></button>`).join(''):'<div class="setting-note driver-empty">Keine passenden Disponenten gefunden.</div>';
+}
+function resetSettingsDispatcherForm(){['settingsDispatcherEditId','settingsDispatcherName','settingsDispatcherPhone','settingsDispatcherEmail','settingsDispatcherNote'].forEach(id=>{const el=$(id);if(el)el.value=''})}
+function showSettingsDispatcherBrowse(opts={}){const panel=$('atmsDispatcherSettingsPanel');if(!panel)return;['settingsDispatcherBrowseView','settingsDispatcherEditorView','settingsDispatcherDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDispatcherBrowseView')?.classList.remove('hidden');renderSettingsDispatcherList();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.dispatcher,'dispatcher');else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function showSettingsDispatcherEditor(mode='new',id='',opts={}){
+  const panel=$('atmsDispatcherSettingsPanel');if(!panel)return;if(opts.history!==false){atmsSettingsRememberScroll('dispatcher');atmsSettingsPushRoute('dispatcher','editor',mode==='edit'?id:'')}resetSettingsDispatcherForm();const d=mode==='edit'?getDispatchers().find(x=>String(x.id)===String(id)):null;
+  if(d){$('settingsDispatcherEditId').value=d.id;$('settingsDispatcherName').value=d.name||'';$('settingsDispatcherPhone').value=d.phone||'';$('settingsDispatcherEmail').value=d.email||'';$('settingsDispatcherNote').value=d.note||''}
+  const title=$('settingsDispatcherEditorTitle');if(title)title.textContent=d?'Disponent bearbeiten':'Neuer Disponent';['settingsDispatcherBrowseView','settingsDispatcherDetailView'].forEach(x=>$(x)?.classList.add('hidden'));$('settingsDispatcherEditorView')?.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>{panel.scrollIntoView({block:'start'});setTimeout(()=>$('settingsDispatcherName')?.focus(),80)})
+}
+function showSettingsDispatcherDetail(id,opts={}){
+  const list=getDispatchers(),d=list.find(x=>String(x.id)===String(id)),body=$('settingsDispatcherDetailBody');if(!d||!body)return;if(opts.history!==false){atmsSettingsRememberScroll('dispatcher');atmsSettingsPushRoute('dispatcher','detail',id)}body.dataset.dispatcherId=d.id;const current=String(currentDispatcherId()||(list[0]?.id||''))===String(d.id);
+  body.innerHTML=`<div class="driver-detail-hero">${current?'<div class="driver-detail-status active">● Aktueller Disponent</div>':''}<h3>${esc(d.name)}</h3><p>Disposition</p></div>${settingsDispatcherFieldRow('Telefon / WhatsApp',d.phone,{tel:!!cleanPhone(d.phone)})}${settingsDispatcherFieldRow('E-Mail',d.email,{mail:!!String(d.email||'').trim()})}${settingsDispatcherFieldRow('Notiz',d.note)}${settingsDispatcherFieldRow('Rolle','Disposition')}`;
+  const phone=cleanPhone(d.phone),call=$('settingsDispatcherCall'),wa=$('settingsDispatcherWhatsapp');if(call){call.classList.toggle('hidden',!phone);call.href=phone?'tel:'+phone:'#'}if(wa)wa.classList.toggle('hidden',!phone);
+  const currentBtn=$('settingsDispatcherCurrent');if(currentBtn){currentBtn.classList.toggle('hidden',current);currentBtn.textContent='✓ Als aktuellen Disponenten wählen'}const title=$('settingsDispatcherDetailTitle');if(title)title.textContent=d.name;
+  ['settingsDispatcherBrowseView','settingsDispatcherEditorView'].forEach(x=>$(x)?.classList.add('hidden'));$('settingsDispatcherDetailView')?.classList.remove('hidden');$('atmsDispatcherSettingsPanel')?.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>$('atmsDispatcherSettingsPanel')?.scrollIntoView({block:'start'}))
+}
+function saveSettingsDispatcherForm(){
+  const editId=String($('settingsDispatcherEditId')?.value||'').trim(),name=String($('settingsDispatcherName')?.value||'').trim(),phone=String($('settingsDispatcherPhone')?.value||'').trim(),email=String($('settingsDispatcherEmail')?.value||'').trim(),note=String($('settingsDispatcherNote')?.value||'').trim();
+  if(!name||!cleanPhone(phone)){showToast('Bitte Name und gültige Telefonnummer eingeben','warn');return}const list=getDispatchers();if(!editId&&list.length>=20){showToast('Es können maximal 20 Disponenten gespeichert werden','warn');return}
+  if(editId){const d=list.find(x=>String(x.id)===editId);if(!d){showToast('Disponent nicht gefunden','warn');return}Object.assign(d,{name,phone,email,note})}else{const id='disp-'+Date.now();list.push({id,name,phone,email,note});saveDispatchers(list,currentDispatcherId()||id);settingsDispatcherSyncAfterChange();resetSettingsDispatcherForm();atmsSettingsReturnToBrowse('dispatcher');showToast('Disponent gespeichert','ok');return}
+  saveDispatchers(list,currentDispatcherId());settingsDispatcherSyncAfterChange();resetSettingsDispatcherForm();atmsSettingsReturnToBrowse('dispatcher');showToast('Disponent aktualisiert','ok')
+}
+function chooseSettingsDispatcherCurrent(){const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId;if(!id)return;setCurrentDispatcher(id);settingsDispatcherSyncAfterChange();showSettingsDispatcherDetail(id,{history:false});showToast('Aktueller Disponent gesetzt','ok')}
+function deleteSettingsDispatcher(){const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId,list=getDispatchers(),d=list.find(x=>String(x.id)===String(id));if(!d)return;if(!confirm(`Disponent „${d.name}“ wirklich löschen?`))return;const next=list.filter(x=>String(x.id)!==String(id)),current=String(currentDispatcherId())===String(id)?(next[0]?.id||''):currentDispatcherId();saveDispatchers(next,current);settingsDispatcherSyncAfterChange();atmsSettingsReturnToBrowse('dispatcher');showToast('Disponent gelöscht','ok')}
+function ensureSettingsDispatcherPanel(){
+  const view=$('settingsView'),host=$('settingsToolsHost');if(!view)return false;let panel=$('atmsDispatcherSettingsPanel');if(panel)return true;
+  panel=document.createElement('section');panel.id='atmsDispatcherSettingsPanel';panel.dataset.atmsP95Gate4Panel='1';panel.className='settings-dispatcher-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="settingsDispatcherBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>👤 Disponenten</h2><small id="settingsDispatcherPageCount">0 gespeicherte Disponenten</small></div><div class="atms-mobile-head-actions"><button type="button" id="settingsDispatcherHeadSearch" class="atms-mobile-icon-btn" aria-label="Disponent suchen">⌕</button><button type="button" id="settingsDispatcherHeadAdd" class="atms-mobile-icon-btn" aria-label="Neuer Disponent">＋</button></div></div>
+  <div id="settingsDispatcherBrowseView"><div class="driver-toolbar"><input id="settingsDispatcherSearch" class="setting-input" placeholder="Disponent suchen …" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"><button type="button" id="settingsDispatcherNew" class="driver-new-btn">+ Neuer Disponent</button></div><div id="settingsDispatcherSearchInfo" class="driver-search-info">Disponentensuche bereit.</div><div id="settingsDispatcherList" class="driver-compact-list"></div></div>
+  <div id="settingsDispatcherEditorView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="settingsDispatcherEditorBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="settingsDispatcherEditorTitle">Neuer Disponent</h3></div><input id="settingsDispatcherEditId" type="hidden"><label class="setting-label" for="settingsDispatcherName">Name</label><input id="settingsDispatcherName" class="setting-input" placeholder="z. B. Lisa" autocomplete="off"><label class="setting-label" for="settingsDispatcherPhone">Telefon-/WhatsApp-Nummer</label><input id="settingsDispatcherPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"><label class="setting-label" for="settingsDispatcherEmail">E-Mail (optional)</label><input id="settingsDispatcherEmail" class="setting-input" inputmode="email" placeholder="z. B. dispo@firma.de"><label class="setting-label" for="settingsDispatcherNote">Notiz (optional)</label><textarea id="settingsDispatcherNote" class="setting-input driver-note-input" placeholder="z. B. Frühdienst / bevorzugt WhatsApp"></textarea><div class="driver-editor-actions"><button type="button" id="settingsDispatcherSave" class="act dark">Disponent speichern</button></div></div>
+  <div id="settingsDispatcherDetailView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="settingsDispatcherDetailBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="settingsDispatcherDetailTitle">Disponent</h3></div><div id="settingsDispatcherDetailBody" class="driver-detail-body"></div><div class="driver-detail-actions"><a id="settingsDispatcherCall" class="act dark hidden" href="#">📞 Anrufen</a><button type="button" id="settingsDispatcherWhatsapp" class="act dark hidden">💬 WhatsApp</button><button type="button" id="settingsDispatcherCurrent" class="act">✓ Als aktuellen Disponenten wählen</button><button type="button" id="settingsDispatcherEdit" class="act dark">✎ Bearbeiten</button><button type="button" id="settingsDispatcherDelete" class="act danger">🗑 Löschen</button></div></div>`;
+  if(host)host.appendChild(panel);else view.appendChild(panel);
+  $('settingsDispatcherBackSettings')?.addEventListener('click',atmsSettingsBack);$('settingsDispatcherNew')?.addEventListener('click',()=>showSettingsDispatcherEditor('new'));$('settingsDispatcherEditorBack')?.addEventListener('click',atmsSettingsBack);$('settingsDispatcherDetailBack')?.addEventListener('click',atmsSettingsBack);$('settingsDispatcherSave')?.addEventListener('click',saveSettingsDispatcherForm);$('settingsDispatcherHeadSearch')?.addEventListener('click',()=>atmsSettingsFocusBrowse('dispatcher'));$('settingsDispatcherHeadAdd')?.addEventListener('click',()=>showSettingsDispatcherEditor('new'));
+  $('settingsDispatcherSearch')?.addEventListener('input',renderSettingsDispatcherList);$('settingsDispatcherList')?.addEventListener('click',e=>{const row=e.target.closest('[data-settings-dispatcher-id]');if(row)showSettingsDispatcherDetail(row.dataset.settingsDispatcherId)});$('settingsDispatcherCurrent')?.addEventListener('click',chooseSettingsDispatcherCurrent);$('settingsDispatcherEdit')?.addEventListener('click',()=>{const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId;if(id)showSettingsDispatcherEditor('edit',id)});$('settingsDispatcherDelete')?.addEventListener('click',deleteSettingsDispatcher);$('settingsDispatcherWhatsapp')?.addEventListener('click',()=>{const id=$('settingsDispatcherDetailBody')?.dataset.dispatcherId,d=getDispatchers().find(x=>String(x.id)===String(id));if(d)openPrivateWhatsapp(d.phone,d.name,'')});renderSettingsDispatcherList();return true
+}
+function openSettingsDispatcherPage(mode='browse',opts={}){showView('settings');ensureSettingsDispatcherPanel();closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsTransferPage();const view=$('settingsView'),panel=$('atmsDispatcherSettingsPanel');if(!view||!panel)return;setSettingsDispatcherPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');if(opts.history!==false)atmsSettingsPushRoute('dispatcher','browse');if(mode==='browse')showSettingsDispatcherBrowse({restoreScroll:!!opts.restoreScroll});if(!opts.restoreScroll)requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{view.scrollTop=0}catch(_){ }panel.scrollIntoView({block:'start'})})}
+function closeSettingsDispatcherPage(){const panel=$('atmsDispatcherSettingsPanel');setSettingsDispatcherPageActive(false);panel?.classList.add('hidden');['settingsDispatcherEditorView','settingsDispatcherDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDispatcherBrowseView')?.classList.remove('hidden');resetSettingsDispatcherForm();renderSettingsDispatcherList();requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})}
+
 function loadWhatsappSettings(){renderInfoChatSettings();renderDispatcherList();renderDispatcherControls();renderDriverContactList();renderDriverControls();updateBackupUI()}
 function cleanPhone(v){return String(v||'').replace(/[^0-9]/g,'')}
 function getDriverContacts(){let d=[];try{d=JSON.parse(localStorage.getItem(DRIVER_SETTINGS)||'[]')}catch{}if(!Array.isArray(d))d=[];return d.filter(x=>x&&x.name).map(x=>({id:x.id||('driver-'+Date.now()+Math.random()),name:String(x.name||'').trim(),phone:String(x.phone||''),vehicle:String(x.vehicle||''),note:String(x.note||''),favorite:!!x.favorite,active:x.active!==false}))}
@@ -1025,6 +2011,60 @@ function deleteDriverContact(id){const d=getDriverContacts().find(x=>x.id===id);
 function toggleDriverFavorite(id){const list=getDriverContacts(),d=list.find(x=>x.id===id);if(!d)return;d.favorite=!d.favorite;saveDriverContacts(list);renderDriverContactList();renderDriverControls()}
 function toggleDriverActive(id){const list=getDriverContacts(),d=list.find(x=>x.id===id);if(!d)return;d.active=!d.active;saveDriverContacts(list);renderDriverContactList();renderDriverControls()}
 function renderDriverContactList(){const box=$('driverContactList');if(!box)return;const q=normKey(($('driverContactSearch')&&$('driverContactSearch').value)||''),showInactive=!!($('driverShowInactive')&&$('driverShowInactive').checked);let list=getDriverContacts().filter(d=>(showInactive||d.active!==false)&&(!q||[d.name,d.phone,d.vehicle,d.note].some(v=>normKey(v).includes(q))));list.sort((a,b)=>(Number(b.favorite)-Number(a.favorite))||(Number(b.active)-Number(a.active))||a.name.localeCompare(b.name,'de'));box.innerHTML=list.length?list.map(d=>`<div class="dispatcher-item"><div><b>${d.favorite?'⭐ ':''}${esc(d.name)}</b><small>${esc(d.phone||'Keine Telefonnummer')}</small><div class="driver-item-meta">${d.vehicle?`<span class="driver-chip">🚐 ${esc(d.vehicle)}</span>`:''}<span class="driver-chip ${d.active?'active':'inactive'}">${d.active?'🟢 Aktiv':'🔴 Inaktiv'}</span>${d.favorite?'<span class="driver-chip fav">Favorit</span>':''}</div>${d.note?`<div class="driver-note">${esc(d.note)}</div>`:''}</div><div class="dispatcher-item-actions"><button class="mini" type="button" onclick="toggleDriverFavorite('${d.id}')">${d.favorite?'★':'☆'}</button><button class="mini" type="button" onclick="editDriverContact('${d.id}')">✎</button><button class="mini" type="button" onclick="toggleDriverActive('${d.id}')">${d.active?'Pause':'Aktiv'}</button>${cleanPhone(d.phone)?`<a class="mini" href="tel:${cleanPhone(d.phone)}">📞</a>`:''}<button class="mini danger" type="button" onclick="deleteDriverContact('${d.id}')">✕</button></div></div>`).join(''):'<div class="setting-note">Keine passenden Fahrer gefunden.</div>'}
+let settingsDriverFilter='all';
+function settingsDriverSyncAfterChange(){renderDriverContactList();renderDriverControls();updateBackupUI();updateSettingsHub();renderSettingsDriverList()}
+function settingsDriverFieldRow(label,value,opts={}){if(!String(value||'').trim())return'';const v=String(value).trim(),content=opts.tel?`<a href="tel:${esc(cleanPhone(v))}">${esc(v)}</a>`:esc(v);return`<div class="driver-detail-row"><span>${esc(label)}</span><strong>${content}</strong></div>`}
+function renderSettingsDriverList(){
+  const host=$('settingsDriverList');if(!host)return;const all=getDriverContacts(),q=normKey($('settingsDriverSearch')?.value||''),filter=settingsDriverFilter;
+  let list=all.filter(d=>(filter==='active'?d.active!==false:filter==='inactive'?d.active===false:true)&&(!q||[d.name,d.phone,d.vehicle,d.note].some(v=>normKey(v).includes(q))));
+  list.sort((a,b)=>(Number(b.favorite)-Number(a.favorite))||(Number(b.active)-Number(a.active))||a.name.localeCompare(b.name,'de'));
+  const count=$('settingsDriverPageCount');if(count)count.textContent=`${all.length} gespeicherte Fahrer`;
+  const info=$('settingsDriverSearchInfo');if(info)info.textContent=q||filter!=='all'?`${list.length} Treffer von ${all.length}`:`${all.length} Fahrer verfügbar`;
+  document.querySelectorAll('#atmsDriverSettingsPanel [data-driver-filter]').forEach(btn=>btn.classList.toggle('active',btn.dataset.driverFilter===filter));
+  host.innerHTML=list.length?list.map(d=>`<button type="button" class="driver-compact-item" data-settings-driver-id="${esc(d.id)}"><span class="driver-compact-main"><strong>${d.favorite?'⭐ ':''}${esc(d.name)}</strong><small>${esc(d.vehicle||'Kein Standardfahrzeug')}</small><em class="${d.active!==false?'active':'inactive'}">${d.active!==false?'Aktiv':'Inaktiv'}</em></span><span class="driver-compact-chevron">›</span></button>`).join(''):'<div class="setting-note driver-empty">Keine passenden Fahrer gefunden.</div>';
+}
+function resetSettingsDriverForm(){['settingsDriverEditId','settingsDriverName','settingsDriverPhone','settingsDriverVehicle','settingsDriverNote'].forEach(id=>{const el=$(id);if(el)el.value=''});if($('settingsDriverFavorite'))$('settingsDriverFavorite').checked=false;if($('settingsDriverActive'))$('settingsDriverActive').checked=true}
+function showSettingsDriverBrowse(opts={}){const panel=$('atmsDriverSettingsPanel');if(!panel)return;['settingsDriverBrowseView','settingsDriverEditorView','settingsDriverDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDriverBrowseView')?.classList.remove('hidden');renderSettingsDriverList();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.driver,'driver');else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function showSettingsDriverEditor(mode='new',id='',opts={}){
+  const panel=$('atmsDriverSettingsPanel');if(!panel)return;if(opts.history!==false){atmsSettingsRememberScroll('driver');atmsSettingsPushRoute('driver','editor',mode==='edit'?id:'')}resetSettingsDriverForm();const d=mode==='edit'?getDriverContacts().find(x=>String(x.id)===String(id)):null;
+  if(d){$('settingsDriverEditId').value=d.id;$('settingsDriverName').value=d.name;$('settingsDriverPhone').value=d.phone||'';$('settingsDriverVehicle').value=d.vehicle||'';$('settingsDriverNote').value=d.note||'';$('settingsDriverFavorite').checked=!!d.favorite;$('settingsDriverActive').checked=d.active!==false}
+  const title=$('settingsDriverEditorTitle');if(title)title.textContent=d?'Fahrer bearbeiten':'Neuer Fahrer';['settingsDriverBrowseView','settingsDriverDetailView'].forEach(x=>$(x)?.classList.add('hidden'));$('settingsDriverEditorView')?.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>{panel.scrollIntoView({block:'start'});setTimeout(()=>$('settingsDriverName')?.focus(),80)})
+}
+function showSettingsDriverDetail(id,opts={}){
+  const d=getDriverContacts().find(x=>String(x.id)===String(id)),body=$('settingsDriverDetailBody');if(!d||!body)return;if(opts.history!==false){atmsSettingsRememberScroll('driver');atmsSettingsPushRoute('driver','detail',id)}body.dataset.driverId=d.id;
+  body.innerHTML=`<div class="driver-detail-hero"><div class="driver-detail-status ${d.active!==false?'active':'inactive'}">${d.active!==false?'● Aktiv':'● Inaktiv'}</div><h3>${d.favorite?'⭐ ':''}${esc(d.name)}</h3><p>${esc(d.vehicle||'Kein Standardfahrzeug')}</p></div>${settingsDriverFieldRow('Telefon / WhatsApp',d.phone,{tel:!!cleanPhone(d.phone)})}${settingsDriverFieldRow('Standardfahrzeug',d.vehicle)}${settingsDriverFieldRow('Notiz',d.note)}${settingsDriverFieldRow('Favorit',d.favorite?'Ja':'Nein')}`;
+  const call=$('settingsDriverCall');if(call){const phone=cleanPhone(d.phone);call.classList.toggle('hidden',!phone);call.href=phone?'tel:'+phone:'#'}
+  const fav=$('settingsDriverFavoriteToggle');if(fav)fav.textContent=d.favorite?'★ Favorit entfernen':'☆ Als Favorit markieren';const state=$('settingsDriverActiveToggle');if(state)state.textContent=d.active!==false?'⏸ Deaktivieren':'▶ Aktivieren';const title=$('settingsDriverDetailTitle');if(title)title.textContent=d.name;
+  ['settingsDriverBrowseView','settingsDriverEditorView'].forEach(x=>$(x)?.classList.add('hidden'));$('settingsDriverDetailView')?.classList.remove('hidden');$('atmsDriverSettingsPanel')?.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>$('atmsDriverSettingsPanel')?.scrollIntoView({block:'start'}))
+}
+function saveSettingsDriverForm(){
+  const editId=String($('settingsDriverEditId')?.value||'').trim(),name=String($('settingsDriverName')?.value||'').trim(),phone=String($('settingsDriverPhone')?.value||'').trim(),vehicle=String($('settingsDriverVehicle')?.value||'').trim(),note=String($('settingsDriverNote')?.value||'').trim(),favorite=!!$('settingsDriverFavorite')?.checked,activeFlag=$('settingsDriverActive')?.checked!==false;
+  if(!name){showToast('Bitte Fahrername eingeben','warn');return}if(phone&&!cleanPhone(phone)){showToast('Bitte gültige Telefonnummer eingeben oder Feld leer lassen','warn');return}
+  const list=getDriverContacts(),duplicate=list.find(x=>normKey(x.name)===normKey(name)&&String(x.id)!==editId);if(duplicate){showToast('Dieser Fahrer ist bereits gespeichert','warn');return}
+  if(editId){const d=list.find(x=>String(x.id)===editId);if(!d){showToast('Fahrer nicht gefunden','warn');return}Object.assign(d,{name,phone,vehicle,note,favorite,active:activeFlag})}else list.push({id:'driver-'+Date.now(),name,phone,vehicle,note,favorite,active:activeFlag});
+  saveDriverContacts(list);settingsDriverSyncAfterChange();resetSettingsDriverForm();atmsSettingsReturnToBrowse('driver');showToast(editId?'Fahrer aktualisiert':'Fahrer gespeichert','ok')
+}
+function toggleSettingsDriverFavorite(){const id=$('settingsDriverDetailBody')?.dataset.driverId,list=getDriverContacts(),d=list.find(x=>String(x.id)===String(id));if(!d)return;d.favorite=!d.favorite;saveDriverContacts(list);settingsDriverSyncAfterChange();showSettingsDriverDetail(id)}
+function toggleSettingsDriverActive(){const id=$('settingsDriverDetailBody')?.dataset.driverId,list=getDriverContacts(),d=list.find(x=>String(x.id)===String(id));if(!d)return;d.active=!d.active;saveDriverContacts(list);settingsDriverSyncAfterChange();showSettingsDriverDetail(id)}
+function deleteSettingsDriver(){
+  const id=$('settingsDriverDetailBody')?.dataset.driverId,d=getDriverContacts().find(x=>String(x.id)===String(id));if(!d)return;
+  if(rides.some(r=>normKey(r.driver)===normKey(d.name)&&!(r._bundleMemberIds||[r.id]).every(x=>done.has(x)))){alert('Dieser Fahrer ist noch offenen Fahrten zugeordnet. Deaktiviere ihn stattdessen oder weise die Fahrten zuerst neu zu.');return}
+  if(!confirm(`Fahrer „${d.name}“ wirklich löschen?`))return;saveDriverContacts(getDriverContacts().filter(x=>String(x.id)!==String(id)));settingsDriverSyncAfterChange();atmsSettingsReturnToBrowse('driver');showToast('Fahrer gelöscht','ok')
+}
+function ensureSettingsDriverPanel(){
+  const view=$('settingsView'),host=$('settingsToolsHost');if(!view)return false;let panel=$('atmsDriverSettingsPanel');if(panel)return true;
+  panel=document.createElement('section');panel.id='atmsDriverSettingsPanel';panel.dataset.atmsP95Gate3Panel='1';panel.className='settings-driver-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="settingsDriverBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>🚗 Fahrer</h2><small id="settingsDriverPageCount">0 gespeicherte Fahrer</small></div><div class="atms-mobile-head-actions"><button type="button" id="settingsDriverHeadSearch" class="atms-mobile-icon-btn" aria-label="Fahrer suchen">⌕</button><button type="button" id="settingsDriverHeadAdd" class="atms-mobile-icon-btn" aria-label="Neuer Fahrer">＋</button></div></div>
+  <div id="settingsDriverBrowseView"><div class="driver-toolbar"><input id="settingsDriverSearch" class="setting-input" placeholder="Fahrer suchen …" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"><button type="button" id="settingsDriverNew" class="driver-new-btn">+ Neuer Fahrer</button></div><div class="driver-filter-tabs"><button type="button" data-driver-filter="all" class="active">Alle</button><button type="button" data-driver-filter="active">Aktiv</button><button type="button" data-driver-filter="inactive">Inaktiv</button></div><div id="settingsDriverSearchInfo" class="driver-search-info">Fahrersuche bereit.</div><div id="settingsDriverList" class="driver-compact-list"></div></div>
+  <div id="settingsDriverEditorView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="settingsDriverEditorBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="settingsDriverEditorTitle">Neuer Fahrer</h3></div><input id="settingsDriverEditId" type="hidden"><label class="setting-label" for="settingsDriverName">Fahrername</label><input id="settingsDriverName" class="setting-input" placeholder="z. B. Schimmi" autocomplete="off"><label class="setting-label" for="settingsDriverPhone">Telefon-/WhatsApp-Nummer</label><input id="settingsDriverPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"><label class="setting-label" for="settingsDriverVehicle">Standardfahrzeug (optional)</label><input id="settingsDriverVehicle" class="setting-input" placeholder="z. B. Van"><div class="driver-editor-checks"><label class="driver-check"><input id="settingsDriverFavorite" type="checkbox"> ⭐ Favorit</label><label class="driver-check"><input id="settingsDriverActive" type="checkbox" checked> 🟢 Aktiv</label></div><label class="setting-label" for="settingsDriverNote">Notiz (optional)</label><textarea id="settingsDriverNote" class="setting-input driver-note-input" placeholder="z. B. Bevorzugt Anruf statt WhatsApp"></textarea><div class="driver-editor-actions"><button type="button" id="settingsDriverSave" class="act dark">Fahrer speichern</button></div></div>
+  <div id="settingsDriverDetailView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="settingsDriverDetailBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="settingsDriverDetailTitle">Fahrerdetails</h3></div><div id="settingsDriverDetailBody" class="driver-detail-body"></div><div class="driver-detail-actions"><a id="settingsDriverCall" class="act dark hidden" href="#">📞 Anrufen</a><button type="button" id="settingsDriverFavoriteToggle" class="act">☆ Als Favorit markieren</button><button type="button" id="settingsDriverActiveToggle" class="act">⏸ Deaktivieren</button><button type="button" id="settingsDriverEdit" class="act dark">✎ Bearbeiten</button><button type="button" id="settingsDriverDelete" class="act danger">🗑 Löschen</button></div></div>`;
+  if(host)host.appendChild(panel);else view.appendChild(panel);
+  $('settingsDriverBackSettings')?.addEventListener('click',atmsSettingsBack);$('settingsDriverNew')?.addEventListener('click',()=>showSettingsDriverEditor('new'));$('settingsDriverEditorBack')?.addEventListener('click',atmsSettingsBack);$('settingsDriverDetailBack')?.addEventListener('click',atmsSettingsBack);$('settingsDriverSave')?.addEventListener('click',saveSettingsDriverForm);$('settingsDriverHeadSearch')?.addEventListener('click',()=>atmsSettingsFocusBrowse('driver'));$('settingsDriverHeadAdd')?.addEventListener('click',()=>showSettingsDriverEditor('new'));
+  $('settingsDriverSearch')?.addEventListener('input',renderSettingsDriverList);panel.querySelector('.driver-filter-tabs')?.addEventListener('click',e=>{const btn=e.target.closest('[data-driver-filter]');if(!btn)return;settingsDriverFilter=btn.dataset.driverFilter||'all';renderSettingsDriverList()});$('settingsDriverList')?.addEventListener('click',e=>{const row=e.target.closest('[data-settings-driver-id]');if(row)showSettingsDriverDetail(row.dataset.settingsDriverId)});
+  $('settingsDriverFavoriteToggle')?.addEventListener('click',toggleSettingsDriverFavorite);$('settingsDriverActiveToggle')?.addEventListener('click',toggleSettingsDriverActive);$('settingsDriverEdit')?.addEventListener('click',()=>{const id=$('settingsDriverDetailBody')?.dataset.driverId;if(id)showSettingsDriverEditor('edit',id)});$('settingsDriverDelete')?.addEventListener('click',deleteSettingsDriver);renderSettingsDriverList();return true
+}
+function openSettingsDriverPage(mode='browse',opts={}){showView('settings');ensureSettingsDriverPanel();closeSettingsAddressPage();closeSettingsTransferPage();const view=$('settingsView'),panel=$('atmsDriverSettingsPanel');if(!view||!panel)return;setSettingsDriverPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');if(opts.history!==false)atmsSettingsPushRoute('driver','browse');if(mode==='browse')showSettingsDriverBrowse({restoreScroll:!!opts.restoreScroll});if(!opts.restoreScroll)requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{view.scrollTop=0}catch(_){ }panel.scrollIntoView({block:'start'})})}
+function closeSettingsDriverPage(){const panel=$('atmsDriverSettingsPanel');setSettingsDriverPageActive(false);panel?.classList.add('hidden');['settingsDriverEditorView','settingsDriverDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('settingsDriverBrowseView')?.classList.remove('hidden');resetSettingsDriverForm();settingsDriverFilter='all';renderSettingsDriverList();requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})}
 function availableDrivers(){const byName=new Map();getDriverContacts().filter(d=>d.active!==false).forEach(d=>byName.set(normKey(d.name),{...d}));rides.forEach(r=>{const name=String(r.driver||'').trim();if(!name)return;const k=normKey(name);if(!byName.has(k))byName.set(k,{id:'ride-driver-'+k,name,phone:first(r.driverPhone,r.fahrerTelefon,r.fahrer_telefon,r.phone,r.telefon,r.tel),vehicle:r.vehicle||'',favorite:false,active:true})});return [...byName.values()].sort((a,b)=>(Number(b.favorite)-Number(a.favorite))||a.name.localeCompare(b.name,'de'))}
 function selectedDriverContact(){const sel=$('cockpitDriverSelect');const list=availableDrivers();return list.find(x=>x.id===(sel&&sel.value))||list.find(x=>active&&normKey(x.name)===normKey(active.driver))||list[0]||null}
 function renderDriverControls(){const sel=$('cockpitDriverSelect');if(!sel)return;const list=availableDrivers();const preferred=list.find(x=>active&&normKey(x.name)===normKey(active.driver));const current=preferred||(sel.value&&list.find(x=>x.id===sel.value))||list[0];sel.innerHTML=list.length?list.map(d=>`<option value="${d.id}" ${current&&d.id===current.id?'selected':''}>👤 ${esc(d.name)}</option>`).join(''):'<option value="">Kein Fahrer</option>';if(current)sel.value=current.id;const d=selectedDriverContact(),phone=cleanPhone(d&&d.phone);$('cockpitDriverInfo').textContent=d?[d.name,d.phone||'Telefonnummer fehlt',d.vehicle||'',d.note||''].filter(Boolean).join(' · '):'Bitte Fahrer in den Einstellungen anlegen.';$('cockpitDriverCallBtn').href=phone?'tel:'+phone:'#';$('cockpitDriverCallBtn').classList.toggle('hidden',!phone);$('cockpitDriverMessageBtn').disabled=!phone}
@@ -1109,6 +2149,28 @@ function downloadTextFile(text,name,type){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
 }
+function browserDownloadBlob(blob,name){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+function blobToBase64Payload(blob){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{const value=String(reader.result||''),comma=value.indexOf(',');if(comma<0){reject(new Error('Exportdaten konnten nicht vorbereitet werden.'));return}resolve(value.slice(comma+1))};
+    reader.onerror=()=>reject(reader.error||new Error('Exportdaten konnten nicht gelesen werden.'));
+    reader.readAsDataURL(blob);
+  });
+}
+async function saveExportBlob(blob,name,type){
+  const bridge=window.ATMSNativeFileExport;
+  if(bridge&&typeof bridge.saveBase64File==='function'){
+    const payload=await blobToBase64Payload(blob);
+    await bridge.saveBase64File(payload,name,type||blob.type||'application/octet-stream');
+    return 'native';
+  }
+  browserDownloadBlob(blob,name);
+  return 'browser';
+}
 function backupFileName(){
   const d=new Date(),p=n=>String(n).padStart(2,'0');
   return `ATMS_Backup_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}.atms`;
@@ -1127,25 +2189,87 @@ function updateBackupUI(){
     setBackupStatus(text,'ok');if(info){info.textContent=dt.toLocaleDateString('de-DE')+' · '+dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});info.classList.remove('warn');info.classList.add('status');}
   }else{setBackupStatus('Noch keine Sicherung erstellt.','warn');if(info){info.textContent='Noch keine Sicherung';info.classList.add('warn');info.classList.remove('status');}}
 }
-function exportAtmsBackup(){
+async function exportAtmsBackup(){
   try{
+    // P96/S1: Eine defekte Sicherung mit 0 Fahrten bei vorhandenen 140 Fahrten
+    // darf nicht als erfolgreich exportiert werden.
+    const ridesRaw=localStorage.getItem(KEY);
+    if(ridesRaw===null)throw Error('Fahrten-Speicher fehlt. Backup blockiert, damit keine unvollstaendige Sicherung entsteht.');
+    let storedRides,storedDone;
+    try{storedRides=JSON.parse(ridesRaw);storedDone=JSON.parse(localStorage.getItem(DONE)||'[]')}catch(_){throw Error('Fahrten-/Status-Speicher ungueltig. Backup blockiert.');}
+    if(!Array.isArray(storedRides)||!Array.isArray(storedDone)||storedRides.length!==rides.length)
+      throw Error(`Fahrten-Speicher nicht synchron: App ${rides.length}, gespeichert ${Array.isArray(storedRides)?storedRides.length:'ungueltig'}. Backup blockiert.`);
+    if(storedDone.length!==done.size||!storedDone.every(id=>done.has(id)))
+      throw Error('Erledigt-Status noch nicht vollstaendig gespeichert. Backup blockiert.');
     const payload=backupPayload();
-    downloadTextFile(JSON.stringify(payload,null,2),backupFileName(),'application/octet-stream');
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/octet-stream'});
+    await saveExportBlob(blob,backupFileName(),'application/octet-stream');
     localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:payload.createdAt,appVersion:payload.appVersion}));
     updateBackupUI();
-  }catch(e){setBackupStatus('Backup konnte nicht erstellt werden: '+e.message,'warn');}
+  }catch(e){
+    const message=String(e?.message||e||'Unbekannter Fehler');
+    if(/abgebrochen/i.test(message)){
+      setBackupStatus('Backup-Speichern abgebrochen.','warn');
+      return;
+    }
+    setBackupStatus('Backup konnte nicht erstellt werden: '+message,'warn');
+  }
 }
 function chooseBackupFile(){const input=$('backupFileInput');if(input){input.value='';input.click();}}
 async function importAtmsBackup(file){
   try{
     const obj=JSON.parse(await file.text());
-    if(!obj||obj.format!=='ATMS_BACKUP'||!obj.storage||typeof obj.storage!=='object') throw Error('Keine gültige ATMS-Backup-Datei.');
-    const keys=Object.keys(obj.storage);
-    if(!confirm(`Backup vom ${obj.createdAt?new Date(obj.createdAt).toLocaleString('de-DE'):'unbekannten Datum'} wiederherstellen?\n\n${keys.length} gespeicherte Bereiche werden übernommen.`))return;
-    keys.forEach(k=>{if(k.startsWith('atms_'))localStorage.setItem(k,String(obj.storage[k]??''));});
-    localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:new Date().toISOString(),restoredFrom:obj.createdAt||'',appVersion:obj.appVersion||''}));
-    alert('Backup wurde erfolgreich wiederhergestellt. ATMS wird neu geladen.');location.reload();
-  }catch(e){setBackupStatus('Wiederherstellung fehlgeschlagen: '+e.message,'warn');alert('Backup konnte nicht importiert werden.');}
+    if(!obj||obj.format!=='ATMS_BACKUP'||obj.formatVersion!==1||!obj.storage||typeof obj.storage!=='object')
+      throw Error('Keine gueltige ATMS-Backup-Datei (Version 1).');
+    // P96/S1: Ein Snapshot ohne Fahrten-Key ist KEIN vollstaendiges Backup.
+    const rideRaw=obj.storage[KEY],doneRaw=obj.storage[DONE];
+    if(typeof rideRaw!=='string'||typeof doneRaw!=='string')
+      throw Error('Backup unvollstaendig: Fahrten oder Erledigt-Status fehlen. Wiederherstellung abgebrochen.');
+    let incomingRides,incomingDone;
+    try{incomingRides=JSON.parse(rideRaw);incomingDone=JSON.parse(doneRaw)}catch(_){throw Error('Backup enthaelt ungueltige Fahrten-/Statusdaten.');}
+    if(!Array.isArray(incomingRides)||!Array.isArray(incomingDone)||new Set(incomingRides.map(r=>String(r?.id||''))).size!==incomingRides.length)
+      throw Error('Backup-Fahrten sind fehlerhaft oder enthalten doppelte IDs.');
+    const keys=Object.keys(obj.storage).filter(k=>k.startsWith('atms_'));
+    const existingCount=(()=>{try{return JSON.parse(localStorage.getItem(KEY)||'[]').length}catch(_){return 0}})();
+    const countWarning=incomingRides.length<existingCount
+      ? `\n\nACHTUNG: Dieses Backup enthaelt nur ${incomingRides.length} Fahrten; aktuell sind ${existingCount} Fahrten gespeichert. Du wuerdest einen aelteren Bestand wiederherstellen.` : '';
+    if(!confirm(`Backup vom ${obj.createdAt?new Date(obj.createdAt).toLocaleString('de-DE'):'unbekannten Datum'} wiederherstellen?\n\n${incomingRides.length} Fahrten, ${keys.length} Bereiche.${countWarning}`))return;
+    const durableBefore=await syncPersistenceDurableShadow('before-backup-restore');
+    if(!durableBefore)throw Error('Wiederherstellung blockiert: Aktueller Bestand konnte nicht in IndexedDB gesichert werden.');
+    const before={};for(const key of keys)before[key]=localStorage.getItem(key);
+    const touched=[];
+    try{
+      for(const key of keys){
+        const value=String(obj.storage[key]??'');
+        localStorage.setItem(key,value);
+        touched.push(key);
+        if(localStorage.getItem(key)!==value)throw Error('Backup-Wiederherstellung: Schreibpruefung bei '+key+' fehlgeschlagen.');
+      }
+      // Nur wenn ALLE lokalen Bereiche verifiziert sind, den Durable-Shadow umstellen.
+      const durableAfter=await syncPersistenceDurableShadow('after-backup-restore-verified');
+      if(!durableAfter)throw Error('IndexedDB-Bestaetigung der Wiederherstellung fehlgeschlagen.');
+      // Storage V2 bleibt in Phase 1 rein additiv: Fehler blockieren keine bestaetigte Wiederherstellung.
+      void syncStorageV2Phase1('after-backup-restore-verified');
+    }catch(writeError){
+      let rollbackOk=true;
+      for(const key of touched.reverse()){
+        try{
+          if(before[key]===null)localStorage.removeItem(key);else localStorage.setItem(key,before[key]);
+          if(localStorage.getItem(key)!==before[key])rollbackOk=false;
+        }catch(_){rollbackOk=false}
+      }
+      // Bei fehlgeschlagenem Rollback den letzten verifizierten IndexedDB-Stand
+      // NICHT durch einen moeglichen Teilbestand ueberschreiben.
+      if(rollbackOk)await syncPersistenceDurableShadow('failed-backup-restore-rollback');
+      persistAudit('backup_restore_failed',{rollbackOk,message:String(writeError?.message||writeError)});
+      throw Error(rollbackOk
+        ? 'Wiederherstellung abgebrochen; alter Stand wieder eingesetzt. '+String(writeError?.message||writeError)
+        : 'KRITISCH: Wiederherstellung unvollstaendig, automatisches Zuruecksetzen gescheitert. App NICHT neu starten. Externes Backup aufbewahren.');
+    }
+    try{localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:new Date().toISOString(),restoredFrom:obj.createdAt||'',appVersion:obj.appVersion||''}))}catch(_){ }
+    alert('Backup vollstaendig wiederhergestellt und in beiden Speichern bestaetigt. ATMS wird neu geladen.');
+    location.reload();
+  }catch(e){setBackupStatus('Wiederherstellung fehlgeschlagen: '+e.message,'warn');alert(e.message||'Backup konnte nicht importiert werden.');}
 }
 function resetAtmsData(){
   if(!confirm('Wirklich alle lokal gespeicherten ATMS-Daten löschen?\n\nDisponenten, Fahrten, Erledigt-Status und Einstellungen werden entfernt.'))return;
@@ -1394,10 +2518,11 @@ function applyFlightCacheToRides(source){
       if(String(next.flightLocation||'').trim()!==nextLocation){next.flightLocation=nextLocation;rowChanged=true;}
       if(String(next.iata||'').trim().toUpperCase()!==nextIata){next.iata=nextIata;rowChanged=true;}
       const restoredConfidence=verified?'verified':'source_confirmed';
+      const restoredNeedsManual=Boolean(!verified||hit.conflict);
       if(next.flightCheckConfidence!==restoredConfidence){next.flightCheckConfidence=restoredConfidence;rowChanged=true;}
-      if(next.flightNeedsManualCheck!==false){next.flightNeedsManualCheck=false;rowChanged=true;}
+      if(next.flightNeedsManualCheck!==restoredNeedsManual){next.flightNeedsManualCheck=restoredNeedsManual;rowChanged=true;}
       if(Boolean(next.flightConflict)!==Boolean(hit.conflict)){next.flightConflict=Boolean(hit.conflict);rowChanged=true;}
-      verifiedRestored++;
+      if(verified&&!hit.conflict)verifiedRestored++;else manualRestored++;
     }else{
       // Unsichere Pruefungen duerfen den vorhandenen Planort niemals loeschen oder ersetzen.
       // Der manuelle Hinweis wird aber sofort wiederhergestellt, damit der Zaehler nach Neuimport stimmt.
@@ -1827,7 +2952,8 @@ function applyGeminiFlightResult(){
         flightLocation:accepted?hit.flightLocation:r.flightLocation,
         iata:accepted?hit.iata:(r.iata||''),
         flightCheckConfidence:verified?'verified':(sourceConfirmed?'source_confirmed':'uncertain'),
-        flightNeedsManualCheck:!accepted,
+        flightNeedsManualCheck:Boolean(!verified||hit.conflict),
+        flightConflict:Boolean(hit.conflict),
         flightCheckSourceNote:String(hit.sourceNote||'').trim(),
         flightCheckedAt:checkedAt
       };
@@ -1988,6 +3114,144 @@ function liveFlightCheckItems(source=rides){
   }
   return [...map.values()];
 }
+
+function nativeLiveStatusIdentityMatch(ride,hit){
+  const flight=flightCacheNumber(ride?.flightNumber||ride?.arrivalFlight||ride?.departureFlight);if(!flight)return false;
+  const date=String(ride?.date||'').trim();
+  const eventContext=flightAirportEventDateContext(ride||{});
+  const airportEventDate=String(eventContext.airportEventDate||date).trim();
+  const direction=flightDirectionForGemini(ride);
+  const airportIata=String(flightAirportForGemini(ride)||'').trim().toUpperCase();
+  return flightCacheNumber(hit?.flightNumber)===flight
+    &&(!date||String(hit?.date||'').trim()===date)
+    &&String(hit?.airportEventDate||hit?.date||'').trim()===airportEventDate
+    &&String(hit?.direction||'').trim().toLowerCase()===direction
+    &&String(hit?.airportIata||'').trim().toUpperCase()===airportIata;
+}
+function nativeLiveStatusRawLabel(status){
+  const value=String(status||'').trim().toLowerCase();
+  if(value==='departed')return'departed';
+  if(value==='landed')return'landed';
+  if(value==='delayed')return'delayed';
+  if(value==='cancelled')return'cancelled';
+  if(value==='on_time')return'on-time';
+  if(value==='scheduled')return'scheduled';
+  return'unknown';
+}
+async function runNativeLiveStatusCheck(){
+  const button=$('nativeLiveStatusBtn'),statusBox=$('nativeLiveStatusStatus');
+  try{
+    const pending=liveFlightPendingPlanMeta();
+    if(pending){
+      if(statusBox)statusBox.textContent=`⚠ Neue Planliste mit ${Number(pending.rideCount||0)} Fahrt(en) noch nicht übernommen. Bitte zuerst „Geprüfte Fahrten übernehmen“.`;
+      showToast('Neue Planliste zuerst übernehmen','warn');return;
+    }
+    const includeAll=Boolean($('liveFlightIncludeAll')?.checked);
+    const source=includeAll?rides:liveFlightRelevantRides();
+    const items=liveFlightCheckItems(source);
+    if(!items.length){
+      if(!includeAll&&liveFlightCheckItems().length)throw new Error('Keine aktuell relevanten Flüge. Für den historischen Test „Alle Flüge des Plantags einbeziehen“ aktivieren.');
+      throw new Error('Keine Flüge im aktuellen Fahrtenbestand gefunden.');
+    }
+    if(typeof window.ATMSNativeLiveStatusCheck!=='function')throw new Error('Native LIVE-Statusprüfung ist noch nicht verfügbar. Import-Modul bitte vollständig laden.');
+    if(button){button.disabled=true;button.setAttribute('aria-busy','true')}
+    if(statusBox)statusBox.textContent=`Native Zwei-Quellen-LIVE-Prüfung läuft · ${items.length} Flug/Flüge …`;
+    const result=await window.ATMSNativeLiveStatusCheck(items);
+    const hits=Array.isArray(result?.flights)?result.flights:[];
+    const reportedCheckedAt=String(result?.checkedAt||'').trim();
+    const fresh=liveReportedCheckIsFresh(reportedCheckedAt);
+    const importedAt=new Date().toISOString();
+    let updated=0,uncertain=0,manualPreserved=0,exactTimePreserved=0,archived=0,operationalArrivalTimes=0;
+    rides=rides.map(r=>{
+      const candidates=hits.filter(hit=>nativeLiveStatusIdentityMatch(r,hit));
+      if(candidates.length!==1)return r;
+      const hit=candidates[0];
+      if(r.liveManualConfirmed){manualPreserved++;return r;}
+      const existingTimedSnapshot=Boolean(rawExplicitLiveTimeOf(r)||first(r?.liveFlightActualTime,r?.liveFlightEstimatedTime));
+      if(existingTimedSnapshot&&liveSnapshotFreshness(r).usable){
+        exactTimePreserved++;
+        return norm({...r,
+          liveLastNativeStatusCheckedAt:importedAt,
+          liveLastNativeStatusReportedCheckedAt:reportedCheckedAt,
+          liveLastNativeStatusConfirmed:Boolean(hit?.confirmed===true&&hit?.statusConfirmed===true&&fresh),
+          liveLastNativeStatus:String(hit?.status||hit?.observedOfficialStatus||'unknown'),
+          liveLastNativeStatusSourceNote:String(hit?.sourceNote||''),
+          liveLastNativeStatusSources:Array.isArray(hit?.sources)?hit.sources:[]
+        },0);
+      }
+      const confirmed=Boolean(hit?.confirmed===true&&hit?.statusConfirmed===true&&hit?.timeConfirmed!==true&&fresh);
+      if(!confirmed){uncertain++;return norm({...r,
+        liveLastNativeStatusCheckedAt:importedAt,
+        liveLastNativeStatusReportedCheckedAt:reportedCheckedAt,
+        liveLastNativeStatusConfirmed:false,
+        liveLastNativeStatus:String(hit?.observedOfficialStatus||hit?.status||'unknown'),
+        liveLastNativeStatusSourceNote:String(hit?.sourceNote||''),
+        liveLastNativeStatusSources:Array.isArray(hit?.sources)?hit.sources:[]
+      },0);}
+      const airportIata=String(hit?.airportIata||flightAirportForGemini(r)||'').trim().toUpperCase();
+      const eventContext=flightAirportEventDateContext(r);
+      const airportEventDate=String(hit?.airportEventDate||eventContext.airportEventDate||r?.date||'').trim();
+      const status=String(hit?.status||'unknown').trim().toLowerCase();
+      const direction=flightDirectionForGemini(r);
+      const acceptedOfficialActual=strictClockOrNull(first(hit?.officialActualTime,hit?.observedOfficialActualTime));
+      const useOfficialArrivalActual=Boolean(
+        direction==='arrival'
+        && airportIata==='DUS'
+        && status==='landed'
+        && hit?.officialActualOperationallyAccepted===true
+        && hit?.timeMinuteDualSourceConfirmed!==true
+        && acceptedOfficialActual
+      );
+      const history=liveHistoryPatchFromRide(r,importedAt,useOfficialArrivalActual?'superseded_by_native_official_arrival_actual':'superseded_by_native_status_only');
+      if(Object.keys(history).length)archived++;
+      const nextLive=useOfficialArrivalActual?clockPlusMinutes(acceptedOfficialActual,arrivalBufferMinutesForRide(r)):'';
+      if(useOfficialArrivalActual&&nextLive)operationalArrivalTimes++;
+      updated++;
+      return norm({...r,...history,
+        liveTime:nextLive,live_time:nextLive,
+        flightStatus:nativeLiveStatusRawLabel(status),
+        delayMinutes:null,
+        landed:status==='landed',
+        liveFlightStatus:status,
+        liveFlightAirportIata:airportIata,
+        liveFlightAirportEventDate:airportEventDate,
+        liveFlightScheduledTime:'',
+        liveFlightEstimatedTime:'',
+        liveFlightActualTime:useOfficialArrivalActual?acceptedOfficialActual:'',
+        liveCheckedAt:importedAt,
+        liveReportedCheckedAt:reportedCheckedAt,
+        liveCurrentConfirmed:true,
+        liveCurrentSource:useOfficialArrivalActual?'native_official_airport_actual':'native_status',
+        liveSourceNote:String(hit?.sourceNote||'Native Zwei-Quellen-Status bestätigt; exakte LIVE-Zeit nicht als Zwei-Quellen-Minute bestätigt.'),
+        liveSources:Array.isArray(hit?.sources)?hit.sources:[],
+        liveSourceConflict:false,
+        liveResolutionMode:useOfficialArrivalActual?'native_arrival_official_actual_dual_status':'native_status_consensus',
+        livePrioritySourceUrl:'',
+        liveNativeStatusOnly:!useOfficialArrivalActual,
+        liveNativeTimeConfirmed:false,
+        liveNativeOfficialActualAccepted:useOfficialArrivalActual,
+        liveNativeMinuteDualSourceConfirmed:false
+      },0);
+    });
+    save();render();scheduleLiveFreshnessRefresh();
+    try{localStorage.setItem(ATMS_LIVE_LAST_CHECK_META,JSON.stringify({reportedCheckedAt,importedAt,confirmedRides:updated,currentLiveTimes:operationalArrivalTimes,uncertainRides:uncertain,archivedRides:archived,manualPreserved,nativeStatusOnly:operationalArrivalTimes===0,nativeOfficialArrivalActualTimes:operationalArrivalTimes,freshnessMinutes:ATMS_LIVE_FRESHNESS_MINUTES}))}catch(_){ }
+    updateLiveFlightPanelContext();
+    if(statusBox){
+      const parts=[`${updated} Fahrt(en) mit Zwei-Quellen-Status aktualisiert`,`${operationalArrivalTimes} DUS-Actual-Ankunftszeit(en) operativ übernommen`];
+      if(uncertain)parts.push(`${uncertain} nicht sicher bestätigt`);
+      if(manualPreserved)parts.push(`${manualPreserved} manuell bestätigt beibehalten`);
+      if(exactTimePreserved)parts.push(`${exactTimePreserved} bereits bestätigte aktuelle LIVE-Zeit nicht überschrieben`);
+      statusBox.textContent=parts.join(' · ')+'.';
+    }
+    showToast(`${updated} Native LIVE-Status bestätigt · ${operationalArrivalTimes} DUS-Ankunftszeit(en) übernommen`,'ok');
+  }catch(e){
+    if(statusBox)statusBox.textContent='Fehler: '+String(e?.message||e||'Unbekannter Fehler');
+    showToast('Native LIVE-Statusprüfung nicht abgeschlossen','warn');
+  }finally{
+    if(button){button.disabled=false;button.removeAttribute('aria-busy')}
+  }
+}
+
 function buildLiveFlightPrompt(includeAll=false){
   const source=includeAll?rides:liveFlightRelevantRides();
   const items=liveFlightCheckItems(source);
@@ -2418,9 +3682,10 @@ function ensureLiveFlightPanel(){
   if($('liveFlightPanel'))return;
   const view=$('importView'),host=$('importToolsHost');if(!view)return;
   const panel=document.createElement('section');panel.id='liveFlightPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(52,199,255,.32);border-radius:14px;background:rgba(10,80,110,.10)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:3px">Letzte LIVE-Prüfung: –</div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-bottom:10px">Web-LIVE gilt 15 Min. als aktuell. Danach wird es nicht mehr für LIVE-Zeit oder Live-Dispo verwendet. Manuell bestätigte Landungen und Abflüge bleiben erhalten.</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><div id="liveFlightScopeHint" style="font-size:12px;opacity:.78;line-height:1.45;margin:0 0 7px">Prüfumfang wird ermittelt …</div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:750;margin:0 0 9px"><input id="liveFlightIncludeAll" type="checkbox"><span id="liveFlightIncludeAllLabel">Alle Flüge des Plantags einbeziehen</span></label><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigter Abflug</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für einen vom Disponenten z. B. in Flightradar24 eindeutig bestätigten tatsächlichen Abflug. Ändert PLAN/DISPO nicht und verwendet keinen Landepuffer.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualDepartureFlight" placeholder="Flugnr. z. B. EW9752" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualDepartureTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualDepartureBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigten Abflug übernehmen</button><div id="manualDepartureStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Abflugzeit übernommen.</div>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">📡 Live-Flugdaten</div><div style="font-size:13px;opacity:.82;margin-bottom:8px">Aktuellen Status prüfen, ohne PLAN oder DISPO zu überschreiben. LIVE bleibt ein eigenes Zeitfeld.</div><div id="liveFlightContextStatus" style="font-size:12px;font-weight:800;line-height:1.45;margin-bottom:3px">Aktueller Fahrtenbestand wird ermittelt …</div><div id="liveFlightLastCheck" style="font-size:12px;opacity:.78;line-height:1.45;margin-bottom:3px">Letzte LIVE-Prüfung: –</div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-bottom:10px">Web-LIVE gilt 15 Min. als aktuell. Danach wird es nicht mehr für LIVE-Zeit oder Live-Dispo verwendet. Manuell bestätigte Landungen und Abflüge bleiben erhalten.</div><div style="padding:10px;border:1px solid rgba(255,255,255,.14);border-radius:10px;margin-bottom:10px"><div style="font-weight:800;margin-bottom:6px">⏱ Standard-Abholpuffer nach Landung</div><div style="display:flex;gap:8px;align-items:center"><input id="liveArrivalBuffer" type="number" min="0" max="120" step="1" inputmode="numeric" style="width:90px;padding:10px;border-radius:9px"><span>Minuten</span><button type="button" id="saveLiveArrivalBufferBtn" style="margin-left:auto;padding:10px 12px;border-radius:9px;font-weight:800">Speichern</button></div><div id="liveArrivalBufferNote" style="font-size:12px;opacity:.8;margin-top:6px"></div></div><div id="liveFlightScopeHint" style="font-size:12px;opacity:.78;line-height:1.45;margin:0 0 7px">Prüfumfang wird ermittelt …</div><label style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:750;margin:0 0 9px"><input id="liveFlightIncludeAll" type="checkbox"><span id="liveFlightIncludeAllLabel">Alle Flüge des Plantags einbeziehen</span></label><button type="button" id="nativeLiveStatusBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:850">📡 Native LIVE automatisch prüfen</button><div id="nativeLiveStatusStatus" style="font-size:12px;opacity:.82;line-height:1.45;margin-top:8px">Noch keine Native Zwei-Quellen-LIVE-Prüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-size:11px;opacity:.72;line-height:1.4;margin-bottom:8px">Fallback für vollständige Web-LIVE-Prüfung inklusive Zeitfeldern:</div><button type="button" id="copyLiveFlightBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">📡 Live-Prüfauftrag kopieren</button><textarea id="liveFlightPromptFallback" class="hidden" style="width:100%;min-height:120px;margin-top:10px" readonly></textarea><textarea id="liveFlightResult" placeholder="Live-Flug-JSON hier einfügen" style="width:100%;min-height:120px;margin-top:10px"></textarea><button type="button" id="applyLiveFlightBtn" disabled aria-disabled="true" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Live-Flugdaten übernehmen</button><div id="liveFlightImportStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine Live-Flugprüfung durchgeführt.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigte Landung</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für eine vom Disponenten z. B. in Flightradar24 eindeutig bestätigte Landungszeit. Nutzt den globalen Puffer oben.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualArrivalFlight" placeholder="Flugnr. z. B. EW9841" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualArrivalTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualArrivalBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigte Landung übernehmen</button><div id="manualArrivalStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Landungszeit übernommen.</div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="font-weight:800;margin-bottom:6px">✋ Manuell bestätigter Abflug</div><div style="font-size:12px;opacity:.8;margin-bottom:8px">Für einen vom Disponenten z. B. in Flightradar24 eindeutig bestätigten tatsächlichen Abflug. Ändert PLAN/DISPO nicht und verwendet keinen Landepuffer.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><input id="manualDepartureFlight" placeholder="Flugnr. z. B. EW9752" autocomplete="off" style="padding:10px;border-radius:9px;min-width:0"><input id="manualDepartureTime" type="time" step="60" style="padding:10px;border-radius:9px;min-width:0"></div><button type="button" id="applyManualDepartureBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">✓ Bestätigten Abflug übernehmen</button><div id="manualDepartureStatus" style="font-size:12px;opacity:.8;margin-top:8px">Noch keine manuelle Abflugzeit übernommen.</div>`;
   const anchor=$('geminiFlightPanel');
   if(anchor&&anchor.parentElement===host)anchor.insertAdjacentElement('afterend',panel);else if(host)host.appendChild(panel);else if(anchor)anchor.insertAdjacentElement('afterend',panel);else view.appendChild(panel);
+  $('nativeLiveStatusBtn')?.addEventListener('click',runNativeLiveStatusCheck);
   $('copyLiveFlightBtn')?.addEventListener('click',copyLiveFlightPrompt);
   $('liveFlightIncludeAll')?.addEventListener('change',updateLiveFlightPanelContext);
   $('applyLiveFlightBtn')?.addEventListener('click',applyLiveFlightResult);
@@ -2548,10 +3813,57 @@ function restoreCurrentRidesAfterBlockedImport(){
   }catch(_){}
 }
 function readPlanImportHistory(){try{const x=JSON.parse(localStorage.getItem(PLAN_IMPORT_HISTORY)||'[]');return Array.isArray(x)?x:[]}catch(_){return[]}}
-function savePlanImportHistory(list,reason='plan-import-history'){const next=Array.isArray(list)?list.slice(-40):[];safePersistentSetItem(PLAN_IMPORT_HISTORY,JSON.stringify(next),reason);return next}
+function savePlanImportHistory(list,reason='plan-import-history'){const next=Array.isArray(list)?list.slice(-40):[];return safePersistentSetItem(PLAN_IMPORT_HISTORY,JSON.stringify(next),reason)}
 function currentPlanImportSession(){try{return JSON.parse(localStorage.getItem(PLAN_IMPORT_CURRENT)||'null')}catch(_){return null}}
 function planImportSessionId(){return `plan-${Date.now()}-${Math.random().toString(36).slice(2,8)}`}
 function planImportNorm(v){return String(v??'').trim().toLowerCase().replace(/\s+/g,' ')}
+// P93: Ein sehr enges OCR-Symbolartefakt darf nur durch eine gleichzeitige Geschwisterzeile
+// derselben Fahrtengruppe bestätigt werden. Beispielklasse: zwei Buchstaben + ™, wobei die
+// exakt passende Geschwisterzeile den daraus abgeleiteten Drei-Buchstaben-IATA-Code trägt.
+// Ohne Geschwisterbeleg bleibt der Routentext unangetastet.
+function p93CompactAirportArtifactCandidate(value){
+  const raw=String(value??'').trim().toUpperCase().replace(/\s+/g,'');
+  const match=raw.match(/^([A-Z]{2})™$/u);
+  if(!match)return'';
+  const candidate=`${match[1]}M`;
+  return flightAirportIataFromPlace(candidate)===candidate?candidate:'';
+}
+function p93SiblingRouteGroupKey(r){
+  return [
+    String(first(r?.date,r?.datum)||'').trim()||berlinDate(),
+    String(planTimeOf(r)||'').trim(),
+    flightCacheNumber(r?.flightNumber||''),
+    planImportNorm(r?.driver||r?.fahrer),
+    planImportNorm(r?.company||r?.firma||r?.partner||r?.airline)
+  ].join('|');
+}
+function p93NormalizeSiblingRouteArtifacts(source){
+  const list=(Array.isArray(source)?source:[]).map(r=>({...r}));
+  if(list.length<2)return list;
+  const groups=new Map();
+  list.forEach((r,index)=>{const key=p93SiblingRouteGroupKey(r);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(index)});
+  for(const indexes of groups.values()){
+    if(indexes.length<2)continue;
+    for(const index of indexes){
+      const ride=list[index];
+      for(const field of ['pickup','destination']){
+        const candidate=p93CompactAirportArtifactCandidate(ride?.[field]);
+        if(!candidate)continue;
+        const confirmed=indexes.some(otherIndex=>{
+          if(otherIndex===index)return false;
+          const peer=list[otherIndex];
+          return flightAirportIataFromPlace(peer?.[field])===candidate;
+        });
+        if(!confirmed)continue;
+        ride[field]=candidate;
+        const trace=Array.isArray(ride._p93RouteOcrNormalized)?ride._p93RouteOcrNormalized.slice():[];
+        trace.push({field,from:String(source?.[index]?.[field]??''),to:candidate,reason:'sibling_confirmed_airport_ocr_artifact'});
+        ride._p93RouteOcrNormalized=trace;
+      }
+    }
+  }
+  return list;
+}
 function planImportRideIdentity(r){
   const date=String(first(r?.date,r?.datum)||'').trim()||berlinDate();
   const flight=flightCacheNumber(r?.flightNumber||'');
@@ -2564,6 +3876,168 @@ function planImportRideIdentity(r){
     ? ['flight',date,flight,dir,airport,pickup,destination,flightTime||rideTime].join('|')
     : ['ride',date,rideTime,pickup,destination].join('|');
 }
+// P73: stabile reale Fahrt auch dann wiedererkennen, wenn sich in einer späteren
+// überlappenden Planversion nur die Listen-Flugzeit korrigiert hat. Fahrer + DISPO-Zeit
+// + Route bleiben dabei zwingend Bestandteil der Identität, damit parallele Fahrzeuge
+// desselben Fluges (z. B. Yaser/Leon) nicht miteinander verschmolzen werden.
+function planImportStableRideIdentity(r){
+  const date=String(first(r?.date,r?.datum)||'').trim()||berlinDate();
+  const flight=flightCacheNumber(r?.flightNumber||'');
+  const dir=flight?String(flightDirectionForGemini(r)||'unknown'):'';
+  const airport=flight?String(flightAirportForGemini(r)||'').toUpperCase():'';
+  const pickup=planImportNorm(r?.pickup),destination=planImportNorm(r?.destination);
+  const rideTime=String(planTimeOf(r)||'').trim();
+  const driver=planImportNorm(r?.driver||r?.fahrer);
+  return flight
+    ? ['stable-flight',date,flight,dir,airport,rideTime,pickup,destination,driver].join('|')
+    : ['stable-ride',date,rideTime,pickup,destination,driver].join('|');
+}
+// P77 – one-time Legacy-Dedupe mit fail-closed Beweiskette.
+// Die Migration ist absichtlich enger als P73: sie bereinigt nur bereits vorhandene
+// Altstände und verändert die normale Import-Matchinglogik nicht.
+function p77LegacyMinutes(value){
+  const m=String(value||'').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if(!m)return null;
+  const h=Number(m[1]),min=Number(m[2]);
+  return h>=0&&h<24&&min>=0&&min<60?h*60+min:null;
+}
+function p77LegacyMinuteDistance(a,b){
+  if(a===null||b===null)return null;
+  const d=Math.abs(a-b);return Math.min(d,1440-d);
+}
+function p77LegacyImportStamp(r){
+  const m=String(r?.id||'').match(/^import-(\d+)-/);
+  return m?Number(m[1]):0;
+}
+function p77LegacyIsBundle(r){
+  return Boolean(isBundleRide(r)||(Array.isArray(r?.bundleStops)&&r.bundleStops.length>1));
+}
+function p77LegacyRevisionKey(r){
+  const flight=flightCacheNumber(r?.flightNumber||'');
+  if(!flight)return'';
+  const date=String(first(r?.date,r?.datum)||'').trim();
+  const direction=String(first(r?.flightDirection,flightDirectionForGemini(r))||'').trim().toLowerCase();
+  const parts=[
+    date,flight,direction,
+    planImportNorm(r?.driver||r?.fahrer),
+    planImportNorm(r?.pickup||r?.abholort),
+    planImportNorm(r?.destination||r?.zielort||r?.ziel),
+    planImportNorm(r?.company||r?.firma||r?.partner),
+    planImportNorm(r?.customer||r?.kunde),
+    planImportNorm(r?.vehicle||r?.fahrzeug),
+    String(Number(r?.persons||r?.personen||0)),
+    String(Number(r?.price||r?.preis||0).toFixed(2)),
+    planImportNorm(r?.currency||'EUR')
+  ];
+  return parts.join('|');
+}
+function p77LegacySourceCoverage(current,date,sourceFile){
+  const times=(current||[])
+    .filter(r=>String(first(r?.date,r?.datum)||'').trim()===date&&String(r?.sourceFile||'').trim()===sourceFile)
+    .map(r=>p77LegacyMinutes(planTimeOf(r)))
+    .filter(v=>v!==null);
+  if(times.length<2)return null;
+  return{min:Math.min(...times),max:Math.max(...times),count:times.length};
+}
+function p77RunLegacyDedupeMigration(current){
+  const input=Array.isArray(current)?current:[];
+  let previous=null;
+  try{previous=JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_MIGRATION_KEY)||'null')}catch(_){ }
+  if(previous?.completed)return{rides:input,changed:false,removed:[],status:previous};
+
+  const buckets=new Map();
+  input.forEach(r=>{
+    const key=p77LegacyRevisionKey(r);if(!key)return;
+    if(!buckets.has(key))buckets.set(key,[]);
+    buckets.get(key).push(r);
+  });
+  const removals=[];
+  for(const group of buckets.values()){
+    // Mehrdeutige Gruppen sowie Einzelfahrten bleiben immer unangetastet.
+    if(group.length!==2)continue;
+    const [a,b]=group;
+    if(group.some(r=>p77LegacyIsBundle(r)))continue;
+    if(group.some(r=>r?._planCarryover!==true||r?._planMissingFromLatest!==true))continue;
+    const sourceA=String(a?.sourceFile||'').trim(),sourceB=String(b?.sourceFile||'').trim();
+    if(!sourceA||!sourceB||sourceA===sourceB)continue;
+    const stampA=p77LegacyImportStamp(a),stampB=p77LegacyImportStamp(b);
+    if(!stampA||!stampB||stampA===stampB)continue;
+    const newer=stampA>stampB?a:b,older=stampA>stampB?b:a;
+
+    const newerPlan=String(planTimeOf(newer)||'').trim(),olderPlan=String(planTimeOf(older)||'').trim();
+    const newerFlight=String(listedFlightTimeOf(newer)||'').trim(),olderFlight=String(listedFlightTimeOf(older)||'').trim();
+    const planSame=newerPlan===olderPlan,flightSame=newerFlight===olderFlight;
+    const planDelta=p77LegacyMinuteDistance(p77LegacyMinutes(newerPlan),p77LegacyMinutes(olderPlan));
+    const flightDelta=p77LegacyMinuteDistance(p77LegacyMinutes(newerFlight),p77LegacyMinutes(olderFlight));
+    const safeFlightCorrection=planSame&&!flightSame&&flightDelta!==null&&flightDelta>0&&flightDelta<=15;
+    const safePlanCorrection=flightSame&&!planSame&&planDelta!==null&&planDelta>0&&planDelta<=45;
+    // Wenn beide Zeitachsen gleichzeitig wechseln oder keine enge Korrektur beweisbar ist: nichts tun.
+    if(!(safeFlightCorrection||safePlanCorrection))continue;
+
+    const date=String(first(newer?.date,newer?.datum)||'').trim();
+    const coverage=p77LegacySourceCoverage(input,date,String(newer?.sourceFile||'').trim());
+    const oldPlanMinute=p77LegacyMinutes(olderPlan);
+    if(!coverage||oldPlanMinute===null||oldPlanMinute<coverage.min||oldPlanMinute>coverage.max)continue;
+
+    removals.push({
+      oldId:String(older.id),keepId:String(newer.id),
+      flightNumber:String(newer.flightNumber||''),date,
+      oldPlanTime:olderPlan,newPlanTime:newerPlan,
+      oldFlightTime:olderFlight,newFlightTime:newerFlight,
+      oldSource:sourceA===String(older?.sourceFile||'').trim()?sourceA:sourceB,
+      newSource:String(newer?.sourceFile||'').trim(),
+      reason:safeFlightCorrection?'flight_time_revision':'plan_time_revision'
+    });
+  }
+
+  // Unerwartet viele Treffer bedeuten eine zu breite Regel: fail closed, keine Datenänderung.
+  if(removals.length>10){
+    persistAudit('p77a_legacy_dedupe_blocked',{reason:'too-many-candidates',candidateCount:removals.length});
+    return{rides:input,changed:false,removed:[],blocked:true};
+  }
+
+  if(!removals.length){
+    const status={completed:true,completedAt:new Date().toISOString(),removedCount:0,removed:[]};
+    try{localStorage.setItem(P77_LEGACY_DEDUPE_MIGRATION_KEY,JSON.stringify(status))}catch(_){ }
+    persistAudit('p77a_legacy_dedupe_completed',{removedCount:0});
+    return{rides:input,changed:false,removed:[],status};
+  }
+
+  // Rollback ist Pflicht. P77A sichert bewusst nur die tatsächlich betroffenen Altzeilen
+  // statt die komplette Fahrtenliste ein zweites Mal in localStorage zu duplizieren.
+  // Dadurch bleibt der Fail-Closed-Schutz erhalten, ohne den lokalen Speicher unnötig zu belasten.
+  const removeIds=new Set(removals.map(x=>x.oldId));
+  const removedRides=input.filter(r=>removeIds.has(String(r?.id||'')));
+  const doneState=removals.map(item=>({
+    oldId:item.oldId,keepId:item.keepId,
+    oldWasDone:done.has(item.oldId),keepWasDone:done.has(item.keepId)
+  }));
+  const rollback={
+    savedAt:new Date().toISOString(),reason:'P77A compact pre-migration rollback',
+    baseRideCount:input.length,removedRides,doneState,plannedRemovals:removals
+  };
+  try{
+    localStorage.setItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY,JSON.stringify(rollback));
+    const verify=JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY)||'null');
+    if(!verify||!Array.isArray(verify.removedRides)||verify.removedRides.length!==removals.length||Number(verify.baseRideCount)!==input.length)throw Error('compact rollback verification failed');
+  }catch(error){
+    persistAudit('p77a_legacy_dedupe_blocked',{reason:'rollback-failed',message:String(error?.message||error)});
+    return{rides:input,changed:false,removed:[],blocked:true};
+  }
+
+  removals.forEach(item=>{
+    if(done.has(item.oldId))done.add(item.keepId);
+    done.delete(item.oldId);
+  });
+  const next=input.filter(r=>!removeIds.has(String(r.id)));
+  const status={completed:true,completedAt:new Date().toISOString(),removedCount:removals.length,removed:removals};
+  try{localStorage.setItem(P77_LEGACY_DEDUPE_MIGRATION_KEY,JSON.stringify(status))}catch(_){ }
+  persistAudit('p77a_legacy_dedupe_completed',{removedCount:removals.length,removed:removals.map(x=>({oldId:x.oldId,keepId:x.keepId,flightNumber:x.flightNumber,reason:x.reason}))});
+  return{rides:next,changed:true,removed:removals,status};
+}
+function p77LegacyDedupeStatus(){try{return JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_MIGRATION_KEY)||'null')}catch(_){return null}}
+function p77LegacyDedupeRollback(){try{return JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY)||'null')}catch(_){return null}}
+
 function planImportPreserveMetadata(oldRide,newRide){
   const preserve=['id','flightLocation','iata','flightVerified','flightVerificationStatus','flightConfidence','flightSources','flightSourceNote','flightSourceConflict','flightResolutionMode','flightPrioritySourceUrl','flightCheckedAt','liveTime','actualLandingTime','actualDepartureTime','flightStatus','liveCheckedAt','liveSources','liveSourceNote','liveSourceConflict','liveResolutionMode','livePrioritySourceUrl','liveManualConfirmed','liveBufferOverrideMinutes'];
   const out={...newRide};
@@ -2572,18 +4046,63 @@ function planImportPreserveMetadata(oldRide,newRide){
   out._planCarryover=false;out._planMissingFromLatest=false;
   return out;
 }
+function planImportPreserveStableId(oldRide,newRide){
+  const out={...newRide,id:oldRide?.id??newRide?.id};
+  out._planCarryover=false;out._planMissingFromLatest=false;
+  return out;
+}
 function mergePlanImportByIdentity(current,incoming){
-  const buckets=new Map();
-  (current||[]).forEach(r=>{const k=planImportRideIdentity(r);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(r)});
-  const used=new Set(),merged=[];let matched=0;
-  (incoming||[]).forEach(r=>{const k=planImportRideIdentity(r),c=(buckets.get(k)||[]).filter(x=>!used.has(String(x.id)));if(c.length===1){used.add(String(c[0].id));merged.push(planImportPreserveMetadata(c[0],r));matched++}else merged.push(r)});
+  const exactBuckets=new Map(),stableBuckets=new Map();
+  (current||[]).forEach(r=>{
+    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r);
+    if(!exactBuckets.has(exact))exactBuckets.set(exact,[]);exactBuckets.get(exact).push(r);
+    if(!stableBuckets.has(stable))stableBuckets.set(stable,[]);stableBuckets.get(stable).push(r);
+  });
+  const used=new Set(),merged=[];let matched=0,deduped=0;
+  (incoming||[]).forEach(r=>{
+    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r);
+    const exactCandidates=(exactBuckets.get(exact)||[]).filter(x=>!used.has(String(x.id)));
+    if(exactCandidates.length===1){
+      const preferred=exactCandidates[0];
+      const sameStable=(stableBuckets.get(stable)||[]).filter(x=>!used.has(String(x.id)));
+      if(sameStable.some(x=>String(x.id)===String(preferred.id))){
+        sameStable.forEach(x=>used.add(String(x.id)));
+        deduped+=Math.max(0,sameStable.length-1);
+      }else used.add(String(preferred.id));
+      merged.push(planImportPreserveMetadata(preferred,r));
+      matched++;
+      return;
+    }
+    const stableCandidates=(stableBuckets.get(stable)||[]).filter(x=>!used.has(String(x.id)));
+    if(stableCandidates.length){
+      const incomingFlightTime=String(listedFlightTimeOf(r)||'').trim();
+      const preferred=stableCandidates.find(x=>String(listedFlightTimeOf(x)||'').trim()===incomingFlightTime)
+        || stableCandidates.find(x=>!x?._planCarryover&&!x?._planMissingFromLatest)
+        || stableCandidates[0];
+      // Alle weiteren Alt-Duplikate derselben stabilen realen Fahrt gelten als durch
+      // diese aktuelle Planzeile ersetzt und dürfen nicht erneut als Carryover auftauchen.
+      stableCandidates.forEach(x=>used.add(String(x.id)));
+      deduped+=Math.max(0,stableCandidates.length-1);
+      const sameExact=planImportRideIdentity(preferred)===exact;
+      merged.push(sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r));
+      matched++;
+      return;
+    }
+    merged.push(r);
+  });
   const carry=(current||[]).filter(r=>!used.has(String(r.id))&&!done.has(r.id)).map(r=>({...r,_planCarryover:true,_planMissingFromLatest:true}));
-  return{rides:[...merged,...carry],matched,carryover:carry.length,incomingCount:(incoming||[]).length};
+  return{rides:[...merged,...carry],matched,carryover:carry.length,deduped,incomingCount:(incoming||[]).length};
 }
 function beginPlanImportSession(incoming,mergeInfo){
   const now=new Date().toISOString(),id=planImportSessionId();
   const session={id,createdAt:now,plantag:String((incoming||[]).map(r=>String(r?.date||'').trim()).find(Boolean)||berlinDate()),incomingCount:Number(mergeInfo?.incomingCount||incoming?.length||0),activeRideCount:rides.length,matchedCount:Number(mergeInfo?.matched||0),carryoverCount:Number(mergeInfo?.carryover||0),phases:{plan:true,ocr:true,imported:true,flightChecked:false,liveChecked:false}};
-  const history=readPlanImportHistory();history.push({...session,rides:rides.map(r=>({...r}))});savePlanImportHistory(history);safePersistentSetItem(PLAN_IMPORT_CURRENT,JSON.stringify(session),'plan-import-current');return session;
+  // P96/S1: nur Planversions-Metadaten. Vollstaendige Fahrten bleiben in
+  // KEY/IndexedDB und im exportierbaren Backup; keine N-fache Datenduplizierung.
+  const history=readPlanImportHistory();history.push({...session});
+  session.historySaved=savePlanImportHistory(history);
+  session.currentSaved=safePersistentSetItem(PLAN_IMPORT_CURRENT,JSON.stringify(session),'plan-import-current');
+  if(!session.historySaved||!session.currentSaved)persistAudit('plan_history_partial',{historySaved:session.historySaved,currentSaved:session.currentSaved});
+  return session;
 }
 function resetCurrentImportCheckDisplay(){
   try{localStorage.removeItem('atms_flight_check_last_status_v1')}catch(_){ }
@@ -2621,7 +4140,9 @@ function deletePlanHistorySession(sessionId){
   if(!target)return false;
   const when=planHistoryDateText(target.createdAt);
   if(!confirm(`Diese frühere Planliste aus der Historie löschen?\n\nImport: ${when}\nFahrten im Import: ${Number(target.incomingCount||0)}\n\nDer aktuelle Fahrtenbestand wird dadurch NICHT verändert.`))return false;
-  savePlanImportHistory(history.filter(x=>String(x?.id||'')!==id),'plan-history-delete-one');
+  if(!savePlanImportHistory(history.filter(x=>String(x?.id||'')!==id),'plan-history-delete-one')){
+    showToast('Planliste konnte nicht geloescht werden: Speicherfehler','warn');return false;
+  }
   const current=currentPlanImportSession();
   if(String(current?.id||'')===id)localStorage.removeItem(PLAN_IMPORT_CURRENT);
   renderPlanImportHistoryPanel();
@@ -2636,7 +4157,9 @@ function deleteEarlierPlanHistory(){
   const removeCount=history.length-keep.length;
   if(removeCount<=0){showToast('Keine früheren Planlisten vorhanden','warn');return false}
   if(!confirm(`${removeCount} frühere Planliste(n) aus der Historie löschen?\n\nDie aktuelle Planliste und der aktuelle Fahrtenbestand bleiben erhalten.`))return false;
-  savePlanImportHistory(keep,'plan-history-delete-earlier');
+  if(!savePlanImportHistory(keep,'plan-history-delete-earlier')){
+    showToast('Fruehere Planlisten konnten nicht geloescht werden: Speicherfehler','warn');return false;
+  }
   renderPlanImportHistoryPanel();
   capturePersistenceSafety('plan-history-delete-earlier');
   showToast(`${removeCount} frühere Planliste(n) gelöscht`,'ok');
@@ -2647,7 +4170,10 @@ function startPlanDataFreshFromNow(){
   const backup={savedAt:new Date().toISOString(),rides:Array.isArray(rides)?rides:[],done:[...done],history,current:currentPlanImportSession(),rideOverrides:getRideOverrides(),flightCache:getFlightCache()};
   const count=Array.isArray(rides)?rides.length:0;
   if(!confirm(`ATMS-Planbereich ab jetzt neu beginnen?\n\nGelöscht werden:\n• ${count} aktuelle/alte Fahrten\n• frühere Planlisten-Historie\n• planbezogene Flug-/LIVE-Prüfdaten und Fahrtenkorrekturen\n\nERHALTEN bleiben Fahrer, Disponenten, Einstellungen, Adressbuch und Standard-Abholpuffer.\n\nVorher wird lokal ein Sicherheits-Snapshot angelegt.`))return false;
-  safePersistentSetItem(PLAN_RESET_BACKUP,JSON.stringify(backup),'plan-clean-start-backup');
+  if(!safePersistentSetItem(PLAN_RESET_BACKUP,JSON.stringify(backup),'plan-clean-start-backup')){
+    showToast('Neustart abgebrochen: Der bisherige Fahrtenbestand konnte nicht lokal gesichert werden.','warn');
+    return false;
+  }
   rides=[];done.clear();
   [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
   save();
@@ -2750,7 +4276,7 @@ function mergeImportedRides(current,incoming){
   incoming.forEach(r=>map.set(String(r.id),r));
   return [...map.values()];
 }
-function applyImportedRides(newRides){
+async function applyImportedRides(newRides){
   if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
 
   const importAuthorization=consumePlanImportAuthorization();
@@ -2770,6 +4296,15 @@ function applyImportedRides(newRides){
     source:importAuthorization.source,
     incomingCount:newRides.length
   });
+  const beforeRides=rides.map(r=>({...r}));
+  const beforeDone=new Set(done);
+  // Nur bei nachweislich erfolgreich geschriebener VORHER-Version beginnen.
+  let persistedBefore=[];
+  try{persistedBefore=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(_){ }
+  if(!Array.isArray(persistedBefore)||persistedBefore.length!==beforeRides.length)
+    throw Error('Import blockiert: Der vorherige Fahrtenbestand ist nicht vollstaendig im lokalen Speicher. Bitte Sicherung pruefen.');
+  const durableBefore=await syncPersistenceDurableShadow('before-plan-import-verified');
+  if(!durableBefore)throw Error('Import blockiert: Die bestehende Fahrten-Sicherung in IndexedDB konnte nicht bestaetigt werden.');
 
   // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
   // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
@@ -2791,15 +4326,23 @@ function applyImportedRides(newRides){
   // Datum bleibt unveraendert.
   const importedAt=new Date().toISOString();
   const assumedPlantDay=berlinDate();
-  const normalizedIncoming=newRides.map(r=>{
+  const normalizedIncomingBase=newRides.map(r=>{
     const explicitDate=String(first(r?.date,r?.datum)||'').trim();
     if(explicitDate)return r;
     return {...r,date:assumedPlantDay,dateAssumed:true,planDateAssumed:true,planImportedAt:importedAt};
   });
+  // P93: Nur durch eine gleichzeitige Geschwisterzeile bestätigte kompakte Airport-OCR-Artefakte
+  // werden vor dem Re-Import-Matching normalisiert. Bestand und Neueingang durchlaufen dieselbe
+  // enge Regel, damit bereits entstandene Carryover-Dubletten beim nächsten Import zusammenfallen.
+  const normalizedIncoming=p93NormalizeSiblingRouteArtifacts(normalizedIncomingBase);
+  const normalizedCurrent=p93NormalizeSiblingRouteArtifacts(rides);
+  // P75: Fahrerfarben aus farbigen Bild-/WhatsApp-Planlisten nur als UI-Metadaten übernehmen.
+  // Manuell in P74 gewählte/gesperrte Farben haben Vorrang; Fahrtdaten bleiben unverändert.
+  applyImportedDriverPlanColors(normalizedIncoming);
   // P32: gleiche reale, noch offene Fahrt aus einer neuen Planversion behält ihre stabile ID
   // und bereits bestätigte Flug-/LIVE-Metadaten. Nicht sicher gematchte offene Alt-Fahrten
   // werden nicht blind gelöscht, sondern als Carryover markiert.
-  const planMerge=mergePlanImportByIdentity(rides,normalizedIncoming);
+  const planMerge=mergePlanImportByIdentity(normalizedCurrent,normalizedIncoming);
   rides=planMerge.rides;
   const corrected=applyRideOverrides(rides);
   rides=corrected.rides;
@@ -2809,9 +4352,21 @@ function applyImportedRides(newRides){
   const restored=applyFlightCacheToRides(rides);
   rides=restored.rides;
   done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
-  save();
+  const stored=save({deferDurable:true,silent:true});
+  if(!stored){
+    rides=beforeRides;done=beforeDone;
+    if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'local-write'});
+    throw Error('Import abgebrochen: Neue Fahrten konnten nicht dauerhaft gespeichert werden. Alter Bestand bleibt erhalten.');
+  }
+  const durableAfter=await syncPersistenceDurableShadow('after-plan-import-verified');
+  if(!durableAfter){
+    rides=beforeRides;done=beforeDone;
+    if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'durable-write'});
+    throw Error('Import abgebrochen: IndexedDB-Sicherung fehlgeschlagen. Vorheriger Bestand wurde erneut gespeichert; bitte Backup pruefen.');
+  }
+  // Storage V2 ist noch kein Freigabe-Gate: nur paralleles Spiegeln + Verifikation.
+  void syncStorageV2Phase1('after-plan-import-verified');
   capturePersistenceSafety('after-plan-import');
-  syncPersistenceDurableShadow('after-plan-import');
   const importSession=beginPlanImportSession(normalizedIncoming,planMerge);
   renderPlanImportHistoryPanel();
   resetCurrentImportCheckDisplay();
@@ -2822,6 +4377,7 @@ function applyImportedRides(newRides){
     mode:'merge',
     count:rides.length,
     importSessionId:importSession.id,
+    historySaved:Boolean(importSession.historySaved&&importSession.currentSaved),
     matchedRides:planMerge.matched,
     carryoverRides:planMerge.carryover,
     restoredFlightChecks:restored.changed,
@@ -3020,7 +4576,7 @@ function googleMapsRouteUrl(r,geo){
   return{url:`https://www.google.com/maps/dir/?${params.toString()}`,missing:[]};
 }
 function openGoogleMapsRoute(r,geo=null){const result=googleMapsRouteUrl(r,geo);if(result.missing?.length){showMissingRouteAddresses(result.missing);return false}if(!result.url){showToast('Keine vollständige Route verfügbar','warn');return false}window.open(result.url,'_blank');return true}
-function routeLabelForRide(r){const points=routePointsForRide(r);return points.length?points.join(' → '):'Keine Route verfügbar'}
+function routeLabelForRide(r){const route=routeAddressResolution(r),points=route.points.length?route.points:routePointsForRide(r);return points.length?points.join(' → '):'Keine Route verfügbar'}
 // CORE-006S – Lokales, editierbares Orts-/Adressbuch.
 function normalizeAddressAlias(value){return normKey(String(value||'').replace(/[.,;:]+$/g,''))}
 function normalizeAddressBookEntry(raw,index=0){
@@ -3033,22 +4589,38 @@ function normalizeAddressBookEntry(raw,index=0){
   return {id:String(raw?.id||`addr-${Date.now()}-${index}-${Math.random().toString(36).slice(2,8)}`),name,address,aliases,note:String(raw?.note??raw?.notiz??'').trim(),createdAt:String(raw?.createdAt||new Date().toISOString()),updatedAt:String(raw?.updatedAt||raw?.createdAt||new Date().toISOString())};
 }
 function getAddressBook(){try{const raw=JSON.parse(localStorage.getItem(ADDRESS_BOOK)||'[]');return(Array.isArray(raw)?raw:[]).map(normalizeAddressBookEntry).filter(x=>x.name&&x.address)}catch(_){return[]}}
-function saveAddressBook(list,reason='address-book'){const clean=(Array.isArray(list)?list:[]).map(normalizeAddressBookEntry).filter(x=>x.name&&x.address).slice(0,3000);const ok=safePersistentSetItem(ADDRESS_BOOK,JSON.stringify(clean),reason);if(ok){capturePersistenceSafety(reason);try{updateBackupUI()}catch(_){}}return ok}
+function saveAddressBook(list,reason='address-book'){const clean=(Array.isArray(list)?list:[]).map(normalizeAddressBookEntry).filter(x=>x.name&&x.address).slice(0,3000);const ok=safePersistentSetItem(ADDRESS_BOOK,JSON.stringify(clean),reason);if(ok){capturePersistenceSafety(reason);try{updateBackupUI()}catch(_){ }try{updateSettingsHub()}catch(_){ }}return ok}
 function addressBookTerms(entry){return[entry?.name,...(Array.isArray(entry?.aliases)?entry.aliases:[])].map(normalizeAddressAlias).filter(Boolean)}
 function findAddressBookEntry(place){const key=normalizeAddressAlias(place);if(!key)return null;const hits=getAddressBook().filter(entry=>addressBookTerms(entry).includes(key));return hits.length===1?hits[0]:null}
 function addressBookHasCollision(candidate,excludeId=''){const wanted=new Set(addressBookTerms(candidate));if(!wanted.size)return null;return getAddressBook().find(entry=>String(entry.id)!==String(excludeId)&&addressBookTerms(entry).some(term=>wanted.has(term)))||null}
 function resetAddressBookForm(){for(const id of['addressBookEditId','addressBookName','addressBookAddress','addressBookAliases','addressBookNote']){const el=$(id);if(el)el.value=''}const saveBtn=$('addressBookSaveBtn'),cancelBtn=$('addressBookCancelEditBtn');if(saveBtn)saveBtn.textContent='+ Adresse speichern';if(cancelBtn)cancelBtn.classList.add('hidden')}
+function addressBookDisplayMeta(entry){
+  const note=String(entry?.note||'').trim(),parts={};
+  note.split(/\s*\|\|\s*/).forEach(piece=>{const m=piece.match(/^([^:]{2,32}):\s*(.+)$/);if(m)parts[normKey(m[1])]=m[2].trim()});
+  let category=parts.kategorie||parts.category||'';
+  if(!category){const probe=normKey(`${entry?.name||''} ${entry?.address||''}`);if(/flughafen|airport/.test(probe))category='Flughafen';else if(/hotel/.test(probe))category='Hotel';else if(/taxi/.test(probe))category='Taxistand';else category='Adresse'}
+  return{category,phone:parts.telefon||parts.phone||'',website:parts.website||parts.webseite||'',hints:parts.hinweise||parts.hinweis||'',maps:parts['google maps']||parts.maps||'',sources:parts.quellen||parts.quelle||'',rawNote:note};
+}
+function addressBookFieldRow(label,value,opts={}){if(!String(value||'').trim())return'';const v=String(value).trim();const content=opts.link?`<a href="${esc(v)}" target="_blank" rel="noopener noreferrer">${esc(v)}</a>`:esc(v);return`<div class="address-detail-row"><span>${esc(label)}</span><strong>${content}</strong></div>`}
 function renderAddressBook(){
   const host=$('addressBookList'),status=$('addressBookStatus'),searchInfo=$('addressBookSearchInfo');if(!host)return;
   const rawQuery=String($('addressBookSearch')?.value||''),q=normKey(rawQuery),all=getAddressBook();
   const visible=all.filter(e=>!q||[e.name,e.address,...e.aliases,e.note].some(v=>normKey(v).includes(q)));
-  if(searchInfo){
-    searchInfo.textContent=q?`${visible.length} Treffer von ${all.length} Adresse(n) für „${rawQuery.trim()}“`:`${all.length} Adresse(n) verfügbar`;
-    searchInfo.style.color=q&&visible.length===0?'#ffc14d':'';
-  }
+  const count=$('addressBookPageCount');if(count)count.textContent=`${all.length} gespeicherte Adresse${all.length===1?'':'n'}`;
+  if(searchInfo){searchInfo.textContent=q?`${visible.length} Treffer von ${all.length}`:`${all.length} Adresse(n) verfügbar`;searchInfo.style.color=q&&visible.length===0?'#ffc14d':''}
   if(status)status.textContent=q?`${visible.length} Treffer von ${all.length} Adresse(n)`:`${all.length} Adresse(n) gespeichert · lokal auf diesem Gerät`;
-  host.innerHTML=visible.length?visible.map(e=>`<div class="dispatcher-item" data-address-id="${esc(e.id)}"><div style="min-width:0"><b>${esc(e.name)}</b><small style="display:block;white-space:normal">${esc(e.address)}</small>${e.aliases.length?`<div class="driver-note">Alias: ${e.aliases.map(esc).join(' · ')}</div>`:''}${e.note?`<div class="driver-note">${esc(e.note)}</div>`:''}</div><div class="dispatcher-item-actions"><button type="button" class="mini" data-address-action="edit">✎</button><button type="button" class="mini danger" data-address-action="delete">✕</button></div></div>`).join(''):'<div class="setting-note">Noch keine passenden Orte & Adressen gespeichert.</div>';
+  host.innerHTML=visible.length?visible.map(e=>{const meta=addressBookDisplayMeta(e);return`<button type="button" class="address-compact-item" data-address-id="${esc(e.id)}"><span class="address-compact-main"><strong>${esc(e.name)}</strong><small>${esc(e.address)}</small><em>${esc(meta.category)}</em></span><span class="address-compact-chevron">›</span></button>`}).join(''):'<div class="setting-note address-empty">Noch keine passenden Orte & Adressen gespeichert.</div>';
 }
+function showAddressBookBrowse(opts={}){const panel=$('atmsAddressBookPanel');if(!panel)return;['addressBookBrowseView','addressBookEditorView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookBrowseView')?.classList.remove('hidden');renderAddressBook();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.address,'address');else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function showAddressBookEditor(mode='new',opts={}){const panel=$('atmsAddressBookPanel');if(!panel)return;const id=String(opts.id||$('addressBookEditId')?.value||'');if(opts.history!==false){atmsSettingsRememberScroll('address');atmsSettingsPushRoute('address','editor',mode==='edit'?id:'')}['addressBookBrowseView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookEditorView')?.classList.remove('hidden');const title=$('addressBookEditorTitle');if(title)title.textContent=mode==='edit'?'Adresse bearbeiten':'Neue Adresse';panel.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>{panel.scrollIntoView({block:'start'});setTimeout(()=>$('addressBookName')?.focus(),80)})}
+function showAddressBookDetail(id,opts={}){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;if(opts.history!==false){atmsSettingsRememberScroll('address');atmsSettingsPushRoute('address','detail',id)}const meta=addressBookDisplayMeta(e),body=$('addressBookDetailBody');if(!body)return;body.dataset.addressId=e.id;body.innerHTML=`<div class="address-detail-hero"><div class="address-detail-type">${esc(meta.category)}</div><h3>${esc(e.name)}</h3><p>${esc(e.address)}</p></div>${addressBookFieldRow('Aliase',e.aliases.join(' · '))}${addressBookFieldRow('Telefon',meta.phone)}${addressBookFieldRow('Website',meta.website,{link:/^https?:/i.test(meta.website)})}${addressBookFieldRow('Google Maps',meta.maps,{link:/^https?:/i.test(meta.maps)})}${addressBookFieldRow('Hinweise',meta.hints)}${addressBookFieldRow('Quellen',meta.sources)}${meta.rawNote&&!Object.keys(meta).some(k=>k!=='rawNote'&&k!=='category'&&meta[k])?addressBookFieldRow('Notiz',meta.rawNote):''}`;const title=$('addressBookDetailTitle');if(title)title.textContent=e.name;['addressBookBrowseView','addressBookEditorView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookDetailView')?.classList.remove('hidden');$('atmsAddressBookPanel')?.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>$('atmsAddressBookPanel')?.scrollIntoView({block:'start'}))}
+function openSettingsAddressPage(mode='browse',opts={}){
+  showView('settings');closeSettingsDriverPage();ensureAddressBookPanel();const view=$('settingsView'),panel=$('atmsAddressBookPanel');if(!view||!panel)return;setSettingsAddressPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');
+  if(opts.history!==false)atmsSettingsPushRoute('address',mode==='transfer'?'transfer':'browse');
+  if(mode==='transfer'){['addressBookBrowseView','addressBookEditorView','addressBookDetailView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookTransferView')?.classList.remove('hidden')}else showAddressBookBrowse({restoreScroll:!!opts.restoreScroll});
+  if(!opts.restoreScroll)requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{view.scrollTop=0}catch(_){ }panel.scrollIntoView({block:'start'})});
+}
+function closeSettingsAddressPage(){const panel=$('atmsAddressBookPanel');setSettingsAddressPageActive(false);panel?.classList.add('hidden');['addressBookEditorView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookBrowseView')?.classList.remove('hidden');resetAddressBookForm();}
 function installAddressBookSearchEvents(){
   const input=$('addressBookSearch');if(!input||input.dataset.atmsSearchS3==='1')return;
   input.dataset.atmsSearchS3='1';
@@ -3065,10 +4637,10 @@ function saveAddressBookForm(){
   if(!name){showToast('Bitte Kurzname / Planname eingeben','warn');return}if(!address){showToast('Bitte vollständige Adresse eingeben','warn');return}
   const list=getAddressBook(),old=list.find(x=>String(x.id)===editId),candidate=normalizeAddressBookEntry({...old,id:editId||undefined,name,address,aliases,note,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()});
   const collision=addressBookHasCollision(candidate,editId);if(collision){alert(`Kurzname oder Alias ist bereits „${collision.name}“ zugeordnet. Bitte einen eindeutigen Namen/Alias verwenden.`);return}
-  const next=editId?list.map(x=>String(x.id)===editId?candidate:x):[candidate,...list];if(!saveAddressBook(next,'address-book-edit')){showToast('Adresse konnte nicht gespeichert werden','warn');return}resetAddressBookForm();renderAddressBook();showToast(editId?'Adresse geändert':'Adresse gespeichert','ok');
+  const next=editId?list.map(x=>String(x.id)===editId?candidate:x):[candidate,...list];if(!saveAddressBook(next,'address-book-edit')){showToast('Adresse konnte nicht gespeichert werden','warn');return}resetAddressBookForm();atmsSettingsReturnToBrowse('address');updateSettingsHub();showToast(editId?'Adresse geändert':'Adresse gespeichert','ok');
 }
-function editAddressBookEntry(id){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;$('addressBookEditId').value=e.id;$('addressBookName').value=e.name;$('addressBookAddress').value=e.address;$('addressBookAliases').value=e.aliases.join('\n');$('addressBookNote').value=e.note||'';$('addressBookSaveBtn').textContent='Änderungen speichern';$('addressBookCancelEditBtn')?.classList.remove('hidden');$('addressBookName')?.scrollIntoView({behavior:'smooth',block:'center'})}
-function deleteAddressBookEntry(id){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;if(!confirm(`Ort „${e.name}“ wirklich aus Orte & Adressen löschen?`))return;saveAddressBook(getAddressBook().filter(x=>String(x.id)!==String(id)),'address-book-delete');resetAddressBookForm();renderAddressBook();showToast('Adresse gelöscht','ok')}
+function editAddressBookEntry(id){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;$('addressBookEditId').value=e.id;$('addressBookName').value=e.name;$('addressBookAddress').value=e.address;$('addressBookAliases').value=e.aliases.join('\n');$('addressBookNote').value=e.note||'';$('addressBookSaveBtn').textContent='Änderungen speichern';$('addressBookCancelEditBtn')?.classList.remove('hidden');showAddressBookEditor('edit',{id:e.id})}
+function deleteAddressBookEntry(id){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;if(!confirm(`Ort „${e.name}“ wirklich aus Orte & Adressen löschen?`))return;saveAddressBook(getAddressBook().filter(x=>String(x.id)!==String(id)),'address-book-delete');resetAddressBookForm();atmsSettingsReturnToBrowse('address');updateSettingsHub();showToast('Adresse gelöscht','ok')}
 function addressBookImportMode(count){const current=getAddressBook();if(!current.length)return'replace';if(confirm(`${count} Adresse(n) wurden erkannt.\n\nOK = Bestehende Adressen BEHALTEN & Import ERGÄNZEN\nAbbrechen = weitere Auswahl`))return'merge';return confirm(`Bestehende ${current.length} Adresse(n) durch die Importdatei ERSETZEN?\n\nOK = bestehende Adressen ersetzen\nAbbrechen = Import ohne Änderung abbrechen`)?'replace':'cancel'}
 function validateImportedAddressEntries(rows){const out=[],seen=new Set();for(let i=0;i<rows.length;i++){const e=normalizeAddressBookEntry(rows[i],i);if(!e.name&&!e.address)continue;if(!e.name||!e.address)throw new Error(`Zeile ${i+2}: Kurzname und Adresse sind erforderlich.`);const terms=addressBookTerms(e);if(terms.some(t=>seen.has(t)))throw new Error(`Zeile ${i+2}: Kurzname/Alias kommt in der Importdatei doppelt vor.`);terms.forEach(t=>seen.add(t));out.push(e)}if(!out.length)throw new Error('Keine gültigen Adressen in der Datei gefunden.');return out}
 function csvDetectDelimiter(text){const line=String(text||'').split(/\r?\n/).find(x=>x.trim())||'';return(line.match(/;/g)||[]).length>=(line.match(/,/g)||[]).length?';':','}
@@ -3095,18 +4667,155 @@ function mergeAddressBookImported(imported){const current=getAddressBook(),next=
 async function importAddressBookFile(file){try{const imported=await parseAddressBookFile(file),mode=addressBookImportMode(imported.length);if(mode==='cancel'){showToast('Adressimport abgebrochen','warn');return}capturePersistenceSafety('before-address-book-import');try{localStorage.setItem('atms_address_book_previous_import_v1',JSON.stringify({savedAt:new Date().toISOString(),addresses:getAddressBook()}))}catch(_){ }if(mode==='replace'){const now=new Date().toISOString(),fresh=imported.map((e,i)=>normalizeAddressBookEntry({...e,id:`addr-${Date.now()}-${i}`,createdAt:now,updatedAt:now},i));saveAddressBook(fresh,'address-book-import-replace');renderAddressBook();const status=$('addressBookStatus');if(status)status.textContent=`${fresh.length} Adresse(n) gespeichert · bestehende Adressen wurden ersetzt.`;showToast(`${fresh.length} Adressen importiert · bestehende ersetzt`,'ok');return}const m=mergeAddressBookImported(imported);saveAddressBook(m.list,'address-book-import-merge');renderAddressBook();const msg=`${m.added} neu · ${m.unchanged} unverändert${m.conflicts?` · ${m.conflicts} Konflikt(e) nicht überschrieben`:''}`;const status=$('addressBookStatus');if(status)status.textContent=msg;showToast(msg,m.conflicts?'warn':'ok')}catch(e){const status=$('addressBookStatus');if(status)status.textContent='Importfehler: '+e.message;showToast('Adressimport fehlgeschlagen','warn')}}
 function addressBookExportRows(){return[['Kurzname','Adresse','Aliase','Notiz'],...getAddressBook().map(e=>[e.name,e.address,e.aliases.join(' | '),e.note||''])]}
 function csvCell(v){v=String(v??'');return/[;"\r\n]/.test(v)?`"${v.replace(/"/g,'""')}"`:v}
-function exportAddressBookCsv(){const rows=addressBookExportRows(),empty=rows.length<=1,text='\uFEFF'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n'),d=new Date(),p=n=>String(n).padStart(2,'0');downloadTextFile(text,`ATMS_Adressen_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.csv`,'text/csv;charset=utf-8');showToast(empty?'CSV-Adressvorlage exportiert':'CSV-Adressliste exportiert','ok')}
-async function exportAddressBookXlsx(){try{const rows=addressBookExportRows(),empty=rows.length<=1,JSZip=await loadAddressBookJsZip(),zip=new JSZip(),sheetRows=rows.map((r,ri)=>`<row r="${ri+1}">${r.map((v,ci)=>`<c r="${xlsxColumnName(ci)}${ri+1}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(v)}</t></is></c>`).join('')}</row>`).join('');zip.file('[Content_Types].xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');zip.file('_rels/.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');zip.file('xl/workbook.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="ATMS Adressen" sheetId="1" r:id="rId1"/></sheets></workbook>');zip.file('xl/_rels/workbook.xml.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');zip.file('xl/worksheets/sheet1.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`);const xlsxMime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:xlsxMime}),url=URL.createObjectURL(blob),a=document.createElement('a'),d=new Date(),p=n=>String(n).padStart(2,'0');a.href=url;a.download=`ATMS_Adressen_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);showToast(empty?'Excel-Adressvorlage exportiert':'Excel-Adressliste exportiert','ok')}catch(e){const status=$('addressBookStatus');if(status)status.textContent='Excel-Exportfehler: '+e.message;showToast('Excel-Export fehlgeschlagen','warn')}}
+async function exportAddressBookCsv(){try{const rows=addressBookExportRows(),empty=rows.length<=1,text='\uFEFF'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n'),d=new Date(),p=n=>String(n).padStart(2,'0'),name=`ATMS_Adressen_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.csv`,blob=new Blob([text],{type:'text/csv;charset=utf-8'});const mode=await saveExportBlob(blob,name,'text/csv');const status=$('addressBookStatus');if(status)status.textContent=mode==='native'?(empty?'CSV-Adressvorlage als Datei gespeichert.':`${rows.length-1} Adresse(n) als CSV-Datei gespeichert.`):(empty?'CSV-Adressvorlage: Download gestartet.':'CSV-Adressliste: Download gestartet.');showToast(empty?'CSV-Adressvorlage exportiert':'CSV-Adressliste exportiert','ok')}catch(e){const message=String(e?.message||e||'');const status=$('addressBookStatus');if(/abgebrochen/i.test(message)){if(status)status.textContent='CSV-Export abgebrochen.';showToast('CSV-Export abgebrochen','warn')}else{if(status)status.textContent='CSV-Exportfehler: '+message;showToast('CSV-Export fehlgeschlagen','warn')}}}
+async function exportAddressBookXlsx(){try{const rows=addressBookExportRows(),empty=rows.length<=1,JSZip=await loadAddressBookJsZip(),zip=new JSZip(),sheetRows=rows.map((r,ri)=>`<row r="${ri+1}">${r.map((v,ci)=>`<c r="${xlsxColumnName(ci)}${ri+1}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(v)}</t></is></c>`).join('')}</row>`).join('');zip.file('[Content_Types].xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');zip.file('_rels/.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');zip.file('xl/workbook.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="ATMS Adressen" sheetId="1" r:id="rId1"/></sheets></workbook>');zip.file('xl/_rels/workbook.xml.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');zip.file('xl/worksheets/sheet1.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`);const xlsxMime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:xlsxMime}),d=new Date(),p=n=>String(n).padStart(2,'0'),name=`ATMS_Adressen_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.xlsx`;const mode=await saveExportBlob(blob,name,xlsxMime);const status=$('addressBookStatus');if(status)status.textContent=mode==='native'?(empty?'Excel-Adressvorlage als Datei gespeichert.':`${rows.length-1} Adresse(n) als Excel-Datei gespeichert.`):(empty?'Excel-Adressvorlage: Download gestartet.':'Excel-Adressliste: Download gestartet.');showToast(empty?'Excel-Adressvorlage exportiert':'Excel-Adressliste exportiert','ok')}catch(e){const message=String(e?.message||e||'');const status=$('addressBookStatus');if(/abgebrochen/i.test(message)){if(status)status.textContent='Excel-Export abgebrochen.';showToast('Excel-Export abgebrochen','warn')}else{if(status)status.textContent='Excel-Exportfehler: '+message;showToast('Excel-Export fehlgeschlagen','warn')}}}
 function ensureAddressBookPanel(){
-  const view=$('settingsView'),host=$('settingsToolsHost');if(!view)return false;let panel=$('atmsAddressBookPanel');if(panel){if(host&&panel.parentElement!==host)host.appendChild(panel);renderAddressBook();return true}
-  panel=document.createElement('section');panel.id='atmsAddressBookPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(108,207,255,.32);border-radius:14px;background:rgba(20,90,120,.10)';
-  panel.innerHTML=`<div style="font-weight:900;margin-bottom:5px">📍 Orte & Adressen</div><div style="font-size:12px;opacity:.82;margin-bottom:10px">Lokales Adressbuch für „Route öffnen“ und Live-Routing. Hotels werden nur über exakte Kurznamen/Aliase zugeordnet.</div><input id="addressBookSearch" placeholder="Adressen durchsuchen" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search" style="width:100%;box-sizing:border-box;padding:10px;border-radius:9px;margin-bottom:4px"><div id="addressBookSearchInfo" style="font-size:12px;opacity:.86;margin:0 0 10px">Adresssuche bereit.</div><input id="addressBookEditId" type="hidden"><label style="display:block;font-size:12px;opacity:.8;margin:5px 0">Kurzname / Planname</label><input id="addressBookName" placeholder="z. B. Holiday Inn Toulouseallee" autocomplete="off" style="width:100%;box-sizing:border-box;padding:10px;border-radius:9px"><label style="display:block;font-size:12px;opacity:.8;margin:8px 0 5px">Vollständige Adresse</label><input id="addressBookAddress" placeholder="Straße Hausnummer, PLZ Ort" autocomplete="street-address" style="width:100%;box-sizing:border-box;padding:10px;border-radius:9px"><label style="display:block;font-size:12px;opacity:.8;margin:8px 0 5px">Aliase (optional · je Zeile oder mit | trennen)</label><textarea id="addressBookAliases" placeholder="z. B. Holiday Inn DUS" style="width:100%;box-sizing:border-box;min-height:70px;padding:10px;border-radius:9px"></textarea><label style="display:block;font-size:12px;opacity:.8;margin:8px 0 5px">Notiz (optional)</label><input id="addressBookNote" placeholder="z. B. Haupteingang / Buszufahrt" style="width:100%;box-sizing:border-box;padding:10px;border-radius:9px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px"><button type="button" id="addressBookSaveBtn" style="padding:11px;border-radius:10px;font-weight:900">+ Adresse speichern</button><button type="button" id="addressBookCancelEditBtn" class="hidden" style="padding:11px;border-radius:10px;font-weight:800">Bearbeiten abbrechen</button></div><div style="height:1px;background:rgba(255,255,255,.12);margin:14px 0"></div><div style="display:grid;grid-template-columns:1fr;gap:8px"><button type="button" id="addressBookImportBtn" style="padding:11px;border-radius:10px;font-weight:850">📥 Excel/CSV importieren</button><input id="addressBookImportInput" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden"><button type="button" id="addressBookExportXlsxBtn" style="padding:11px;border-radius:10px;font-weight:850">📤 Excel exportieren</button><button type="button" id="addressBookExportCsvBtn" style="padding:11px;border-radius:10px;font-weight:850">📤 CSV exportieren</button></div><div id="addressBookStatus" style="font-size:12px;opacity:.82;margin:10px 0"></div><div id="addressBookList" style="display:grid;gap:8px"></div>`;
+  const view=$('settingsView'),host=$('settingsToolsHost');if(!view)return false;let panel=$('atmsAddressBookPanel');
+  if(panel&&panel.dataset.atmsP95Gate2Panel!=='1'){panel.remove();panel=null}
+  if(panel){if(host&&panel.parentElement!==host)host.appendChild(panel);renderAddressBook();return true}
+  panel=document.createElement('section');panel.id='atmsAddressBookPanel';panel.dataset.atmsP95Gate2Panel='1';panel.className='settings-address-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="addressBookBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>📍 Adressen</h2><small id="addressBookPageCount">0 gespeicherte Adressen</small></div><div class="atms-mobile-head-actions"><button type="button" id="addressBookHeadSearch" class="atms-mobile-icon-btn" aria-label="Adresse suchen">⌕</button><button type="button" id="addressBookHeadAdd" class="atms-mobile-icon-btn" aria-label="Neue Adresse">＋</button></div></div>
+  <div id="addressBookBrowseView"><div class="address-toolbar"><input id="addressBookSearch" class="setting-input" placeholder="Adresse suchen …" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search"><button type="button" id="addressBookNewBtn" class="address-new-btn">+ Neue Adresse</button></div><div id="addressBookSearchInfo" class="address-search-info">Adresssuche bereit.</div><div id="addressBookList" class="address-compact-list"></div></div>
+  <div id="addressBookEditorView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="addressBookEditorBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="addressBookEditorTitle">Neue Adresse</h3></div><input id="addressBookEditId" type="hidden"><label class="setting-label" for="addressBookName">Kurzname / Planname</label><input id="addressBookName" class="setting-input" placeholder="z. B. Holiday Inn Toulouseallee" autocomplete="off"><label class="setting-label" for="addressBookAddress">Vollständige Adresse</label><input id="addressBookAddress" class="setting-input" placeholder="Straße Hausnummer, PLZ Ort" autocomplete="street-address"><label class="setting-label" for="addressBookAliases">Aliase (optional · je Zeile oder mit | trennen)</label><textarea id="addressBookAliases" class="setting-input address-aliases" placeholder="z. B. Holiday Inn DUS"></textarea><label class="setting-label" for="addressBookNote">Notiz (optional)</label><textarea id="addressBookNote" class="setting-input address-note-input" placeholder="z. B. Haupteingang / Buszufahrt"></textarea><div class="address-editor-actions"><button type="button" id="addressBookSaveBtn" class="act dark">+ Adresse speichern</button><button type="button" id="addressBookCancelEditBtn" class="act hidden">Bearbeiten abbrechen</button></div></div>
+  <div id="addressBookDetailView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="addressBookDetailBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="addressBookDetailTitle">Adressdetails</h3></div><div id="addressBookDetailBody" class="address-detail-body"></div><div class="address-detail-actions"><button type="button" id="addressBookDetailEdit" class="act dark">✎ Bearbeiten</button><button type="button" id="addressBookDetailDelete" class="act danger">🗑 Löschen</button></div></div>
+  <div id="addressBookTransferView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="addressBookTransferBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3>📥 Import &amp; Export</h3></div><p class="setting-note">Gate 2: Die bestehenden Adress-Datenwerkzeuge bleiben unverändert verfügbar. Die endgültige Import-&amp;-Export-Seite folgt in ihrem eigenen Gate.</p><div class="address-transfer-actions"><button type="button" id="addressBookImportBtn" class="act dark">📥 Excel/CSV importieren</button><input id="addressBookImportInput" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden"><button type="button" id="addressBookExportXlsxBtn" class="act">📤 Excel exportieren</button><button type="button" id="addressBookExportCsvBtn" class="act">📤 CSV exportieren</button></div><div id="addressBookStatus" class="address-transfer-status"></div></div>`;
   if(host)host.appendChild(panel);else view.appendChild(panel);
-  $('addressBookSaveBtn')?.addEventListener('click',saveAddressBookForm);$('addressBookCancelEditBtn')?.addEventListener('click',()=>{resetAddressBookForm();renderAddressBook()});installAddressBookSearchEvents();$('addressBookList')?.addEventListener('click',e=>{const btn=e.target.closest('[data-address-action]'),row=e.target.closest('[data-address-id]');if(!btn||!row)return;const id=row.dataset.addressId;if(btn.dataset.addressAction==='edit')editAddressBookEntry(id);else if(btn.dataset.addressAction==='delete')deleteAddressBookEntry(id)});$('addressBookImportBtn')?.addEventListener('click',()=>{const input=$('addressBookImportInput');if(input){input.value='';input.click()}});$('addressBookImportInput')?.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)importAddressBookFile(file)});$('addressBookExportXlsxBtn')?.addEventListener('click',exportAddressBookXlsx);$('addressBookExportCsvBtn')?.addEventListener('click',exportAddressBookCsv);renderAddressBook();return true
+  $('addressBookBackSettings')?.addEventListener('click',atmsSettingsBack);
+  $('addressBookNewBtn')?.addEventListener('click',()=>{resetAddressBookForm();showAddressBookEditor('new')});
+  $('addressBookEditorBack')?.addEventListener('click',()=>{resetAddressBookForm();atmsSettingsBack()});
+  $('addressBookDetailBack')?.addEventListener('click',atmsSettingsBack);
+  $('addressBookTransferBack')?.addEventListener('click',atmsSettingsBack);
+  $('addressBookHeadSearch')?.addEventListener('click',()=>atmsSettingsFocusBrowse('address'));$('addressBookHeadAdd')?.addEventListener('click',()=>{resetAddressBookForm();showAddressBookEditor('new')});
+  $('addressBookSaveBtn')?.addEventListener('click',saveAddressBookForm);
+  $('addressBookCancelEditBtn')?.addEventListener('click',()=>{resetAddressBookForm();atmsSettingsBack()});
+  installAddressBookSearchEvents();
+  $('addressBookList')?.addEventListener('click',e=>{const row=e.target.closest('[data-address-id]');if(row)showAddressBookDetail(row.dataset.addressId)});
+  $('addressBookDetailEdit')?.addEventListener('click',()=>{const id=$('addressBookDetailBody')?.dataset.addressId;if(id)editAddressBookEntry(id)});
+  $('addressBookDetailDelete')?.addEventListener('click',()=>{const id=$('addressBookDetailBody')?.dataset.addressId;if(id)deleteAddressBookEntry(id)});
+  $('addressBookImportBtn')?.addEventListener('click',()=>{const input=$('addressBookImportInput');if(input){input.value='';input.click()}});
+  $('addressBookImportInput')?.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)importAddressBookFile(file)});
+  $('addressBookExportXlsxBtn')?.addEventListener('click',exportAddressBookXlsx);$('addressBookExportCsvBtn')?.addEventListener('click',exportAddressBookCsv);
+  renderAddressBook();return true
+}
+function settingsTransferDateStamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`}
+function driverExportRows(){return [['Name','Telefon','Fahrzeug','Aktiv','Favorit','Notiz'],...getDriverContacts().map(d=>[d.name||'',d.phone||'',d.vehicle||'',d.active!==false?'Ja':'Nein',d.favorite?'Ja':'Nein',d.note||''])]}
+function setSettingsTransferStatus(message,type=''){const el=$('settingsTransferStatus');if(el){el.textContent=String(message||'');el.className='settings-transfer-status '+String(type||'')}}
+function renderSettingsTransferInfo(){const a=$('settingsTransferAddressCount'),d=$('settingsTransferDriverCount');if(a)a.textContent=String(getAddressBook().length);if(d)d.textContent=String(getDriverContacts().length)}
+async function exportDriversCsv(){try{const rows=driverExportRows(),empty=rows.length<=1,text='\uFEFF'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n'),name=`ATMS_Fahrer_${settingsTransferDateStamp()}.csv`,blob=new Blob([text],{type:'text/csv;charset=utf-8'});setSettingsTransferStatus('Fahrer-CSV wird vorbereitet …');const mode=await saveExportBlob(blob,name,'text/csv');setSettingsTransferStatus(mode==='native'?(empty?'CSV-Fahrervorlage gespeichert.':`${rows.length-1} Fahrer als CSV-Datei gespeichert.`):(empty?'CSV-Fahrervorlage: Download gestartet.':'Fahrer-CSV: Download gestartet.'),'ok');showToast(empty?'CSV-Fahrervorlage exportiert':'Fahrer-CSV exportiert','ok')}catch(e){const m=String(e?.message||e||'');setSettingsTransferStatus(/abgebrochen/i.test(m)?'Fahrer-CSV-Export abgebrochen.':'Fahrer-CSV-Export fehlgeschlagen: '+m,'warn');showToast(/abgebrochen/i.test(m)?'CSV-Export abgebrochen':'CSV-Export fehlgeschlagen','warn')}}
+async function exportDriversXlsx(){try{const rows=driverExportRows(),empty=rows.length<=1,JSZip=await loadAddressBookJsZip(),zip=new JSZip(),sheetRows=rows.map((r,ri)=>`<row r="${ri+1}">${r.map((v,ci)=>`<c r="${xlsxColumnName(ci)}${ri+1}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(v)}</t></is></c>`).join('')}</row>`).join('');zip.file('[Content_Types].xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');zip.file('_rels/.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');zip.file('xl/workbook.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="ATMS Fahrer" sheetId="1" r:id="rId1"/></sheets></workbook>');zip.file('xl/_rels/workbook.xml.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');zip.file('xl/worksheets/sheet1.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`);const mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:mime}),name=`ATMS_Fahrer_${settingsTransferDateStamp()}.xlsx`;setSettingsTransferStatus('Fahrer-Excel wird vorbereitet …');const mode=await saveExportBlob(blob,name,mime);setSettingsTransferStatus(mode==='native'?(empty?'Excel-Fahrervorlage gespeichert.':`${rows.length-1} Fahrer als Excel-Datei gespeichert.`):(empty?'Excel-Fahrervorlage: Download gestartet.':'Fahrer-Excel: Download gestartet.'),'ok');showToast(empty?'Excel-Fahrervorlage exportiert':'Fahrer-Excel exportiert','ok')}catch(e){const m=String(e?.message||e||'');setSettingsTransferStatus(/abgebrochen/i.test(m)?'Fahrer-Excel-Export abgebrochen.':'Fahrer-Excel-Export fehlgeschlagen: '+m,'warn');showToast(/abgebrochen/i.test(m)?'Excel-Export abgebrochen':'Excel-Export fehlgeschlagen','warn')}}
+async function settingsTransferImportAddresses(file){if(!file)return;setSettingsTransferStatus('Adressdatei wird geprüft …');await importAddressBookFile(file);renderSettingsTransferInfo();const legacy=String($('addressBookStatus')?.textContent||'').trim();if(/fehler|abgebrochen/i.test(legacy))setSettingsTransferStatus(legacy,'warn');else setSettingsTransferStatus(legacy||`Adressbestand: ${getAddressBook().length} gespeichert.`,'ok')}
+async function settingsTransferRunAddressExport(type){setSettingsTransferStatus(type==='xlsx'?'Adress-Excel wird vorbereitet …':'Adress-CSV wird vorbereitet …');if(type==='xlsx')await exportAddressBookXlsx();else await exportAddressBookCsv();const legacy=String($('addressBookStatus')?.textContent||'').trim();if(/fehler|abgebrochen/i.test(legacy))setSettingsTransferStatus(legacy,'warn');else setSettingsTransferStatus(legacy||`Adressbestand: ${getAddressBook().length} gespeichert.`,'ok')}
+function showSettingsTransferBrowse(){const panel=$('atmsSettingsTransferPanel');if(!panel)return;renderSettingsTransferInfo();panel.classList.remove('atms-mobile-nav-collapsed');setSettingsTransferStatus('Bereit für Import & Export.');requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{$('settingsView').scrollTop=0}catch(_){ }})}
+function showSettingsPlanImport(opts={}){if(opts.history!==false)atmsSettingsPushRoute('transfer','planimport');document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));showView('import');const back=$('importBack');if(back)back.setAttribute('aria-label','Zurück zu Import & Export')}
+function atmsPlanImportBack(){const route=atmsSettingsReadRoute();if(route?.kind==='transfer'&&route.level==='planimport'&&Number(route.depth)>1){try{history.back();return}catch(_){ }}render()}
+function ensureSettingsTransferPanel(){
+  const view=$('settingsView'),host=$('settingsToolsHost');if(!view)return false;let panel=$('atmsSettingsTransferPanel');if(panel)return true;
+  panel=document.createElement('section');panel.id='atmsSettingsTransferPanel';panel.dataset.atmsP95Gate5Panel='1';panel.className='settings-transfer-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="settingsTransferBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>📥 Import &amp; Export</h2><small>Daten schnell austauschen</small></div></div>
+  <div id="settingsTransferBrowseView" class="settings-transfer-body">
+    <section class="settings-transfer-card"><div class="settings-transfer-card-head"><span class="settings-transfer-icon">📋</span><div><h3>Planliste</h3><p>Bild/WhatsApp, Excel, CSV oder ATMS-JSON mit der bestehenden Planlistenanalyse importieren.</p></div></div><button type="button" id="settingsTransferPlanImport" class="settings-transfer-primary">📋 Planliste importieren</button></section>
+    <section class="settings-transfer-card"><div class="settings-transfer-card-head"><span class="settings-transfer-icon">📍</span><div><h3>Adressen</h3><p><strong id="settingsTransferAddressCount">0</strong> gespeicherte Adressen · bestehende Konfliktprüfung bleibt aktiv.</p></div></div><input id="settingsTransferAddressInput" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden"><div class="settings-transfer-actions"><button type="button" id="settingsTransferAddressImport" class="act dark">📥 Excel/CSV importieren</button><button type="button" id="settingsTransferAddressXlsx" class="act">📤 Excel exportieren</button><button type="button" id="settingsTransferAddressCsv" class="act">📤 CSV exportieren</button></div></section>
+    <section class="settings-transfer-card"><div class="settings-transfer-card-head"><span class="settings-transfer-icon">🚗</span><div><h3>Fahrer</h3><p><strong id="settingsTransferDriverCount">0</strong> gespeicherte Fahrer · Name, Telefon, Fahrzeug, Status, Favorit und Notiz.</p></div></div><div class="settings-transfer-actions two"><button type="button" id="settingsTransferDriverXlsx" class="act">📤 Excel exportieren</button><button type="button" id="settingsTransferDriverCsv" class="act">📤 CSV exportieren</button></div></section>
+    <div id="settingsTransferStatus" class="settings-transfer-status">Bereit für Import &amp; Export.</div>
+  </div>`;
+  if(host)host.appendChild(panel);else view.appendChild(panel);
+  $('settingsTransferBackSettings')?.addEventListener('click',atmsSettingsBack);
+  $('settingsTransferPlanImport')?.addEventListener('click',()=>showSettingsPlanImport());
+  $('settingsTransferAddressImport')?.addEventListener('click',()=>{const input=$('settingsTransferAddressInput');if(input){input.value='';input.click()}});
+  $('settingsTransferAddressInput')?.addEventListener('change',e=>{const file=e.target.files?.[0];if(file)settingsTransferImportAddresses(file)});
+  $('settingsTransferAddressXlsx')?.addEventListener('click',()=>settingsTransferRunAddressExport('xlsx'));
+  $('settingsTransferAddressCsv')?.addEventListener('click',()=>settingsTransferRunAddressExport('csv'));
+  $('settingsTransferDriverXlsx')?.addEventListener('click',exportDriversXlsx);
+  $('settingsTransferDriverCsv')?.addEventListener('click',exportDriversCsv);
+  renderSettingsTransferInfo();return true
+}
+function openSettingsTransferPage(opts={}){showView('settings');ensureSettingsTransferPanel();closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsBackupPage();const view=$('settingsView'),panel=$('atmsSettingsTransferPanel');if(!view||!panel)return;setSettingsTransferPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');if(opts.history!==false)atmsSettingsPushRoute('transfer','browse');showSettingsTransferBrowse();requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
+function closeSettingsTransferPage(){const panel=$('atmsSettingsTransferPanel');setSettingsTransferPageActive(false);panel?.classList.add('hidden');requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})}
+
+// CORE-007D8A1F1D8P95-GATE6: bestehende Backup-Engine unverändert in eine eigene Settings-Unterseite verschieben.
+function showSettingsBackupBrowse(){
+  const panel=$('atmsSettingsBackupPanel');if(!panel)return;
+  panel.classList.remove('atms-mobile-nav-collapsed');
+  const legacy=$('backupCard');if(legacy)legacy.style.removeProperty('display');
+  updateBackupUI();ensureStorageV2StatusCard();renderStorageV2StatusCard();
+  requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{$('settingsView').scrollTop=0}catch(_){ }})
+}
+function ensureSettingsBackupPanel(){
+  const view=$('settingsView'),host=$('settingsToolsHost'),legacy=$('backupCard');if(!view||!legacy)return false;
+  let panel=$('atmsSettingsBackupPanel');if(panel)return true;
+  panel=document.createElement('section');panel.id='atmsSettingsBackupPanel';panel.dataset.atmsP95Gate6Panel='1';panel.className='settings-backup-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="settingsBackupBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>💾 Backup &amp; Wiederherstellen</h2><small>ATMS-Daten sicher verwalten</small></div></div><div id="settingsBackupBody" class="settings-backup-body"></div>`;
+  if(host)host.appendChild(panel);else view.appendChild(panel);
+  $('settingsBackupBody')?.appendChild(legacy);
+  legacy.classList.add('settings-backup-card');legacy.style.removeProperty('display');
+  $('settingsBackupBackSettings')?.addEventListener('click',atmsSettingsBack);
+  updateBackupUI();ensureStorageV2StatusCard();return true
+}
+function openSettingsBackupPage(opts={}){
+  showView('settings');if(!ensureSettingsBackupPanel())return;
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();
+  const view=$('settingsView'),panel=$('atmsSettingsBackupPanel');if(!view||!panel)return;
+  setSettingsBackupPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');$('backupCard')?.style.removeProperty('display');
+  if(opts.history!==false)atmsSettingsPushRoute('backup','browse');showSettingsBackupBrowse();requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))
+}
+function closeSettingsBackupPage(){
+  const panel=$('atmsSettingsBackupPanel');setSettingsBackupPageActive(false);panel?.classList.add('hidden');requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})
+}
+// CORE-007D8A1F1D8P95-GATE7: bestehende Über-ATMS-PRO-Karte unverändert in eine eigene System-Unterseite verschieben.
+function showSettingsAboutBrowse(){
+  const panel=$('atmsSettingsAboutPanel');if(!panel)return;
+  panel.classList.remove('atms-mobile-nav-collapsed');
+  const legacy=$('infoCard');if(legacy)legacy.style.removeProperty('display');
+  requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{$('settingsView').scrollTop=0}catch(_){ }})
+}
+function ensureSettingsAboutPanel(){
+  const view=$('settingsView'),host=$('settingsToolsHost'),legacy=$('infoCard');if(!view||!legacy)return false;
+  let panel=$('atmsSettingsAboutPanel');if(panel)return true;
+  panel=document.createElement('section');panel.id='atmsSettingsAboutPanel';panel.dataset.atmsP95Gate7Panel='1';panel.className='settings-about-page hidden';
+  panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="settingsAboutBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>ℹ️ Über ATMS PRO</h2><small>Version, Build und Systeminformationen</small></div></div><div id="settingsAboutBody" class="settings-about-body"></div>`;
+  if(host)host.appendChild(panel);else view.appendChild(panel);
+  $('settingsAboutBody')?.appendChild(legacy);
+  legacy.classList.add('settings-about-card');legacy.style.removeProperty('display');
+  $('settingsAboutBackSettings')?.addEventListener('click',atmsSettingsBack);
+  return true
+}
+function openSettingsAboutPage(opts={}){
+  showView('settings');if(!ensureSettingsAboutPanel())return;
+  closeSettingsAddressPage();closeSettingsDriverPage();closeSettingsDispatcherPage();closeSettingsTransferPage();closeSettingsBackupPage();
+  const view=$('settingsView'),panel=$('atmsSettingsAboutPanel');if(!view||!panel)return;
+  setSettingsAboutPageActive(true);panel.classList.remove('hidden');panel.classList.remove('atms-mobile-nav-collapsed');$('infoCard')?.style.removeProperty('display');
+  if(opts.history!==false)atmsSettingsPushRoute('about','browse');showSettingsAboutBrowse();requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))
+}
+function closeSettingsAboutPage(){
+  const panel=$('atmsSettingsAboutPanel');setSettingsAboutPageActive(false);panel?.classList.add('hidden');requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }})
 }
 function navigationResolvedPoint(name){const raw=String(name||'').trim();if(!raw)return{ok:false,name:raw,value:''};const entry=findAddressBookEntry(raw);if(entry)return{ok:true,name:raw,value:entry.address,entry};const iata=flightAirportIataFromPlace(raw);if(iata==='DUS')return{ok:true,name:raw,value:'Düsseldorf Airport (DUS), Düsseldorf, Germany',airportIata:iata};if(iata==='CGN')return{ok:true,name:raw,value:'Cologne Bonn Airport (CGN), Köln, Germany',airportIata:iata};if(iata)return{ok:true,name:raw,value:`${iata} Airport`,airportIata:iata};return{ok:false,name:raw,value:''}}
-function routeAddressResolution(r){const points=routePointsForRide(r),resolved=points.map(navigationResolvedPoint),missing=resolved.filter(x=>!x.ok).map(x=>x.name);return{points,resolved,missing}}
-function showMissingRouteAddresses(missing){const unique=[...new Set((missing||[]).map(x=>String(x||'').trim()).filter(Boolean))];if(unique.length)alert(`Für folgende Orte fehlt eine eindeutige Adresse in „Orte & Adressen“:\n\n${unique.map(x=>'• '+x).join('\n')}\n\nBitte die Adresse einmal unter Einstellungen → Orte & Adressen hinterlegen. ATMS öffnet bewusst keine geratenen Hotel-Adressen.`)}
+function compositeRoutePointResolution(name){
+  const raw=String(name||'').trim();if(!raw)return null;
+  // Ein exakter gespeicherter Kurzname/Alias hat immer Vorrang vor einer Zerlegung.
+  if(navigationResolvedPoint(raw).ok)return null;
+  const splitters=[/\s*→\s*/u,/\s*\+\s*/u,/\s+&\s+/u,/\s+und\s+/iu,/\s*\/\s*/u,/\s*-\s*/u];
+  for(const splitter of splitters){
+    const parts=raw.split(splitter).map(x=>String(x||'').trim()).filter(Boolean);
+    if(parts.length<2)continue;
+    const resolved=parts.map(navigationResolvedPoint);
+    if(resolved.every(x=>x.ok))return{parts,resolved};
+  }
+  return null;
+}
+function routeAddressResolution(r){
+  const sourcePoints=routePointsForRide(r),points=[],resolved=[],missing=[];
+  const push=(name,item)=>{const clean=String(name||'').trim();if(!clean)return;const last=points.at(-1);if(last&&normKey(last)===normKey(clean))return;points.push(clean);resolved.push(item)};
+  for(const point of sourcePoints){
+    const direct=navigationResolvedPoint(point);
+    if(direct.ok){push(point,direct);continue}
+    const composite=compositeRoutePointResolution(point);
+    if(composite){composite.parts.forEach((name,i)=>push(name,composite.resolved[i]));continue}
+    push(point,direct);missing.push(point);
+  }
+  return{points,resolved,missing,sourcePoints};
+}
+function showMissingRouteAddresses(missing){const unique=[...new Set((missing||[]).map(x=>String(x||'').trim()).filter(Boolean))];if(unique.length)alert(`Für folgende Orte fehlt eine eindeutige Adresse in „Orte & Adressen“:\n\n${unique.map(x=>'• '+x).join('\n')}\n\nBitte die Adresse einmal unter Einstellungen → Adressen hinterlegen. ATMS öffnet bewusst keine geratenen Hotel-Adressen.`)}
 function navigationSearchQuery(name){
   const resolved=navigationResolvedPoint(name);
   return resolved.ok?resolved.value:'';
@@ -3881,6 +5590,11 @@ function initApp(){
     capturePersistenceSafety('startup');
     initPersistenceDurableShadow();
     initPersistentFlightCheckStatus();
+    bindSettingsHubNavigation();
+    installSettingsMobileNavigation();
+    atmsInstallPrimaryBackNavigation();
+    atmsInstallRidesHeader();
+    setInterval(atmsPastClockTick,60000);
     bindClick('driverBtn',openDrivers);
     bindClick('cockpitDispatcherMessageBtn',openDispatcherMessage);
     bindClick('cockpitDriverMessageBtn',openDriverMessage);
@@ -3898,17 +5612,17 @@ function initApp(){
     bindClick('importBackupBtn',chooseBackupFile);
     bindClick('resetDataBtn',resetAtmsData);
     const backupInput=safeEl('backupFileInput');if(backupInput)backupInput.addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(f)importAtmsBackup(f)});
-    bindClick('closeDrivers',()=>safeEl('driverDialog')?.classList.add('hidden'));
+    bindClick('closeDrivers',()=>atmsPrimaryCloseDriverDialog());
     const driverDialog=safeEl('driverDialog');
-    if(driverDialog)driverDialog.addEventListener('click',e=>{if(e.target===driverDialog)driverDialog.classList.add('hidden')});
+    if(driverDialog)driverDialog.addEventListener('click',e=>{if(e.target===driverDialog)atmsPrimaryCloseDriverDialog()});
     const driverSheet=safeEl('driverSheet');if(driverSheet)driverSheet.addEventListener('click',e=>e.stopPropagation());
-    bindClick('backBtn',render);
-    bindClick('importBack',render);
+    bindClick('backBtn',()=>render({restoreRidePosition:true}));
+    bindClick('importBack',atmsPlanImportBack);
     bindClick('settingsBack',render);
-    bindClick('plusBtn',()=>{document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));showView('import')});
+    bindClick('plusBtn',()=>{atmsPrimaryVisit('import');document.querySelectorAll('.nav').forEach(x=>x.classList.remove('active'));showView('import');const back=$('importBack');if(back)back.setAttribute('aria-label','Zurück')});
     const search=safeEl('search');if(search)search.addEventListener('input',render);
     bindClick('mapBtn',()=>{if(active)openGoogleMapsRoute(active,null)});
-    bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));save();openCockpit(active.id)});
+    bindClick('doneBtn',()=>{if(!active)return;const ids=active._bundleMemberIds||[active.id];const allDone=ids.every(id=>done.has(id));ids.forEach(id=>allDone?done.delete(id):done.add(id));if(!save()){ids.forEach(id=>allDone?done.add(id):done.delete(id));return}openCockpit(active.id)});
     // CORE-007D8A1F1D8P2: Der moderne Planlisten-Import (plan-import.js) besitzt den
     // fileInput vollständig. Der alte JSON-Fallback darf dessen Auswahlstatus nicht mehr
     // überschreiben und darf Bild-/Excel-/CSV-Dateien nicht mehr als Text einlesen.
@@ -3927,27 +5641,37 @@ function initApp(){
       const status=safeEl('importStatus');
       if(status)status.textContent='ATMS-JSON geladen. Jetzt „JSON laden“ tippen.';
     });
-    bindClick('loadBtn',()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,'ok');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message}});
+    bindClick('loadBtn',async()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=await applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=!result.historySaved?`Fahrten gesichert (${result.count}), aber Planlistenhistorie nicht vollstaendig gespeichert. Bitte Backup erstellen.`:result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(!result.historySaved?'Fahrten gesichert, Historie nicht gespeichert':result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,result.historySaved?'ok':'warn');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message;showToast('Import wurde nicht als erfolgreich bestaetigt','warn')}});
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
-    document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));showView('settings');safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
+    document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n!=='all')atmsPrimaryVisit(n);if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));atmsSettingsOpenHubFromPrimaryNav();safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);
-    try{loadWhatsappSettings();renderNavigationSettings();ensureAddressBookPanel();renderAddressBook();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){renderMessagesView()}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render()}}));
+    try{loadWhatsappSettings();renderNavigationSettings();ensureAddressBookPanel();renderAddressBook();updateBackupUI()}catch(e){showAppError(e)}}else if(n==='messages'){renderMessagesView()}else if(n==='live'){renderLiveDisposition()}else if(n==='all'){openDrivers()}else{mode='rides';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));render({restoreRidePosition:true})}}));
 
     ensureMobileImportLayoutFix();
     ensureGeminiFlightPanel();
     ensureAddressBookPanel();
+    ensureSettingsDriverPanel();
+    ensureSettingsTransferPanel();
     ensureLiveFlightPanel();
     ensurePlanImportHistoryPanel();
     ensurePersistenceSafetyPanel();
     initPersistenceSafetyPanelObserver();
     try{
       rides=JSON.parse(localStorage.getItem(KEY)||'[]').map(norm);
+      const p77LegacyCleanup=p77RunLegacyDedupeMigration(rides);
+      rides=p77LegacyCleanup.rides;
       const overrideRestore=applyRideOverrides(rides);
       rides=overrideRestore.rides;
       const restored=applyFlightCacheToRides(rides);
-      rides=restored.rides;
-      if(overrideRestore.changed||restored.changed)save();
+      const correctedBorderTimes=p96RecoverPersistedBorderTimes(restored.rides);
+      rides=correctedBorderTimes.rides;
+      if(p77LegacyCleanup.changed||overrideRestore.changed||restored.changed||correctedBorderTimes.changed){
+        if(!save())persistAudit('startup_ride_migration_unsaved',{p96:correctedBorderTimes.changed});
+        else if(correctedBorderTimes.changed)persistAudit('legacy_ocr_time_corrected',{count:correctedBorderTimes.changed,from:'startup'});
+      }
     }catch(e){rides=[]}
+    // Phase 1 erst nach dem bestehenden lokalen Startup/Migrationspfad starten.
+    void initStorageV2Phase1();
     scheduleLiveFreshnessRefresh();
     initLiveDisposition();
     if(getDriverSession().active)startLiveGeoWatch();
@@ -3961,7 +5685,7 @@ window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
 window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAddressBookEntry};
-window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSStorageV2Diagnosis=storageV2Diagnosis;window.ATMSStorageV2Check=checkStorageV2Phase1;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.ATMSP77LegacyDedupeStatus=p77LegacyDedupeStatus;window.ATMSP77LegacyDedupeRollback=p77LegacyDedupeRollback;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;

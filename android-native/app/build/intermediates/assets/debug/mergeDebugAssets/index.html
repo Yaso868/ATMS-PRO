@@ -20,15 +20,16 @@
 <div class="contact-card"><div><label class="setting-label" for="cockpitDriverSelect">FAHRER PRIVAT</label><select id="cockpitDriverSelect" class="dispatcher-select"></select></div><div class="contact-actions"><a id="cockpitDriverCallBtn" class="contact-btn" href="#">📞 Anrufen</a><button id="cockpitDriverMessageBtn" class="contact-btn message" type="button">💬 Nachricht</button></div><div id="cockpitDriverInfo" class="contact-info">Fahrer und Telefonnummern kannst du in den Einstellungen verwalten.</div></div>
 <button id="infoStatusBtn" class="info-status-btn" type="button">📢 Info / Status</button>
 </div></div></main></section>
-
 <section id="liveDispositionView" class="hidden"><main class="live-disposition">
   <div class="live-head"><div><h1>Live-Disposition</h1><div class="sub">Fahrtenfolge, Tracking und Verspätungsprüfung</div></div><span id="liveSystemPill" class="live-pill">● BEREIT</span></div>
   <div class="live-mode-switch" aria-label="Live-Dispo-Modus"><button id="liveModeStandard" class="live-mode-btn active" type="button">Standard</button><button id="liveModeRoute" class="live-mode-btn" type="button">Routenprüfung</button></div>
   <div class="live-grid">
     <div>
       <div class="live-card"><h2>🚘 Fahrer & Tracking</h2><div class="live-driver-row"><select id="liveDriverSelect" class="live-select"></select><button id="liveRefreshBtn" class="act dark" type="button">↻</button></div><div class="tracking-box"><div><div id="liveTrackingState" class="tracking-state wait">Zustimmung ausstehend</div><div id="liveTrackingMeta" class="live-meta">Tracking ist nur während Schicht/Fahrt zulässig.</div></div><label class="consent-label"><input id="liveTrackingConsent" type="checkbox"> Zustimmung</label></div><div id="liveSingleDriverNotice" class="live-meta"></div></div>
-      <div class="live-card driver-session-card"><h2>🚖 Dieses Handy & Schicht</h2><div id="liveSessionDriver" class="session-driver">Noch kein Fahrer diesem Handy zugeordnet.</div><div class="session-grid"><div><span class="session-label">Schichtstatus</span><strong id="liveShiftStatus" class="session-status off">Nicht gestartet</strong></div><div><span class="session-label">GPS-Status</span><strong id="liveGpsStatus" class="session-status off">Nicht aktiv</strong></div><div><span class="session-label">Schichtbeginn</span><strong id="liveShiftStarted">–</strong></div><div><span class="session-label">Letzte Position</span><strong id="liveShiftLastPosition">–</strong></div></div><button id="liveShiftToggleBtn" class="live-action primary" type="button">▶ Schicht starten</button><div class="route-note">Beim Start wird der im Dropdown gewählte Fahrer diesem Handy zugeordnet. Die Zuordnung bleibt bis zum Schichtende bestehen. GPS läuft nur bei erteilter Zustimmung und solange die App geöffnet ist.</div></div>
-      <div id="liveRouteCheckCard" class="live-card route-check-card route-hidden" style="margin-top:10px"><h2>🧭 Routenprüfung – nur ausgewählter Fahrer</h2><div id="livePhoneDriverNotice" class="geo-box"><b>Zuordnung:</b> Die GPS-Position dieses Handys wird ausschließlich für die Fahrten des ausgewählten Fahrers verwendet.</div><div id="liveRouteChain" class="route-chain" style="margin-top:8px"></div><div id="liveGeoState" class="geo-box"><b>Standort dieses Handys:</b> noch nicht ermittelt.</div><button id="liveGetPositionBtn" class="live-action secondary" type="button">📍 Standort dieses Handys verwenden</button><div id="liveRouteSummary" class="route-summary"></div><div class="route-note">Die Position dieses Handys wird dem aktuell im Dropdown ausgewählten Fahrer zugeordnet. Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, Fahrtdauern und gemeldeter Verspätungen; Live-Verkehrsdaten werden nicht behauptet.</div></div>
+      <div class="live-card driver-session-card"><h2>🚖 Dieses Handy & Schicht</h2><div id="liveSessionDriver" class="session-driver">Noch kein Fahrer diesem Handy zugeordnet.</div><div class="session-grid"><div><span class="session-label">Schichtstatus</span><strong id="liveShiftStatus" class="session-status off">Nicht gestartet</strong></div><div><span class="session-label">GPS-Status</span><strong id="liveGpsStatus" class="session-status off">Nicht aktiv</strong></div><div><span class="session-label">Schichtbeginn</span><strong id="liveShiftStarted">–</strong></div><div><span class="session-label">Letzte Position</span><strong id="liveShiftLastPosition">–</strong></div></div><button id="liveShiftToggleBtn" class="live-action primary" type="button">▶ Schicht starten</button><div class="route-note">Beim Start wird der im Dropdown gewählte Fahrer diesem Handy zugeordnet.
+Die Zuordnung bleibt bis zum Schichtende bestehen. GPS läuft nur bei erteilter Zustimmung und solange die App geöffnet ist.</div></div>
+      <div id="liveRouteCheckCard" class="live-card route-check-card route-hidden" style="margin-top:10px"><h2>🧭 Routenprüfung – nur ausgewählter Fahrer</h2><div id="livePhoneDriverNotice" class="geo-box"><b>Zuordnung:</b> Die GPS-Position dieses Handys wird ausschließlich für die Fahrten des ausgewählten Fahrers verwendet.</div><div id="liveRouteChain" class="route-chain" style="margin-top:8px"></div><div id="liveGeoState" class="geo-box"><b>Standort dieses Handys:</b> noch nicht ermittelt.</div><button id="liveGetPositionBtn" class="live-action secondary" type="button">📍 Standort dieses Handys verwenden</button><div id="liveRouteSummary" class="route-summary"></div><div class="route-note">Die Position dieses Handys wird dem aktuell im Dropdown ausgewählten Fahrer zugeordnet.
+Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, Fahrtdauern und gemeldeter Verspätungen; Live-Verkehrsdaten werden nicht behauptet.</div></div>
       <div class="live-card" style="margin-top:10px"><h2>🕒 Fahrtenfolge</h2><div id="liveTimeline" class="timeline-list"></div><button id="liveMoreRidesBtn" class="live-action secondary" type="button">Weitere Fahrten anzeigen</button></div>
     </div>
     <div>
@@ -56,14 +57,42 @@
 </div>
 <div class="card legacy-json"><details><summary>Erweiterter JSON-Import</summary><textarea id="jsonInput" placeholder="ATMS-JSON hier einfügen …"></textarea><div class="actions2"><button id="loadBtn" class="act green">JSON laden</button><button id="clearBtn" class="act dark">Leeren</button></div></details></div>
 </main></section>
-<section id="settingsView" class="hidden"><main class="settings-page"><div class="cockHead"><h1>Einstellungen</h1></div><div id="settingsToolsHost"></div>
-<div class="card"><h2>👤 Disponenten</h2><p class="setting-note">Name und Telefonnummer werden lokal gespeichert. Im Cockpit wählst du den aktuellen Disponenten. WhatsApp-Texte werden automatisch aus der Fahrt erzeugt.</p><div class="settings-grid">
+<section id="settingsView" class="hidden"><main class="settings-page"><div class="cockHead"><h1>Einstellungen</h1></div><!-- CORE-007D8A1F1D8P95 Gate 1: Settings Hub. Bestehende Einstellungslogik bleibt unverändert darunter erhalten. -->
+<div id="settingsHub" class="settings-hub" aria-label="Einstellungsbereiche">
+  <div class="settings-hub-group">
+    <div class="settings-hub-group-title">STAMMDATEN</div>
+    <button class="settings-hub-item" type="button" data-settings-jump="addresses">
+      <span class="settings-hub-icon">📍</span><span class="settings-hub-copy"><strong>Adressen</strong><small>Hotels, Flughäfen, Treffpunkte</small></span><span id="settingsAddressCount" class="settings-hub-meta">–</span><span class="settings-hub-chevron">›</span>
+    </button>
+    <button class="settings-hub-item" type="button" data-settings-jump="drivers">
+      <span class="settings-hub-icon">🚗</span><span class="settings-hub-copy"><strong>Fahrer</strong><small>Fahrer, Fahrzeuge, Status</small></span><span id="settingsDriverCount" class="settings-hub-meta">–</span><span class="settings-hub-chevron">›</span>
+    </button>
+    <button class="settings-hub-item" type="button" data-settings-jump="dispatchers">
+      <span class="settings-hub-icon">👤</span><span class="settings-hub-copy"><strong>Disponenten</strong><small>Kontakte und WhatsApp</small></span><span id="settingsDispatcherCount" class="settings-hub-meta">–</span><span class="settings-hub-chevron">›</span>
+    </button>
+  </div>
+  <div class="settings-hub-group">
+    <div class="settings-hub-group-title">DATEN</div>
+    <button class="settings-hub-item" type="button" data-settings-jump="transfer">
+      <span class="settings-hub-icon">📥</span><span class="settings-hub-copy"><strong>Import &amp; Export</strong><small>Planlisten, Excel und CSV</small></span><span class="settings-hub-meta">Daten</span><span class="settings-hub-chevron">›</span>
+    </button>
+    <button class="settings-hub-item" type="button" data-settings-jump="backup">
+      <span class="settings-hub-icon">💾</span><span class="settings-hub-copy"><strong>Backup &amp; Wiederherstellen</strong><small>Sicherung und Wiederherstellung</small></span><span class="settings-hub-meta">Backup</span><span class="settings-hub-chevron">›</span>
+    </button>
+  </div>
+  <div class="settings-hub-group">
+    <div class="settings-hub-group-title">SYSTEM</div>
+    <button class="settings-hub-item" type="button" data-settings-jump="about">
+      <span class="settings-hub-icon">ℹ️</span><span class="settings-hub-copy"><strong>Über ATMS PRO</strong><small>Version, Build und Systeminformationen</small></span><span class="settings-hub-meta">V1.4.0</span><span class="settings-hub-chevron">›</span>
+    </button>
+  </div>
+</div><div id="settingsToolsHost"></div>
+<div class="card" id="dispatcherSettingsCard"><h2>👤 Disponenten</h2><p class="setting-note">Name und Telefonnummer werden lokal gespeichert. Im Cockpit wählst du den aktuellen Disponenten. WhatsApp-Texte werden automatisch aus der Fahrt erzeugt.</p><div class="settings-grid">
 <div><label class="setting-label" for="dispatcherName">Disponent anlegen (max. 20)</label><input id="dispatcherName" class="setting-input" placeholder="z. B. Ewa"></div>
 <div><label class="setting-label" for="dispatcherPhone">Telefon-/WhatsApp-Nummer</label><input id="dispatcherPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"></div>
 <button id="addDispatcher" class="act dark full" type="button">+ Disponent speichern</button><div id="dispatcherList" class="dispatcher-list full"></div><div class="setting-note full">Disponenten erhalten nur selbst verfasste private Nachrichten.</div>
 </div></div>
-
-<div class="card driver-settings-card"><h2>🚘 Fahrerverwaltung</h2><p class="setting-note">Speichere beliebig viele Fahrer mit Telefonnummer, Fahrzeug, Notiz und Status. Favoriten stehen im Cockpit zuerst.</p>
+<div class="card driver-settings-card" id="driverSettingsCard"><h2>🚘 Fahrerverwaltung</h2><p class="setting-note">Speichere beliebig viele Fahrer mit Telefonnummer, Fahrzeug, Notiz und Status. Favoriten stehen im Cockpit zuerst.</p>
 <div class="driver-edit-grid">
 <div><label class="setting-label" for="driverContactName">Fahrername</label><input id="driverContactName" class="setting-input" placeholder="z. B. Lana"></div>
 <div><label class="setting-label" for="driverContactPhone">Telefon-/WhatsApp-Nummer</label><input id="driverContactPhone" class="setting-input" inputmode="tel" placeholder="z. B. +4915112345678"></div>
@@ -87,7 +116,7 @@
  <button id="importBackupBtn" class="backup-btn" type="button">📥 Backup wiederherstellen</button>
  <button id="resetDataBtn" class="backup-btn danger" type="button">🗑 ATMS-Daten zurücksetzen</button>
 </div>
-<input id="backupFileInput" type="file" accept=".atms,.json,application/json" hidden>
+<input id="backupFileInput" type="file" accept=".atms,.json,application/json,application/octet-stream" hidden>
 <div id="backupStatus" class="backup-status warn">Noch keine Sicherung erstellt.</div>
 </div>
 <div class="card info-premium" id="infoCard">
@@ -99,11 +128,11 @@
   <div class="info-slogan">Smart Dispatch. Simple Workflow.</div>
 </div>
 <div class="info-details">
-  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P35</div></div></div>
-  <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Stable Web-App · P34F5 Basis</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P94</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Stable Native-App · V1.4.0 Final</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">♙</div><div><div class="info-detail-label">Entwickelt von</div><div class="info-detail-value">Yaser Tatli</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">✓</div><div><div class="info-detail-label">Status</div><div class="info-detail-value status">● Produktiv</div></div></div>
-  <div class="info-detail"><div class="info-detail-icon">▣</div><div><div class="info-detail-label">Letzte Aktualisierung</div><div class="info-detail-value">22.09.2026</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">▣</div><div><div class="info-detail-label">Letzte Aktualisierung</div><div class="info-detail-value">29.09.2026</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">☁</div><div><div class="info-detail-label">Datensicherung</div><div id="infoBackupStatus" class="info-detail-value warn">Noch keine Sicherung</div></div></div>
 </div>
 <div class="info-footer"><b>© 2026 ATMS PRO</b>Alle Rechte vorbehalten.</div>
