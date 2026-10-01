@@ -1,6 +1,0 @@
-{
-  "patch": "CORE-007D8A1F1D8P66",
-  "target": "android-native/app/src/main/assets/js/plan-import.js",
-  "source_sha256": "5af2399accd23641785ffd0fdb1ca7f06a96c5b4e41609641532d47a34e3a02b",
-  "output_sha256": "0e3d24a0b3f77ec1bec98fc56df5fb90ceba3a8a92adfdb01d0a21f4989c81ec"
-}
