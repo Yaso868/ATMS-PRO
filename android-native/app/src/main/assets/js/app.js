@@ -1543,6 +1543,11 @@ function atmsPrimaryBack(){
 }
 function atmsInstallPrimaryBackNavigation(){
   atmsPrimaryEnsureState();
+  // P97-2C: bridge Android native Back / edge gesture into the existing ATMS back navigation.
+  if(!window.__ATMS_P97_NATIVE_BACK_BOUND){
+    window.__ATMS_P97_NATIVE_BACK_BOUND=true;
+    window.addEventListener('atms-native-back',atmsPrimaryBack);
+  }
   window.addEventListener('popstate',e=>{
     const state=e.state||{};
     const dialog=$('driverDialog');
