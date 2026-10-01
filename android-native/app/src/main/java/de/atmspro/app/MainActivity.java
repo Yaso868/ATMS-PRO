@@ -1,3 +1,4 @@
+// STORAGE V2 PHASE 2A · 01.10.2026: Native Datei-Write-Read-Verifikation mit bytegenauem Vergleich + SHA-256 für .atmsarchive; bestehende Exporte bleiben kompatibel.
 // CORE-007D8A1F1D8P70 · 27.09.2026: NATIVE GOOGLE MAPS ROUTE HANDOFF – Opens ATMS Google Maps routes directly in the installed Google Maps app and intercepts intent:// route handoffs inside the WebView; HTTPS fallback remains if Google Maps is unavailable.
 // CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – Adds a dedicated Storage Access Framework bridge for user-confirmed CSV/XLSX file creation. Existing import picker, geolocation and flight bridge stay unchanged.
 // CORE-007D8A1F1D8P40F1 · 24.09.2026: NATIVE LIVE NON-BLOCKING BRIDGE – P40 network requests can run off the WebView/UI thread via an async Promise bridge; existing synchronous bridge remains for backward compatibility.
@@ -28,7 +29,11 @@ import androidx.webkit.WebViewAssetLoader;
 
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
+import java.util.Arrays;
 
 /**
  * P31F13: aktuelle bestaetigte ATMS-Weboberflaeche als lokale Android-Assets.
@@ -49,6 +54,7 @@ public final class MainActivity extends Activity {
     private ValueCallback<Uri[]> pendingFileChooser;
     private byte[] pendingExportBytes;
     private String pendingExportRequestId;
+    private boolean pendingExportVerifyReadBack;
     private String pendingGeolocationOrigin;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
 
@@ -313,6 +319,24 @@ public final class MainActivity extends Activity {
                 String fileName,
                 String mimeType,
                 String requestId) {
+            beginBase64FileExport(base64Data, fileName, mimeType, requestId, false);
+        }
+
+        @JavascriptInterface
+        public void saveBase64FileVerified(
+                String base64Data,
+                String fileName,
+                String mimeType,
+                String requestId) {
+            beginBase64FileExport(base64Data, fileName, mimeType, requestId, true);
+        }
+
+        private void beginBase64FileExport(
+                String base64Data,
+                String fileName,
+                String mimeType,
+                String requestId,
+                boolean verifyReadBack) {
             final byte[] bytes;
             try {
                 bytes = Base64.decode(base64Data == null ? "" : base64Data, Base64.DEFAULT);
@@ -323,7 +347,7 @@ public final class MainActivity extends Activity {
                         "Exportdaten konnten nicht verarbeitet werden.");
                 return;
             }
-            runOnUiThread(() -> beginNativeFileExport(bytes, fileName, mimeType, requestId));
+            runOnUiThread(() -> beginNativeFileExport(bytes, fileName, mimeType, requestId, verifyReadBack));
         }
     }
 
@@ -331,7 +355,8 @@ public final class MainActivity extends Activity {
             byte[] bytes,
             String fileName,
             String mimeType,
-            String requestId) {
+            String requestId,
+            boolean verifyReadBack) {
         String currentUrl = webView == null ? null : webView.getUrl();
         if (currentUrl == null
                 || !currentUrl.startsWith("https://appassets.androidplatform.net/assets/")) {
@@ -351,6 +376,7 @@ public final class MainActivity extends Activity {
 
         pendingExportBytes = bytes == null ? new byte[0] : bytes;
         pendingExportRequestId = requestId;
+        pendingExportVerifyReadBack = verifyReadBack;
 
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -373,13 +399,13 @@ public final class MainActivity extends Activity {
         }
 
         Uri target = data.getData();
+        final byte[] expectedBytes = pendingExportBytes == null ? new byte[0] : pendingExportBytes;
         try (OutputStream output = getContentResolver().openOutputStream(target)) {
             if (output == null) {
                 throw new IllegalStateException("Kein Schreibzugriff auf die gewählte Datei.");
             }
-            output.write(pendingExportBytes == null ? new byte[0] : pendingExportBytes);
+            output.write(expectedBytes);
             output.flush();
-            finishNativeFileExport(true, "");
         } catch (Exception error) {
             String detail = error.getMessage();
             finishNativeFileExport(
@@ -387,25 +413,77 @@ public final class MainActivity extends Activity {
                     detail == null || detail.trim().isEmpty()
                             ? "Datei konnte nicht gespeichert werden."
                             : "Datei konnte nicht gespeichert werden: " + detail);
+            return;
+        }
+
+        if (!pendingExportVerifyReadBack) {
+            finishNativeFileExport(true, "");
+            return;
+        }
+
+        try (InputStream input = getContentResolver().openInputStream(target)) {
+            if (input == null) {
+                throw new IllegalStateException("Gespeicherte Datei konnte nicht zur Prüfung geöffnet werden.");
+            }
+            byte[] readBackBytes = readAllBytes(input);
+            if (!Arrays.equals(expectedBytes, readBackBytes)) {
+                throw new IllegalStateException("Write-Read-Prüfung fehlgeschlagen: Dateiinhalte weichen ab.");
+            }
+            finishNativeFileExport(true, "", true, readBackBytes.length, sha256Hex(readBackBytes));
+        } catch (Exception error) {
+            String detail = error.getMessage();
+            finishNativeFileExport(
+                    false,
+                    detail == null || detail.trim().isEmpty()
+                            ? "Datei wurde geschrieben, konnte aber nicht verifiziert werden."
+                            : "Datei wurde geschrieben, konnte aber nicht verifiziert werden: " + detail);
         }
     }
 
     private void finishNativeFileExport(boolean success, String errorMessage) {
+        finishNativeFileExport(success, errorMessage, false, 0, "");
+    }
+
+    private void finishNativeFileExport(
+            boolean success,
+            String errorMessage,
+            boolean verifiedReadBack,
+            int byteLength,
+            String sha256) {
         String requestId = pendingExportRequestId;
         pendingExportRequestId = null;
         pendingExportBytes = null;
-        notifyNativeFileExportResult(requestId, success, errorMessage);
+        pendingExportVerifyReadBack = false;
+        notifyNativeFileExportResult(requestId, success, errorMessage, verifiedReadBack, byteLength, sha256);
     }
 
     private void notifyNativeFileExportResult(
             String requestId,
             boolean success,
             String errorMessage) {
+        notifyNativeFileExportResult(requestId, success, errorMessage, false, 0, "");
+    }
+
+    private void notifyNativeFileExportResult(
+            String requestId,
+            boolean success,
+            String errorMessage,
+            boolean verifiedReadBack,
+            int byteLength,
+            String sha256) {
         if (requestId == null || requestId.trim().isEmpty() || webView == null) {
             return;
         }
         String safeId = JSONObject.quote(requestId);
         String safeError = JSONObject.quote(errorMessage == null ? "" : errorMessage);
+        JSONObject result = new JSONObject();
+        try {
+            result.put("verifiedReadBack", success && verifiedReadBack);
+            result.put("byteLength", success && verifiedReadBack ? Math.max(0, byteLength) : 0);
+            result.put("sha256", success && verifiedReadBack && sha256 != null ? sha256 : "");
+        } catch (Exception ignored) {
+        }
+        String safeResult = JSONObject.quote(result.toString());
         String script = "try{if(typeof window.__ATMSNativeFileExportResolve==='function'){"
                 + "window.__ATMSNativeFileExportResolve("
                 + safeId
@@ -413,8 +491,30 @@ public final class MainActivity extends Activity {
                 + (success ? "true" : "false")
                 + ","
                 + safeError
+                + ","
+                + safeResult
                 + ");}}catch(e){}";
         webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
+    private static byte[] readAllBytes(InputStream input) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
+    }
+
+    private static String sha256Hex(byte[] bytes) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(bytes == null ? new byte[0] : bytes);
+        StringBuilder out = new StringBuilder(hash.length * 2);
+        for (byte value : hash) {
+            out.append(String.format(java.util.Locale.ROOT, "%02x", value & 0xff));
+        }
+        return out.toString();
     }
 
     private static String normalizeExportMimeType(String mimeType) {
@@ -461,15 +561,20 @@ public final class MainActivity extends Activity {
                 + "if(!window.ATMSNativeFileExportHost)return;"
                 + "var seq=0;"
                 + "window.__ATMSNativeFileExportPending=window.__ATMSNativeFileExportPending||{};"
-                + "window.__ATMSNativeFileExportResolve=function(id,success,error){"
+                + "window.__ATMSNativeFileExportResolve=function(id,success,error,resultJson){"
                 + "var p=window.__ATMSNativeFileExportPending[id];if(!p)return;delete window.__ATMSNativeFileExportPending[id];"
-                + "if(success){p.resolve(true);}else{p.reject(new Error(String(error||'Speichern fehlgeschlagen.')));}};"
+                + "if(success){var result={verifiedReadBack:false,byteLength:0,sha256:''};try{if(resultJson)result=JSON.parse(String(resultJson));}catch(e){}p.resolve(result);}else{p.reject(new Error(String(error||'Speichern fehlgeschlagen.')));}};"
                 + "window.ATMSNativeFileExport={"
-                + "contractVersion:'ATMS-FILE-EXPORT-NATIVE-1',"
+                + "contractVersion:'ATMS-FILE-EXPORT-NATIVE-2',"
                 + "saveBase64File:function(base64Data,fileName,mimeType){return new Promise(function(resolve,reject){"
                 + "seq+=1;var id='atms-file-'+Date.now().toString(36)+'-'+seq.toString(36);"
                 + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
                 + "try{window.ATMSNativeFileExportHost.saveBase64File(String(base64Data||''),String(fileName||''),String(mimeType||''),id);}"
+                + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});},"
+                + "saveBase64FileVerified:function(base64Data,fileName,mimeType){return new Promise(function(resolve,reject){"
+                + "seq+=1;var id='atms-file-verified-'+Date.now().toString(36)+'-'+seq.toString(36);"
+                + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
+                + "try{window.ATMSNativeFileExportHost.saveBase64FileVerified(String(base64Data||''),String(fileName||''),String(mimeType||''),id);}"
                 + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});}"
                 + "};"
                 + "try{window.dispatchEvent(new CustomEvent('atms-native-file-export-ready'));}catch(e){}"

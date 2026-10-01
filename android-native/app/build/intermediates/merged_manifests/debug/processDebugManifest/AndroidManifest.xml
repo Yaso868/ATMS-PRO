@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="de.atmspro.app"
-    android:versionCode="3"
-    android:versionName="1.4.0-p31f13" >
+    android:versionCode="4"
+    android:versionName="1.4.0-p31f14" >
 
     <uses-sdk
         android:minSdkVersion="26"
@@ -17,10 +17,10 @@
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
         android:debuggable="true"
         android:extractNativeLibs="false"
-        android:icon="@drawable/ic_atms_pro_launcher"
+        android:icon="@drawable/ic_atms_pro_launcher_v2"
         android:label="ATMS PRO"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:roundIcon="@drawable/ic_atms_pro_launcher"
+        android:roundIcon="@drawable/ic_atms_pro_launcher_v2"
         android:theme="@style/Theme.ATMSPRO"
         android:usesCleartextTraffic="false" >
         <activity

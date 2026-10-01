@@ -43,9 +43,9 @@ MERGED from [androidx.versionedparcelable:versionedparcelable:1.1.0] /home/runne
 	android:label
 		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:10:9-33
 	android:roundIcon
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:9:9-59
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:9:9-62
 	android:icon
-		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:8:9-54
+		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:8:9-57
 	android:allowBackup
 		ADDED from /home/runner/work/ATMS-PRO/ATMS-PRO/android-native/app/src/main/AndroidManifest.xml:7:9-35
 	android:theme

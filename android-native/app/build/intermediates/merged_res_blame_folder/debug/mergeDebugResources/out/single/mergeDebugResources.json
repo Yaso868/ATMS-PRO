@@ -8,6 +8,10 @@
         "source": "de.atmspro.app-main-9:/layout/activity_main.xml"
     },
     {
+        "merged": "de.atmspro.app-debug-7:/drawable-nodpi_ic_atms_pro_launcher_v2.png.flat",
+        "source": "de.atmspro.app-main-9:/drawable-nodpi/ic_atms_pro_launcher_v2.png"
+    },
+    {
         "merged": "de.atmspro.app-debug-7:/xml_network_security_config.xml.flat",
         "source": "de.atmspro.app-main-9:/xml/network_security_config.xml"
     }

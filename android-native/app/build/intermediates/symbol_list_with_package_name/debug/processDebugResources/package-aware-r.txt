@@ -38,6 +38,7 @@ dimen notification_subtext_size
 dimen notification_top_pad
 dimen notification_top_pad_large_text
 drawable ic_atms_pro_launcher
+drawable ic_atms_pro_launcher_v2
 drawable notification_action_background
 drawable notification_bg
 drawable notification_bg_low

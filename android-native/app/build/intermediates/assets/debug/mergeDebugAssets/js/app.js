@@ -1,3 +1,4 @@
+// STORAGE V2 PHASE 2A + FINAL ICON · 01.10.2026: Nicht-destruktives Tagesarchiv mit SHA-256, nativer Write-Read-Verifikation und read-only Archivübersicht. localStorage bleibt Hauptspeicher; keine automatische Löschung/Archivierung/Umschaltung.
 // STORAGE V2 PHASE 1 · 01.10.2026: Additiver IndexedDB-Paralleltest für Fahrten + Erledigt-Status. localStorage bleibt Source of Truth; keine automatische Löschung, Archivierung, Reparatur oder Umschaltung. Sichtbare Verifikation in Backup & Wiederherstellen.
 // P95 BUNDLED UI 01.10.2026: Past rides default closed on fresh entry; driver color opens by tapping the color dot, redundant palette button removed.
 // P95 UX CORRECTIONS 30.09.2026: Compact empty ride list before separate past-rides section; visual only.
@@ -105,7 +106,7 @@ const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;let storageV2ArchiveBusy=false;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -488,6 +489,143 @@ function renderStorageV2StatusCard(){
     else if(status==='error')detail.textContent='⚠ Storage V2 nicht bestätigt: '+(d.error||'unbekannter Fehler')+'. Bestehender localStorage bleibt unverändert.';
     else detail.textContent='Storage V2 wird geprüft. Es werden keine aktiven Daten gelöscht.';
   }
+}
+
+// STORAGE V2 PHASE 2A: bewusst manuelles, nicht-destruktives Tagesarchiv.
+// Es wird niemals automatisch archiviert oder aus dem aktiven Bestand geloescht.
+// Die externe .atmsarchive-Datei gilt erst nach nativer Write-Read-Pruefung als bestaetigt.
+function storageV2ArchiveIsoDate(value){
+  const s=String(value||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+  const m=s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  return m?`${m[3]}-${m[2]}-${m[1]}`:'';
+}
+function storageV2ArchiveRideDate(r){return storageV2ArchiveIsoDate(first(r?.date,r?.planDate,r?.datum))}
+function storageV2ArchiveLocalData(){
+  const ridesRaw=localStorage.getItem(KEY),doneRaw=localStorage.getItem(DONE);
+  if(ridesRaw===null||doneRaw===null)throw new Error('Archivierung blockiert: Fahrten- oder Erledigt-Speicher fehlt.');
+  let storedRides,storedDone;
+  try{storedRides=JSON.parse(ridesRaw);storedDone=JSON.parse(doneRaw)}catch(_){throw new Error('Archivierung blockiert: Fahrten-/Status-Speicher ist unlesbar.');}
+  if(!Array.isArray(storedRides)||!Array.isArray(storedDone))throw new Error('Archivierung blockiert: Erwartete Listenstruktur fehlt.');
+  return{storedRides,storedDone,ridesRaw,doneRaw};
+}
+function storageV2ArchiveDates(){
+  try{return[...new Set(storageV2ArchiveLocalData().storedRides.map(storageV2ArchiveRideDate).filter(Boolean))].sort()}
+  catch(_){return[]}
+}
+function storageV2ArchiveCatalog(){
+  try{const value=JSON.parse(localStorage.getItem(STORAGE_V2_ARCHIVE_CATALOG)||'[]');return Array.isArray(value)?value.filter(x=>x&&typeof x==='object'):[]}
+  catch(_){return[]}
+}
+function storageV2ArchiveDateLabel(date){
+  const iso=storageV2ArchiveIsoDate(date);if(!iso)return String(date||'–');
+  const m=iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}.${m[2]}.${m[1]}`:iso;
+}
+async function storageV2ArchiveSha256(text){
+  if(!window.crypto?.subtle||typeof TextEncoder==='undefined')throw new Error('SHA-256 ist auf diesem Gerät nicht verfügbar. Archivierung bleibt unverändert blockiert.');
+  const bytes=new TextEncoder().encode(String(text??''));
+  const digest=await window.crypto.subtle.digest('SHA-256',bytes);
+  return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+}
+function storageV2ArchiveSourceForDate(date){
+  const iso=storageV2ArchiveIsoDate(date);if(!iso)throw new Error('Bitte einen gültigen Archivtag auswählen.');
+  const local=storageV2ArchiveLocalData(),dayRides=local.storedRides.filter(r=>storageV2ArchiveRideDate(r)===iso);
+  if(!dayRides.length)throw new Error('Für diesen Tag sind keine Fahrten gespeichert.');
+  const rideIds=dayRides.map(r=>String(r?.id||'').trim());
+  if(rideIds.some(id=>!id))throw new Error('Archivierung blockiert: Mindestens eine Fahrt besitzt keine eindeutige ID.');
+  if(new Set(rideIds).size!==rideIds.length)throw new Error('Archivierung blockiert: Doppelte Fahrt-IDs im Tagesbestand erkannt.');
+  const dayIdSet=new Set(rideIds),doneIds=local.storedDone.map(x=>String(x||'').trim()).filter(id=>id&&dayIdSet.has(id));
+  if(new Set(doneIds).size!==doneIds.length)throw new Error('Archivierung blockiert: Doppelte Erledigt-IDs im Tagesbestand erkannt.');
+  const v2=storageV2Diagnosis();
+  return{iso,dayRides,rideIds:rideIds.slice().sort(),doneIds:doneIds.slice().sort(),activeRideCount:local.storedRides.length,activeDoneCount:local.storedDone.length,storageV2:v2};
+}
+async function buildStorageV2DailyArchive(date){
+  const source=storageV2ArchiveSourceForDate(date),createdAt=new Date().toISOString();
+  const core={
+    format:'ATMS_ARCHIVE',formatVersion:1,archiveSchema:STORAGE_V2_ARCHIVE_SCHEMA,app:'ATMS PRO',appVersion:'1.4.0',
+    archiveDate:source.iso,createdAt,mode:'read-only',destructive:false,sourceOfTruth:'localStorage',
+    rideCount:source.dayRides.length,doneCount:source.doneIds.length,rideIds:source.rideIds,doneIds:source.doneIds,rides:source.dayRides,
+    sourceMeta:{activeRideCount:source.activeRideCount,activeDoneCount:source.activeDoneCount,rideStorageKey:KEY,doneStorageKey:DONE,storageV2Phase1:{status:source.storageV2.status,exactMatch:source.storageV2.exactMatch,localContentHash:source.storageV2.local?.contentHash||'',v2ContentHash:source.storageV2.storageV2?.contentHash||''}}
+  };
+  const payloadSha256=await storageV2ArchiveSha256(JSON.stringify(core));
+  const archive={...core,integrity:{algorithm:'SHA-256',payloadSha256}};
+  await verifyStorageV2ArchiveObject(archive);
+  const text=JSON.stringify(archive,null,2),fileSha256=await storageV2ArchiveSha256(text);
+  return{archive,text,fileSha256};
+}
+async function verifyStorageV2ArchiveObject(obj){
+  if(!obj||obj.format!=='ATMS_ARCHIVE'||obj.formatVersion!==1||obj.archiveSchema!==STORAGE_V2_ARCHIVE_SCHEMA)throw new Error('Archivprüfung fehlgeschlagen: Format/Version ungültig.');
+  if(!Array.isArray(obj.rides)||!Array.isArray(obj.rideIds)||!Array.isArray(obj.doneIds))throw new Error('Archivprüfung fehlgeschlagen: Listenstruktur fehlt.');
+  if(Number(obj.rideCount)!==obj.rides.length||Number(obj.doneCount)!==obj.doneIds.length)throw new Error('Archivprüfung fehlgeschlagen: Anzahl stimmt nicht.');
+  const ids=obj.rides.map(r=>String(r?.id||'').trim());
+  if(ids.some(id=>!id)||new Set(ids).size!==ids.length)throw new Error('Archivprüfung fehlgeschlagen: Fahrt-IDs fehlen oder sind doppelt.');
+  const sortedIds=ids.slice().sort(),declaredIds=obj.rideIds.map(String).slice().sort();
+  if(JSON.stringify(sortedIds)!==JSON.stringify(declaredIds))throw new Error('Archivprüfung fehlgeschlagen: Fahrt-ID-Liste stimmt nicht.');
+  const idSet=new Set(sortedIds),doneIds=obj.doneIds.map(String);
+  if(doneIds.some(id=>!idSet.has(id))||new Set(doneIds).size!==doneIds.length)throw new Error('Archivprüfung fehlgeschlagen: Erledigt-IDs sind inkonsistent.');
+  if(obj.integrity?.algorithm!=='SHA-256'||!/^[0-9a-f]{64}$/i.test(String(obj.integrity?.payloadSha256||'')))throw new Error('Archivprüfung fehlgeschlagen: Prüfsumme fehlt.');
+  const {integrity,...core}=obj,actual=await storageV2ArchiveSha256(JSON.stringify(core));
+  if(actual.toLowerCase()!==String(integrity.payloadSha256).toLowerCase())throw new Error('Archivprüfung fehlgeschlagen: SHA-256 stimmt nicht.');
+  return true;
+}
+async function saveStorageV2ArchiveVerified(text,fileName,expectedFileSha256){
+  const bridge=window.ATMSNativeFileExport;
+  if(!bridge||typeof bridge.saveBase64FileVerified!=='function')throw new Error('Native Dateiprüfung ist nicht verfügbar. Archivierung bleibt blockiert.');
+  const blob=new Blob([text],{type:'application/octet-stream'}),payload=await blobToBase64Payload(blob);
+  const result=await bridge.saveBase64FileVerified(payload,fileName,'application/octet-stream');
+  if(!result||result.verifiedReadBack!==true)throw new Error('Archivdatei wurde nicht als zurückgelesen bestätigt.');
+  const expectedBytes=new TextEncoder().encode(text).byteLength;
+  if(Number(result.byteLength)!==expectedBytes)throw new Error(`Archivprüfung fehlgeschlagen: Dateigröße ${result.byteLength??'–'} statt ${expectedBytes} Byte.`);
+  if(String(result.sha256||'').toLowerCase()!==String(expectedFileSha256||'').toLowerCase())throw new Error('Archivprüfung fehlgeschlagen: Datei-SHA-256 weicht nach dem Schreiben ab.');
+  return result;
+}
+function rememberStorageV2Archive(archive,fileName,fileMeta,fileSha256){
+  const entry={id:`${archive.archiveDate}|${archive.integrity.payloadSha256}`,archiveDate:archive.archiveDate,createdAt:archive.createdAt,rideCount:archive.rideCount,doneCount:archive.doneCount,fileName,payloadSha256:archive.integrity.payloadSha256,fileSha256:String(fileSha256||''),byteLength:Number(fileMeta?.byteLength)||0,verifiedReadBack:true,readOnly:true};
+  const next=[entry,...storageV2ArchiveCatalog().filter(x=>String(x.id)!==entry.id)].slice(0,400);
+  return safePersistentSetItem(STORAGE_V2_ARCHIVE_CATALOG,JSON.stringify(next),'storage-v2-phase2a-archive-catalog')?entry:null;
+}
+function storageV2ArchiveSetStatus(message,type=''){
+  const el=$('atmsArchiveStatus');if(!el)return;el.textContent=message;el.style.color=type==='ok'?'#76efad':type==='warn'?'#ffd36e':'rgba(255,255,255,.82)';
+}
+function renderStorageV2ArchiveCard(){
+  const card=$('atmsStorageV2ArchiveCard');if(!card)return;
+  const dates=storageV2ArchiveDates(),select=$('atmsArchiveDateSelect'),count=$('atmsArchiveDayCount'),list=$('atmsArchiveList'),btn=$('atmsCreateArchiveBtn');
+  const previous=select?.value||'',selected=dates.includes(previous)?previous:(dates[0]||'');
+  if(select){select.innerHTML=dates.length?dates.map(d=>`<option value="${esc(d)}" ${d===selected?'selected':''}>${esc(storageV2ArchiveDateLabel(d))}</option>`).join(''):'<option value="">Keine archivfähigen Tage</option>';select.disabled=!dates.length||storageV2ArchiveBusy;}
+  let dayCount=0;if(selected){try{dayCount=storageV2ArchiveSourceForDate(selected).dayRides.length}catch(_){}}
+  if(count)count.textContent=selected?`${dayCount} Fahrt${dayCount===1?'':'en'} · aktive Daten bleiben unverändert`:'Keine Tagesdaten verfügbar';
+  if(btn){btn.disabled=!selected||storageV2ArchiveBusy;btn.textContent=storageV2ArchiveBusy?'Archiv wird geschrieben & geprüft …':'📦 Tagesarchiv erstellen & prüfen';}
+  const catalog=storageV2ArchiveCatalog().slice().sort((a,b)=>String(b.archiveDate||'').localeCompare(String(a.archiveDate||''))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
+  if(list)list.innerHTML=catalog.length?catalog.map(x=>`<div style="padding:10px 11px;border-radius:12px;background:rgba(0,0,0,.16);margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(storageV2ArchiveDateLabel(x.archiveDate))}</b><span style="font-size:10px;font-weight:900;color:#76efad">VERIFIZIERT</span></div><div style="font-size:12px;opacity:.78;margin-top:4px">${Number(x.rideCount)||0} Fahrten · ${Number(x.doneCount)||0} erledigt · read-only</div><div style="font-size:10px;opacity:.58;margin-top:4px;word-break:break-all">SHA-256 ${esc(String(x.fileSha256||'').slice(0,16))}… · ${esc(x.fileName||'')}</div></div>`).join(''):'<div style="font-size:12px;opacity:.7;padding:8px 0">Noch kein verifiziertes Tagesarchiv in dieser App registriert.</div>';
+}
+function ensureStorageV2ArchiveCard(){
+  const body=$('settingsBackupBody');if(!body)return false;
+  let card=$('atmsStorageV2ArchiveCard');
+  if(!card){
+    card=document.createElement('section');card.id='atmsStorageV2ArchiveCard';card.style.cssText='margin:14px 0 0;padding:16px;border:1px solid rgba(215,178,82,.38);border-radius:18px;background:linear-gradient(180deg,rgba(34,43,54,.96),rgba(12,29,42,.98));box-sizing:border-box';
+    card.innerHTML=`<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-size:18px;font-weight:900;color:#fff">🗃️ Tagesarchiv</div><div style="font-size:12px;opacity:.72;margin-top:3px">Storage V2 Phase 2A · nicht-destruktiv</div></div><span style="padding:6px 9px;border-radius:999px;font-size:10px;font-weight:900;background:rgba(215,178,82,.16);color:#f2d37a">READ-ONLY</span></div><p style="margin:12px 0;font-size:13px;line-height:1.45;opacity:.86">Ein ausgewählter Tag wird als <b>.atmsarchive</b> geschrieben. Android liest die gespeicherte Datei direkt wieder zurück; Anzahl, IDs und SHA-256 werden geprüft. Es wird nichts aus den aktiven Fahrten gelöscht.</p><label style="display:block;font-size:11px;font-weight:800;opacity:.7;margin-bottom:5px">Archivtag</label><select id="atmsArchiveDateSelect" style="width:100%;min-height:44px;border-radius:11px;padding:0 10px;background:#102b3b;color:#fff;border:1px solid rgba(255,255,255,.18)"></select><div id="atmsArchiveDayCount" style="font-size:12px;opacity:.72;margin-top:7px">–</div><button type="button" id="atmsCreateArchiveBtn" style="width:100%;margin-top:11px;padding:12px;border-radius:11px;border:1px solid rgba(215,178,82,.45);background:rgba(215,178,82,.14);color:#f7e3a4;font-weight:900">📦 Tagesarchiv erstellen &amp; prüfen</button><div id="atmsArchiveStatus" style="margin-top:10px;padding:10px;border-radius:11px;background:rgba(0,0,0,.16);font-size:12px;line-height:1.4">Bereit. Keine automatische Archivierung oder Löschung aktiv.</div><div style="margin-top:13px;font-size:13px;font-weight:900">Archivübersicht · read-only</div><div id="atmsArchiveList"></div>`;
+    body.appendChild(card);
+    $('atmsArchiveDateSelect')?.addEventListener('change',()=>renderStorageV2ArchiveCard());
+    $('atmsCreateArchiveBtn')?.addEventListener('click',async()=>{
+      if(storageV2ArchiveBusy)return;const date=$('atmsArchiveDateSelect')?.value||'';if(!date)return;
+      storageV2ArchiveBusy=true;renderStorageV2ArchiveCard();storageV2ArchiveSetStatus('Archivdaten werden gesammelt und mit SHA-256 geprüft …');
+      try{
+        const built=await buildStorageV2DailyArchive(date),fileName=`ATMS_Archiv_${built.archive.archiveDate}.atmsarchive`;
+        storageV2ArchiveSetStatus('Android-Speicherdialog: Datei speichern. Danach wird sie automatisch zurückgelesen und bytegenau geprüft …');
+        const fileMeta=await saveStorageV2ArchiveVerified(built.text,fileName,built.fileSha256);
+        const remembered=rememberStorageV2Archive(built.archive,fileName,fileMeta,built.fileSha256);
+        persistAudit('storage_v2_phase2a_archive_verified',{archiveDate:built.archive.archiveDate,rideCount:built.archive.rideCount,doneCount:built.archive.doneCount,payloadSha256:built.archive.integrity.payloadSha256,fileSha256:built.fileSha256,byteLength:fileMeta.byteLength,catalogSaved:Boolean(remembered)});
+        storageV2ArchiveSetStatus(remembered?`✓ Archiv verifiziert: ${built.archive.rideCount} Fahrten · SHA-256 bestätigt · Datei zurückgelesen. Aktive Daten unverändert.`:`✓ Archivdatei verifiziert. Der lokale Archivkatalog konnte jedoch nicht gespeichert werden; aktive Daten sind unverändert.`,remembered?'ok':'warn');
+        showToast(remembered?'Tagesarchiv verifiziert':'Archivdatei verifiziert · Katalog nicht gespeichert',remembered?'ok':'warn');
+      }catch(e){
+        const message=String(e?.message||e||'Unbekannter Fehler');
+        storageV2ArchiveSetStatus(/abgebrochen/i.test(message)?'Archiv-Speichern abgebrochen. Aktive Daten unverändert.':'⚠ Archiv nicht bestätigt: '+message+' Aktive Daten unverändert.','warn');
+        persistAudit('storage_v2_phase2a_archive_failed',{archiveDate:date,message});
+        if(!/abgebrochen/i.test(message))showToast('Archivierung nicht bestätigt','warn');
+      }finally{storageV2ArchiveBusy=false;renderStorageV2ArchiveCard();}
+    });
+  }
+  renderStorageV2ArchiveCard();return true;
 }
 function capturePersistenceSafety(reason='snapshot',syncDurable=true){
   try{
@@ -4737,7 +4875,7 @@ function showSettingsBackupBrowse(){
   const panel=$('atmsSettingsBackupPanel');if(!panel)return;
   panel.classList.remove('atms-mobile-nav-collapsed');
   const legacy=$('backupCard');if(legacy)legacy.style.removeProperty('display');
-  updateBackupUI();ensureStorageV2StatusCard();renderStorageV2StatusCard();
+  updateBackupUI();ensureStorageV2StatusCard();renderStorageV2StatusCard();ensureStorageV2ArchiveCard();renderStorageV2ArchiveCard();
   requestAnimationFrame(()=>{try{window.scrollTo(0,0)}catch(_){ }try{$('settingsView').scrollTop=0}catch(_){ }})
 }
 function ensureSettingsBackupPanel(){
@@ -4749,7 +4887,7 @@ function ensureSettingsBackupPanel(){
   $('settingsBackupBody')?.appendChild(legacy);
   legacy.classList.add('settings-backup-card');legacy.style.removeProperty('display');
   $('settingsBackupBackSettings')?.addEventListener('click',atmsSettingsBack);
-  updateBackupUI();ensureStorageV2StatusCard();return true
+  updateBackupUI();ensureStorageV2StatusCard();ensureStorageV2ArchiveCard();return true
 }
 function openSettingsBackupPage(opts={}){
   showView('settings');if(!ensureSettingsBackupPanel())return;
