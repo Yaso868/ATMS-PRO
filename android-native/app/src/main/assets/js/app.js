@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P103 · 02.10.2026: CURRENT-PLAN SAFE CLEANUP – ergänzt die ausdrücklich bestätigte Bereinigungsstufe für „Nur aktuelle Planliste behalten“. Vor jeder Entfernung werden frisches ATMS-Backup, exakter Storage-V2-Abgleich und persistenter Archivordner verlangt; alle betroffenen Tage werden vorab als .atmsarchive geschrieben, nativ zurückgelesen und per SHA-256 bestätigt. Erst eine unveränderte Preflight-Freigabe darf ungeschützte Carryover-Fahrten aus aktivem Bestand, Erledigt-Status und Fahrten-Overrides entfernen; aktuelle und 📌-geschützte Fahrten bleiben erhalten. Bei Schreib-/Sync-Fehlern wird der aktive Bestand sofort zurückgerollt. Keine Änderung an OCR, Import/Dedupe, Bundles, PLAN/DISPO/LIVE oder FLIGHT-008.
 // CORE-007D8A1F1D8P102.1 · 02.10.2026: CURRENT-PLAN PREVIEW UI ANCHOR FIX – mountet die bestehende rein nicht-destruktive P102-Vorschau sichtbar direkt auf der aktuellen Native-Seite „Planliste importieren“ und prüft den Mount bei jedem Öffnen erneut. Keine Änderung an 13/143-Erkennung, Behalten-Markierungen, Fahrtdaten, Import/OCR, Storage V2, PLAN/DISPO/LIVE oder FLIGHT-008.
 // CORE-007D8A1F1D8P102 · 02.10.2026: CURRENT-PLAN KEEP PREVIEW – ergänzt eine ausschließlich nicht-destruktive Vorschau für „Nur aktuelle Planliste behalten“. Aktuelle Fahrten werden von P32/P99-Carryover-Fahrten getrennt gezählt; ältere Fahrten können einzeln mit 📌 Behalten geschützt werden. P102 löscht, archiviert oder verschiebt keine Fahrt. P101 Storage V2, P100, OCR, Import/Dedupe, Bundles, PLAN/DISPO/LIVE und FLIGHT-008 bleiben unverändert.
 // STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmal auswählen, Berechtigung dauerhaft halten, Tagesarchive kollisionsfrei direkt dort speichern und nativ byte-/SHA-256-genau zurücklesen. Phase 2A bleibt als Fallback erhalten; keine automatische Löschung aktiver Fahrten.
@@ -116,6 +117,7 @@ const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
 const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1',PLAN_KEEP_PINNED='atms_plan_keep_pinned_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;let storageV2ArchiveBusy=false;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const PLAN_KEEP_CLEANUP_PREFLIGHT='atms_current_plan_cleanup_preflight_v1',PLAN_KEEP_CLEANUP_LAST='atms_current_plan_cleanup_last_v1';let p103CleanupBusy=false,p103CleanupStatusMessage='',p103CleanupStatusType='';
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -4482,7 +4484,7 @@ function startPlanDataFreshFromNow(){
     return false;
   }
   rides=[];done.clear();
-  [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,PLAN_KEEP_PINNED,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
+  [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,PLAN_KEEP_PINNED,PLAN_KEEP_CLEANUP_PREFLIGHT,PLAN_KEEP_CLEANUP_LAST,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_import_recovery_current_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
   // P102: Ein bewusster kompletter Plan-Neustart setzt auch alle Behalten-Markierungen explizit leer,
   // damit Safety/Durable-Shadow keine veralteten Pins wiederherstellen können.
   safePersistentSetItem(PLAN_KEEP_PINNED,'[]','plan-clean-start-p102-pins');
@@ -4557,6 +4559,153 @@ function p102TogglePinnedRide(id){
   showToast(willPin?'Fahrt für spätere Bereinigung geschützt':'Behalten-Schutz aufgehoben','ok');
   return true;
 }
+// P103 · sichere, zweistufige Bereinigung. Die Vorschau bleibt P102; erst ein vollständig
+// verifizierter Preflight kann die ausdrücklich bestätigte Entfernung freischalten.
+function p103ReadJsonStorage(key,fallback=null){try{const v=JSON.parse(localStorage.getItem(key)||'null');return v??fallback}catch(_){return fallback}}
+function p103ReadPreflight(){const v=p103ReadJsonStorage(PLAN_KEEP_CLEANUP_PREFLIGHT,null);return v&&typeof v==='object'?v:null}
+function p103BackupGate(session){
+  const meta=p103ReadJsonStorage(BACKUP_META,{})||{},backupMs=Date.parse(String(meta.createdAt||'')),sessionMs=Date.parse(String(session?.createdAt||''));
+  const ageMs=Number.isFinite(backupMs)?Date.now()-backupMs:Infinity;
+  const ok=Number.isFinite(backupMs)&&(!Number.isFinite(sessionMs)||backupMs>=sessionMs)&&ageMs>=0&&ageMs<=24*60*60*1000;
+  return{ok,createdAt:String(meta.createdAt||''),backupMs,sessionMs,ageMs};
+}
+function p103RemovalIds(p){return p.removalCandidates.map(r=>String(r?.id||'').trim()).filter(Boolean).sort()}
+function p103RemovalDates(p){
+  const dates=[],bad=[];
+  for(const r of p.removalCandidates){const d=storageV2ArchiveRideDate(r);if(!d)bad.push(String(r?.id||'unbekannt'));else dates.push(d)}
+  return{dates:[...new Set(dates)].sort(),bad};
+}
+function p103SameStringArray(a,b){const x=(Array.isArray(a)?a:[]).map(String).slice().sort(),y=(Array.isArray(b)?b:[]).map(String).slice().sort();return JSON.stringify(x)===JSON.stringify(y)}
+function p103CatalogProofsOk(manifest){
+  const proofs=Array.isArray(manifest?.archives)?manifest.archives:[],catalog=storageV2ArchiveCatalog();
+  return proofs.length>0&&proofs.every(p=>catalog.some(x=>x?.verifiedReadBack===true&&String(x.payloadSha256||'')===String(p.payloadSha256||'')&&String(x.fileSha256||'')===String(p.fileSha256||'')));
+}
+function p103PreflightMatchesCurrent(manifest,p){
+  if(!manifest||manifest.schema!==1||String(manifest.sessionId||'')!==String(p.session?.id||''))return false;
+  if(!p.aligned||!p.removalCandidates.length)return false;
+  if(!p103SameStringArray(manifest.removalIds,p103RemovalIds(p)))return false;
+  const d=p103RemovalDates(p);if(d.bad.length||!p103SameStringArray(manifest.dates,d.dates))return false;
+  if(!p103CatalogProofsOk(manifest))return false;
+  return true;
+}
+function p103BackupLabel(gate){if(!gate?.createdAt)return'keine bestätigte Sicherung';const d=new Date(gate.createdAt);return Number.isNaN(d.getTime())?'ungültiger Sicherungszeitpunkt':d.toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'})}
+function p103SetCleanupStatus(message,type=''){p103CleanupStatusMessage=String(message||'');p103CleanupStatusType=String(type||'');try{renderP102CurrentPlanPreview()}catch(_){}}
+function p103CleanupHtml(p){
+  if(!p?.session)return'';
+  const backup=p103BackupGate(p.session),folder=storageV2ArchiveFolderState(),v2=storageV2Diagnosis(),dates=p103RemovalDates(p),manifest=p103ReadPreflight(),ready=p103PreflightMatchesCurrent(manifest,p);
+  const backupText=backup.ok?`✓ Backup ${esc(p103BackupLabel(backup))}`:`⚠ Frisches Backup nach aktuellem Import fehlt`;
+  const folderText=folder.supported&&folder.configured&&folder.persistedReadWrite&&folder.writable?`✓ Archivordner ${esc(folder.folderName||'ausgewählt')}`:'⚠ Persistenter Archivordner nicht bestätigt';
+  const v2Text=v2.exactMatch?'✓ Storage V2 exakt synchron':'⚠ Storage V2 muss vor Bereinigung exakt synchron sein';
+  const dateText=dates.bad.length?`⚠ ${dates.bad.length} Fahrt(en) ohne archivfähiges Datum`:`${dates.dates.length} betroffene Archivtage`;
+  const canPreflight=p.aligned&&p.removalCandidates.length>0&&backup.ok&&!dates.bad.length&&folder.supported&&folder.configured&&folder.persistedReadWrite&&folder.writable;
+  const statusColor=p103CleanupStatusType==='ok'?'#76efad':p103CleanupStatusType==='warn'?'#ffd36e':'rgba(255,255,255,.82)';
+  if(!p.removalCandidates.length){
+    const msg=p.pinned.length?`Keine ungeschützten älteren Fahrten mehr. ${p.pinned.length} ältere Fahrt(en) bleiben durch 📌 Behalten geschützt.`:'✓ Aktiver Fahrtenbestand enthält keine bereinigbaren älteren Carryover-Fahrten mehr.';
+    return`<div style="margin-top:12px;padding:11px;border:1px solid rgba(103,240,165,.25);border-radius:12px;background:rgba(33,196,111,.07);font-size:12px;line-height:1.45;color:#9af6bf"><b>P103 Bereinigung:</b> ${msg}</div>`;
+  }
+  return`<div style="margin-top:12px;padding:12px;border:1px solid rgba(255,120,120,.25);border-radius:12px;background:rgba(80,20,20,.12)"><div style="font-size:13px;font-weight:900">🛡 P103 · sichere Bereinigungsstufe</div><div style="font-size:11px;line-height:1.5;opacity:.82;margin-top:6px">Vor der Entfernung werden alle betroffenen Tage im persistenten Archivordner geschrieben, zurückgelesen und per SHA-256 bestätigt. Erst danach wird die zweite Bestätigung freigeschaltet.</div><div style="font-size:11px;line-height:1.55;margin-top:8px"><div style="color:${backup.ok?'#76efad':'#ffd36e'}">${backupText}</div><div style="color:${v2.exactMatch?'#76efad':'#ffd36e'}">${v2Text}</div><div style="color:${folder.supported&&folder.configured&&folder.persistedReadWrite&&folder.writable?'#76efad':'#ffd36e'}">${folderText}</div><div>${esc(dateText)} · ${p.removalCandidates.length} Fahrt(en) vorgesehen</div></div>${ready?`<div style="margin-top:9px;padding:9px;border-radius:10px;background:rgba(33,196,111,.10);color:#9af6bf;font-size:11px;line-height:1.45"><b>✓ Preflight verifiziert</b> · ${manifest.archives.length} Archivdatei(en) zurückgelesen · Kandidatenstand unverändert.</div><button type="button" data-p103-apply="1" ${p103CleanupBusy?'disabled':''} style="width:100%;margin-top:9px;padding:11px;border-radius:10px;border:1px solid rgba(255,94,94,.55);background:rgba(255,94,94,.16);color:#ffd0d0;font-weight:900">🧹 ${p.removalCandidates.length} ältere Fahrt(en) aus aktivem Bestand entfernen</button>`:`<button type="button" data-p103-preflight="1" ${(!canPreflight||p103CleanupBusy)?'disabled':''} style="width:100%;margin-top:9px;padding:11px;border-radius:10px;border:1px solid rgba(215,178,82,.45);background:rgba(215,178,82,.14);color:#f7e3a4;font-weight:900">${p103CleanupBusy?'Sicherheitsprüfung läuft …':`🛡 Sicherheitsprüfung & ${dates.dates.length} Vor-Archive erstellen`}</button>`}${p103CleanupStatusMessage?`<div style="margin-top:8px;padding:8px;border-radius:9px;background:rgba(0,0,0,.16);font-size:11px;line-height:1.45;color:${statusColor}">${esc(p103CleanupStatusMessage)}</div>`:''}</div>`;
+}
+async function p103ArchiveRemovalCandidates(p){
+  const folder=storageV2ArchiveFolderState();
+  if(!folder.supported||!folder.configured||!folder.persistedReadWrite||!folder.writable)throw new Error('Persistenter Archivordner ist nicht sicher freigegeben.');
+  const dateInfo=p103RemovalDates(p);if(dateInfo.bad.length)throw new Error('Mindestens eine zu bereinigende Fahrt besitzt kein archivfähiges Datum.');
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+  const proofs=[];
+  for(let i=0;i<dateInfo.dates.length;i++){
+    const date=dateInfo.dates[i],candidateIds=p.removalCandidates.filter(r=>storageV2ArchiveRideDate(r)===date).map(r=>String(r?.id||'').trim()).filter(Boolean);
+    p103SetCleanupStatus(`Archiv ${i+1}/${dateInfo.dates.length}: ${storageV2ArchiveDateLabel(date)} wird geschrieben und zurückgelesen …`);
+    const built=await buildStorageV2DailyArchive(date),archivedIds=new Set(built.archive.rideIds.map(String));
+    if(candidateIds.some(id=>!archivedIds.has(id)))throw new Error(`Archiv ${date}: Nicht alle Bereinigungskandidaten sind enthalten.`);
+    const fileName=`ATMS_Archiv_${date}_vor_Bereinigung_${stamp}.atmsarchive`;
+    const fileMeta=await saveStorageV2ArchiveVerified(built.text,fileName,built.fileSha256);
+    const remembered=rememberStorageV2Archive(built.archive,fileMeta?.fileName||fileName,fileMeta,built.fileSha256);
+    if(!remembered)throw new Error(`Archiv ${date} wurde verifiziert, aber der lokale Archivnachweis konnte nicht gespeichert werden.`);
+    proofs.push({archiveDate:date,candidateCount:candidateIds.length,rideCount:built.archive.rideCount,doneCount:built.archive.doneCount,fileName:String(fileMeta?.fileName||fileName),folderName:String(fileMeta?.folderName||folder.folderName||''),payloadSha256:built.archive.integrity.payloadSha256,fileSha256:built.fileSha256,byteLength:Number(fileMeta?.byteLength)||0,verifiedReadBack:true});
+  }
+  return proofs;
+}
+async function p103RunPreflight(){
+  if(p103CleanupBusy)return false;
+  const p=p102CurrentPlanPreview(),backup=p103BackupGate(p.session),folder=storageV2ArchiveFolderState(),dates=p103RemovalDates(p);
+  if(!p.session||!p.aligned){showToast('Bereinigung blockiert: aktuelle Planliste nicht eindeutig abgegrenzt','warn');return false}
+  if(!p.removalCandidates.length){showToast('Keine älteren ungeschützten Fahrten zu bereinigen','warn');return false}
+  const ids=p103RemovalIds(p);if(ids.length!==p.removalCandidates.length||new Set(ids).size!==ids.length){showToast('Bereinigung blockiert: Fahrt-IDs fehlen oder sind doppelt','warn');return false}
+  if(!backup.ok){showToast('Bereinigung blockiert: Bitte zuerst ein frisches ATMS-Backup erstellen','warn');return false}
+  if(dates.bad.length){showToast('Bereinigung blockiert: Fahrt ohne archivfähiges Datum','warn');return false}
+  if(!folder.supported||!folder.configured||!folder.persistedReadWrite||!folder.writable){showToast('Bereinigung blockiert: Archivordner bitte erneut bestätigen','warn');return false}
+  if(!confirm(`Sicherheitsprüfung für „Nur aktuelle Planliste behalten“ starten?\n\nAktuelle Planliste: ${p.current.length}\n📌 Behalten: ${p.pinned.length}\nZur späteren Entfernung: ${p.removalCandidates.length}\nBetroffene Archivtage: ${dates.dates.length}\n\nJetzt werden nur verifizierte Vor-Archive erstellt. Noch wird KEINE Fahrt entfernt.`))return false;
+  p103CleanupBusy=true;storageV2ArchiveBusy=true;p103SetCleanupStatus('Storage V2 wird vor der Archivierung exakt geprüft …');
+  try{
+    const sync=await checkStorageV2Phase1('p103-preflight-before-archive',false);if(!sync?.ok)throw new Error('Storage V2 ist nicht exakt synchron.');
+    const ridesRawBefore=localStorage.getItem(KEY)||'',doneRawBefore=localStorage.getItem(DONE)||'';
+    const ridesSha=await storageV2ArchiveSha256(ridesRawBefore),doneSha=await storageV2ArchiveSha256(doneRawBefore);
+    const proofs=await p103ArchiveRemovalCandidates(p);
+    const now=p102CurrentPlanPreview();
+    if(!p103SameStringArray(ids,p103RemovalIds(now)))throw new Error('Fahrtenbestand hat sich während der Sicherheitsprüfung geändert.');
+    const currentRidesSha=await storageV2ArchiveSha256(localStorage.getItem(KEY)||''),currentDoneSha=await storageV2ArchiveSha256(localStorage.getItem(DONE)||'');
+    if(currentRidesSha!==ridesSha||currentDoneSha!==doneSha)throw new Error('Fahrten-/Erledigt-Speicher hat sich während der Sicherheitsprüfung geändert.');
+    const manifest={schema:1,createdAt:new Date().toISOString(),sessionId:String(p.session?.id||''),plantag:String(p.session?.plantag||''),currentCount:p.current.length,pinnedIds:p.pinned.map(r=>String(r?.id||'')).sort(),removalIds:ids,dates:dates.dates,ridesRawSha256:ridesSha,doneRawSha256:doneSha,backupCreatedAt:backup.createdAt,folderName:String(folder.folderName||''),archives:proofs};
+    if(!safePersistentSetItem(PLAN_KEEP_CLEANUP_PREFLIGHT,JSON.stringify(manifest),'p103-cleanup-preflight'))throw new Error('Preflight-Nachweis konnte nicht sicher gespeichert werden.');
+    capturePersistenceSafety('p103-cleanup-preflight');
+    persistAudit('p103_cleanup_preflight_ok',{sessionId:manifest.sessionId,currentCount:manifest.currentCount,removalCount:ids.length,pinnedCount:manifest.pinnedIds.length,dates:dates.dates,archives:proofs.map(x=>({date:x.archiveDate,fileSha256:x.fileSha256,fileName:x.fileName}))});
+    p103CleanupStatusMessage=`✓ Sicherheitsprüfung abgeschlossen: ${proofs.length} Archivdatei(en) verifiziert. Zweite Bestätigung ist jetzt freigeschaltet.`;p103CleanupStatusType='ok';
+    showToast('P103 Sicherheitsprüfung bestanden','ok');return true;
+  }catch(e){
+    try{localStorage.removeItem(PLAN_KEEP_CLEANUP_PREFLIGHT)}catch(_){}
+    const msg=String(e?.message||e||'Unbekannter Fehler');persistAudit('p103_cleanup_preflight_failed',{message:msg});p103CleanupStatusMessage='⚠ Sicherheitsprüfung abgebrochen: '+msg;p103CleanupStatusType='warn';showToast('Bereinigung bleibt blockiert','warn');return false;
+  }finally{p103CleanupBusy=false;storageV2ArchiveBusy=false;renderP102CurrentPlanPreview();try{renderStorageV2ArchiveCard()}catch(_){}}
+}
+async function p103ApplyCleanup(){
+  if(p103CleanupBusy)return false;
+  const p=p102CurrentPlanPreview(),manifest=p103ReadPreflight(),backup=p103BackupGate(p.session);
+  if(!p103PreflightMatchesCurrent(manifest,p)){showToast('Bereinigung blockiert: Sicherheitsprüfung ist nicht mehr aktuell','warn');return false}
+  if(!backup.ok||String(backup.createdAt||'')!==String(manifest.backupCreatedAt||'')){showToast('Bereinigung blockiert: Backup-Nachweis hat sich geändert','warn');return false}
+  const ridesSha=await storageV2ArchiveSha256(localStorage.getItem(KEY)||''),doneSha=await storageV2ArchiveSha256(localStorage.getItem(DONE)||'');
+  if(ridesSha!==String(manifest.ridesRawSha256||'')||doneSha!==String(manifest.doneRawSha256||'')){showToast('Bereinigung blockiert: Fahrtenbestand wurde seit dem Preflight verändert','warn');return false}
+  const v2=await checkStorageV2Phase1('p103-before-delete',false);if(!v2?.ok){showToast('Bereinigung blockiert: Storage V2 ist nicht exakt synchron','warn');return false}
+  const folder=storageV2ArchiveFolderState();if(!folder.configured||!folder.persistedReadWrite||!folder.writable){showToast('Bereinigung blockiert: Archivordner-Freigabe ist nicht mehr gültig','warn');return false}
+  const keepCount=p.current.length+p.pinned.length,removeCount=p.removalCandidates.length;
+  if(!confirm(`JETZT ältere Fahrten aus dem aktiven Bestand entfernen?\n\nBEHALTEN:\n• ${p.current.length} Fahrt(en) der aktuellen Planliste\n• ${p.pinned.length} Fahrt(en) mit 📌 Behalten\n\nENTFERNEN:\n• ${removeCount} ältere Carryover-Fahrt(en)\n\nSICHERHEIT:\n• Backup: ${p103BackupLabel(backup)}\n• ${manifest.archives.length} Vor-Archiv(e) verifiziert\n• Archivordner: ${folder.folderName||'bestätigt'}\n\nArchive und Backup bleiben erhalten. Die Entfernung betrifft nur den aktiven Fahrtenbestand.`))return false;
+  p103CleanupBusy=true;p103SetCleanupStatus('Bereinigung wird transaktionsartig durchgeführt …');
+  const before={rides:JSON.parse(JSON.stringify(rides)),done:new Set(done),overrides:getRideOverrides(),pins:p102PinnedRideIds(),previousImport:localStorage.getItem('atms_import_previous_v1'),recoveryCurrent:localStorage.getItem('atms_import_recovery_current_v1')};
+  const removeIds=new Set(p103RemovalIds(p));
+  try{
+    const nextRides=rides.filter(r=>!removeIds.has(String(r?.id||''))),nextDone=new Set([...done].filter(id=>!removeIds.has(String(id)))),nextOverrides=getRideOverrides().filter(x=>!removeIds.has(String(x?.rideId||''))),nextPins=new Set([...p102PinnedRideIds()].filter(id=>!removeIds.has(String(id))));
+    if(nextRides.length!==keepCount)throw new Error(`Sicherheitsabbruch: Erwartet ${keepCount} verbleibende Fahrten, berechnet ${nextRides.length}.`);
+    rides=nextRides;done=nextDone;
+    if(!save({silent:true,deferDurable:true}))throw new Error('Aktiver Fahrtenbestand konnte nicht vollständig gespeichert werden.');
+    if(!saveRideOverrides(nextOverrides))throw new Error('Fahrtenkorrekturen konnten nicht sicher bereinigt werden.');
+    if(!p102SavePinnedRideIds(nextPins))throw new Error('Behalten-Markierungen konnten nicht sicher gespeichert werden.');
+    const durable=await syncPersistenceDurableShadow('p103-current-plan-cleanup');if(!durable||durable.storage?.[KEY]!==localStorage.getItem(KEY)||durable.storage?.[DONE]!==localStorage.getItem(DONE))throw new Error('Durable Shadow konnte den neuen Bestand nicht exakt bestätigen.');
+    const s2=await syncStorageV2Phase1('p103-current-plan-cleanup');if(!s2?.ok)throw new Error('Storage V2 konnte den neuen Bestand nicht exakt bestätigen.');
+    let stored=[];try{stored=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(_){throw new Error('Gespeicherter Fahrtenbestand ist nach Bereinigung unlesbar.')}
+    if(!Array.isArray(stored)||stored.length!==keepCount||stored.some(r=>removeIds.has(String(r?.id||''))))throw new Error('Write-Read-Prüfung des bereinigten Fahrtenbestands fehlgeschlagen.');
+    try{localStorage.removeItem('atms_import_previous_v1');localStorage.removeItem('atms_import_recovery_current_v1')}catch(_){}
+    const report={schema:1,completedAt:new Date().toISOString(),sessionId:String(p.session?.id||''),plantag:String(p.session?.plantag||''),beforeCount:p.all.length,currentKept:p.current.length,pinnedKept:p.pinned.length,removedCount:removeCount,afterCount:keepCount,backupCreatedAt:backup.createdAt,folderName:String(folder.folderName||''),archives:manifest.archives.map(x=>({archiveDate:x.archiveDate,fileName:x.fileName,fileSha256:x.fileSha256,payloadSha256:x.payloadSha256}))};
+    safePersistentSetItem(PLAN_KEEP_CLEANUP_LAST,JSON.stringify(report),'p103-cleanup-result');
+    try{localStorage.removeItem(PLAN_KEEP_CLEANUP_PREFLIGHT)}catch(_){}
+    capturePersistenceSafety('p103-current-plan-cleanup');
+    if(active&&removeIds.has(String(active?.id||'')))active=null;
+    persistAudit('p103_cleanup_success',{beforeCount:p.all.length,currentKept:p.current.length,pinnedKept:p.pinned.length,removedCount:removeCount,afterCount:keepCount,archiveCount:manifest.archives.length});
+    p103CleanupStatusMessage=`✓ Bereinigung bestätigt: ${removeCount} ältere Fahrt(en) entfernt · ${keepCount} aktiv geblieben. Archive und Backup bleiben erhalten.`;p103CleanupStatusType='ok';
+    render();updateBackupUI();renderP102CurrentPlanPreview();showToast(`${removeCount} ältere Fahrten sicher entfernt`,'ok');return true;
+  }catch(e){
+    const msg=String(e?.message||e||'Unbekannter Fehler');let rollbackOk=false;
+    try{
+      rides=before.rides;done=before.done;
+      const r1=save({silent:true,deferDurable:true}),r2=saveRideOverrides(before.overrides),r3=p102SavePinnedRideIds(before.pins);
+      if(before.previousImport===null)localStorage.removeItem('atms_import_previous_v1');else localStorage.setItem('atms_import_previous_v1',before.previousImport);
+      if(before.recoveryCurrent===null)localStorage.removeItem('atms_import_recovery_current_v1');else localStorage.setItem('atms_import_recovery_current_v1',before.recoveryCurrent);
+      capturePersistenceSafety('p103-cleanup-rollback',false);
+      const d=await syncPersistenceDurableShadow('p103-cleanup-rollback'),s2=await syncStorageV2Phase1('p103-cleanup-rollback');
+      rollbackOk=Boolean(r1&&r2&&r3&&d&&s2?.ok&&localStorage.getItem(KEY)===JSON.stringify(rides));
+    }catch(_){rollbackOk=false}
+    persistAudit('p103_cleanup_failed',{message:msg,rollbackOk});
+    p103CleanupStatusMessage=`⚠ Bereinigung fehlgeschlagen: ${msg}${rollbackOk?' · vorheriger aktiver Bestand wurde wiederhergestellt.':' · ROLLBACK NICHT BESTÄTIGT – bitte Backup verwenden.'}`;p103CleanupStatusType='warn';
+    showToast(rollbackOk?'Bereinigung abgebrochen · Bestand wiederhergestellt':'KRITISCH: Rollback nicht bestätigt','warn');
+    render();updateBackupUI();return false;
+  }finally{p103CleanupBusy=false;renderP102CurrentPlanPreview()}
+}
 function renderP102CurrentPlanPreview(){
   const host=$('p102CurrentPlanPreview');if(!host)return false;
   const p=p102CurrentPlanPreview(),session=p.session;
@@ -4587,8 +4736,11 @@ function renderP102CurrentPlanPreview(){
     }).join('');
     return `<details style="margin-top:8px;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:0 10px"><summary style="cursor:pointer;padding:10px 0;font-size:12px;font-weight:800">${esc(p102RideDateLabel(date))} · ${list.length} ältere Fahrt(en)${pinnedCount?' · '+pinnedCount+' behalten':''}</summary>${rows}</details>`;
   }).join('');
-  host.innerHTML=`<div style="font-size:12px;line-height:1.45;margin-bottom:9px">Letzter bestätigter Import: <b>${plantag}</b> · ${imported}<br>${matchNote}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:7px"><div style="padding:9px;border-radius:10px;background:rgba(33,196,111,.10)"><b style="font-size:20px">${p.current.length}</b><div style="font-size:10px;opacity:.72">aktuelle Planliste</div></div><div style="padding:9px;border-radius:10px;background:rgba(255,193,66,.10)"><b style="font-size:20px">${p.older.length}</b><div style="font-size:10px;opacity:.72">ältere Carryover</div></div><div style="padding:9px;border-radius:10px;background:rgba(74,191,255,.10)"><b style="font-size:20px">${p.pinned.length}</b><div style="font-size:10px;opacity:.72">📌 behalten</div></div><div style="padding:9px;border-radius:10px;background:rgba(255,94,94,.08)"><b style="font-size:20px">${p.removalCandidates.length}</b><div style="font-size:10px;opacity:.72">später bereinigbar</div></div></div><div style="margin-top:10px;padding:9px;border-radius:10px;background:rgba(255,255,255,.045);font-size:11px;line-height:1.45"><b>P102 Vorschau:</b> Es wird noch keine Fahrt gelöscht, verschoben oder automatisch archiviert. „📌 Behalten“ schützt ältere Fahrten für die spätere Bereinigungsstufe.</div>${p.older.length?`<div style="margin-top:10px;font-size:12px;font-weight:800">Ältere Fahrten prüfen</div>${groupHtml}`:'<div style="margin-top:10px;font-size:12px;color:#67f0a5;font-weight:800">✓ Keine älteren Carryover-Fahrten erkannt.</div>'}`;
+  const p103Html=p103CleanupHtml(p);
+  host.innerHTML=`<div style="font-size:12px;line-height:1.45;margin-bottom:9px">Letzter bestätigter Import: <b>${plantag}</b> · ${imported}<br>${matchNote}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:7px"><div style="padding:9px;border-radius:10px;background:rgba(33,196,111,.10)"><b style="font-size:20px">${p.current.length}</b><div style="font-size:10px;opacity:.72">aktuelle Planliste</div></div><div style="padding:9px;border-radius:10px;background:rgba(255,193,66,.10)"><b style="font-size:20px">${p.older.length}</b><div style="font-size:10px;opacity:.72">ältere Carryover</div></div><div style="padding:9px;border-radius:10px;background:rgba(74,191,255,.10)"><b style="font-size:20px">${p.pinned.length}</b><div style="font-size:10px;opacity:.72">📌 behalten</div></div><div style="padding:9px;border-radius:10px;background:rgba(255,94,94,.08)"><b style="font-size:20px">${p.removalCandidates.length}</b><div style="font-size:10px;opacity:.72">später bereinigbar</div></div></div><div style="margin-top:10px;padding:9px;border-radius:10px;background:rgba(255,255,255,.045);font-size:11px;line-height:1.45"><b>P102 Vorschau:</b> „📌 Behalten“ schützt ältere Fahrten. P103 darf nur nach verifiziertem Backup-/Storage-/Archiv-Preflight entfernen.</div>${p103Html}${p.older.length?`<div style="margin-top:10px;font-size:12px;font-weight:800">Ältere Fahrten prüfen</div>${groupHtml}`:'<div style="margin-top:10px;font-size:12px;color:#67f0a5;font-weight:800">✓ Keine älteren Carryover-Fahrten erkannt.</div>'}`;
   host.querySelectorAll('[data-p102-pin]').forEach(btn=>btn.addEventListener('click',()=>p102TogglePinnedRide(btn.dataset.p102Pin)));
+  host.querySelector('[data-p103-preflight]')?.addEventListener('click',()=>void p103RunPreflight());
+  host.querySelector('[data-p103-apply]')?.addEventListener('click',()=>void p103ApplyCleanup());
   return true;
 }
 function ensureP102CurrentPlanPreviewPanel(){
@@ -4602,7 +4754,7 @@ function ensureP102CurrentPlanPreviewPanel(){
   if(!panel){
     panel=document.createElement('section');panel.id='p102CurrentPlanPreviewPanel';panel.className='card';
     panel.style.cssText='margin:0 0 18px;padding:18px;border:1px solid rgba(215,178,82,.38);border-radius:22px;background:linear-gradient(180deg,rgba(65,52,18,.28),rgba(24,31,37,.96))';
-    panel.innerHTML='<div style="font-weight:900;font-size:18px;margin-bottom:4px">🧹 Nur aktuelle Planliste behalten · Vorschau</div><div style="font-size:11px;opacity:.72;line-height:1.4;margin-bottom:9px">P102 · Sicherheitsstufe ohne Löschung</div><div id="p102CurrentPlanPreview"></div>';
+    panel.innerHTML='<div style="font-weight:900;font-size:18px;margin-bottom:4px">🧹 Nur aktuelle Planliste behalten · Vorschau</div><div style="font-size:11px;opacity:.72;line-height:1.4;margin-bottom:9px">P103 · Vorschau + archivgesicherte Bereinigungsstufe</div><div id="p102CurrentPlanPreview"></div>';
   }
   // Immer direkt zwischen Haupt-Planimport und erweitertem JSON-Import positionieren.
   // Dadurch ist die Vorschau unabhängig von alten Gemini/LIVE/History-Containern sichtbar.
