@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P106 · 02.10.2026: CURRENT PLAN DRIVER COLORS – aktuelle, konsistente Fahrerzellfarben des gerade importierten Plans ersetzen veraltete automatische Planfarben desselben Fahrers. Manuell gesperrte P74-Farben bleiben unangetastet; alte Farben anderer, im aktuellen Import nicht vorkommender Fahrer blockieren keine neue Planfarbe mehr.
 // CORE-007D8A1F1D8P105 · 02.10.2026: SAFE ARCHIVE RESTORE – ergänzt eine zweistufige, additive Wiederherstellung aus bereits nativ zurückgelesenen und SHA-256-verifizierten .atmsarchive-Dateien. Vor Übernahme wird Storage V2 exakt geprüft und ein frisches vollständiges ATMS-Backup des aktuellen Bestands erstellt. Bestehende Fahrt-IDs werden niemals überschrieben; nur fehlende Archivfahrten werden als ältere Carryover ergänzt. Nach dem Schreiben müssen localStorage, Durable Shadow und Storage V2 den neuen Bestand bestätigen; bei Fehler wird der exakte Vorzustand zurückgerollt.
 // CORE-007D8A1F1D8P104_3 · 02.10.2026: LIVE APPBAR ANDROID SAFE-AREA FIX – trennt ausschließlich die ATMS-PRO-Kopfleiste der Fahrer-Fahrtenkontrolle visuell von der Android-Statusleiste. Die Appbar erhält auf Mobilgeräten einen eigenen oberen Safe-Area-Abstand, sodass Uhr/Netz/Akku nicht mehr mit „ATMS PRO“ überlagert wirken. Keine Änderung an Live-Dispo-Berechnung, Tracking, Nachrichten, Fahrten, Archiv, Storage V2, OCR, Import/Dedupe oder Persistenz.
 // CORE-007D8A1F1D8P104_2 · 02.10.2026: ARCHIVE BACK + PRIMARY SAFE-AREA POLISH – hält den P104-READ-ONLY-Viewer beim Zurück-Pfeil sicher innerhalb von „Backup & Wiederherstellen“, blendet währenddessen die äußere Settings-Zurückleiste aus und stellt sie danach wieder her. Nachrichten und Live-Dispo erhalten denselben Android-Safe-Area-Abstand wie die bestätigten Native-Top-Bars; beim echten Tabwechsel wird die vertikale Scrollposition sauber auf den Seitenanfang gesetzt, ohne laufende Live-Refreshes nach oben zu springen. Keine Änderung an Archiv-/SHA-Logik, Fahrten, Storage V2, OCR, Import, PLAN/DISPO/LIVE-Berechnung oder Persistenz.
@@ -1411,28 +1412,18 @@ function applyImportedDriverPlanColors(source){
     if(!byDriver.has(key))byDriver.set(key,{name,items:[]});
     byDriver.get(key).items.push({hex,confidence:Number(ride?.sourcePlanColorConfidence||0)});
   }
-  if(!byDriver.size)return{changed:0,skippedManual:0,skippedConflict:0};
+  if(!byDriver.size)return{changed:0,skippedManual:0,skippedConflict:0,applied:0};
   ensureDriverColorAssignments(source);
-  let changed=0,skippedManual=0,skippedConflict=0;
-  const reserved=[];
-  const allKeys=[...new Set([...Object.keys(driverColorMap),...Object.keys(driverPlanColorMap),...byDriver.keys()])];
-  allKeys.forEach(key=>{
-    if(!driverColorManualMap[key])return;
-    const id=driverColorMap[key],hex=DRIVER_COLOR_PALETTE.find(c=>c.id===id)?.hex;
-    if(hex)reserved.push({key,hex});
-  });
+  let changed=0,skippedManual=0,applied=0;
   for(const [key,entry] of byDriver){
     if(driverColorManualMap[key]){skippedManual++;continue}
     const hex=driverPlanColorConsensus(entry.items);if(!hex)continue;
-    const conflict=reserved.find(x=>x.key!==key&&driverRgbDistance(x.hex,hex)<30)
-      || [...byDriver.keys()].filter(k=>k!==key&&driverPlanColorMap[k]).map(k=>({key:k,hex:driverPlanColorMap[k]})).find(x=>driverRgbDistance(x.hex,hex)<24);
-    if(conflict){skippedConflict++;continue}
     if(driverPlanColorMap[key]!==hex){driverPlanColorMap[key]=hex;changed++}
-    reserved.push({key,hex});
+    applied++;
   }
   if(changed)saveDriverPlanColorMap();
   reassignAutomaticPaletteConflicts();
-  return{changed,skippedManual,skippedConflict};
+  return{changed,skippedManual,skippedConflict:0,applied};
 }
 function ensureDriverColorCss(){
   if(document.getElementById('atmsDriverColorStyles'))return;

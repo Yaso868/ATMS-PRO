@@ -142,8 +142,9 @@
 
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
+  // CORE-007D8A1F1D8P106 · 02.10.2026: MULTI-IMAGE + DRIVER OCR/COLOR INTEGRITY PACK – erlaubt mehrere Bildteile derselben Planliste in einem Analyse-Lauf, verbindet Fortsetzungsbilder ohne eigene Kopfzeile vor der OCR sicher mit dem Kopfzeilenbild, erweitert den Fahrer-Spaltenkonsens um genau eine eindeutig fehlende Buchstabenposition (z. B. Selm→Selim) und prüft Fahrerzellfarben auf fehlende/inkonsistente Erkennung. Keine Flug-, Routing-, Preis-, Dedupe- oder Speicherlogik wird aufgeweicht.
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
+  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -1074,6 +1075,12 @@
         // und bleiben ausschließlich als Diagnose-Metadaten am Ride erhalten.
         issues.push({ level: 'warning', row, text: `Fahrer „${ride.driver}“ OCR-auffällig – Original-Planliste prüfen` });
       }
+      if (ride.driver && ride.driverPlanColorNeedsManualCheck) {
+        const detail = ride.driverPlanColorIssue === 'same_driver_color_inconsistent'
+          ? `Fahrerfarbe für „${ride.driver}“ ist innerhalb derselben Planliste uneinheitlich`
+          : `Fahrerfarbe für „${ride.driver}“ konnte aus der Fahrerzelle nicht sicher erkannt werden`;
+        issues.push({ level: 'warning', kind: 'driver_color', row, text: `${detail} – Original-Planliste prüfen` });
+      }
       if (ride.flightNumber && !looksLikeFlight(ride.flightNumber)) issues.push({ level: 'warning', row, text: `Flugnummer „${ride.flightNumber}“ bitte prüfen` });
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
         issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
@@ -1304,6 +1311,53 @@
     });
   }
 
+
+  async function combinePlanImageFiles(files) {
+    const list = (Array.isArray(files) ? files : []).filter(isImageFile);
+    if (list.length <= 1) return list[0] || null;
+    const images = await Promise.all(list.map(loadImage));
+    const targetWidth = Math.max(...images.map(img => Number(img.naturalWidth || img.width || 1)));
+    const gap = Math.max(4, Math.round(targetWidth * 0.004));
+    const heights = images.map(img => Math.max(1, Math.round(Number(img.naturalHeight || img.height || 1) * targetWidth / Math.max(1, Number(img.naturalWidth || img.width || 1)))));
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = heights.reduce((sum, value) => sum + value, 0) + gap * (images.length - 1);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    let y = 0;
+    images.forEach((img, index) => {
+      ctx.drawImage(img, 0, y, targetWidth, heights[index]);
+      y += heights[index];
+      if (index < images.length - 1) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, y, targetWidth, gap);
+        y += gap;
+      }
+    });
+    const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Mehrteilige Planliste konnte nicht zusammengeführt werden.')), 'image/png'));
+    const baseName = cellText(list[0]?.name).replace(/\.[^.]+$/, '') || 'ATMS_Planliste';
+    const combined = new File([blob], `${baseName}_ATMS_MULTI_${list.length}.png`, { type: 'image/png', lastModified: Date.now() });
+    try {
+      combined.atmsSourceFileNames = list.map(file => cellText(file?.name));
+      combined.atmsSourcePartCount = list.length;
+    } catch (_) {}
+    return combined;
+  }
+
+  async function readSelectedFiles() {
+    const files = (Array.isArray(state.files) && state.files.length) ? state.files.slice() : (state.file ? [state.file] : []);
+    if (!files.length) throw new Error('Keine Planliste ausgewählt.');
+    if (files.length === 1) return readFile(files[0]);
+    if (!files.every(isImageFile)) throw new Error('Mehrfachauswahl ist nur für Bild-/WhatsApp-Planlisten vorgesehen. Excel, CSV und JSON bitte einzeln auswählen.');
+    const combined = await combinePlanImageFiles(files);
+    const result = await readImagePlan(combined);
+    result.sheetName = `Bild / WhatsApp · ${files.length} Teile`;
+    result.multiImage = true;
+    result.sourceFiles = files.map(file => cellText(file?.name));
+    return result;
+  }
+
   async function buildSourceColorCanvas(file, width, height) {
     const img = await loadImage(file);
     const canvas = document.createElement('canvas');
@@ -1406,6 +1460,54 @@
       if (!color?.hex) return ride;
       return { ...ride, sourcePlanColorHex: color.hex, sourcePlanColorConfidence: Number(color.confidence || 0), sourcePlanColorSource: 'image_driver_cell' };
     });
+  }
+
+
+  function planColorRgb(hex) {
+    const match = cellText(hex).match(/^#?([0-9a-f]{6})$/i);
+    if (!match) return null;
+    const value = match[1];
+    return { r: parseInt(value.slice(0,2),16), g: parseInt(value.slice(2,4),16), b: parseInt(value.slice(4,6),16) };
+  }
+
+  function planColorDistance(left, right) {
+    const a = planColorRgb(left), b = planColorRgb(right);
+    if (!a || !b) return Infinity;
+    return Math.hypot(a.r-b.r, a.g-b.g, a.b-b.b);
+  }
+
+  function markImageDriverColorIntegrity(rides) {
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const groups = new Map();
+    out.forEach(ride => {
+      const driver = cellText(ride?.driver);
+      if (!driver) return;
+      const key = cleanKey(driver);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(ride);
+    });
+    groups.forEach(items => {
+      const usable = items.filter(ride => planColorRgb(ride?.sourcePlanColorHex) && Number(ride?.sourcePlanColorConfidence || 0) >= 0.25);
+      items.forEach(ride => {
+        if (!planColorRgb(ride?.sourcePlanColorHex) || Number(ride?.sourcePlanColorConfidence || 0) < 0.25) {
+          ride.driverPlanColorNeedsManualCheck = true;
+          ride.driverPlanColorIssue = 'driver_cell_color_missing_or_weak';
+        }
+      });
+      if (usable.length < 2) return;
+      let maxSpread = 0;
+      for (let i = 0; i < usable.length; i++) {
+        for (let j = i + 1; j < usable.length; j++) maxSpread = Math.max(maxSpread, planColorDistance(usable[i].sourcePlanColorHex, usable[j].sourcePlanColorHex));
+      }
+      if (maxSpread > 58) {
+        items.forEach(ride => {
+          ride.driverPlanColorNeedsManualCheck = true;
+          ride.driverPlanColorIssue = 'same_driver_color_inconsistent';
+          ride.driverPlanColorSpread = Math.round(maxSpread);
+        });
+      }
+    });
+    return out;
   }
 
   async function preprocessImage(file) {
@@ -4030,6 +4132,16 @@
     // Deutsche Diakritik kann bei englischer Primär-OCR zugleich einen Buchstaben verschieben.
     // Ein einziger Zeichenunterschied ist nur bei tatsächlich vorhandener Diakritik erlaubt.
     if (driverHasLatinDiacritic(candidate) && driverEditDistance(original, candidate) <= 1) return true;
+
+    // P106: Eine einzelne im Primär-OCR ausgelassene Buchstabenposition darf nur dann
+    // ergänzt werden, wenn die deutsche Fahrer-Spalten-OCR denselben längeren Namen
+    // mit Mehrfach-Konsens geliefert hat. Kein Namenswörterbuch: Entfernt man exakt
+    // EIN Zeichen aus dem Kandidaten, muss exakt der Primärwert entstehen.
+    if (candidate.length === original.length + 1 && original.length >= 3) {
+      for (let index = 0; index < candidate.length; index++) {
+        if (candidate.slice(0, index) + candidate.slice(index + 1) === original) return true;
+      }
+    }
 
     return false;
   }
@@ -7572,8 +7684,9 @@
     let pipelineStarted = false;
     try {
       currentPlanDate();
-      $('importStatus').textContent = isImageFile(state.file) ? 'Bildanalyse wird vorbereitet …' : 'Planliste wird analysiert …';
-      const result = await p54MeasureAsync('read_file_total', () => readFile(state.file));
+      const selectedCount = Array.isArray(state.files) && state.files.length ? state.files.length : (state.file ? 1 : 0);
+      $('importStatus').textContent = isImageFile(state.file) ? (selectedCount > 1 ? `${selectedCount} Bildteile werden gemeinsam analysiert …` : 'Bildanalyse wird vorbereitet …') : 'Planliste wird analysiert …';
+      const result = await p54MeasureAsync('read_file_total', () => readSelectedFiles());
       if (generation !== state.pipelineGeneration) return;
       if (result.kind === 'json') {
         const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
@@ -7736,6 +7849,7 @@
         ));
         preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
+        preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));
         state.ocrCellDiagnostics = p54MeasureSync('build_raw_diagnostics', () => buildOcrCellRawDiagnostics(
           preparedRides,
           result.imageMeta,
@@ -7789,8 +7903,11 @@
     }
   }
 
-  function selectFile(file) {
+  function selectFiles(fileList) {
+    const files = Array.from(fileList || []).filter(Boolean);
+    const file = files[0] || null;
     state.file = file;
+    state.files = files;
     state.matrix = [];
     state.rides = [];
     state.cancelledRows = [];
@@ -7825,7 +7942,20 @@
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
     const planDate = currentPlanDate();
-    $('importStatus').textContent = file ? `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.` : 'Noch keine Planliste ausgewählt.';
+    if (!file) {
+      $('importStatus').textContent = 'Noch keine Planliste ausgewählt.';
+    } else if (files.length > 1) {
+      const imageOnly = files.every(isImageFile);
+      $('importStatus').textContent = imageOnly
+        ? `Ausgewählt: ${files.length} Bildteile · Plantag ${formatPlanDate(planDate)}. ATMS verbindet sie in Auswahlreihenfolge und analysiert sie gemeinsam.`
+        : `Ausgewählt: ${files.length} Dateien. Mehrfachauswahl ist nur für Bild-/WhatsApp-Planlisten erlaubt.`;
+    } else {
+      $('importStatus').textContent = `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.`;
+    }
+  }
+
+  function selectFile(file) {
+    selectFiles(file ? [file] : []);
   }
 
   window.addEventListener('atms:gemini-flight-result', event => {
@@ -10943,7 +11073,7 @@
     if (!input) return;
     ensurePlanDateControl();
     currentPlanDate();
-    input.addEventListener('change', event => selectFile(event.target.files && event.target.files[0]));
+    input.addEventListener('change', event => selectFiles(event.target.files || []));
     $('analyzePlanBtn')?.addEventListener('click', analyze);
     $('importPlanBtn')?.addEventListener('click', importRides);
     $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
@@ -10952,8 +11082,8 @@
       ['dragenter','dragover'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.add('over'); }));
       ['dragleave','drop'].forEach(name => drop.addEventListener(name, event => { event.preventDefault(); drop.classList.remove('over'); }));
       drop.addEventListener('drop', event => {
-        const file = event.dataTransfer.files && event.dataTransfer.files[0];
-        if (file) selectFile(file);
+        const files = event.dataTransfer.files ? Array.from(event.dataTransfer.files) : [];
+        if (files.length) selectFiles(files);
       });
     }
   }

@@ -44,8 +44,8 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
 <section id="importView" class="hidden"><main class="import"><div class="cockHead"><button id="importBack" class="icon">←</button><h1>Planliste importieren</h1></div>
 <div class="card plan-import-card">
   <div class="import-title-row"><div><h2>Planliste direkt hochladen</h2><p class="sub">Bild/WhatsApp, Excel, CSV oder ATMS-JSON – automatische Erkennung der ATMS-Planliste.</p></div><span class="import-badge">NEU</span></div>
-  <label class="file file-large">📷 Bild oder Planliste auswählen<input id="fileInput" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,.xlsx,.xls,.csv,.tsv,.json,application/json,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
-  <div id="planImportDrop" class="plan-drop">Datei hier ablegen oder oben auswählen</div>
+  <label class="file file-large">📷 Bild(er) oder Planliste auswählen<input id="fileInput" type="file" multiple accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,.xlsx,.xls,.csv,.tsv,.json,application/json,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"></label>
+  <div id="planImportDrop" class="plan-drop">Datei hier ablegen oder mehrere Bildteile gemeinsam auswählen</div>
   <div id="planAnalysis" class="plan-analysis hidden">
     <div id="planProfileInfo" class="plan-profile-info"><b>Importprofil wird erkannt …</b></div>
     <div class="plan-stats plan-stats-extended"><div><b id="planRideCount">0</b><span>Fahrten</span></div><div><b id="planDriverCount">0</b><span>Fahrer</span></div><div><b id="planFlightCount">0</b><span>Flüge</span></div><div><b id="planWarningCount">0</b><span>Hinweise</span></div><div><b id="planErrorCount">0</b><span>Fehler</span></div><div><b id="planSheetName">–</b><span>Tabellenblatt</span></div></div>
