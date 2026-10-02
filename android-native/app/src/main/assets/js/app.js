@@ -1,3 +1,4 @@
+// STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmal auswählen, Berechtigung dauerhaft halten, Tagesarchive kollisionsfrei direkt dort speichern und nativ byte-/SHA-256-genau zurücklesen. Phase 2A bleibt als Fallback erhalten; keine automatische Löschung aktiver Fahrten.
 // CORE-007D8A1F1D8P100 · 02.10.2026: ADDRESS-CANDIDATE PC ROUNDTRIP – offene P98-Adressbuch-Kandidaten können in der Native-App als Excel/CSV exportiert, am PC ergänzt und sicher wieder importiert werden. Aktionen OFFEN/ÜBERNEHMEN/IGNORIEREN werden vor Anwendung zusammengefasst; nur neue kollisionsfreie Adressen werden additiv angelegt, bestehende Adressen niemals automatisch überschrieben oder gelöscht. Kandidaten-ID hält die Zuordnung stabil, der erkannte Originalname wird bei umbenanntem Kurzname als Alias bewahrt. P99.3/P99.2/P99.1/P99, Fahrtdaten, OCR, PLAN/DISPO/LIVE, FLIGHT-008, Bundles, Storage V2 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P99.3 · 02.10.2026: PAST-RIDES DATE LABEL – zeigt ausschließlich im Bereich „Vergangene Fahrten“ das echte Fahrtdatum direkt auf jeder Fahrtenkarte, damit gleich aussehende historische Wiederholungen verschiedener Tage eindeutig unterscheidbar sind. Keine Änderung an Fahrtdaten, Dedupe, Import, Erledigt-Status, Bundles, Storage V2 oder FLIGHT-008.
 // CORE-007D8A1F1D8P99.2 · 02.10.2026: LEGACY PARTNER/FIRMA IDENTITY FIX – korrigiert den engen P99.1-Legacy-Dedupe-Schlüssel für ältere Fahrten, bei denen derselbe sichtbare Partner historisch in partner/airline statt zusätzlich in customer gespeichert wurde. Partner/Kunde wird fachlich über partner -> airline -> customer/kunde normalisiert, Firma separat über company/firma. Alle übrigen P99.1-Fail-Closed-Guards bleiben unverändert; keine globale Dedupe-Regel.
@@ -574,11 +575,32 @@ async function verifyStorageV2ArchiveObject(obj){
   if(actual.toLowerCase()!==String(integrity.payloadSha256).toLowerCase())throw new Error('Archivprüfung fehlgeschlagen: SHA-256 stimmt nicht.');
   return true;
 }
+function storageV2ArchiveFolderState(){
+  const bridge=window.ATMSNativeFileExport;
+  if(!bridge||typeof bridge.getArchiveFolderState!=='function')return{supported:false,configured:false,persistedReadWrite:false,writable:false,folderName:''};
+  try{return{supported:true,...(bridge.getArchiveFolderState()||{})}}catch(e){return{supported:true,configured:false,persistedReadWrite:false,writable:false,folderName:'',error:String(e?.message||e||'')}}
+}
+async function chooseStorageV2ArchiveFolder(){
+  const bridge=window.ATMSNativeFileExport;
+  if(!bridge||typeof bridge.chooseArchiveFolder!=='function')throw new Error('Native Archivordner-Auswahl ist in dieser App-Version nicht verfügbar.');
+  const result=await bridge.chooseArchiveFolder();
+  if(!result?.configured||!result?.persistedReadWrite)throw new Error('Die dauerhafte Lese-/Schreibfreigabe für den Archivordner wurde nicht bestätigt.');
+  return result;
+}
 async function saveStorageV2ArchiveVerified(text,fileName,expectedFileSha256){
   const bridge=window.ATMSNativeFileExport;
   if(!bridge||typeof bridge.saveBase64FileVerified!=='function')throw new Error('Native Dateiprüfung ist nicht verfügbar. Archivierung bleibt blockiert.');
   const blob=new Blob([text],{type:'application/octet-stream'}),payload=await blobToBase64Payload(blob);
-  const result=await bridge.saveBase64FileVerified(payload,fileName,'application/octet-stream');
+  const folder=storageV2ArchiveFolderState();
+  let result;
+  if(folder.supported&&folder.configured){
+    if(!folder.persistedReadWrite||!folder.writable)throw new Error('Die gespeicherte Archivordner-Berechtigung ist nicht mehr gültig. Bitte Archivordner erneut wählen.');
+    if(typeof bridge.saveBase64FileToArchiveFolderVerified!=='function')throw new Error('Native Direktablage im Archivordner ist nicht verfügbar.');
+    result=await bridge.saveBase64FileToArchiveFolderVerified(payload,fileName,'application/octet-stream');
+  }else{
+    result=await bridge.saveBase64FileVerified(payload,fileName,'application/octet-stream');
+    result={...(result||{}),storageMode:'save-dialog',fileName};
+  }
   if(!result||result.verifiedReadBack!==true)throw new Error('Archivdatei wurde nicht als zurückgelesen bestätigt.');
   const expectedBytes=new TextEncoder().encode(text).byteLength;
   if(Number(result.byteLength)!==expectedBytes)throw new Error(`Archivprüfung fehlgeschlagen: Dateigröße ${result.byteLength??'–'} statt ${expectedBytes} Byte.`);
@@ -586,42 +608,66 @@ async function saveStorageV2ArchiveVerified(text,fileName,expectedFileSha256){
   return result;
 }
 function rememberStorageV2Archive(archive,fileName,fileMeta,fileSha256){
-  const entry={id:`${archive.archiveDate}|${archive.integrity.payloadSha256}`,archiveDate:archive.archiveDate,createdAt:archive.createdAt,rideCount:archive.rideCount,doneCount:archive.doneCount,fileName,payloadSha256:archive.integrity.payloadSha256,fileSha256:String(fileSha256||''),byteLength:Number(fileMeta?.byteLength)||0,verifiedReadBack:true,readOnly:true};
+  const actualFileName=String(fileMeta?.fileName||fileName||''),folderName=String(fileMeta?.folderName||''),storageMode=String(fileMeta?.storageMode||'save-dialog');
+  const entry={id:`${archive.archiveDate}|${archive.integrity.payloadSha256}`,archiveDate:archive.archiveDate,createdAt:archive.createdAt,rideCount:archive.rideCount,doneCount:archive.doneCount,fileName:actualFileName,folderName,storageMode,payloadSha256:archive.integrity.payloadSha256,fileSha256:String(fileSha256||''),byteLength:Number(fileMeta?.byteLength)||0,verifiedReadBack:true,readOnly:true};
   const next=[entry,...storageV2ArchiveCatalog().filter(x=>String(x.id)!==entry.id)].slice(0,400);
-  return safePersistentSetItem(STORAGE_V2_ARCHIVE_CATALOG,JSON.stringify(next),'storage-v2-phase2a-archive-catalog')?entry:null;
+  return safePersistentSetItem(STORAGE_V2_ARCHIVE_CATALOG,JSON.stringify(next),'storage-v2-phase2b-archive-catalog')?entry:null;
 }
 function storageV2ArchiveSetStatus(message,type=''){
   const el=$('atmsArchiveStatus');if(!el)return;el.textContent=message;el.style.color=type==='ok'?'#76efad':type==='warn'?'#ffd36e':'rgba(255,255,255,.82)';
 }
 function renderStorageV2ArchiveCard(){
   const card=$('atmsStorageV2ArchiveCard');if(!card)return;
-  const dates=storageV2ArchiveDates(),select=$('atmsArchiveDateSelect'),count=$('atmsArchiveDayCount'),list=$('atmsArchiveList'),btn=$('atmsCreateArchiveBtn');
+  const dates=storageV2ArchiveDates(),select=$('atmsArchiveDateSelect'),count=$('atmsArchiveDayCount'),list=$('atmsArchiveList'),btn=$('atmsCreateArchiveBtn'),folderStatus=$('atmsArchiveFolderStatus'),folderBtn=$('atmsChooseArchiveFolderBtn');
+  const folder=storageV2ArchiveFolderState();
+  if(folderStatus){
+    if(!folder.supported)folderStatus.innerHTML='<b>Archivordner:</b> Native Phase 2B noch nicht verfügbar. Phase-2A-Speicherdialog bleibt aktiv.';
+    else if(folder.configured&&folder.persistedReadWrite)folderStatus.innerHTML=`<b>Archivordner:</b> ✓ ${esc(folder.folderName||'ausgewählt')} · dauerhafte Lese-/Schreibfreigabe bestätigt`;
+    else if(folder.configured)folderStatus.innerHTML='<b>Archivordner:</b> ⚠ gespeicherte Freigabe nicht mehr gültig · bitte neu wählen';
+    else folderStatus.innerHTML='<b>Archivordner:</b> Noch nicht gewählt. Bis dahin bleibt der bestätigte Phase-2A-Speicherdialog aktiv.';
+  }
+  if(folderBtn){folderBtn.disabled=storageV2ArchiveBusy||!folder.supported;folderBtn.textContent=folder.configured?'📁 Archivordner ändern':'📁 Archivordner wählen';}
   const previous=select?.value||'',selected=dates.includes(previous)?previous:(dates[0]||'');
   if(select){select.innerHTML=dates.length?dates.map(d=>`<option value="${esc(d)}" ${d===selected?'selected':''}>${esc(storageV2ArchiveDateLabel(d))}</option>`).join(''):'<option value="">Keine archivfähigen Tage</option>';select.disabled=!dates.length||storageV2ArchiveBusy;}
   let dayCount=0;if(selected){try{dayCount=storageV2ArchiveSourceForDate(selected).dayRides.length}catch(_){}}
   if(count)count.textContent=selected?`${dayCount} Fahrt${dayCount===1?'':'en'} · aktive Daten bleiben unverändert`:'Keine Tagesdaten verfügbar';
   if(btn){btn.disabled=!selected||storageV2ArchiveBusy;btn.textContent=storageV2ArchiveBusy?'Archiv wird geschrieben & geprüft …':'📦 Tagesarchiv erstellen & prüfen';}
   const catalog=storageV2ArchiveCatalog().slice().sort((a,b)=>String(b.archiveDate||'').localeCompare(String(a.archiveDate||''))||String(b.createdAt||'').localeCompare(String(a.createdAt||'')));
-  if(list)list.innerHTML=catalog.length?catalog.map(x=>`<div style="padding:10px 11px;border-radius:12px;background:rgba(0,0,0,.16);margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(storageV2ArchiveDateLabel(x.archiveDate))}</b><span style="font-size:10px;font-weight:900;color:#76efad">VERIFIZIERT</span></div><div style="font-size:12px;opacity:.78;margin-top:4px">${Number(x.rideCount)||0} Fahrten · ${Number(x.doneCount)||0} erledigt · read-only</div><div style="font-size:10px;opacity:.58;margin-top:4px;word-break:break-all">SHA-256 ${esc(String(x.fileSha256||'').slice(0,16))}… · ${esc(x.fileName||'')}</div></div>`).join(''):'<div style="font-size:12px;opacity:.7;padding:8px 0">Noch kein verifiziertes Tagesarchiv in dieser App registriert.</div>';
+  if(list)list.innerHTML=catalog.length?catalog.map(x=>`<div style="padding:10px 11px;border-radius:12px;background:rgba(0,0,0,.16);margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${esc(storageV2ArchiveDateLabel(x.archiveDate))}</b><span style="font-size:10px;font-weight:900;color:#76efad">VERIFIZIERT</span></div><div style="font-size:12px;opacity:.78;margin-top:4px">${Number(x.rideCount)||0} Fahrten · ${Number(x.doneCount)||0} erledigt · read-only</div><div style="font-size:10px;opacity:.58;margin-top:4px;word-break:break-all">SHA-256 ${esc(String(x.fileSha256||'').slice(0,16))}… · ${esc(x.fileName||'')}${x.folderName?' · '+esc(x.folderName):''}</div></div>`).join(''):'<div style="font-size:12px;opacity:.7;padding:8px 0">Noch kein verifiziertes Tagesarchiv in dieser App registriert.</div>';
 }
 function ensureStorageV2ArchiveCard(){
   const body=$('settingsBackupBody');if(!body)return false;
   let card=$('atmsStorageV2ArchiveCard');
   if(!card){
     card=document.createElement('section');card.id='atmsStorageV2ArchiveCard';card.style.cssText='margin:14px 0 0;padding:16px;border:1px solid rgba(215,178,82,.38);border-radius:18px;background:linear-gradient(180deg,rgba(34,43,54,.96),rgba(12,29,42,.98));box-sizing:border-box';
-    card.innerHTML=`<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-size:18px;font-weight:900;color:#fff">🗃️ Tagesarchiv</div><div style="font-size:12px;opacity:.72;margin-top:3px">Storage V2 Phase 2A · nicht-destruktiv</div></div><span style="padding:6px 9px;border-radius:999px;font-size:10px;font-weight:900;background:rgba(215,178,82,.16);color:#f2d37a">READ-ONLY</span></div><p style="margin:12px 0;font-size:13px;line-height:1.45;opacity:.86">Ein ausgewählter Tag wird als <b>.atmsarchive</b> geschrieben. Android liest die gespeicherte Datei direkt wieder zurück; Anzahl, IDs und SHA-256 werden geprüft. Es wird nichts aus den aktiven Fahrten gelöscht.</p><label style="display:block;font-size:11px;font-weight:800;opacity:.7;margin-bottom:5px">Archivtag</label><select id="atmsArchiveDateSelect" style="width:100%;min-height:44px;border-radius:11px;padding:0 10px;background:#102b3b;color:#fff;border:1px solid rgba(255,255,255,.18)"></select><div id="atmsArchiveDayCount" style="font-size:12px;opacity:.72;margin-top:7px">–</div><button type="button" id="atmsCreateArchiveBtn" style="width:100%;margin-top:11px;padding:12px;border-radius:11px;border:1px solid rgba(215,178,82,.45);background:rgba(215,178,82,.14);color:#f7e3a4;font-weight:900">📦 Tagesarchiv erstellen &amp; prüfen</button><div id="atmsArchiveStatus" style="margin-top:10px;padding:10px;border-radius:11px;background:rgba(0,0,0,.16);font-size:12px;line-height:1.4">Bereit. Keine automatische Archivierung oder Löschung aktiv.</div><div style="margin-top:13px;font-size:13px;font-weight:900">Archivübersicht · read-only</div><div id="atmsArchiveList"></div>`;
+    card.innerHTML=`<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div style="font-size:18px;font-weight:900;color:#fff">🗃️ Tagesarchiv</div><div style="font-size:12px;opacity:.72;margin-top:3px">Storage V2 Phase 2B · persistenter Archivordner · nicht-destruktiv</div></div><span style="padding:6px 9px;border-radius:999px;font-size:10px;font-weight:900;background:rgba(215,178,82,.16);color:#f2d37a">READ-ONLY</span></div><p style="margin:12px 0;font-size:13px;line-height:1.45;opacity:.86">Ein ausgewählter Tag wird als <b>.atmsarchive</b> geschrieben. Nach einmaliger Ordnerfreigabe speichert Android weitere Archive direkt dort und liest jede neue Datei sofort wieder zurück; Anzahl, IDs, Bytes und SHA-256 werden geprüft. Es wird nichts aus den aktiven Fahrten gelöscht.</p><div id="atmsArchiveFolderStatus" style="padding:10px 11px;border-radius:11px;background:rgba(0,0,0,.16);font-size:12px;line-height:1.4">Archivordner wird geprüft …</div><button type="button" id="atmsChooseArchiveFolderBtn" style="width:100%;margin-top:8px;padding:11px;border-radius:11px;border:1px solid rgba(74,191,255,.38);background:rgba(74,191,255,.11);color:#bfeaff;font-weight:900">📁 Archivordner wählen</button><label style="display:block;font-size:11px;font-weight:800;opacity:.7;margin:13px 0 5px">Archivtag</label><select id="atmsArchiveDateSelect" style="width:100%;min-height:44px;border-radius:11px;padding:0 10px;background:#102b3b;color:#fff;border:1px solid rgba(255,255,255,.18)"></select><div id="atmsArchiveDayCount" style="font-size:12px;opacity:.72;margin-top:7px">–</div><button type="button" id="atmsCreateArchiveBtn" style="width:100%;margin-top:11px;padding:12px;border-radius:11px;border:1px solid rgba(215,178,82,.45);background:rgba(215,178,82,.14);color:#f7e3a4;font-weight:900">📦 Tagesarchiv erstellen &amp; prüfen</button><div id="atmsArchiveStatus" style="margin-top:10px;padding:10px;border-radius:11px;background:rgba(0,0,0,.16);font-size:12px;line-height:1.4">Bereit. Keine automatische Archivierung oder Löschung aktiv.</div><div style="margin-top:13px;font-size:13px;font-weight:900">Archivübersicht · read-only</div><div id="atmsArchiveList"></div>`;
     body.appendChild(card);
     $('atmsArchiveDateSelect')?.addEventListener('change',()=>renderStorageV2ArchiveCard());
+    $('atmsChooseArchiveFolderBtn')?.addEventListener('click',async()=>{
+      if(storageV2ArchiveBusy)return;
+      storageV2ArchiveBusy=true;renderStorageV2ArchiveCard();storageV2ArchiveSetStatus('Android-Ordnerauswahl öffnen …');
+      try{
+        const result=await chooseStorageV2ArchiveFolder();
+        persistAudit('storage_v2_phase2b_archive_folder_selected',{folderName:String(result?.folderName||''),persistedReadWrite:Boolean(result?.persistedReadWrite)});
+        storageV2ArchiveSetStatus(`✓ Archivordner freigegeben${result?.folderName?' · '+result.folderName:''}. Künftige Tagesarchive werden dort direkt gespeichert und nach dem Schreiben zurückgelesen.`,'ok');
+        showToast('Archivordner gespeichert','ok');
+      }catch(e){
+        const message=String(e?.message||e||'Unbekannter Fehler');
+        storageV2ArchiveSetStatus(/abgebrochen/i.test(message)?'Ordnerauswahl abgebrochen. Bisherige Einstellung bleibt unverändert.':'⚠ Archivordner nicht bestätigt: '+message,'warn');
+        if(!/abgebrochen/i.test(message))showToast('Archivordner nicht bestätigt','warn');
+      }finally{storageV2ArchiveBusy=false;renderStorageV2ArchiveCard();}
+    });
     $('atmsCreateArchiveBtn')?.addEventListener('click',async()=>{
       if(storageV2ArchiveBusy)return;const date=$('atmsArchiveDateSelect')?.value||'';if(!date)return;
       storageV2ArchiveBusy=true;renderStorageV2ArchiveCard();storageV2ArchiveSetStatus('Archivdaten werden gesammelt und mit SHA-256 geprüft …');
       try{
-        const built=await buildStorageV2DailyArchive(date),fileName=`ATMS_Archiv_${built.archive.archiveDate}.atmsarchive`;
-        storageV2ArchiveSetStatus('Android-Speicherdialog: Datei speichern. Danach wird sie automatisch zurückgelesen und bytegenau geprüft …');
+        const built=await buildStorageV2DailyArchive(date),fileName=`ATMS_Archiv_${built.archive.archiveDate}.atmsarchive`,folderBefore=storageV2ArchiveFolderState();
+        storageV2ArchiveSetStatus(folderBefore.configured&&folderBefore.persistedReadWrite?`Archiv wird direkt in „${folderBefore.folderName||'Archivordner'}“ geschrieben und danach bytegenau zurückgelesen …`:'Android-Speicherdialog: Datei speichern. Danach wird sie automatisch zurückgelesen und bytegenau geprüft …');
         const fileMeta=await saveStorageV2ArchiveVerified(built.text,fileName,built.fileSha256);
-        const remembered=rememberStorageV2Archive(built.archive,fileName,fileMeta,built.fileSha256);
-        persistAudit('storage_v2_phase2a_archive_verified',{archiveDate:built.archive.archiveDate,rideCount:built.archive.rideCount,doneCount:built.archive.doneCount,payloadSha256:built.archive.integrity.payloadSha256,fileSha256:built.fileSha256,byteLength:fileMeta.byteLength,catalogSaved:Boolean(remembered)});
-        storageV2ArchiveSetStatus(remembered?`✓ Archiv verifiziert: ${built.archive.rideCount} Fahrten · SHA-256 bestätigt · Datei zurückgelesen. Aktive Daten unverändert.`:`✓ Archivdatei verifiziert. Der lokale Archivkatalog konnte jedoch nicht gespeichert werden; aktive Daten sind unverändert.`,remembered?'ok':'warn');
+        const remembered=rememberStorageV2Archive(built.archive,fileMeta?.fileName||fileName,fileMeta,built.fileSha256);
+        const auditName=fileMeta?.storageMode==='persisted-folder'?'storage_v2_phase2b_archive_verified':'storage_v2_phase2a_archive_verified';
+        persistAudit(auditName,{archiveDate:built.archive.archiveDate,rideCount:built.archive.rideCount,doneCount:built.archive.doneCount,payloadSha256:built.archive.integrity.payloadSha256,fileSha256:built.fileSha256,byteLength:fileMeta.byteLength,fileName:String(fileMeta?.fileName||fileName),folderName:String(fileMeta?.folderName||''),storageMode:String(fileMeta?.storageMode||'save-dialog'),catalogSaved:Boolean(remembered)});
+        storageV2ArchiveSetStatus(remembered?`✓ Archiv verifiziert: ${built.archive.rideCount} Fahrten · SHA-256 bestätigt · Datei zurückgelesen${fileMeta?.folderName?' · '+fileMeta.folderName:''}. Aktive Daten unverändert.`:`✓ Archivdatei verifiziert. Der lokale Archivkatalog konnte jedoch nicht gespeichert werden; aktive Daten sind unverändert.`,remembered?'ok':'warn');
         showToast(remembered?'Tagesarchiv verifiziert':'Archivdatei verifiziert · Katalog nicht gespeichert',remembered?'ok':'warn');
       }catch(e){
         const message=String(e?.message||e||'Unbekannter Fehler');
@@ -633,6 +679,7 @@ function ensureStorageV2ArchiveCard(){
   }
   renderStorageV2ArchiveCard();return true;
 }
+window.addEventListener('atms-native-file-export-ready',()=>{try{renderStorageV2ArchiveCard()}catch(_){}});
 function capturePersistenceSafety(reason='snapshot',syncDurable=true){
   try{
     const previous=readPersistenceSafety();

@@ -1,3 +1,4 @@
+// STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmalige Ordnerfreigabe wird dauerhaft gehalten; .atmsarchive-Dateien werden kollisionsfrei im Ordner erstellt, nativ zurückgelesen und byte-/SHA-256-genau verifiziert. Keine automatische Löschung aktiver Daten.
 // STORAGE V2 PHASE 2A · 01.10.2026: Native Datei-Write-Read-Verifikation mit bytegenauem Vergleich + SHA-256 für .atmsarchive; bestehende Exporte bleiben kompatibel.
 // CORE-007D8A1F1D8P70 · 27.09.2026: NATIVE GOOGLE MAPS ROUTE HANDOFF – Opens ATMS Google Maps routes directly in the installed Google Maps app and intercepts intent:// route handoffs inside the WebView; HTTPS fallback remains if Google Maps is unavailable.
 // CORE-007D8A1F1D8P69 · 27.09.2026: NATIVE ADDRESS BOOK FILE EXPORT – Adds a dedicated Storage Access Framework bridge for user-confirmed CSV/XLSX file creation. Existing import picker, geolocation and flight bridge stay unchanged.
@@ -8,10 +9,15 @@ import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.UriPermission;
+import android.database.Cursor;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
+import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
 import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 import android.util.Base64;
@@ -45,16 +51,20 @@ import java.util.Arrays;
 public final class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST_CODE = 3608;
     private static final int FILE_EXPORT_REQUEST_CODE = 6901;
+    private static final int ARCHIVE_TREE_REQUEST_CODE = 7202;
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 3701;
     private static final String LOCAL_APP_URL =
             "https://appassets.androidplatform.net/assets/index.html";
     private static final String GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps";
+    private static final String ARCHIVE_PREFS = "atms_storage_v2_archive";
+    private static final String ARCHIVE_TREE_URI_KEY = "archive_tree_uri";
 
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileChooser;
     private byte[] pendingExportBytes;
     private String pendingExportRequestId;
     private boolean pendingExportVerifyReadBack;
+    private String pendingArchiveFolderRequestId;
     private String pendingGeolocationOrigin;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
 
@@ -282,6 +292,10 @@ public final class MainActivity extends Activity {
             handleNativeFileExportResult(resultCode, data);
             return;
         }
+        if (requestCode == ARCHIVE_TREE_REQUEST_CODE) {
+            handleArchiveFolderSelectionResult(resultCode, data);
+            return;
+        }
         if (requestCode != FILE_CHOOSER_REQUEST_CODE || pendingFileChooser == null) {
             return;
         }
@@ -329,6 +343,39 @@ public final class MainActivity extends Activity {
                 String mimeType,
                 String requestId) {
             beginBase64FileExport(base64Data, fileName, mimeType, requestId, true);
+        }
+
+        @JavascriptInterface
+        public String getArchiveFolderStateJson() {
+            return buildArchiveFolderStateJson().toString();
+        }
+
+        @JavascriptInterface
+        public void chooseArchiveFolder(String requestId) {
+            runOnUiThread(() -> beginArchiveFolderSelection(requestId));
+        }
+
+        @JavascriptInterface
+        public void saveBase64FileToArchiveFolderVerified(
+                String base64Data,
+                String fileName,
+                String mimeType,
+                String requestId) {
+            final byte[] bytes;
+            try {
+                bytes = Base64.decode(base64Data == null ? "" : base64Data, Base64.DEFAULT);
+            } catch (IllegalArgumentException error) {
+                notifyNativeFileExportResult(
+                        requestId,
+                        false,
+                        "Archivdaten konnten nicht verarbeitet werden.");
+                return;
+            }
+            runOnUiThread(() -> saveNativeArchiveFileToFolderVerified(
+                    bytes,
+                    fileName,
+                    mimeType,
+                    requestId));
         }
 
         private void beginBase64FileExport(
@@ -386,6 +433,314 @@ public final class MainActivity extends Activity {
             startActivityForResult(intent, FILE_EXPORT_REQUEST_CODE);
         } catch (ActivityNotFoundException | SecurityException error) {
             finishNativeFileExport(false, "Android-Speicherdialog konnte nicht geöffnet werden.");
+        }
+    }
+
+    private boolean isTrustedLocalAppOrigin() {
+        String currentUrl = webView == null ? null : webView.getUrl();
+        return currentUrl != null
+                && currentUrl.startsWith("https://appassets.androidplatform.net/assets/");
+    }
+
+    private SharedPreferences archivePreferences() {
+        return getSharedPreferences(ARCHIVE_PREFS, MODE_PRIVATE);
+    }
+
+    private Uri storedArchiveTreeUri() {
+        String raw = archivePreferences().getString(ARCHIVE_TREE_URI_KEY, "");
+        if (raw == null || raw.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Uri.parse(raw.trim());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean hasPersistedArchiveTreePermission(Uri treeUri) {
+        if (treeUri == null) {
+            return false;
+        }
+        try {
+            for (UriPermission permission : getContentResolver().getPersistedUriPermissions()) {
+                if (treeUri.equals(permission.getUri())
+                        && permission.isReadPermission()
+                        && permission.isWritePermission()) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    private String archiveTreeDisplayName(Uri treeUri) {
+        if (treeUri == null) {
+            return "";
+        }
+        try {
+            Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri,
+                    DocumentsContract.getTreeDocumentId(treeUri));
+            try (Cursor cursor = getContentResolver().query(
+                    documentUri,
+                    new String[]{OpenableColumns.DISPLAY_NAME},
+                    null,
+                    null,
+                    null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    String value = cursor.getString(0);
+                    if (value != null && !value.trim().isEmpty()) {
+                        return value.trim();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            String docId = DocumentsContract.getTreeDocumentId(treeUri);
+            int colon = docId == null ? -1 : docId.lastIndexOf(':');
+            String fallback = colon >= 0 ? docId.substring(colon + 1) : docId;
+            if (fallback != null && !fallback.trim().isEmpty()) {
+                return fallback.trim();
+            }
+        } catch (Exception ignored) {
+        }
+        return "Ausgewählter Ordner";
+    }
+
+    private JSONObject buildArchiveFolderStateJson() {
+        JSONObject state = new JSONObject();
+        Uri treeUri = storedArchiveTreeUri();
+        boolean configured = treeUri != null;
+        boolean permission = configured && hasPersistedArchiveTreePermission(treeUri);
+        try {
+            state.put("configured", configured);
+            state.put("persistedReadWrite", permission);
+            state.put("writable", permission);
+            state.put("folderName", configured ? archiveTreeDisplayName(treeUri) : "");
+        } catch (Exception ignored) {
+        }
+        return state;
+    }
+
+    private void beginArchiveFolderSelection(String requestId) {
+        if (!isTrustedLocalAppOrigin()) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Archivordner kann nur innerhalb der lokalen ATMS-App gewählt werden.");
+            return;
+        }
+        if (requestId == null || requestId.trim().isEmpty()) {
+            return;
+        }
+        if (pendingArchiveFolderRequestId != null || pendingExportRequestId != null) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Ein Datei- oder Ordnerdialog ist bereits geöffnet.");
+            return;
+        }
+
+        pendingArchiveFolderRequestId = requestId;
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        Uri currentTree = storedArchiveTreeUri();
+        if (currentTree != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, currentTree);
+        }
+        try {
+            startActivityForResult(intent, ARCHIVE_TREE_REQUEST_CODE);
+        } catch (ActivityNotFoundException | SecurityException error) {
+            String id = pendingArchiveFolderRequestId;
+            pendingArchiveFolderRequestId = null;
+            notifyNativeFileExportResult(
+                    id,
+                    false,
+                    "Android-Ordnerauswahl konnte nicht geöffnet werden.");
+        }
+    }
+
+    private void handleArchiveFolderSelectionResult(int resultCode, Intent data) {
+        String requestId = pendingArchiveFolderRequestId;
+        pendingArchiveFolderRequestId = null;
+        if (requestId == null || requestId.trim().isEmpty()) {
+            return;
+        }
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+            notifyNativeFileExportResult(requestId, false, "Ordnerauswahl abgebrochen.");
+            return;
+        }
+
+        Uri treeUri = data.getData();
+        try {
+            int requestedFlags = data.getFlags()
+                    & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            if ((requestedFlags & Intent.FLAG_GRANT_READ_URI_PERMISSION) == 0
+                    || (requestedFlags & Intent.FLAG_GRANT_WRITE_URI_PERMISSION) == 0) {
+                throw new SecurityException("Lese-/Schreibfreigabe wurde nicht vollständig erteilt.");
+            }
+            getContentResolver().takePersistableUriPermission(treeUri, requestedFlags);
+            if (!hasPersistedArchiveTreePermission(treeUri)) {
+                throw new SecurityException("Dauerhafte Ordnerfreigabe konnte nicht bestätigt werden.");
+            }
+            archivePreferences().edit()
+                    .putString(ARCHIVE_TREE_URI_KEY, treeUri.toString())
+                    .apply();
+
+            JSONObject result = buildArchiveFolderStateJson();
+            result.put("storageMode", "persisted-folder");
+            notifyNativeFileExportCustomResult(requestId, true, "", result);
+        } catch (Exception error) {
+            String detail = error.getMessage();
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    detail == null || detail.trim().isEmpty()
+                            ? "Archivordner konnte nicht dauerhaft freigegeben werden."
+                            : "Archivordner konnte nicht dauerhaft freigegeben werden: " + detail);
+        }
+    }
+
+    private String uniqueArchiveFileName(Uri treeUri, String requestedName) throws Exception {
+        String safeName = sanitizeExportFileName(requestedName);
+        String base = safeName;
+        String extension = "";
+        int dot = safeName.lastIndexOf('.');
+        if (dot > 0) {
+            base = safeName.substring(0, dot);
+            extension = safeName.substring(dot);
+        }
+        String candidate = safeName;
+        for (int suffix = 1; suffix <= 999; suffix++) {
+            if (!archiveChildNameExists(treeUri, candidate)) {
+                return candidate;
+            }
+            candidate = base + "_" + (suffix + 1) + extension;
+        }
+        throw new IllegalStateException("Zu viele gleichnamige Archivdateien im gewählten Ordner.");
+    }
+
+    private boolean archiveChildNameExists(Uri treeUri, String displayName) throws Exception {
+        String treeId = DocumentsContract.getTreeDocumentId(treeUri);
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeId);
+        try (Cursor cursor = getContentResolver().query(
+                childrenUri,
+                new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+                null,
+                null,
+                null)) {
+            if (cursor == null) {
+                throw new IllegalStateException("Archivordner konnte nicht gelesen werden.");
+            }
+            while (cursor.moveToNext()) {
+                String name = cursor.getString(0);
+                if (displayName.equals(name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void saveNativeArchiveFileToFolderVerified(
+            byte[] bytes,
+            String fileName,
+            String mimeType,
+            String requestId) {
+        if (!isTrustedLocalAppOrigin()) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Archivspeicherung ist nur innerhalb der lokalen ATMS-App erlaubt.");
+            return;
+        }
+        if (pendingExportRequestId != null || pendingArchiveFolderRequestId != null) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Ein Datei- oder Ordnerdialog ist bereits geöffnet.");
+            return;
+        }
+
+        Uri treeUri = storedArchiveTreeUri();
+        if (treeUri == null) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Noch kein Archivordner ausgewählt.");
+            return;
+        }
+        if (!hasPersistedArchiveTreePermission(treeUri)) {
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    "Die dauerhafte Berechtigung für den Archivordner fehlt. Bitte Ordner erneut wählen.");
+            return;
+        }
+
+        byte[] expectedBytes = bytes == null ? new byte[0] : bytes;
+        Uri created = null;
+        try {
+            String actualName = uniqueArchiveFileName(treeUri, fileName);
+            Uri parentDocument = DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri,
+                    DocumentsContract.getTreeDocumentId(treeUri));
+            created = DocumentsContract.createDocument(
+                    getContentResolver(),
+                    parentDocument,
+                    normalizeExportMimeType(mimeType),
+                    actualName);
+            if (created == null) {
+                throw new IllegalStateException("Archivdatei konnte im gewählten Ordner nicht angelegt werden.");
+            }
+
+            try (OutputStream output = getContentResolver().openOutputStream(created, "w")) {
+                if (output == null) {
+                    throw new IllegalStateException("Kein Schreibzugriff auf die neue Archivdatei.");
+                }
+                output.write(expectedBytes);
+                output.flush();
+            }
+
+            byte[] readBackBytes;
+            try (InputStream input = getContentResolver().openInputStream(created)) {
+                if (input == null) {
+                    throw new IllegalStateException("Archivdatei konnte zur Prüfung nicht geöffnet werden.");
+                }
+                readBackBytes = readAllBytes(input);
+            }
+            if (!Arrays.equals(expectedBytes, readBackBytes)) {
+                throw new IllegalStateException("Write-Read-Prüfung fehlgeschlagen: Archivdatei weicht bytegenau ab.");
+            }
+
+            JSONObject result = new JSONObject();
+            result.put("verifiedReadBack", true);
+            result.put("byteLength", readBackBytes.length);
+            result.put("sha256", sha256Hex(readBackBytes));
+            result.put("fileName", actualName);
+            result.put("folderName", archiveTreeDisplayName(treeUri));
+            result.put("storageMode", "persisted-folder");
+            notifyNativeFileExportCustomResult(requestId, true, "", result);
+        } catch (Exception error) {
+            if (created != null) {
+                try {
+                    DocumentsContract.deleteDocument(getContentResolver(), created);
+                } catch (Exception ignored) {
+                }
+            }
+            String detail = error.getMessage();
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    detail == null || detail.trim().isEmpty()
+                            ? "Archivdatei konnte nicht gespeichert und verifiziert werden."
+                            : "Archivdatei konnte nicht gespeichert und verifiziert werden: " + detail);
         }
     }
 
@@ -471,11 +826,6 @@ public final class MainActivity extends Activity {
             boolean verifiedReadBack,
             int byteLength,
             String sha256) {
-        if (requestId == null || requestId.trim().isEmpty() || webView == null) {
-            return;
-        }
-        String safeId = JSONObject.quote(requestId);
-        String safeError = JSONObject.quote(errorMessage == null ? "" : errorMessage);
         JSONObject result = new JSONObject();
         try {
             result.put("verifiedReadBack", success && verifiedReadBack);
@@ -483,7 +833,20 @@ public final class MainActivity extends Activity {
             result.put("sha256", success && verifiedReadBack && sha256 != null ? sha256 : "");
         } catch (Exception ignored) {
         }
-        String safeResult = JSONObject.quote(result.toString());
+        notifyNativeFileExportCustomResult(requestId, success, errorMessage, result);
+    }
+
+    private void notifyNativeFileExportCustomResult(
+            String requestId,
+            boolean success,
+            String errorMessage,
+            JSONObject result) {
+        if (requestId == null || requestId.trim().isEmpty() || webView == null) {
+            return;
+        }
+        String safeId = JSONObject.quote(requestId);
+        String safeError = JSONObject.quote(errorMessage == null ? "" : errorMessage);
+        String safeResult = JSONObject.quote(result == null ? "{}" : result.toString());
         String script = "try{if(typeof window.__ATMSNativeFileExportResolve==='function'){"
                 + "window.__ATMSNativeFileExportResolve("
                 + safeId
@@ -565,7 +928,7 @@ public final class MainActivity extends Activity {
                 + "var p=window.__ATMSNativeFileExportPending[id];if(!p)return;delete window.__ATMSNativeFileExportPending[id];"
                 + "if(success){var result={verifiedReadBack:false,byteLength:0,sha256:''};try{if(resultJson)result=JSON.parse(String(resultJson));}catch(e){}p.resolve(result);}else{p.reject(new Error(String(error||'Speichern fehlgeschlagen.')));}};"
                 + "window.ATMSNativeFileExport={"
-                + "contractVersion:'ATMS-FILE-EXPORT-NATIVE-2',"
+                + "contractVersion:'ATMS-FILE-EXPORT-NATIVE-3',"
                 + "saveBase64File:function(base64Data,fileName,mimeType){return new Promise(function(resolve,reject){"
                 + "seq+=1;var id='atms-file-'+Date.now().toString(36)+'-'+seq.toString(36);"
                 + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
@@ -575,6 +938,17 @@ public final class MainActivity extends Activity {
                 + "seq+=1;var id='atms-file-verified-'+Date.now().toString(36)+'-'+seq.toString(36);"
                 + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
                 + "try{window.ATMSNativeFileExportHost.saveBase64FileVerified(String(base64Data||''),String(fileName||''),String(mimeType||''),id);}"
+                + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});},"
+                + "getArchiveFolderState:function(){try{var raw=window.ATMSNativeFileExportHost.getArchiveFolderStateJson();return raw?JSON.parse(String(raw)):{configured:false,persistedReadWrite:false,writable:false,folderName:''};}catch(e){return{configured:false,persistedReadWrite:false,writable:false,folderName:'',error:String(e&&e.message||e||'')};}},"
+                + "chooseArchiveFolder:function(){return new Promise(function(resolve,reject){"
+                + "seq+=1;var id='atms-archive-folder-'+Date.now().toString(36)+'-'+seq.toString(36);"
+                + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
+                + "try{window.ATMSNativeFileExportHost.chooseArchiveFolder(id);}"
+                + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});},"
+                + "saveBase64FileToArchiveFolderVerified:function(base64Data,fileName,mimeType){return new Promise(function(resolve,reject){"
+                + "seq+=1;var id='atms-archive-save-'+Date.now().toString(36)+'-'+seq.toString(36);"
+                + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
+                + "try{window.ATMSNativeFileExportHost.saveBase64FileToArchiveFolderVerified(String(base64Data||''),String(fileName||''),String(mimeType||''),id);}"
                 + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});}"
                 + "};"
                 + "try{window.dispatchEvent(new CustomEvent('atms-native-file-export-ready'));}catch(e){}"
