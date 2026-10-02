@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P104_1 · 02.10.2026: ARCHIVE BROWSER READ-ONLY UI-ANCHOR-FIX – rendert die bereits verifiziert gelesene Archivansicht als robuste Unteransicht direkt im sichtbaren Backup-Bereich statt als frei an <body> angehängtes Overlay. Nur UI-Anker/Navigation; Integritätsprüfung, Archivdaten, aktive Fahrten, Storage V2, Erledigt-Status, Overrides und Archive bleiben unverändert.
 // CORE-007D8A1F1D8P104 · 02.10.2026: ARCHIVE BROWSER READ-ONLY – ergänzt einen rein lesenden Archiv-Browser für verifizierte .atmsarchive-Dateien im persistenten ATMS-PRO-Archivordner. Vor Anzeige werden Datei-SHA-256, Byteanzahl, Archivformat, Payload-SHA-256, Archivdatum und Zähler gegen den lokalen Archivkatalog geprüft. Archivdaten werden nur angezeigt; aktive Fahrten, Storage V2, Erledigt-Status, Overrides und Archive werden niemals verändert.
 // CORE-007D8A1F1D8P103 · 02.10.2026: CURRENT-PLAN SAFE CLEANUP – ergänzt die ausdrücklich bestätigte Bereinigungsstufe für „Nur aktuelle Planliste behalten“. Vor jeder Entfernung werden frisches ATMS-Backup, exakter Storage-V2-Abgleich und persistenter Archivordner verlangt; alle betroffenen Tage werden vorab als .atmsarchive geschrieben, nativ zurückgelesen und per SHA-256 bestätigt. Erst eine unveränderte Preflight-Freigabe darf ungeschützte Carryover-Fahrten aus aktivem Bestand, Erledigt-Status und Fahrten-Overrides entfernen; aktuelle und 📌-geschützte Fahrten bleiben erhalten. Bei Schreib-/Sync-Fehlern wird der aktive Bestand sofort zurückgerollt. Keine Änderung an OCR, Import/Dedupe, Bundles, PLAN/DISPO/LIVE oder FLIGHT-008.
 // CORE-007D8A1F1D8P102.1 · 02.10.2026: CURRENT-PLAN PREVIEW UI ANCHOR FIX – mountet die bestehende rein nicht-destruktive P102-Vorschau sichtbar direkt auf der aktuellen Native-Seite „Planliste importieren“ und prüft den Mount bei jedem Öffnen erneut. Keine Änderung an 13/143-Erkennung, Behalten-Markierungen, Fahrtdaten, Import/OCR, Storage V2, PLAN/DISPO/LIVE oder FLIGHT-008.
@@ -614,7 +615,14 @@ async function readStorageV2ArchiveVerified(entry){
   if(String(obj.integrity?.payloadSha256||'').toLowerCase()!==String(entry?.payloadSha256||'').toLowerCase())throw new Error('Archiv-Payload stimmt nicht mit dem Archivkatalog überein.');
   return{archive:obj,fileMeta:result};
 }
-function closeStorageV2ArchiveViewer(){const el=$('atmsArchiveViewer');if(el)el.remove()}
+let storageV2ArchiveViewerReturnScrollY=0;
+function closeStorageV2ArchiveViewer(){
+  const viewer=$('atmsArchiveViewer');if(viewer)viewer.remove();
+  const host=$('settingsBackupBody');
+  if(host){Array.from(host.children).forEach(el=>{if(el?.dataset?.atmsArchiveViewerHidden==='1'){el.style.display=el.dataset.atmsArchiveViewerPrevDisplay||'';delete el.dataset.atmsArchiveViewerHidden;delete el.dataset.atmsArchiveViewerPrevDisplay;}})}
+  const y=Number(storageV2ArchiveViewerReturnScrollY)||0;storageV2ArchiveViewerReturnScrollY=0;
+  requestAnimationFrame(()=>{try{window.scrollTo({top:y,left:0,behavior:'auto'})}catch(_){window.scrollTo(0,y)}});
+}
 function renderStorageV2ArchiveViewer(entry,archive,fileMeta){
   closeStorageV2ArchiveViewer();
   const doneIds=new Set((Array.isArray(archive?.doneIds)?archive.doneIds:[]).map(String));
@@ -626,9 +634,19 @@ function renderStorageV2ArchiveViewer(entry,archive,fileMeta){
     const vehicle=String(first(raw?.vehicle,raw?.fahrzeug,n.vehicle)||'–'),persons=Number(first(raw?.persons,raw?.personen,raw?.pax,n.persons)||0),done=doneIds.has(id);
     return `<article style="padding:11px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);margin-top:8px"><div style="display:flex;justify-content:space-between;gap:10px"><div><b style="font-size:17px">${esc(time)}</b> · ${esc(driver)}</div>${done?'<span style="font-size:10px;font-weight:900;color:#76efad">ERLEDIGT</span>':''}</div><div style="font-size:13px;font-weight:800;margin-top:5px">${esc(pickup)} → ${esc(destination)}</div><div style="font-size:11px;opacity:.76;margin-top:5px">${flight?`✈ ${esc(flight)}${location?' · '+esc(location):''} · `:''}🚘 ${esc(vehicle)} · 👤 ${persons||'–'} · ${esc(ridePriceLabel(n))}</div></article>`;
   }).join('');
-  const overlay=document.createElement('div');overlay.id='atmsArchiveViewer';overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:#071923;color:#fff;overflow:auto;-webkit-overflow-scrolling:touch;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);box-sizing:border-box';
-  overlay.innerHTML=`<div style="position:sticky;top:0;z-index:2;background:rgba(7,25,35,.98);border-bottom:1px solid rgba(255,255,255,.10);padding:10px 14px;display:flex;align-items:center;gap:10px"><button type="button" id="atmsArchiveViewerClose" style="width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font-size:25px">‹</button><div><div style="font-size:18px;font-weight:900">🗃️ Archiv · ${esc(storageV2ArchiveDateLabel(archive.archiveDate))}</div><div style="font-size:11px;opacity:.7">READ-ONLY · ${Number(archive.rideCount)||0} Fahrten · ${Number(archive.doneCount)||0} erledigt</div></div></div><main style="padding:14px;max-width:760px;margin:0 auto"><div style="padding:11px;border-radius:12px;background:rgba(33,196,111,.08);border:1px solid rgba(103,240,165,.20);font-size:11px;line-height:1.5;color:#b8f7d0"><b>✓ Verifiziert gelesen</b><br>Datei-SHA-256 ${esc(String(fileMeta?.sha256||'').slice(0,16))}… · ${Number(fileMeta?.byteLength)||0} Byte<br>${esc(entry.fileName||'')} · ${esc(fileMeta?.folderName||entry.folderName||'ATMS PRO Archive')}<br><b>Keine Wiederherstellung:</b> Diese Ansicht verändert aktive Fahrten oder Archive nicht.</div>${cards||'<div style="padding:20px;text-align:center;opacity:.7">Keine Fahrten im Archiv.</div>'}</main>`;
-  document.body.appendChild(overlay);$('atmsArchiveViewerClose')?.addEventListener('click',closeStorageV2ArchiveViewer);overlay.scrollTop=0;
+  const host=$('settingsBackupBody');
+  storageV2ArchiveViewerReturnScrollY=Number(window.scrollY||document.documentElement?.scrollTop||0)||0;
+  const viewer=document.createElement('section');viewer.id='atmsArchiveViewer';viewer.style.cssText='display:block!important;visibility:visible!important;opacity:1!important;position:relative;z-index:2;width:100%;min-height:70vh;background:#071923;color:#fff;padding:0 0 18px;box-sizing:border-box';
+  viewer.innerHTML=`<div style="position:sticky;top:0;z-index:3;background:#071923;border-bottom:1px solid rgba(255,255,255,.10);padding:8px 0 10px;display:flex;align-items:center;gap:10px"><button type="button" id="atmsArchiveViewerClose" style="width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font-size:25px">‹</button><div><div style="font-size:18px;font-weight:900">🗃️ Archiv · ${esc(storageV2ArchiveDateLabel(archive.archiveDate))}</div><div style="font-size:11px;opacity:.7">READ-ONLY · ${Number(archive.rideCount)||0} Fahrten · ${Number(archive.doneCount)||0} erledigt</div></div></div><main style="padding:12px 0 4px"><div style="padding:11px;border-radius:12px;background:rgba(33,196,111,.08);border:1px solid rgba(103,240,165,.20);font-size:11px;line-height:1.5;color:#b8f7d0"><b>✓ Verifiziert gelesen</b><br>Datei-SHA-256 ${esc(String(fileMeta?.sha256||'').slice(0,16))}… · ${Number(fileMeta?.byteLength)||0} Byte<br>${esc(entry.fileName||'')} · ${esc(fileMeta?.folderName||entry.folderName||'ATMS PRO Archive')}<br><b>Keine Wiederherstellung:</b> Diese Ansicht verändert aktive Fahrten oder Archive nicht.</div>${cards||'<div style="padding:20px;text-align:center;opacity:.7">Keine Fahrten im Archiv.</div>'}</main>`;
+  if(host){
+    Array.from(host.children).forEach(el=>{el.dataset.atmsArchiveViewerHidden='1';el.dataset.atmsArchiveViewerPrevDisplay=el.style.display||'';el.style.display='none'});
+    host.prepend(viewer);
+  }else{
+    viewer.style.cssText+='position:fixed;top:0;right:0;bottom:0;left:0;z-index:2147483000;overflow:auto;padding:12px 14px;background:#071923;';
+    document.body.insertBefore(viewer,document.body.firstChild||null);
+  }
+  $('atmsArchiveViewerClose')?.addEventListener('click',closeStorageV2ArchiveViewer);
+  requestAnimationFrame(()=>{try{viewer.scrollIntoView({block:'start',behavior:'auto'})}catch(_){viewer.scrollIntoView(true)}});
 }
 async function openStorageV2ArchiveViewerById(id){
   if(storageV2ArchiveReadBusy)return false;const entry=storageV2ArchiveCatalog().find(x=>String(x?.id||'')===String(id||''));if(!entry){showToast('Archivnachweis nicht gefunden','warn');return false}
