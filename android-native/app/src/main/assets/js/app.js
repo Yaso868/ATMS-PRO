@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P102 · 02.10.2026: CURRENT-PLAN KEEP PREVIEW – ergänzt eine ausschließlich nicht-destruktive Vorschau für „Nur aktuelle Planliste behalten“. Aktuelle Fahrten werden von P32/P99-Carryover-Fahrten getrennt gezählt; ältere Fahrten können einzeln mit 📌 Behalten geschützt werden. P102 löscht, archiviert oder verschiebt keine Fahrt. P101 Storage V2, P100, OCR, Import/Dedupe, Bundles, PLAN/DISPO/LIVE und FLIGHT-008 bleiben unverändert.
 // STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmal auswählen, Berechtigung dauerhaft halten, Tagesarchive kollisionsfrei direkt dort speichern und nativ byte-/SHA-256-genau zurücklesen. Phase 2A bleibt als Fallback erhalten; keine automatische Löschung aktiver Fahrten.
 // CORE-007D8A1F1D8P100 · 02.10.2026: ADDRESS-CANDIDATE PC ROUNDTRIP – offene P98-Adressbuch-Kandidaten können in der Native-App als Excel/CSV exportiert, am PC ergänzt und sicher wieder importiert werden. Aktionen OFFEN/ÜBERNEHMEN/IGNORIEREN werden vor Anwendung zusammengefasst; nur neue kollisionsfreie Adressen werden additiv angelegt, bestehende Adressen niemals automatisch überschrieben oder gelöscht. Kandidaten-ID hält die Zuordnung stabil, der erkannte Originalname wird bei umbenanntem Kurzname als Alias bewahrt. P99.3/P99.2/P99.1/P99, Fahrtdaten, OCR, PLAN/DISPO/LIVE, FLIGHT-008, Bundles, Storage V2 und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P99.3 · 02.10.2026: PAST-RIDES DATE LABEL – zeigt ausschließlich im Bereich „Vergangene Fahrten“ das echte Fahrtdatum direkt auf jeder Fahrtenkarte, damit gleich aussehende historische Wiederholungen verschiedener Tage eindeutig unterscheidbar sind. Keine Änderung an Fahrtdaten, Dedupe, Import, Erledigt-Status, Bundles, Storage V2 oder FLIGHT-008.
@@ -113,7 +114,7 @@ const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;let storageV2ArchiveBusy=false;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1',PLAN_KEEP_PINNED='atms_plan_keep_pinned_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;let storageV2ArchiveBusy=false;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -260,7 +261,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES]){
+  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED]){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
@@ -696,7 +697,7 @@ function capturePersistenceSafety(reason='snapshot',syncDurable=true){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES];
+    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED];
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -723,7 +724,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
-    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES].includes(key)){
+    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED].includes(key)){
       // Revisionssicher: keine unbestaetigten optimistischen Durable-Werte.
       void syncPersistenceDurableShadow('verified-write:'+reason);
     }
@@ -737,7 +738,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,...(persistenceDurableReady?[KEY,DONE]:[])];
+  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED,...(persistenceDurableReady?[KEY,DONE]:[])];
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
@@ -784,7 +785,7 @@ function persistenceDiagnosis(){
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     storageV2:storageV2Diagnosis(),
-    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK),addressCandidates:inspect(ADDRESS_CANDIDATES)},
+    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK),addressCandidates:inspect(ADDRESS_CANDIDATES),planKeepPinned:inspect(PLAN_KEEP_PINNED)},
     recentAudit:audit.slice(0,30)
   };
 }
@@ -4480,7 +4481,10 @@ function startPlanDataFreshFromNow(){
     return false;
   }
   rides=[];done.clear();
-  [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
+  [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,PLAN_KEEP_PINNED,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
+  // P102: Ein bewusster kompletter Plan-Neustart setzt auch alle Behalten-Markierungen explizit leer,
+  // damit Safety/Durable-Shadow keine veralteten Pins wiederherstellen können.
+  safePersistentSetItem(PLAN_KEEP_PINNED,'[]','plan-clean-start-p102-pins');
   save();
   resetCurrentImportCheckDisplay();
   capturePersistenceSafety('plan-clean-start');
@@ -4494,7 +4498,7 @@ function renderPlanImportHistoryPanel(){
   const host=$('planImportHistoryList');if(!host)return;
   const history=readPlanImportHistory().slice().reverse();
   const current=currentPlanImportSession();
-  if(!history.length){host.innerHTML='<div style="font-size:12px;opacity:.76">Noch keine gespeicherten Planlisten.</div>';return}
+  if(!history.length){host.innerHTML='<div style="font-size:12px;opacity:.76">Noch keine gespeicherten Planlisten.</div>';renderP102CurrentPlanPreview();return}
   host.innerHTML=history.map(s=>{
     const isCurrent=String(s?.id||'')===String(current?.id||'');
     const plantag=esc(String(s?.plantag||'–'));
@@ -4504,9 +4508,103 @@ function renderPlanImportHistoryPanel(){
     return `<div style="padding:10px;border:1px solid rgba(255,255,255,.13);border-radius:10px;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div><div style="font-weight:800">${isCurrent?'● Aktuelle Planliste':'Frühere Planliste'} · ${plantag}</div><div style="font-size:11px;opacity:.72;margin-top:2px">Import ${when} · ${incoming} Fahrt(en)</div></div>${isCurrent?'':`<button type="button" data-plan-history-delete="${esc(String(s.id||''))}" style="padding:7px 9px;border-radius:8px">🗑 Löschen</button>`}</div><div style="font-size:11px;opacity:.8;margin-top:7px">${phases}</div><div style="font-size:11px;opacity:.65;margin-top:3px">Wiedererkannt: ${matched} · übernommen/weitergeführt: ${carry}</div></div>`;
   }).join('');
   host.querySelectorAll('[data-plan-history-delete]').forEach(btn=>btn.addEventListener('click',()=>deletePlanHistorySession(btn.dataset.planHistoryDelete)));
+  renderP102CurrentPlanPreview();
 }
+// P102 · Nur aktuelle Planliste behalten: reine Vorschau + explizites "Behalten".
+// WICHTIG: Dieser Block entfernt, archiviert oder verschiebt keine Fahrt.
+function p102IsOlderCarryoverRide(r){return Boolean(r?._planCarryover===true&&r?._planMissingFromLatest===true)}
+function p102PinnedRideIds(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(PLAN_KEEP_PINNED)||'[]');
+    return new Set((Array.isArray(raw)?raw:[]).map(x=>String(x||'').trim()).filter(Boolean));
+  }catch(_){return new Set()}
+}
+function p102SavePinnedRideIds(ids){
+  const list=[...ids].map(String).filter(Boolean).sort();
+  return safePersistentSetItem(PLAN_KEEP_PINNED,JSON.stringify(list),'p102-plan-keep-pinned');
+}
+function p102CurrentPlanPreview(){
+  const all=Array.isArray(rides)?rides:[];
+  const current=all.filter(r=>!p102IsOlderCarryoverRide(r));
+  const older=all.filter(p102IsOlderCarryoverRide);
+  const pins=p102PinnedRideIds();
+  const pinned=older.filter(r=>pins.has(String(r?.id||'')));
+  const removalCandidates=older.filter(r=>!pins.has(String(r?.id||'')));
+  const session=currentPlanImportSession();
+  const expected=Number(session?.incomingCount||0);
+  const aligned=Boolean(session&&expected>0&&current.length===expected);
+  return{all,current,older,pinned,removalCandidates,pins,session,expected,aligned};
+}
+function p102RideDateLabel(value){
+  const s=String(value||'').trim();
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m?`${m[3]}.${m[2]}.${m[1]}`:(s||'Ohne Datum');
+}
+function p102RideTime(r){return String(first(r?.planTime,r?.pickupTime,r?.time,r?.zeit_abfahrt,r?.plan_abholzeit)||'').trim()||'–'}
+function p102RideRoute(r){return `${String(first(r?.pickup,r?.abholort,r?.von)||'Start nicht verfügbar')} → ${String(first(r?.destination,r?.zielort,r?.ziel,r?.nach)||'Ziel nicht verfügbar')}`}
+function p102RideSortKey(r){return `${String(first(r?.date,r?.datum)||'9999-99-99')}|${p102RideTime(r)}|${String(r?.id||'')}`}
+function p102TogglePinnedRide(id){
+  const rideId=String(id||'').trim();if(!rideId)return false;
+  const ride=(Array.isArray(rides)?rides:[]).find(r=>String(r?.id||'')===rideId);
+  if(!ride||!p102IsOlderCarryoverRide(ride)){showToast('Behalten ist nur für ältere Carryover-Fahrten verfügbar','warn');return false}
+  const pins=p102PinnedRideIds(),willPin=!pins.has(rideId);
+  if(willPin)pins.add(rideId);else pins.delete(rideId);
+  if(!p102SavePinnedRideIds(pins)){showToast('Behalten-Status konnte nicht sicher gespeichert werden','warn');return false}
+  capturePersistenceSafety('p102-plan-keep-pinned');
+  persistAudit('p102_plan_keep_toggle',{rideId,pinned:willPin});
+  renderP102CurrentPlanPreview();
+  showToast(willPin?'Fahrt für spätere Bereinigung geschützt':'Behalten-Schutz aufgehoben','ok');
+  return true;
+}
+function renderP102CurrentPlanPreview(){
+  const host=$('p102CurrentPlanPreview');if(!host)return false;
+  const p=p102CurrentPlanPreview(),session=p.session;
+  if(!session){
+    host.innerHTML='<div style="font-size:12px;opacity:.78;line-height:1.45">Noch keine bestätigte aktuelle Planliste vorhanden. P102 löscht nichts.</div>';
+    return true;
+  }
+  const plantag=esc(String(session?.plantag||'–'));
+  const imported=esc(planHistoryDateText(session?.createdAt));
+  const matchNote=p.aligned
+    ?'<span style="color:#67f0a5;font-weight:800">✓ Aktuelle Planliste eindeutig abgegrenzt</span>'
+    :`<span style="color:#ffd36e;font-weight:800">⚠ Zählabgleich offen: letzter Import ${p.expected||'–'} · aktuell erkannt ${p.current.length}</span>`;
+  const groups=new Map();
+  p.older.slice().sort((a,b)=>{
+    const da=String(first(a?.date,a?.datum)||''),db=String(first(b?.date,b?.datum)||'');
+    if(da!==db)return db.localeCompare(da,'de');
+    return p102RideSortKey(a).localeCompare(p102RideSortKey(b),'de');
+  }).forEach(r=>{
+    const d=String(first(r?.date,r?.datum)||'').trim()||'Ohne Datum';
+    if(!groups.has(d))groups.set(d,[]);groups.get(d).push(r);
+  });
+  const groupHtml=[...groups.entries()].map(([date,list])=>{
+    const pinnedCount=list.filter(r=>p.pins.has(String(r?.id||''))).length;
+    const rows=list.map(r=>{
+      const id=String(r?.id||''),isPinned=p.pins.has(id);
+      const flight=String(r?.flightNumber||'').trim(),driver=String(first(r?.driver,r?.fahrer)||'').trim();
+      return `<div style="padding:9px 0;border-top:1px solid rgba(255,255,255,.08);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center"><div style="min-width:0"><div style="font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p102RideTime(r))} · ${esc(p102RideRoute(r))}</div><div style="font-size:11px;opacity:.7;margin-top:2px">${flight?esc(flight):'ohne Flug'}${driver?' · '+esc(driver):''} · ID ${esc(id)}</div></div><button type="button" data-p102-pin="${esc(id)}" style="padding:8px 9px;border-radius:9px;font-weight:800;white-space:nowrap;${isPinned?'border:1px solid rgba(103,240,165,.55);color:#9af6bf;background:rgba(33,196,111,.12)':''}">${isPinned?'📌 Behalten ✓':'📌 Behalten'}</button></div>`;
+    }).join('');
+    return `<details style="margin-top:8px;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:0 10px"><summary style="cursor:pointer;padding:10px 0;font-size:12px;font-weight:800">${esc(p102RideDateLabel(date))} · ${list.length} ältere Fahrt(en)${pinnedCount?' · '+pinnedCount+' behalten':''}</summary>${rows}</details>`;
+  }).join('');
+  host.innerHTML=`<div style="font-size:12px;line-height:1.45;margin-bottom:9px">Letzter bestätigter Import: <b>${plantag}</b> · ${imported}<br>${matchNote}</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:7px"><div style="padding:9px;border-radius:10px;background:rgba(33,196,111,.10)"><b style="font-size:20px">${p.current.length}</b><div style="font-size:10px;opacity:.72">aktuelle Planliste</div></div><div style="padding:9px;border-radius:10px;background:rgba(255,193,66,.10)"><b style="font-size:20px">${p.older.length}</b><div style="font-size:10px;opacity:.72">ältere Carryover</div></div><div style="padding:9px;border-radius:10px;background:rgba(74,191,255,.10)"><b style="font-size:20px">${p.pinned.length}</b><div style="font-size:10px;opacity:.72">📌 behalten</div></div><div style="padding:9px;border-radius:10px;background:rgba(255,94,94,.08)"><b style="font-size:20px">${p.removalCandidates.length}</b><div style="font-size:10px;opacity:.72">später bereinigbar</div></div></div><div style="margin-top:10px;padding:9px;border-radius:10px;background:rgba(255,255,255,.045);font-size:11px;line-height:1.45"><b>P102 Vorschau:</b> Es wird noch keine Fahrt gelöscht, verschoben oder automatisch archiviert. „📌 Behalten“ schützt ältere Fahrten für die spätere Bereinigungsstufe.</div>${p.older.length?`<div style="margin-top:10px;font-size:12px;font-weight:800">Ältere Fahrten prüfen</div>${groupHtml}`:'<div style="margin-top:10px;font-size:12px;color:#67f0a5;font-weight:800">✓ Keine älteren Carryover-Fahrten erkannt.</div>'}`;
+  host.querySelectorAll('[data-p102-pin]').forEach(btn=>btn.addEventListener('click',()=>p102TogglePinnedRide(btn.dataset.p102Pin)));
+  return true;
+}
+function ensureP102CurrentPlanPreviewPanel(){
+  const parent=$('planImportHistoryPanel');if(!parent)return false;
+  let panel=$('p102CurrentPlanPreviewPanel');
+  if(!panel){
+    panel=document.createElement('section');panel.id='p102CurrentPlanPreviewPanel';
+    panel.style.cssText='margin:14px 0 0;padding:14px;border:1px solid rgba(215,178,82,.38);border-radius:14px;background:rgba(215,178,82,.055)';
+    panel.innerHTML='<div style="font-weight:900;margin-bottom:4px">🧹 Nur aktuelle Planliste behalten · Vorschau</div><div style="font-size:11px;opacity:.72;line-height:1.4;margin-bottom:9px">P102 · Sicherheitsstufe ohne Löschung</div><div id="p102CurrentPlanPreview"></div>';
+    parent.insertAdjacentElement('afterend',panel);
+  }
+  renderP102CurrentPlanPreview();return true;
+}
+window.ATMSP102CurrentPlanPreview=()=>p102CurrentPlanPreview();
+
 function ensurePlanImportHistoryPanel(){
-  if($('planImportHistoryPanel')){renderPlanImportHistoryPanel();return}
+  if($('planImportHistoryPanel')){renderPlanImportHistoryPanel();ensureP102CurrentPlanPreviewPanel();return}
   const view=$('importView'),live=$('liveFlightPanel'),gemini=$('geminiFlightPanel');if(!view)return;
   const panel=document.createElement('section');panel.id='planImportHistoryPanel';panel.style.cssText='margin:16px 0;padding:14px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(255,255,255,.035)';
   panel.innerHTML=`<div style="font-weight:800;margin-bottom:4px">📚 Frühere Planlisten</div><div style="font-size:12px;opacity:.78;line-height:1.45">Jeder bestätigte Import wird als eigene Planversion gespeichert. Einzelnes Löschen entfernt nur den Historieneintrag – nicht den aktuellen Fahrtenbestand.</div><div id="planImportHistoryList" style="margin-top:8px"></div><div style="display:grid;grid-template-columns:1fr;gap:8px;margin-top:10px"><button type="button" id="deleteEarlierPlanHistoryBtn" style="padding:11px;border-radius:9px;font-weight:800">🗑 Alle früheren Planlisten löschen</button><button type="button" id="startPlanFreshBtn" style="padding:11px;border-radius:9px;font-weight:800">🧹 Ab jetzt mit neuen Planlisten starten</button></div><div style="font-size:11px;opacity:.7;line-height:1.4;margin-top:7px">„Ab jetzt …“ leert nur den Plan-/Fahrtenbereich. Fahrer, Disponenten, Einstellungen, Adressbuch und Standard-Abholpuffer bleiben erhalten.</div>`;
@@ -4514,6 +4612,7 @@ function ensurePlanImportHistoryPanel(){
   $('deleteEarlierPlanHistoryBtn')?.addEventListener('click',deleteEarlierPlanHistory);
   $('startPlanFreshBtn')?.addEventListener('click',startPlanDataFreshFromNow);
   renderPlanImportHistoryPanel();
+  ensureP102CurrentPlanPreviewPanel();
 }
 window.ATMSRenderPlanImportHistory=renderPlanImportHistoryPanel;
 
