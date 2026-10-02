@@ -1658,3 +1658,29 @@ html,body{
   #listView .ride.bundle .left .price{font-size:14px!important;}
   #listView .ride.bundle .mid{padding-left:8px!important;padding-right:18px!important;}
 }
+
+
+/* ==========================================================
+   CORE-007D8A1F1D8P104_2 · ARCHIVE BACK + PRIMARY SAFE AREA
+   Nur Navigation/Viewport-Polish. Keine Daten- oder Live-Logik.
+   ========================================================== */
+#settingsView.settings-backup-open .settings-backup-page.atms-archive-viewer-open > .settings-subpage-head{
+  display:none!important;
+}
+#settingsView.settings-backup-open .settings-backup-page.atms-archive-viewer-open #atmsArchiveViewer .atms-archive-viewer-head{
+  padding-top:calc(var(--atms-mobile-safe-top,30px) + 7px)!important;
+  margin-left:-12px;
+  margin-right:-12px;
+  padding-left:12px!important;
+  padding-right:12px!important;
+  background:linear-gradient(180deg,var(--atms-mobile-head-bg,rgba(4,27,39,.985)) 0%,#071923 100%)!important;
+  box-shadow:0 7px 18px rgba(0,0,0,.16);
+}
+@media(max-width:760px){
+  #messagesView #atmsMessagesShell{
+    padding-top:calc(max(30px,env(safe-area-inset-top,0px)) + 7px)!important;
+  }
+  #liveDispositionView .live-disposition{
+    padding-top:calc(max(30px,env(safe-area-inset-top,0px)) + 7px)!important;
+  }
+}
