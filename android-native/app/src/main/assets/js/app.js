@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P99.2 · 02.10.2026: LEGACY PARTNER/FIRMA IDENTITY FIX – korrigiert den engen P99.1-Legacy-Dedupe-Schlüssel für ältere Fahrten, bei denen derselbe sichtbare Partner historisch in partner/airline statt zusätzlich in customer gespeichert wurde. Partner/Kunde wird fachlich über partner -> airline -> customer/kunde normalisiert, Firma separat über company/firma. Alle übrigen P99.1-Fail-Closed-Guards bleiben unverändert; keine globale Dedupe-Regel.
 // CORE-007D8A1F1D8P99.1 · 02.10.2026: LEGACY FLIGHT-METADATA DEDUPE – entfernt beim erneuten Import genau eine noch verbliebene Carryover-Altvariante derselben fachlich identischen Fahrt, wenn deren Flugmetadaten nachweisbar unvollständiger sind (z. B. Flugzeit irrtümlich = Fahrtzeit und Flugort fehlt). Frühzeit-/Folgetag-Korrekturen werden nur zwischen Plantag und bestätigtem Folgetag berücksichtigt; erledigte, Bundle- oder mehrdeutige Kandidaten bleiben fail-closed unangetastet. P99/P98, Storage V2 und FLIGHT-008 bleiben unverändert.
 // CORE-007D8A1F1D8P99 · 02.10.2026: SOURCE-ROW REIMPORT + DATE-SAFE BUNDLES – ersetzt bei erneutem Import derselben Quellzeile sicher ältere OCR-/Datumsvarianten statt sie als Carryover zu behalten und verhindert implizite Bündel über verschiedene Fahrtage. P98-Import-Integrity, Adressbuch-Kandidaten, Storage V2 und FLIGHT-008 bleiben unverändert.
 // CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY + ADDRESS-CANDIDATES – verhindert implizite Bündel bei widersprüchlichem Fahrzeug/Preis, sammelt nach bestätigten Imports unbekannte Routenorte persistent als manuell prüfbare Adressbuch-Kandidaten und schützt diese zusätzlich in Safety/IndexedDB/Backup. Keine automatische Adressübernahme; Storage V2 und FLIGHT-008 bleiben unverändert.
@@ -4062,13 +4063,19 @@ function planImportLegacyFlightCoreIdentity(r){
   const flight=flightCacheNumber(r?.flightNumber||'');
   if(!flight)return'';
   const direction=String(first(r?.flightDirection,flightDirectionForGemini(r))||'unknown').trim().toLowerCase();
+  // P99.2: Aeltere Importe haben den sichtbaren Partner teils nur in `partner`/`airline`
+  // gespeichert, waehrend neuere Importe denselben Wert zusaetzlich in `customer` tragen.
+  // Fuer diesen extrem engen Legacy-Fallback wird deshalb die fachliche Partner/Kundenrolle
+  // einmal kanonisch normalisiert; `company/firma` bleibt bewusst ein separates Pflichtmerkmal.
+  const partnerCustomer=planImportNorm(first(r?.partner,r?.airline,r?.customer,r?.kunde));
+  const company=planImportNorm(first(r?.company,r?.firma));
   return [
     'legacy-flight-core',flight,direction,String(planTimeOf(r)||'').trim(),
     planImportNorm(r?.driver||r?.fahrer),
     planImportNorm(r?.pickup||r?.abholort),
     planImportNorm(r?.destination||r?.zielort||r?.ziel),
-    planImportNorm(r?.company||r?.firma||r?.partner),
-    planImportNorm(r?.customer||r?.kunde),
+    partnerCustomer,
+    company,
     planImportNorm(r?.vehicle||r?.fahrzeug),
     String(Number(r?.persons||r?.personen||0)),
     String(Number(r?.price||r?.preis||0).toFixed(2)),
