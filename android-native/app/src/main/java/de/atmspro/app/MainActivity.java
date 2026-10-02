@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1061 · 02.10.2026: NATIVE FILE PICKER REGRESSION FIX – SAF-Auswahl unterstützt Einzel- und Mehrfachdateien explizit; ClipData/data-URI werden robust an WebView zurückgegeben. Keine OCR-/Importlogik geändert.
 // STORAGE V2 P104 · 02.10.2026: Native read-only archive reader for exact files inside the persisted SAF archive folder. Returns bytes only after exact-name lookup and permission/origin checks; no restore/delete/write path is added.
 // STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmalige Ordnerfreigabe wird dauerhaft gehalten; .atmsarchive-Dateien werden kollisionsfrei im Ordner erstellt, nativ zurückgelesen und byte-/SHA-256-genau verifiziert. Keine automatische Löschung aktiver Daten.
 // STORAGE V2 PHASE 2A · 01.10.2026: Native Datei-Write-Read-Verifikation mit bytegenauem Vergleich + SHA-256 für .atmsarchive; bestehende Exporte bleiben kompatibel.
@@ -9,6 +10,7 @@ package de.atmspro.app;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.UriPermission;
@@ -40,7 +42,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 
 /**
  * P31F13: aktuelle bestaetigte ATMS-Weboberflaeche als lokale Android-Assets.
@@ -62,6 +66,7 @@ public final class MainActivity extends Activity {
 
     private WebView webView;
     private ValueCallback<Uri[]> pendingFileChooser;
+    private boolean pendingFileChooserAllowsMultiple;
     private byte[] pendingExportBytes;
     private String pendingExportRequestId;
     private boolean pendingExportVerifyReadBack;
@@ -124,14 +129,34 @@ public final class MainActivity extends Activity {
                     pendingFileChooser.onReceiveValue(null);
                 }
                 pendingFileChooser = filePathCallback;
+                pendingFileChooserAllowsMultiple = fileChooserParams != null
+                        && fileChooserParams.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE;
                 try {
-                    Intent chooserIntent = fileChooserParams.createIntent();
+                    // P106.1: Samsung/Android WebView liefert bei createIntent() fuer ein
+                    // <input multiple> auf manchen Systempickern keinen verwertbaren Rueckgabewert.
+                    // Deshalb den SAF-Picker explizit aufbauen und Mehrfachauswahl eindeutig setzen.
+                    Intent chooserIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                     chooserIntent.addCategory(Intent.CATEGORY_OPENABLE);
+                    chooserIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    chooserIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, pendingFileChooserAllowsMultiple);
+
+                    String[] acceptedMimeTypes = normalizeFileChooserMimeTypes(
+                            fileChooserParams == null ? null : fileChooserParams.getAcceptTypes());
+                    if (acceptedMimeTypes.length == 1) {
+                        chooserIntent.setType(acceptedMimeTypes[0]);
+                    } else {
+                        chooserIntent.setType("*/*");
+                        if (acceptedMimeTypes.length > 1) {
+                            chooserIntent.putExtra(Intent.EXTRA_MIME_TYPES, acceptedMimeTypes);
+                        }
+                    }
+
                     startActivityForResult(chooserIntent, FILE_CHOOSER_REQUEST_CODE);
                     return true;
                 } catch (ActivityNotFoundException | SecurityException error) {
                     pendingFileChooser.onReceiveValue(null);
                     pendingFileChooser = null;
+                    pendingFileChooserAllowsMultiple = false;
                     return false;
                 }
             }
@@ -301,9 +326,80 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+        Uri[] result = collectFileChooserResult(resultCode, data, pendingFileChooserAllowsMultiple);
         pendingFileChooser.onReceiveValue(result);
         pendingFileChooser = null;
+        pendingFileChooserAllowsMultiple = false;
+    }
+
+    private static String[] normalizeFileChooserMimeTypes(String[] acceptTypes) {
+        LinkedHashSet<String> mimeTypes = new LinkedHashSet<>();
+        if (acceptTypes != null) {
+            for (String raw : acceptTypes) {
+                if (raw == null) {
+                    continue;
+                }
+                for (String part : raw.split(",")) {
+                    String value = part == null ? "" : part.trim().toLowerCase();
+                    if (value.contains("/")) {
+                        mimeTypes.add(value);
+                    }
+                }
+            }
+        }
+        return mimeTypes.toArray(new String[0]);
+    }
+
+    private static Uri[] collectFileChooserResult(
+            int resultCode,
+            Intent data,
+            boolean allowMultiple) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            return null;
+        }
+
+        ArrayList<Uri> uris = new ArrayList<>();
+        ClipData clipData = data.getClipData();
+        if (clipData != null) {
+            int count = clipData.getItemCount();
+            for (int index = 0; index < count; index++) {
+                ClipData.Item item = clipData.getItemAt(index);
+                Uri uri = item == null ? null : item.getUri();
+                if (uri != null && !uris.contains(uri)) {
+                    uris.add(uri);
+                    if (!allowMultiple) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Uri directUri = data.getData();
+        if (directUri != null && !uris.contains(directUri)) {
+            uris.add(directUri);
+        }
+
+        if (uris.isEmpty()) {
+            Uri[] parsed = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+            if (parsed != null) {
+                for (Uri uri : parsed) {
+                    if (uri != null && !uris.contains(uri)) {
+                        uris.add(uri);
+                        if (!allowMultiple) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (uris.isEmpty()) {
+            return null;
+        }
+        if (!allowMultiple && uris.size() > 1) {
+            return new Uri[]{uris.get(0)};
+        }
+        return uris.toArray(new Uri[0]);
     }
 
     @Override
