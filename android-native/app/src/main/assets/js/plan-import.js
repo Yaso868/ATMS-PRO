@@ -142,6 +142,7 @@
 
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
+  // CORE-007D8A1F1D8P1062 · 02.10.2026: IMAGE HEADER SCHEMA + OCR PERFORMANCE GUARD – toleriert genau eine OCR-Abweichung in der Kopfzeile "Uhrzeit" (z. B. "Uhrzett"), damit echte 14-Spalten-Preislisten mit mittlerer Spiegelzeit nicht irrtümlich als 13-Spalten-Schema rekonstruiert werden. Zusätzlich bricht eine klar verschobene rechte Tabellenhälfte vor teurer Zell-Nach-OCR fail-closed ab. Keine Lockerung von OCR-/Flug-/Import-Sicherheitsregeln.
   // CORE-007D8A1F1D8P106 · 02.10.2026: MULTI-IMAGE + DRIVER OCR/COLOR INTEGRITY PACK – erlaubt mehrere Bildteile derselben Planliste in einem Analyse-Lauf, verbindet Fortsetzungsbilder ohne eigene Kopfzeile vor der OCR sicher mit dem Kopfzeilenbild, erweitert den Fahrer-Spaltenkonsens um genau eine eindeutig fehlende Buchstabenposition (z. B. Selm→Selim) und prüft Fahrerzellfarben auf fehlende/inkonsistente Erkennung. Keine Flug-, Routing-, Preis-, Dedupe- oder Speicherlogik wird aufgeweicht.
   const PROFILE_KEY = 'atms_import_profile_v1';
   const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
@@ -989,6 +990,31 @@
     };
   }
 
+  function detectImageRightTailSchemaShift(rides) {
+    const list = (Array.isArray(rides) ? rides : []).filter(Boolean);
+    if (list.length < 3) return { detected: false, driverCompositeCount: 0, displacedFlightCount: 0, total: list.length };
+
+    const driverCompositeCount = list.filter(ride => {
+      const driver = cellText(ride?.driver);
+      if (!driver) return false;
+      return /\d/.test(driver) || /(?:^|\s)(?:van|pkw|bus|sprinter)(?:\s|$)/i.test(driver) || /\b\d{1,2}[:.]\d{2}\b/.test(driver);
+    }).length;
+
+    const displacedFlightCount = list.filter(ride => {
+      if (cellText(ride?.flightNumber)) return false;
+      const rawLocation = cellText(ride?.sourceFlightLocationRaw).toUpperCase();
+      return /(?:^|[^A-Z0-9])[A-Z]{1,3}\s*\d{2,4}[A-Z]?(?:[^A-Z0-9]|$)/.test(rawLocation);
+    }).length;
+
+    const threshold = Math.max(2, Math.ceil(list.length * 0.5));
+    return {
+      detected: driverCompositeCount >= threshold && displacedFlightCount >= threshold,
+      driverCompositeCount,
+      displacedFlightCount,
+      total: list.length
+    };
+  }
+
   function cancellationMarker(value) {
     const key = cleanKey(value);
     return ['storno', 'storniert', 'cancelled', 'canceled'].includes(key) ? key : '';
@@ -1578,9 +1604,32 @@
     return lines.sort((a,b)=>a.cy-b.cy);
   }
 
+  function headerKeyWithinOneEdit(value, expected) {
+    const left = cleanKey(value);
+    const right = cleanKey(expected);
+    if (!left || !right) return false;
+    if (left === right) return true;
+    if (Math.abs(left.length - right.length) > 1) return false;
+
+    let i = 0, j = 0, edits = 0;
+    while (i < left.length && j < right.length) {
+      if (left[i] === right[j]) { i++; j++; continue; }
+      edits++;
+      if (edits > 1) return false;
+      if (left.length === right.length) { i++; j++; }
+      else if (left.length > right.length) i++;
+      else j++;
+    }
+    if (i < left.length || j < right.length) edits++;
+    return edits <= 1;
+  }
+
   function canonicalImageHeaderLabel(key) {
     if (key === 'preis' || key === 'price') return 'Preis';
-    if (key === 'uhrzeit' || key === 'zeit') return 'Uhrzeit';
+    // P106.2: Kopfzeilen-OCR darf bei "Uhrzeit" genau EIN Zeichen verfehlen.
+    // Das ist rein strukturell und gilt nur für Header-Wörter; Fahrtdaten werden nicht
+    // korrigiert. Belegter Realfall: "Uhrzett" statt "Uhrzeit".
+    if (key === 'uhrzeit' || key === 'zeit' || headerKeyWithinOneEdit(key, 'uhrzeit')) return 'Uhrzeit';
     if (key === 'von' || key === 'from') return 'Von';
     if (key === 'nach' || key === 'to') return 'Nach';
     if (key === 'name' || key === 'kunde') return 'Name';
@@ -7775,6 +7824,12 @@
         : 'Unterhalb der Überschriften wurden keine Fahrten erkannt.');
 
       let preparedRides = rides;
+      if (result.imageOcr) {
+        const rightTailShift = detectImageRightTailSchemaShift(preparedRides);
+        if (rightTailShift.detected) {
+          throw new Error(`Die rechte Tabellenhälfte wurde strukturell verschoben erkannt (${rightTailShift.driverCompositeCount}/${rightTailShift.total} Fahrerzellen zusammengerutscht, ${rightTailShift.displacedFlightCount}/${rightTailShift.total} Flugnummern in der Ort-Spalte). ATMS bricht vor der langsamen Zell-Nach-OCR sicher ab. Bitte vollständige Kopfzeile bzw. Bild prüfen.`);
+        }
+      }
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
         preparedRides = await p54MeasureAsync('recover_missing_times', () => recoverMissingRideTimesTargeted(
           preparedRides,
