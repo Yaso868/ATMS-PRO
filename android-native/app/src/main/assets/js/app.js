@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P102.1 · 02.10.2026: CURRENT-PLAN PREVIEW UI ANCHOR FIX – mountet die bestehende rein nicht-destruktive P102-Vorschau sichtbar direkt auf der aktuellen Native-Seite „Planliste importieren“ und prüft den Mount bei jedem Öffnen erneut. Keine Änderung an 13/143-Erkennung, Behalten-Markierungen, Fahrtdaten, Import/OCR, Storage V2, PLAN/DISPO/LIVE oder FLIGHT-008.
 // CORE-007D8A1F1D8P102 · 02.10.2026: CURRENT-PLAN KEEP PREVIEW – ergänzt eine ausschließlich nicht-destruktive Vorschau für „Nur aktuelle Planliste behalten“. Aktuelle Fahrten werden von P32/P99-Carryover-Fahrten getrennt gezählt; ältere Fahrten können einzeln mit 📌 Behalten geschützt werden. P102 löscht, archiviert oder verschiebt keine Fahrt. P101 Storage V2, P100, OCR, Import/Dedupe, Bundles, PLAN/DISPO/LIVE und FLIGHT-008 bleiben unverändert.
 // STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmal auswählen, Berechtigung dauerhaft halten, Tagesarchive kollisionsfrei direkt dort speichern und nativ byte-/SHA-256-genau zurücklesen. Phase 2A bleibt als Fallback erhalten; keine automatische Löschung aktiver Fahrten.
 // CORE-007D8A1F1D8P100 · 02.10.2026: ADDRESS-CANDIDATE PC ROUNDTRIP – offene P98-Adressbuch-Kandidaten können in der Native-App als Excel/CSV exportiert, am PC ergänzt und sicher wieder importiert werden. Aktionen OFFEN/ÜBERNEHMEN/IGNORIEREN werden vor Anwendung zusammengefasst; nur neue kollisionsfreie Adressen werden additiv angelegt, bestehende Adressen niemals automatisch überschrieben oder gelöscht. Kandidaten-ID hält die Zuordnung stabil, der erkannte Originalname wird bei umbenanntem Kurzname als Alias bewahrt. P99.3/P99.2/P99.1/P99, Fahrtdaten, OCR, PLAN/DISPO/LIVE, FLIGHT-008, Bundles, Storage V2 und Persistenz bleiben unverändert.
@@ -1961,7 +1962,7 @@ function showView(v){
   ['listView','cockpitView','importView','settingsView','liveDispositionView','messagesView'].forEach(id=>{const el=$(id);if(el)el.classList.add('hidden')});
   if(v==='list')$('listView')?.classList.remove('hidden');
   if(v==='cockpit')$('cockpitView')?.classList.remove('hidden');
-  if(v==='import'){$('importView')?.classList.remove('hidden');resetHorizontalViewport('importView')}
+  if(v==='import'){$('importView')?.classList.remove('hidden');resetHorizontalViewport('importView');try{ensureP102CurrentPlanPreviewPanel()}catch(_){ }}
   if(v==='settings'){$('settingsView')?.classList.remove('hidden');resetHorizontalViewport('settingsView');try{updateSettingsHub()}catch(_){ }}
   if(v==='live')$('liveDispositionView')?.classList.remove('hidden');
   if(v==='messages'){ensureMessagesView();$('messagesView')?.classList.remove('hidden');resetHorizontalViewport('messagesView')}
@@ -4591,14 +4592,23 @@ function renderP102CurrentPlanPreview(){
   return true;
 }
 function ensureP102CurrentPlanPreviewPanel(){
-  const parent=$('planImportHistoryPanel');if(!parent)return false;
+  // P102.1: Die sichtbare Native-Seite ist #importView > main.import.
+  // Frühere P102-Versionen hingen die Karte indirekt an das alte History-/Tool-Layout,
+  // das auf der aktuellen mobilen Importseite nicht zuverlässig sichtbar ist.
+  const view=$('importView');if(!view)return false;
+  const main=view.querySelector('main.import')||view;
+  const legacy=main.querySelector('.legacy-json');
   let panel=$('p102CurrentPlanPreviewPanel');
   if(!panel){
-    panel=document.createElement('section');panel.id='p102CurrentPlanPreviewPanel';
-    panel.style.cssText='margin:14px 0 0;padding:14px;border:1px solid rgba(215,178,82,.38);border-radius:14px;background:rgba(215,178,82,.055)';
-    panel.innerHTML='<div style="font-weight:900;margin-bottom:4px">🧹 Nur aktuelle Planliste behalten · Vorschau</div><div style="font-size:11px;opacity:.72;line-height:1.4;margin-bottom:9px">P102 · Sicherheitsstufe ohne Löschung</div><div id="p102CurrentPlanPreview"></div>';
-    parent.insertAdjacentElement('afterend',panel);
+    panel=document.createElement('section');panel.id='p102CurrentPlanPreviewPanel';panel.className='card';
+    panel.style.cssText='margin:0 0 18px;padding:18px;border:1px solid rgba(215,178,82,.38);border-radius:22px;background:linear-gradient(180deg,rgba(65,52,18,.28),rgba(24,31,37,.96))';
+    panel.innerHTML='<div style="font-weight:900;font-size:18px;margin-bottom:4px">🧹 Nur aktuelle Planliste behalten · Vorschau</div><div style="font-size:11px;opacity:.72;line-height:1.4;margin-bottom:9px">P102 · Sicherheitsstufe ohne Löschung</div><div id="p102CurrentPlanPreview"></div>';
   }
+  // Immer direkt zwischen Haupt-Planimport und erweitertem JSON-Import positionieren.
+  // Dadurch ist die Vorschau unabhängig von alten Gemini/LIVE/History-Containern sichtbar.
+  if(legacy){
+    if(panel.parentElement!==main||panel.nextElementSibling!==legacy)main.insertBefore(panel,legacy);
+  }else if(panel.parentElement!==main)main.appendChild(panel);
   renderP102CurrentPlanPreview();return true;
 }
 window.ATMSP102CurrentPlanPreview=()=>p102CurrentPlanPreview();
