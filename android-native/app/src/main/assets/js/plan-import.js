@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P99_4 · 02.10.2026: DRIVER CELL MODE-PARALLEL OCR PERFORMANCE FIX – der Realgerät-P54-Beweistest mit der 13-Fahrten-Liste vom 01.10.2026 hat missing_driver_targeted_ocr mit 27.715 ms als klaren verbleibenden Flaschenhals belegt. P99.4 startet fuer jeden der drei bereits vorhandenen, unveraenderten Fahrerzellen-Crops die drei bereits vorhandenen OCR-Modi (default/PSM7/PSM8) parallel und wertet die Ergebnisse danach weiterhin strikt in derselben Modus-Reihenfolge aus. Die drei Crops selbst bleiben bewusst nacheinander, sodass maximal drei OCR-Aufrufe gleichzeitig laufen. Crop-Geometrie, Sprache eng, drei Skalierungen, Kandidatenbereinigung, Stimmen, Zwei-Treffer-Mindestkonsens, Gleichstandsblockade, manuelle Pruefflags und alle Uebernahmeschwellen bleiben unveraendert. Keine Aenderung an Fahrerinhalt, Datum, PLAN/DISPO/LIVE, FLIGHT-008, Import/Dedupe/Bundles, Storage V2 oder Persistenz.
+// CORE-007D8A1F1D8P99_4R · 02.10.2026: DRIVER CELL MODE-PARALLEL OCR ROLLBACK – Realgeraet-P99.4 zeigte zwar einen schnelleren missing_driver_targeted_ocr-Pfad, aber deutliche Gesamtregressionen in mehreren anderen Tesseract-Schritten und eine Gesamtanalyse von 58–63 s statt zuvor ca. 37 s. Daher wird ausschliesslich die P99.4-Promise.all-Parallelisierung rueckgaengig gemacht und der vorherige strikt sequenzielle Modusablauf wiederhergestellt. Crop-Geometrie, Sprache, drei Modi, drei Skalierungen, Kandidatenbereinigung, Stimmen, Zwei-Treffer-Mindestkonsens, Gleichstandsblockade, manuelle Pruefflags und alle Uebernahmeschwellen bleiben unveraendert. Keine Aenderung an Fahrerinhalt, Datum, PLAN/DISPO/LIVE, FLIGHT-008, Import/Dedupe/Bundles, Storage V2 oder Persistenz.
 // CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY PACK – schützt gültige Frühzeiten vor widersprüchlicher Nach-OCR, trennt eine im Bildimport zusammengefallene Firma+Uhrzeit-Zelle ohne Firmen-/Zeit-Hardcodes und erlaubt bei zwei identischen deutschen Routen-Nachscans eine Distanz-2-Diakritikreparatur nur dann, wenn genau das geänderte Primärwort nachweislich sehr schwach erkannt wurde. Folgetag-Entscheidung, FLIGHT-008, PLAN/DISPO/LIVE und übrige OCR-Sicherheitsgrenzen bleiben unverändert.
 // P95 UX CORRECTIONS 30.09.2026: Strict near-primary OCR route recovery for empty same-cell route with unanimous cropped OCR and exact sibling.
 // CORE-007D8A1F1D8P92 · 29.09.2026: MISSING ROUTE RAW-WORD CONFIRMATION – der P91-Realtest belegt, dass missing_route_targeted_ocr ausgeführt wird und der positionsgleiche Roh-OCR-Beleg vorhanden ist, der breite Zell-Crop aber keinen Zwei-Treffer-Konsens erreicht. P92 setzt die beabsichtigte PSM-7-Zeilen-OCR über einen dedizierten Tesseract-Worker korrekt via setParameters() und ergänzt ausschließlich bei genau EINEM kompakten Rohwort in der leeren Routenzelle eine zweite, engere Bestätigung direkt um dessen bereits vorhandene Bounding-Box mit PSM 8. Übernahme weiterhin nur bei mindestens zwei identischen lokalen Bestätigungen desselben positionsgleichen Rohwerts; kein Einzel-Treffer, kein Nachbarzellen-Raten, keine Orts-/Airport-/Hotel-Hardcodes. Bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
@@ -3922,17 +3922,8 @@
       try {
         for (const [x0, cy0, x1, cy1, scale] of regions) {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-
-          // P99.4: Nur die drei bereits vorhandenen OCR-Modi DESSELBEN unveraenderten
-          // Fahrerzellen-Crops laufen parallel. Promise.all bewahrt die ocrModes-Reihenfolge;
-          // Stimmen, Mindestkonsens und Fail-Closed-Auswertung bleiben dadurch identisch.
-          // Die drei Crops bleiben absichtlich nacheinander (max. Parallelitaet = 3).
-          const modeResults = await Promise.all(ocrModes.map(mode =>
-            Tesseract.recognize(crop, 'eng', mode.options)
-              .then(second => ({ mode, second }))
-          ));
-
-          for (const { mode, second } of modeResults) {
+          for (const mode of ocrModes) {
+            const second = await Tesseract.recognize(crop, 'eng', mode.options);
             const candidates = driverCandidatesFromOcrResult(second);
             attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
             if (candidates.length !== 1) continue;
