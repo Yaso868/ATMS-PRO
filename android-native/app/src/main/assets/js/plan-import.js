@@ -142,6 +142,7 @@
 
   // ATMS PRO DAY-002 FLEX 10.08.2026 16:50 Uhr (Europe/Berlin): Folgetag-Block + flexible/optionale Spaltenerkennung.
 
+  // CORE-007D8A1F1D8P1063 · 02.10.2026: MULTI-IMAGE HEADER-ORDER FIX – Mehrbild-Import setzt den Bildteil mit sicherer Kopfzeile vor kopfzeilenlose Fortsetzungen, unabhängig von der Android-Auswahlreihenfolge. Ein deutlich höherer Bildteil wird nur als konservativer Erstkandidat nach vorn gesetzt; falls die erkannte Kopfzeile dennoch in einem späteren Teil liegt, wird genau einmal mit diesem Teil vorn neu gelesen. Einzelbildpfad, OCR-Schema, Fahrer-/Fluglogik und Datenübernahme bleiben unverändert.
   // CORE-007D8A1F1D8P1062 · 02.10.2026: IMAGE HEADER SCHEMA + OCR PERFORMANCE GUARD – toleriert genau eine OCR-Abweichung in der Kopfzeile "Uhrzeit" (z. B. "Uhrzett"), damit echte 14-Spalten-Preislisten mit mittlerer Spiegelzeit nicht irrtümlich als 13-Spalten-Schema rekonstruiert werden. Zusätzlich bricht eine klar verschobene rechte Tabellenhälfte vor teurer Zell-Nach-OCR fail-closed ab. Keine Lockerung von OCR-/Flug-/Import-Sicherheitsregeln.
   // CORE-007D8A1F1D8P106 · 02.10.2026: MULTI-IMAGE + DRIVER OCR/COLOR INTEGRITY PACK – erlaubt mehrere Bildteile derselben Planliste in einem Analyse-Lauf, verbindet Fortsetzungsbilder ohne eigene Kopfzeile vor der OCR sicher mit dem Kopfzeilenbild, erweitert den Fahrer-Spaltenkonsens um genau eine eindeutig fehlende Buchstabenposition (z. B. Selm→Selim) und prüft Fahrerzellfarben auf fehlende/inkonsistente Erkennung. Keine Flug-, Routing-, Preis-, Dedupe- oder Speicherlogik wird aufgeweicht.
   const PROFILE_KEY = 'atms_import_profile_v1';
@@ -1338,37 +1339,87 @@
   }
 
 
-  async function combinePlanImageFiles(files) {
+  function preferLikelyHeaderImageFirst(items) {
+    const list = Array.isArray(items) ? items.slice() : [];
+    if (list.length <= 1) return list;
+    const ranked = list.slice().sort((a, b) => Number(b.scaledHeight || 0) - Number(a.scaledHeight || 0));
+    const tallest = ranked[0];
+    const second = ranked[1];
+    const tallestHeight = Number(tallest?.scaledHeight || 0);
+    const secondHeight = Number(second?.scaledHeight || 0);
+    // P106.3: Nur bei einem sehr deutlichen Größenunterschied wird ein wahrscheinlicher
+    // Hauptteil vorsortiert. Gleich große/ähnliche Screenshots behalten exakt ihre
+    // Auswahlreihenfolge; die sichere Header-Ortung nach dem ersten OCR-Lauf bleibt
+    // dort der alleinige Reorder-Entscheider.
+    if (!(tallestHeight > 0 && secondHeight > 0 && tallestHeight >= secondHeight * 1.35)) return list;
+    return [tallest, ...list.filter(item => item !== tallest)];
+  }
+
+  async function combinePlanImageFiles(files, options = {}) {
     const list = (Array.isArray(files) ? files : []).filter(isImageFile);
     if (list.length <= 1) return list[0] || null;
-    const images = await Promise.all(list.map(loadImage));
-    const targetWidth = Math.max(...images.map(img => Number(img.naturalWidth || img.width || 1)));
+    const loaded = await Promise.all(list.map(async (file, sourceIndex) => ({
+      file,
+      sourceIndex,
+      image: await loadImage(file)
+    })));
+    const targetWidth = Math.max(...loaded.map(item => Number(item.image.naturalWidth || item.image.width || 1)));
+    let items = loaded.map(item => ({
+      ...item,
+      scaledHeight: Math.max(1, Math.round(Number(item.image.naturalHeight || item.image.height || 1) * targetWidth / Math.max(1, Number(item.image.naturalWidth || item.image.width || 1))))
+    }));
+    if (options.preferLikelyHeaderFirst !== false) items = preferLikelyHeaderImageFirst(items);
+
     const gap = Math.max(4, Math.round(targetWidth * 0.004));
-    const heights = images.map(img => Math.max(1, Math.round(Number(img.naturalHeight || img.height || 1) * targetWidth / Math.max(1, Number(img.naturalWidth || img.width || 1)))));
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
-    canvas.height = heights.reduce((sum, value) => sum + value, 0) + gap * (images.length - 1);
+    canvas.height = items.reduce((sum, item) => sum + Number(item.scaledHeight || 0), 0) + gap * (items.length - 1);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     let y = 0;
-    images.forEach((img, index) => {
-      ctx.drawImage(img, 0, y, targetWidth, heights[index]);
-      y += heights[index];
-      if (index < images.length - 1) {
+    const partLayout = [];
+    items.forEach((item, index) => {
+      const y0 = y;
+      ctx.drawImage(item.image, 0, y, targetWidth, item.scaledHeight);
+      y += item.scaledHeight;
+      partLayout.push({
+        sourceIndex: Number(item.sourceIndex),
+        name: cellText(item.file?.name),
+        y0,
+        y1: y,
+        height: Number(item.scaledHeight || 0)
+      });
+      if (index < items.length - 1) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, y, targetWidth, gap);
         y += gap;
       }
     });
     const blob = await new Promise((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Mehrteilige Planliste konnte nicht zusammengeführt werden.')), 'image/png'));
-    const baseName = cellText(list[0]?.name).replace(/\.[^.]+$/, '') || 'ATMS_Planliste';
+    const baseName = cellText(items[0]?.file?.name || list[0]?.name).replace(/\.[^.]+$/, '') || 'ATMS_Planliste';
     const combined = new File([blob], `${baseName}_ATMS_MULTI_${list.length}.png`, { type: 'image/png', lastModified: Date.now() });
     try {
-      combined.atmsSourceFileNames = list.map(file => cellText(file?.name));
+      combined.atmsSourceFileNames = items.map(item => cellText(item.file?.name));
+      combined.atmsOriginalSourceFileNames = list.map(file => cellText(file?.name));
       combined.atmsSourcePartCount = list.length;
+      combined.atmsSourcePartLayout = partLayout;
+      combined.atmsCombinedWidth = canvas.width;
+      combined.atmsCombinedHeight = canvas.height;
     } catch (_) {}
     return combined;
+  }
+
+  function combinedHeaderPartIndex(result, combined) {
+    const layout = Array.isArray(combined?.atmsSourcePartLayout) ? combined.atmsSourcePartLayout : [];
+    const headerCy = Number(result?.imageMeta?.headerLineMeta?.cy);
+    const processedWidth = Number(result?.imageCanvas?.width);
+    const sourceWidth = Number(combined?.atmsCombinedWidth);
+    if (!layout.length || !Number.isFinite(headerCy) || !(processedWidth > 0) || !(sourceWidth > 0)) return -1;
+    const scale = processedWidth / sourceWidth;
+    if (!(scale > 0)) return -1;
+    const sourceY = headerCy / scale;
+    return layout.findIndex(part => sourceY >= Number(part.y0 || 0) && sourceY < Number(part.y1 || 0));
   }
 
   async function readSelectedFiles() {
@@ -1376,11 +1427,40 @@
     if (!files.length) throw new Error('Keine Planliste ausgewählt.');
     if (files.length === 1) return readFile(files[0]);
     if (!files.every(isImageFile)) throw new Error('Mehrfachauswahl ist nur für Bild-/WhatsApp-Planlisten vorgesehen. Excel, CSV und JSON bitte einzeln auswählen.');
-    const combined = await combinePlanImageFiles(files);
-    const result = await readImagePlan(combined);
+
+    let combined = await combinePlanImageFiles(files);
+    let result = await readImagePlan(combined);
+    let headerPartIndex = combinedHeaderPartIndex(result, combined);
+
+    // P106.3: Android/SAF garantiert bei Mehrfachauswahl keine semantische
+    // Reihenfolge. Lag die sicher erkannte Tabellenkopfzeile in einem späteren
+    // Bildteil, wurden davor liegende Fortsetzungszeilen bisher verworfen, weil
+    // imageWordsToMatrix bewusst erst UNTERHALB der Kopfzeile Daten annimmt.
+    // In diesem eindeutig messbaren Fall wird genau einmal mit dem Header-Teil
+    // vorne neu gelesen; alle übrigen Teile behalten ihre bisherige Reihenfolge.
+    if (headerPartIndex > 0) {
+      const layout = Array.isArray(combined?.atmsSourcePartLayout) ? combined.atmsSourcePartLayout : [];
+      const headerSourceIndex = Number(layout[headerPartIndex]?.sourceIndex);
+      if (Number.isInteger(headerSourceIndex) && headerSourceIndex >= 0 && headerSourceIndex < files.length) {
+        const currentOrder = layout.map(part => Number(part.sourceIndex)).filter(index => Number.isInteger(index) && index >= 0 && index < files.length);
+        const reorderedIndexes = [headerSourceIndex, ...currentOrder.filter(index => index !== headerSourceIndex)];
+        const reorderedFiles = reorderedIndexes.map(index => files[index]);
+        combined = await combinePlanImageFiles(reorderedFiles, { preferLikelyHeaderFirst: false });
+        result = await readImagePlan(combined);
+        headerPartIndex = combinedHeaderPartIndex(result, combined);
+        result.multiImageHeaderReordered = true;
+      }
+    }
+
+    if (headerPartIndex > 0) {
+      throw new Error('Mehrteilige Planliste: Die Kopfzeile konnte nicht sicher an den Anfang der Bildfolge gesetzt werden. Bitte die vollständige Kopfzeile zusammen mit den Fortsetzungsbildern erneut auswählen.');
+    }
+
     result.sheetName = `Bild / WhatsApp · ${files.length} Teile`;
     result.multiImage = true;
-    result.sourceFiles = files.map(file => cellText(file?.name));
+    result.sourceFiles = Array.isArray(combined?.atmsSourceFileNames)
+      ? combined.atmsSourceFileNames.slice()
+      : files.map(file => cellText(file?.name));
     return result;
   }
 
