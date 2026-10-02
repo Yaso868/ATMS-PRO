@@ -1,3 +1,4 @@
+// STORAGE V2 P104 · 02.10.2026: Native read-only archive reader for exact files inside the persisted SAF archive folder. Returns bytes only after exact-name lookup and permission/origin checks; no restore/delete/write path is added.
 // STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmalige Ordnerfreigabe wird dauerhaft gehalten; .atmsarchive-Dateien werden kollisionsfrei im Ordner erstellt, nativ zurückgelesen und byte-/SHA-256-genau verifiziert. Keine automatische Löschung aktiver Daten.
 // STORAGE V2 PHASE 2A · 01.10.2026: Native Datei-Write-Read-Verifikation mit bytegenauem Vergleich + SHA-256 für .atmsarchive; bestehende Exporte bleiben kompatibel.
 // CORE-007D8A1F1D8P70 · 27.09.2026: NATIVE GOOGLE MAPS ROUTE HANDOFF – Opens ATMS Google Maps routes directly in the installed Google Maps app and intercepts intent:// route handoffs inside the WebView; HTTPS fallback remains if Google Maps is unavailable.
@@ -356,6 +357,11 @@ public final class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void readArchiveFile(String fileName, String requestId) {
+            runOnUiThread(() -> readNativeArchiveFile(fileName, requestId));
+        }
+
+        @JavascriptInterface
         public void saveBase64FileToArchiveFolderVerified(
                 String base64Data,
                 String fileName,
@@ -624,6 +630,83 @@ public final class MainActivity extends Activity {
             candidate = base + "_" + (suffix + 1) + extension;
         }
         throw new IllegalStateException("Zu viele gleichnamige Archivdateien im gewählten Ordner.");
+    }
+
+    private Uri findArchiveChildUri(Uri treeUri, String displayName) throws Exception {
+        String treeId = DocumentsContract.getTreeDocumentId(treeUri);
+        Uri childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeId);
+        try (Cursor cursor = getContentResolver().query(
+                childrenUri,
+                new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+                null,
+                null,
+                null)) {
+            if (cursor == null) {
+                throw new IllegalStateException("Archivordner konnte nicht gelesen werden.");
+            }
+            while (cursor.moveToNext()) {
+                String documentId = cursor.getString(0);
+                String name = cursor.getString(1);
+                if (displayName.equals(name)) {
+                    return DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId);
+                }
+            }
+        }
+        return null;
+    }
+
+    private void readNativeArchiveFile(String fileName, String requestId) {
+        if (!isTrustedLocalAppOrigin()) {
+            notifyNativeFileExportResult(requestId, false, "Archivlesen ist nur innerhalb der lokalen ATMS-App erlaubt.");
+            return;
+        }
+        String safeName = fileName == null ? "" : fileName.trim();
+        if (safeName.isEmpty() || safeName.contains("/") || safeName.contains("\\") || !safeName.toLowerCase().endsWith(".atmsarchive")) {
+            notifyNativeFileExportResult(requestId, false, "Ungültiger Archivdateiname.");
+            return;
+        }
+        if (pendingExportRequestId != null || pendingArchiveFolderRequestId != null) {
+            notifyNativeFileExportResult(requestId, false, "Ein Datei- oder Ordnerdialog ist bereits geöffnet.");
+            return;
+        }
+        Uri treeUri = storedArchiveTreeUri();
+        if (treeUri == null || !hasPersistedArchiveTreePermission(treeUri)) {
+            notifyNativeFileExportResult(requestId, false, "Die dauerhafte Berechtigung für den Archivordner fehlt. Bitte Ordner erneut wählen.");
+            return;
+        }
+        try {
+            Uri child = findArchiveChildUri(treeUri, safeName);
+            if (child == null) {
+                throw new IllegalStateException("Archivdatei wurde im bestätigten Ordner nicht gefunden.");
+            }
+            byte[] bytes;
+            try (InputStream input = getContentResolver().openInputStream(child)) {
+                if (input == null) {
+                    throw new IllegalStateException("Archivdatei konnte nicht geöffnet werden.");
+                }
+                bytes = readAllBytes(input);
+            }
+            if (bytes.length > 8 * 1024 * 1024) {
+                throw new IllegalStateException("Archivdatei ist für die sichere Direktansicht zu groß.");
+            }
+            JSONObject result = new JSONObject();
+            result.put("verifiedReadBack", true);
+            result.put("byteLength", bytes.length);
+            result.put("sha256", sha256Hex(bytes));
+            result.put("fileName", safeName);
+            result.put("folderName", archiveTreeDisplayName(treeUri));
+            result.put("storageMode", "persisted-folder");
+            result.put("base64Data", Base64.encodeToString(bytes, Base64.NO_WRAP));
+            notifyNativeFileExportCustomResult(requestId, true, "", result);
+        } catch (Exception error) {
+            String detail = error.getMessage();
+            notifyNativeFileExportResult(
+                    requestId,
+                    false,
+                    detail == null || detail.trim().isEmpty()
+                            ? "Archivdatei konnte nicht sicher gelesen werden."
+                            : "Archivdatei konnte nicht sicher gelesen werden: " + detail);
+        }
     }
 
     private boolean archiveChildNameExists(Uri treeUri, String displayName) throws Exception {
@@ -928,7 +1011,7 @@ public final class MainActivity extends Activity {
                 + "var p=window.__ATMSNativeFileExportPending[id];if(!p)return;delete window.__ATMSNativeFileExportPending[id];"
                 + "if(success){var result={verifiedReadBack:false,byteLength:0,sha256:''};try{if(resultJson)result=JSON.parse(String(resultJson));}catch(e){}p.resolve(result);}else{p.reject(new Error(String(error||'Speichern fehlgeschlagen.')));}};"
                 + "window.ATMSNativeFileExport={"
-                + "contractVersion:'ATMS-FILE-EXPORT-NATIVE-3',"
+                + "contractVersion:'ATMS-FILE-EXPORT-NATIVE-4',"
                 + "saveBase64File:function(base64Data,fileName,mimeType){return new Promise(function(resolve,reject){"
                 + "seq+=1;var id='atms-file-'+Date.now().toString(36)+'-'+seq.toString(36);"
                 + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
@@ -944,6 +1027,11 @@ public final class MainActivity extends Activity {
                 + "seq+=1;var id='atms-archive-folder-'+Date.now().toString(36)+'-'+seq.toString(36);"
                 + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
                 + "try{window.ATMSNativeFileExportHost.chooseArchiveFolder(id);}"
+                + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});},"
+                + "readArchiveFile:function(fileName){return new Promise(function(resolve,reject){"
+                + "seq+=1;var id='atms-archive-read-'+Date.now().toString(36)+'-'+seq.toString(36);"
+                + "window.__ATMSNativeFileExportPending[id]={resolve:resolve,reject:reject};"
+                + "try{window.ATMSNativeFileExportHost.readArchiveFile(String(fileName||''),id);}"
                 + "catch(e){delete window.__ATMSNativeFileExportPending[id];reject(e);}});},"
                 + "saveBase64FileToArchiveFolderVerified:function(base64Data,fileName,mimeType){return new Promise(function(resolve,reject){"
                 + "seq+=1;var id='atms-archive-save-'+Date.now().toString(36)+'-'+seq.toString(36);"
