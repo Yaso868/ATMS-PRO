@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY + ADDRESS-CANDIDATES – verhindert implizite Bündel bei widersprüchlichem Fahrzeug/Preis, sammelt nach bestätigten Imports unbekannte Routenorte persistent als manuell prüfbare Adressbuch-Kandidaten und schützt diese zusätzlich in Safety/IndexedDB/Backup. Keine automatische Adressübernahme; Storage V2 und FLIGHT-008 bleiben unverändert.
 // STORAGE V2 PHASE 2A + FINAL ICON · 01.10.2026: Nicht-destruktives Tagesarchiv mit SHA-256, nativer Write-Read-Verifikation und read-only Archivübersicht. localStorage bleibt Hauptspeicher; keine automatische Löschung/Archivierung/Umschaltung.
 // STORAGE V2 PHASE 1 · 01.10.2026: Additiver IndexedDB-Paralleltest für Fahrten + Erledigt-Status. localStorage bleibt Source of Truth; keine automatische Löschung, Archivierung, Reparatur oder Umschaltung. Sichtbare Verifikation in Backup & Wiederherstellen.
 // P95 BUNDLED UI 01.10.2026: Past rides default closed on fresh entry; driver color opens by tapping the color dot, redundant palette button removed.
@@ -106,7 +107,7 @@ const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;let storageV2ArchiveBusy=false;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;let storageV2ArchiveBusy=false;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
 let atmsToastTimer=0;
 function showToast(message,type=''){const el=document.getElementById('atmsToast');if(!el)return;clearTimeout(atmsToastTimer);el.textContent=message;el.className='atms-toast '+type+' show';atmsToastTimer=setTimeout(()=>{el.className='atms-toast';},2600)}
@@ -253,7 +254,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK]){
+  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES]){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
@@ -643,7 +644,7 @@ function capturePersistenceSafety(reason='snapshot',syncDurable=true){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK];
+    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES];
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -670,7 +671,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
-    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK].includes(key)){
+    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES].includes(key)){
       // Revisionssicher: keine unbestaetigten optimistischen Durable-Werte.
       void syncPersistenceDurableShadow('verified-write:'+reason);
     }
@@ -684,7 +685,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
   const snap=readPersistenceSafety();
-  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,...(persistenceDurableReady?[KEY,DONE]:[])];
+  const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,...(persistenceDurableReady?[KEY,DONE]:[])];
   const restored=[];
   for(const key of critical){
     if(localStorage.getItem(key)!==null)continue;
@@ -731,7 +732,7 @@ function persistenceDiagnosis(){
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     storageV2:storageV2Diagnosis(),
-    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK)},
+    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK),addressCandidates:inspect(ADDRESS_CANDIDATES)},
     recentAudit:audit.slice(0,30)
   };
 }
@@ -908,7 +909,16 @@ function openManualFlightEditor(){
 function isAirport(v){return Boolean(flightAirportIataFromPlace(v))}
 function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return'airport_to_hotels';if(!isAirport(r.pickup)&&isAirport(r.destination))return'hotels_to_airport';return'normal'}
 function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),String(r?.sourcePlanAirportIata||'').toUpperCase(),dir].join('|')}
-function sameBundleGroup(a,b){const ka=bundleGroupKey(a),kb=bundleGroupKey(b);return Boolean(ka&&ka===kb)}
+function implicitBundleRowsCompatible(a,b){
+  if(a===b)return true;
+  const av=normKey(a?.vehicle),bv=normKey(b?.vehicle);
+  if(!av||!bv||av!==bv)return false;
+  const ap=Number(a?.price),bp=Number(b?.price);
+  if(!Number.isFinite(ap)||!Number.isFinite(bp)||ap<=0||bp<=0)return false;
+  if(Math.abs(ap-bp)>0.009)return false;
+  return true
+}
+function sameBundleGroup(a,b){const ka=bundleGroupKey(a),kb=bundleGroupKey(b);return Boolean(ka&&ka===kb&&implicitBundleRowsCompatible(a,b))}
 function hotelLabel(name){const n=String(name||'').trim();if(/nh\s*nord/i.test(n))return 'NH Nord DUS';if(/holiday\s*inn/i.test(n))return 'Holiday Inn DUS';return n}
 function knownBundleRepair(r){
   const flight=normKey(r.flightNumber),driver=normKey(r.driver),time=planTimeOf(r),dir=directionOf(r);
@@ -4505,6 +4515,9 @@ async function applyImportedRides(newRides){
   // Storage V2 ist noch kein Freigabe-Gate: nur paralleles Spiegeln + Verifikation.
   void syncStorageV2Phase1('after-plan-import-verified');
   capturePersistenceSafety('after-plan-import');
+  let addressCandidateResult={changed:false,added:0,open:0};
+  try{addressCandidateResult=collectAddressBookCandidates(normalizedIncoming,'address-candidates-plan-import')}
+  catch(e){persistAudit('address_candidates_collect_failed',{phase:'plan-import',message:String(e?.message||e)})}
   const importSession=beginPlanImportSession(normalizedIncoming,planMerge);
   renderPlanImportHistoryPanel();
   resetCurrentImportCheckDisplay();
@@ -4520,7 +4533,9 @@ async function applyImportedRides(newRides){
     carryoverRides:planMerge.carryover,
     restoredFlightChecks:restored.changed,
     restoredVerifiedFlights:restored.verifiedRestored,
-    restoredManualChecks:restored.manualRestored
+    restoredManualChecks:restored.manualRestored,
+    newAddressCandidates:addressCandidateResult.added,
+    openAddressCandidates:addressCandidateResult.open
   };
 }
 
@@ -4730,6 +4745,96 @@ function getAddressBook(){try{const raw=JSON.parse(localStorage.getItem(ADDRESS_
 function saveAddressBook(list,reason='address-book'){const clean=(Array.isArray(list)?list:[]).map(normalizeAddressBookEntry).filter(x=>x.name&&x.address).slice(0,3000);const ok=safePersistentSetItem(ADDRESS_BOOK,JSON.stringify(clean),reason);if(ok){capturePersistenceSafety(reason);try{updateBackupUI()}catch(_){ }try{updateSettingsHub()}catch(_){ }}return ok}
 function addressBookTerms(entry){return[entry?.name,...(Array.isArray(entry?.aliases)?entry.aliases:[])].map(normalizeAddressAlias).filter(Boolean)}
 function findAddressBookEntry(place){const key=normalizeAddressAlias(place);if(!key)return null;const hits=getAddressBook().filter(entry=>addressBookTerms(entry).includes(key));return hits.length===1?hits[0]:null}
+function normalizeAddressCandidate(raw,index=0){
+  const name=String(raw?.name||'').trim(),key=normalizeAddressAlias(name);
+  const seenPickup=Array.isArray(raw?.seenPickup)?[...new Set(raw.seenPickup.map(x=>String(x||'')).filter(Boolean))].slice(-1000):[];
+  const seenDestination=Array.isArray(raw?.seenDestination)?[...new Set(raw.seenDestination.map(x=>String(x||'')).filter(Boolean))].slice(-1000):[];
+  return{id:String(raw?.id||`addr-cand-${Date.now()}-${index}-${Math.random().toString(36).slice(2,8)}`),name,key,pickupCount:Math.max(Number(raw?.pickupCount)||seenPickup.length,seenPickup.length),destinationCount:Math.max(Number(raw?.destinationCount)||seenDestination.length,seenDestination.length),seenPickup,seenDestination,firstSeenAt:String(raw?.firstSeenAt||new Date().toISOString()),lastSeenAt:String(raw?.lastSeenAt||raw?.firstSeenAt||new Date().toISOString()),lastPlanDate:String(raw?.lastPlanDate||''),ignored:Boolean(raw?.ignored)}
+}
+function getAddressCandidates(){try{const raw=JSON.parse(localStorage.getItem(ADDRESS_CANDIDATES)||'[]');return(Array.isArray(raw)?raw:[]).map(normalizeAddressCandidate).filter(x=>x.name&&x.key)}catch(_){return[]}}
+function saveAddressCandidates(list,reason='address-candidates'){
+  const clean=(Array.isArray(list)?list:[]).map(normalizeAddressCandidate).filter(x=>x.name&&x.key).slice(0,3000);
+  const ok=safePersistentSetItem(ADDRESS_CANDIDATES,JSON.stringify(clean),reason);
+  if(ok)capturePersistenceSafety(reason);
+  return ok
+}
+function addressCandidateFingerprint(ride){
+  return [ride?.date||ride?.planDate||'',planTimeOf(ride),normKey(ride?.flightNumber),normKey(ride?.driver),normKey(ride?.pickup),normKey(ride?.destination),normKey(ride?.vehicle),Number(ride?.persons)||0,Number(ride?.price)||0].join('|')
+}
+function addressCandidateRouteHasUnresolvedOcrConflict(ride,field){
+  if(!field)return false;
+  if(ride?.[`${field}NeedsManualCheck`])return true;
+  const current=normalizeAddressAlias(ride?.[field]),attempts=Array.isArray(ride?.[`${field}TargetedOcrAttempts`])?ride[`${field}TargetedOcrAttempts`]:[];
+  const candidates=attempts.map(item=>normalizeAddressAlias(item?.candidate)).filter(Boolean);
+  if(candidates.length<2)return false;
+  const counts=new Map();candidates.forEach(value=>counts.set(value,(counts.get(value)||0)+1));
+  const winner=[...counts.entries()].sort((a,b)=>b[1]-a[1])[0];
+  return Boolean(winner&&winner[1]>=2&&winner[0]!==current&&!ride?.[`${field}RecoveredFromTargetedOcr`])
+}
+function addressCandidateRoutePoints(ride){
+  const points=[];
+  const add=(name,role,field='')=>{const value=String(name||'').trim();if(value)points.push({name:value,role,field})};
+  add(ride?.pickup,'pickup','pickup');add(ride?.destination,'destination','destination');
+  if(Array.isArray(ride?.bundleStops))ride.bundleStops.forEach(stop=>add(stop?.name,String(stop?.type||'').toLowerCase()==='pickup'?'pickup':'destination'));
+  const seen=new Set();
+  return points.filter(point=>{const key=`${point.role}|${normalizeAddressAlias(point.name)}`;if(!normalizeAddressAlias(point.name)||seen.has(key))return false;seen.add(key);return true})
+}
+function collectAddressBookCandidates(source,reason='address-candidates-import'){
+  const incoming=Array.isArray(source)?source:[],list=getAddressCandidates(),byKey=new Map(list.map(entry=>[entry.key,entry]));
+  let changed=false,added=0;
+  for(const ride of incoming){
+    const baseFingerprint=addressCandidateFingerprint(ride);
+    for(const point of addressCandidateRoutePoints(ride)){
+      const key=normalizeAddressAlias(point.name);
+      if(!key||addressCandidateRouteHasUnresolvedOcrConflict(ride,point.field)||findAddressBookEntry(point.name))continue;
+      // Eingebaute Airport-Ziele sind bereits vollständig navigierbar und benötigen
+      // keinen zusätzlichen Adressbuch-Eintrag. Echte zusammengesetzte Routen, deren
+      // Einzelstopps bereits auflösbar sind, werden ebenfalls nicht als „fehlend“ gesammelt.
+      if(flightAirportIataFromPlace(point.name))continue;
+      try{if(compositeRoutePointResolution(point.name))continue}catch(_){}
+      let entry=byKey.get(key);
+      if(!entry){
+        entry=normalizeAddressCandidate({name:point.name,firstSeenAt:new Date().toISOString(),lastSeenAt:new Date().toISOString(),lastPlanDate:String(ride?.planDate||ride?.date||'')},list.length);
+        list.push(entry);byKey.set(key,entry);added++;changed=true;
+      }
+      const seenKey=point.role==='pickup'?'seenPickup':'seenDestination';
+      const countKey=point.role==='pickup'?'pickupCount':'destinationCount';
+      const fingerprint=`${point.role}|${baseFingerprint}`;
+      if(!entry[seenKey].includes(fingerprint)){
+        entry[seenKey].push(fingerprint);if(entry[seenKey].length>1000)entry[seenKey]=entry[seenKey].slice(-1000);
+        entry[countKey]=Math.max(Number(entry[countKey])||0,entry[seenKey].length);
+        entry.lastSeenAt=new Date().toISOString();entry.lastPlanDate=String(ride?.planDate||ride?.date||entry.lastPlanDate||'');
+        changed=true;
+      }
+    }
+  }
+  if(changed)saveAddressCandidates(list,reason);
+  return{changed,added,open:getAddressCandidates().filter(entry=>!entry.ignored&&!findAddressBookEntry(entry.name)).length}
+}
+function visibleAddressCandidates(query=''){
+  const q=normKey(query);
+  return getAddressCandidates().filter(entry=>!entry.ignored&&!findAddressBookEntry(entry.name)&&(!q||normKey(entry.name).includes(q))).sort((a,b)=>(Number(b.pickupCount||0)+Number(b.destinationCount||0))-(Number(a.pickupCount||0)+Number(a.destinationCount||0))||String(a.name).localeCompare(String(b.name),'de'))
+}
+function renderAddressCandidates(query=''){
+  const host=$('addressCandidateList'),card=$('addressCandidateCard'),count=$('addressCandidateCount');if(!host||!card)return;
+  const allOpen=visibleAddressCandidates(''),visible=visibleAddressCandidates(query);
+  card.classList.toggle('hidden',allOpen.length===0);
+  if(count)count.textContent=`${allOpen.length} offen`;
+  host.innerHTML=visible.length?visible.map(entry=>{
+    const roles=[entry.pickupCount?`Abholung ${entry.pickupCount}×`:'',entry.destinationCount?`Ziel ${entry.destinationCount}×`:'' ].filter(Boolean).join(' · ');
+    const date=entry.lastPlanDate?` · zuletzt ${entry.lastPlanDate.split('-').reverse().join('.')}`:'';
+    return`<div class="setting-card" data-address-candidate-id="${esc(entry.id)}"><div class="address-compact-main"><strong>${esc(entry.name)}</strong><small>${esc(roles+date)}</small><em>Noch nicht im Adressbuch</em></div><div class="address-editor-actions"><button type="button" class="act dark" data-address-candidate-add="${esc(entry.id)}">+ Ins Adressbuch</button><button type="button" class="act" data-address-candidate-ignore="${esc(entry.id)}">Ignorieren</button></div></div>`
+  }).join(''):'<div class="setting-note address-empty">Keine passenden Kandidaten zur Suche.</div>';
+}
+function openAddressCandidateEditor(id){
+  const entry=getAddressCandidates().find(x=>String(x.id)===String(id));if(!entry)return;
+  resetAddressBookForm();const name=$('addressBookName');if(name)name.value=entry.name;showAddressBookEditor('new')
+}
+function ignoreAddressCandidate(id){
+  const list=getAddressCandidates(),entry=list.find(x=>String(x.id)===String(id));if(!entry)return;
+  entry.ignored=true;entry.lastSeenAt=new Date().toISOString();
+  if(saveAddressCandidates(list,'address-candidate-ignore')){renderAddressBook();showToast('Adressbuch-Kandidat ignoriert','ok')}
+}
 function addressBookHasCollision(candidate,excludeId=''){const wanted=new Set(addressBookTerms(candidate));if(!wanted.size)return null;return getAddressBook().find(entry=>String(entry.id)!==String(excludeId)&&addressBookTerms(entry).some(term=>wanted.has(term)))||null}
 function resetAddressBookForm(){for(const id of['addressBookEditId','addressBookName','addressBookAddress','addressBookAliases','addressBookNote']){const el=$(id);if(el)el.value=''}const saveBtn=$('addressBookSaveBtn'),cancelBtn=$('addressBookCancelEditBtn');if(saveBtn)saveBtn.textContent='+ Adresse speichern';if(cancelBtn)cancelBtn.classList.add('hidden')}
 function addressBookDisplayMeta(entry){
@@ -4748,6 +4853,7 @@ function renderAddressBook(){
   if(searchInfo){searchInfo.textContent=q?`${visible.length} Treffer von ${all.length}`:`${all.length} Adresse(n) verfügbar`;searchInfo.style.color=q&&visible.length===0?'#ffc14d':''}
   if(status)status.textContent=q?`${visible.length} Treffer von ${all.length} Adresse(n)`:`${all.length} Adresse(n) gespeichert · lokal auf diesem Gerät`;
   host.innerHTML=visible.length?visible.map(e=>{const meta=addressBookDisplayMeta(e);return`<button type="button" class="address-compact-item" data-address-id="${esc(e.id)}"><span class="address-compact-main"><strong>${esc(e.name)}</strong><small>${esc(e.address)}</small><em>${esc(meta.category)}</em></span><span class="address-compact-chevron">›</span></button>`}).join(''):'<div class="setting-note address-empty">Noch keine passenden Orte & Adressen gespeichert.</div>';
+  renderAddressCandidates(rawQuery);
 }
 function showAddressBookBrowse(opts={}){const panel=$('atmsAddressBookPanel');if(!panel)return;['addressBookBrowseView','addressBookEditorView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookBrowseView')?.classList.remove('hidden');renderAddressBook();panel.classList.remove('atms-mobile-nav-collapsed');if(opts.restoreScroll)atmsSettingsSetScroll(atmsSettingsListScroll.address,'address');else requestAnimationFrame(()=>panel.scrollIntoView({block:'start'}))}
 function showAddressBookEditor(mode='new',opts={}){const panel=$('atmsAddressBookPanel');if(!panel)return;const id=String(opts.id||$('addressBookEditId')?.value||'');if(opts.history!==false){atmsSettingsRememberScroll('address');atmsSettingsPushRoute('address','editor',mode==='edit'?id:'')}['addressBookBrowseView','addressBookDetailView','addressBookTransferView'].forEach(id=>$(id)?.classList.add('hidden'));$('addressBookEditorView')?.classList.remove('hidden');const title=$('addressBookEditorTitle');if(title)title.textContent=mode==='edit'?'Adresse bearbeiten':'Neue Adresse';panel.classList.remove('atms-mobile-nav-collapsed');requestAnimationFrame(()=>{panel.scrollIntoView({block:'start'});setTimeout(()=>$('addressBookName')?.focus(),80)})}
@@ -4775,7 +4881,7 @@ function saveAddressBookForm(){
   if(!name){showToast('Bitte Kurzname / Planname eingeben','warn');return}if(!address){showToast('Bitte vollständige Adresse eingeben','warn');return}
   const list=getAddressBook(),old=list.find(x=>String(x.id)===editId),candidate=normalizeAddressBookEntry({...old,id:editId||undefined,name,address,aliases,note,createdAt:old?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()});
   const collision=addressBookHasCollision(candidate,editId);if(collision){alert(`Kurzname oder Alias ist bereits „${collision.name}“ zugeordnet. Bitte einen eindeutigen Namen/Alias verwenden.`);return}
-  const next=editId?list.map(x=>String(x.id)===editId?candidate:x):[candidate,...list];if(!saveAddressBook(next,'address-book-edit')){showToast('Adresse konnte nicht gespeichert werden','warn');return}resetAddressBookForm();atmsSettingsReturnToBrowse('address');updateSettingsHub();showToast(editId?'Adresse geändert':'Adresse gespeichert','ok');
+  const next=editId?list.map(x=>String(x.id)===editId?candidate:x):[candidate,...list];if(!saveAddressBook(next,'address-book-edit')){showToast('Adresse konnte nicht gespeichert werden','warn');return}resetAddressBookForm();atmsSettingsReturnToBrowse('address');renderAddressBook();updateSettingsHub();showToast(editId?'Adresse geändert':'Adresse gespeichert','ok');
 }
 function editAddressBookEntry(id){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;$('addressBookEditId').value=e.id;$('addressBookName').value=e.name;$('addressBookAddress').value=e.address;$('addressBookAliases').value=e.aliases.join('\n');$('addressBookNote').value=e.note||'';$('addressBookSaveBtn').textContent='Änderungen speichern';$('addressBookCancelEditBtn')?.classList.remove('hidden');showAddressBookEditor('edit',{id:e.id})}
 function deleteAddressBookEntry(id){const e=getAddressBook().find(x=>String(x.id)===String(id));if(!e)return;if(!confirm(`Ort „${e.name}“ wirklich aus Orte & Adressen löschen?`))return;saveAddressBook(getAddressBook().filter(x=>String(x.id)!==String(id)),'address-book-delete');resetAddressBookForm();atmsSettingsReturnToBrowse('address');updateSettingsHub();showToast('Adresse gelöscht','ok')}
@@ -4813,7 +4919,7 @@ function ensureAddressBookPanel(){
   if(panel){if(host&&panel.parentElement!==host)host.appendChild(panel);renderAddressBook();return true}
   panel=document.createElement('section');panel.id='atmsAddressBookPanel';panel.dataset.atmsP95Gate2Panel='1';panel.className='settings-address-page hidden';
   panel.innerHTML=`<div class="settings-subpage-head atms-mobile-topbar"><button type="button" id="addressBookBackSettings" class="settings-back-btn" aria-label="Zurück zu Einstellungen">‹</button><div class="atms-mobile-title"><h2>📍 Adressen</h2><small id="addressBookPageCount">0 gespeicherte Adressen</small></div><div class="atms-mobile-head-actions"><button type="button" id="addressBookHeadSearch" class="atms-mobile-icon-btn" aria-label="Adresse suchen">⌕</button><button type="button" id="addressBookHeadAdd" class="atms-mobile-icon-btn" aria-label="Neue Adresse">＋</button></div></div>
-  <div id="addressBookBrowseView"><div class="address-toolbar"><input id="addressBookSearch" class="setting-input" placeholder="Adresse suchen …" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search"><button type="button" id="addressBookNewBtn" class="address-new-btn">+ Neue Adresse</button></div><div id="addressBookSearchInfo" class="address-search-info">Adresssuche bereit.</div><div id="addressBookList" class="address-compact-list"></div></div>
+  <div id="addressBookBrowseView"><div class="address-toolbar"><input id="addressBookSearch" class="setting-input" placeholder="Adresse suchen …" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="search"><button type="button" id="addressBookNewBtn" class="address-new-btn">+ Neue Adresse</button></div><div id="addressBookSearchInfo" class="address-search-info">Adresssuche bereit.</div><section id="addressCandidateCard" class="setting-card hidden"><div class="address-search-info"><strong>📥 Adressbuch-Kandidaten</strong> · <span id="addressCandidateCount">0 offen</span><br><small>Unbekannte Routenorte aus bestätigten Planimporten. Erst nach deiner Prüfung ins Adressbuch übernehmen.</small></div><div id="addressCandidateList" class="address-compact-list"></div></section><div id="addressBookList" class="address-compact-list"></div></div>
   <div id="addressBookEditorView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="addressBookEditorBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="addressBookEditorTitle">Neue Adresse</h3></div><input id="addressBookEditId" type="hidden"><label class="setting-label" for="addressBookName">Kurzname / Planname</label><input id="addressBookName" class="setting-input" placeholder="z. B. Holiday Inn Toulouseallee" autocomplete="off"><label class="setting-label" for="addressBookAddress">Vollständige Adresse</label><input id="addressBookAddress" class="setting-input" placeholder="Straße Hausnummer, PLZ Ort" autocomplete="street-address"><label class="setting-label" for="addressBookAliases">Aliase (optional · je Zeile oder mit | trennen)</label><textarea id="addressBookAliases" class="setting-input address-aliases" placeholder="z. B. Holiday Inn DUS"></textarea><label class="setting-label" for="addressBookNote">Notiz (optional)</label><textarea id="addressBookNote" class="setting-input address-note-input" placeholder="z. B. Haupteingang / Buszufahrt"></textarea><div class="address-editor-actions"><button type="button" id="addressBookSaveBtn" class="act dark">+ Adresse speichern</button><button type="button" id="addressBookCancelEditBtn" class="act hidden">Bearbeiten abbrechen</button></div></div>
   <div id="addressBookDetailView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="addressBookDetailBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3 id="addressBookDetailTitle">Adressdetails</h3></div><div id="addressBookDetailBody" class="address-detail-body"></div><div class="address-detail-actions"><button type="button" id="addressBookDetailEdit" class="act dark">✎ Bearbeiten</button><button type="button" id="addressBookDetailDelete" class="act danger">🗑 Löschen</button></div></div>
   <div id="addressBookTransferView" class="hidden"><div class="address-inner-head atms-mobile-topbar atms-mobile-innerbar"><button type="button" id="addressBookTransferBack" class="settings-back-btn" aria-label="Zurück">‹</button><h3>📥 Import &amp; Export</h3></div><p class="setting-note">Gate 2: Die bestehenden Adress-Datenwerkzeuge bleiben unverändert verfügbar. Die endgültige Import-&amp;-Export-Seite folgt in ihrem eigenen Gate.</p><div class="address-transfer-actions"><button type="button" id="addressBookImportBtn" class="act dark">📥 Excel/CSV importieren</button><input id="addressBookImportInput" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden"><button type="button" id="addressBookExportXlsxBtn" class="act">📤 Excel exportieren</button><button type="button" id="addressBookExportCsvBtn" class="act">📤 CSV exportieren</button></div><div id="addressBookStatus" class="address-transfer-status"></div></div>`;
@@ -4828,6 +4934,10 @@ function ensureAddressBookPanel(){
   $('addressBookCancelEditBtn')?.addEventListener('click',()=>{resetAddressBookForm();atmsSettingsBack()});
   installAddressBookSearchEvents();
   $('addressBookList')?.addEventListener('click',e=>{const row=e.target.closest('[data-address-id]');if(row)showAddressBookDetail(row.dataset.addressId)});
+  $('addressCandidateList')?.addEventListener('click',e=>{
+    const add=e.target.closest('[data-address-candidate-add]');if(add){openAddressCandidateEditor(add.dataset.addressCandidateAdd);return}
+    const ignore=e.target.closest('[data-address-candidate-ignore]');if(ignore)ignoreAddressCandidate(ignore.dataset.addressCandidateIgnore)
+  });
   $('addressBookDetailEdit')?.addEventListener('click',()=>{const id=$('addressBookDetailBody')?.dataset.addressId;if(id)editAddressBookEntry(id)});
   $('addressBookDetailDelete')?.addEventListener('click',()=>{const id=$('addressBookDetailBody')?.dataset.addressId;if(id)deleteAddressBookEntry(id)});
   $('addressBookImportBtn')?.addEventListener('click',()=>{const input=$('addressBookImportInput');if(input){input.value='';input.click()}});
@@ -5808,6 +5918,8 @@ function initApp(){
         else if(correctedBorderTimes.changed)persistAudit('legacy_ocr_time_corrected',{count:correctedBorderTimes.changed,from:'startup'});
       }
     }catch(e){rides=[]}
+    try{collectAddressBookCandidates(rides,'address-candidates-startup-backfill')}
+    catch(e){persistAudit('address_candidates_collect_failed',{phase:'startup-backfill',message:String(e?.message||e)})}
     // Phase 1 erst nach dem bestehenden lokalen Startup/Migrationspfad starten.
     void initStorageV2Phase1();
     scheduleLiveFreshnessRefresh();
@@ -5822,7 +5934,7 @@ window.addEventListener('error',e=>showAppError(e.error||e.message));
 window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
-window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAddressBookEntry};
+window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAddressBookEntry,candidates:getAddressCandidates,collectCandidates:collectAddressBookCandidates};
 window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSStorageV2Diagnosis=storageV2Diagnosis;window.ATMSStorageV2Check=checkStorageV2Phase1;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.ATMSP77LegacyDedupeStatus=p77LegacyDedupeStatus;window.ATMSP77LegacyDedupeRollback=p77LegacyDedupeRollback;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;

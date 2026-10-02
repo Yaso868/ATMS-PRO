@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY PACK – schützt gültige Frühzeiten vor widersprüchlicher Nach-OCR, trennt eine im Bildimport zusammengefallene Firma+Uhrzeit-Zelle ohne Firmen-/Zeit-Hardcodes und erlaubt bei zwei identischen deutschen Routen-Nachscans eine Distanz-2-Diakritikreparatur nur dann, wenn genau das geänderte Primärwort nachweislich sehr schwach erkannt wurde. Folgetag-Entscheidung, FLIGHT-008, PLAN/DISPO/LIVE und übrige OCR-Sicherheitsgrenzen bleiben unverändert.
 // P95 UX CORRECTIONS 30.09.2026: Strict near-primary OCR route recovery for empty same-cell route with unanimous cropped OCR and exact sibling.
 // CORE-007D8A1F1D8P92 · 29.09.2026: MISSING ROUTE RAW-WORD CONFIRMATION – der P91-Realtest belegt, dass missing_route_targeted_ocr ausgeführt wird und der positionsgleiche Roh-OCR-Beleg vorhanden ist, der breite Zell-Crop aber keinen Zwei-Treffer-Konsens erreicht. P92 setzt die beabsichtigte PSM-7-Zeilen-OCR über einen dedizierten Tesseract-Worker korrekt via setParameters() und ergänzt ausschließlich bei genau EINEM kompakten Rohwort in der leeren Routenzelle eine zweite, engere Bestätigung direkt um dessen bereits vorhandene Bounding-Box mit PSM 8. Übernahme weiterhin nur bei mindestens zwei identischen lokalen Bestätigungen desselben positionsgleichen Rohwerts; kein Einzel-Treffer, kein Nachbarzellen-Raten, keine Orts-/Airport-/Hotel-Hardcodes. Bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
 // CORE-007D8A1F1D8P91 · 29.09.2026: MISSING ROUTE CELL TARGETED OCR – behebt den real reproduzierten Graustufen-/Schwarz-Weiß-Fall, dass eine Von-/Nach-Zelle in der Primär-OCR leer bleibt, obwohl die Roh-OCR innerhalb exakt derselben Tabellenzelle bereits einen schwachen Texttreffer enthält. Nur tatsächlich leere Routenfelder werden lokal in drei eng begrenzten Crops derselben Zelle nachgelesen. Übernahme ausschließlich bei mindestens zwei identischen Targeted-OCR-Treffern UND einem positionsgleichen Roh-OCR-Beleg derselben Zelle; sonst bleibt der bestehende Fehler „Abholort/Ziel fehlt“ unverändert bestehen. Keine Orts-, Hotel-, Airport-, Flug- oder Fahrer-Hardcodes; bestehende Routen werden niemals überschrieben. P75/P75A-Farben, FLIGHT-008, PLAN, DISPO, LIVE und Persistenz bleiben unverändert.
@@ -873,7 +874,26 @@
     const pickup = cellText(valueAt(row, mapping, 'pickup'));
     const destination = cellText(valueAt(row, mapping, 'destination'));
     const customer = cellText(valueAt(row, mapping, 'customer'));
-    const company = cellText(valueAt(row, mapping, 'company')) || customer || 'WT';
+
+    // P98: Bei kompakten Bildlisten kann die zweite Uhrzeit-Spalte geometrisch mit
+    // „Firma“ zusammenfallen (z. B. „WT 22:25“ / „Get-E | 22:45“). Ausschließlich
+    // beim Bildimport wird deshalb eine formal gültige, am ZELLENENDE stehende Uhrzeit
+    // generisch abgetrennt. Firmenname und Uhrzeit werden weder geraten noch hart codiert.
+    const rawCompanyCell = cellText(valueAt(row, mapping, 'company'));
+    let companyEmbeddedTime = '';
+    let companyCell = rawCompanyCell;
+    if (options.imageOcr && rawCompanyCell) {
+      const match = rawCompanyCell.match(/^(.*?)(?:\s*[|¦│]\s*|\s+)([0-2]?\d[:.][0-5]\d)\s*$/);
+      if (match) {
+        const candidateTime = normalizeTime(match[2]);
+        const candidateCompany = cellText(match[1]).replace(/[|¦│]+\s*$/g, '').trim();
+        if (candidateCompany && timeToMinutes(candidateTime) !== null) {
+          companyCell = candidateCompany;
+          companyEmbeddedTime = candidateTime;
+        }
+      }
+    }
+    const company = companyCell || customer || 'WT';
 
     let recoveredFlight = '';
     let flightRecoveryAmbiguous = false;
@@ -910,7 +930,8 @@
     const rawPrimaryTime=cellText(valueAt(row,mapping,'time'));
     const primaryDispoTime = normalizeTime(valueAt(row, mapping, 'time'));
     const timeBorderAutoCorrected=Boolean(options.imageOcr&&/^\s*(?:[|¦│]\s*)+\d{3,4}\s*$/.test(rawPrimaryTime)&&/^\d{2}:\d{2}$/.test(primaryDispoTime));
-    const mirroredDispoTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
+    const mappedMirrorTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
+    const mirroredDispoTime = mappedMirrorTime || companyEmbeddedTime;
     const dispoTime = primaryDispoTime || mirroredDispoTime;
     const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
 
@@ -933,6 +954,8 @@
       destination,
       customer,
       company,
+      companyRawOcr: companyEmbeddedTime ? rawCompanyCell : '',
+      companyTimeRecoveredFromCollapsedCell: Boolean(companyEmbeddedTime),
       partner: customer || company,
       arrivalFlight,
       departureFlight,
@@ -1022,6 +1045,13 @@
       // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
       if (ride.dispoTime && ride.timeMirror && normalizeTime(ride.dispoTime) !== normalizeTime(ride.timeMirror)) {
         issues.push({ level: 'warning', row, text: `DISPO-Zeit ${ride.dispoTime} und gespiegelte DISPO-Zeit ${ride.timeMirror} weichen ab – Original-Planliste prüfen` });
+      }
+      if (ride.timeSuspiciousConflict && ride.timeSuspiciousPrimaryKept && !ride.timeSuspiciousMirrorConfirmed) {
+        issues.push({
+          level: 'warning',
+          row,
+          text: `Frühzeit ${cellText(ride.timeOcrInitial || ride.time)} blieb erhalten; Nach-OCR ${cellText(ride.timeSuspiciousBatchCandidate)} widerspricht ohne unabhängige Spiegelbestätigung – Original-Planliste prüfen`
+        });
       }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
       if (!ride.destination) issues.push({ level: 'error', row, text: 'Ziel fehlt' });
@@ -4440,9 +4470,10 @@
     return /[ÄÖÜäöüßÀ-ÿ]/.test(routeOcrText(value));
   }
 
-  function routeChangedDiacriticTokenIsSafe(originalValue, candidateValue) {
+  function routeChangedDiacriticTokenIsSafe(originalValue, candidateValue, maxDistance = 1) {
     const original = routeOcrText(originalValue);
     const candidate = routeOcrText(candidateValue);
+    const distanceLimit = maxDistance === 2 ? 2 : 1;
     if (!original || !candidate || original === candidate) return false;
     if (!routeHasLatinDiacritic(candidate)) return false;
     if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ0-9 .,'’&()/+\-]+$/.test(candidate)) return false;
@@ -4450,8 +4481,8 @@
     const originalTokens = original.split(/\s+/);
     const candidateTokens = candidate.split(/\s+/);
     if (originalTokens.length !== candidateTokens.length) return false;
-    if (Math.abs(original.length - candidate.length) > 1) return false;
-    if (routeOcrDistance(original, candidate) > 1) return false;
+    if (Math.abs(original.length - candidate.length) > distanceLimit) return false;
+    if (routeOcrDistance(original, candidate) > distanceLimit) return false;
 
     let changedTokens = 0;
     for (let index = 0; index < originalTokens.length; index++) {
@@ -4462,9 +4493,29 @@
       if (changedTokens > 1) return false;
       if (right.length < 4) return false;
       if (!routeHasLatinDiacritic(right)) return false;
-      if (routeOcrDistance(left, right) > 1) return false;
+      if (routeOcrDistance(left, right) > distanceLimit) return false;
     }
     return changedTokens === 1;
+  }
+
+  function routeChangedTokenPrimaryConfidence(originalValue, candidateValue, imageMeta, rowMeta, left, right) {
+    const originalTokens = routeOcrText(originalValue).split(/\s+/);
+    const candidateTokens = routeOcrText(candidateValue).split(/\s+/);
+    if (originalTokens.length !== candidateTokens.length) return null;
+    const changed = [];
+    for (let index = 0; index < originalTokens.length; index++) {
+      if (originalTokens[index] !== candidateTokens[index]) changed.push(index);
+    }
+    if (changed.length !== 1) return null;
+    const wantedKey = routeOcrBase(originalTokens[changed[0]]);
+    if (!wantedKey) return null;
+    const matches = rawRouteEvidenceItemsForCell(imageMeta, rowMeta, left, right)
+      .filter(item => item.key === wantedKey)
+      .map(item => Number(item.confidence))
+      .filter(Number.isFinite);
+    if (!matches.length) return null;
+    // Mehrere Roh-Treffer desselben Primärworts müssen gemeinsam schwach sein.
+    return Math.max(...matches);
   }
 
   function routeWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta) {
@@ -4703,12 +4754,28 @@
         if (runner && winner[1] === runner[1]) return;
 
         const candidate = routeOcrText(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
-        if (!routeChangedDiacriticTokenIsSafe(original, candidate)) return;
+        let recoverySource = 'targeted_route_diacritic_consensus';
+        let primaryConfidence = null;
+        let safe = routeChangedDiacriticTokenIsSafe(original, candidate);
+        if (!safe && winner[1] >= 2 && routeChangedDiacriticTokenIsSafe(original, candidate, 2)) {
+          const rowMeta = rowsWithMeta.find(item => item.sourceRow === sourceRow)?.meta || null;
+          primaryConfidence = routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMeta, left, right);
+          // P98: Distanz 2 ist nur bei zwei identischen deutschen Nachscans UND
+          // nachweislich sehr schwachem Primärwort erlaubt. So kann eine fehlerhafte
+          // Diakritik-/Buchstabenkombination sicher korrigiert werden, ohne ein
+          // Wörterbuch oder Orts-Hardcodes einzuführen.
+          safe = Number.isFinite(primaryConfidence) && primaryConfidence <= 35;
+          if (safe) recoverySource = 'targeted_route_diacritic_consensus_low_primary_confidence';
+        }
+        if (!safe) return;
 
         ride[`${descriptor.field}RawOcr`] = original;
         ride[descriptor.field] = candidate;
         ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
-        ride[`${descriptor.field}RecoverySource`] = 'targeted_route_diacritic_consensus';
+        ride[`${descriptor.field}RecoverySource`] = recoverySource;
+        if (Number.isFinite(primaryConfidence)) {
+          ride[`${descriptor.field}PrimaryOcrConfidence`] = primaryConfidence;
+        }
       });
     };
 
@@ -5037,13 +5104,31 @@
       ride.timeSuspiciousBatchCandidate = recovered;
       if (recovered === item.initial) return;
 
+      const mirror = normalizeTime(ride.timeMirror);
       ride.timeOcrInitial = item.initial;
+      ride.timeSuspiciousConflict = true;
+
+      // P98 fail-closed: Eine bereits formal gültige Frühzeit wird bei einem
+      // widersprüchlichen Batch-Nachscan nur dann ersetzt, wenn eine zweite,
+      // semantisch getrennte Zeitquelle derselben Zeile (timeMirror) den neuen
+      // Wert ausdrücklich bestätigt. Bestätigt der Spiegel den Primärwert oder
+      // fehlt er, bleibt der Primärwert erhalten; ohne Spiegel wird der Konflikt
+      // anschließend als Hinweis sichtbar.
+      if (!mirror || mirror !== recovered) {
+        ride.timeSuspiciousPrimaryKept = true;
+        ride.timeSuspiciousMirrorConfirmed = Boolean(mirror && mirror === item.initial);
+        ride.timeRecoverySource = mirror === item.initial
+          ? 'targeted_suspicious_time_conflict_mirror_confirms_primary'
+          : 'targeted_suspicious_time_conflict_primary_kept';
+        return;
+      }
+
       ride.time = recovered;
       ride.planTime = recovered;
       ride.dispoTime = recovered;
       ride.dispo_time = recovered;
       ride.timeRecoveredFromTargetedOcr = true;
-      ride.timeRecoverySource = 'targeted_suspicious_time_column_consensus';
+      ride.timeRecoverySource = 'targeted_suspicious_time_column_consensus_mirror_confirmed';
     });
 
     return out;
