@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P105 · 02.10.2026: SAFE ARCHIVE RESTORE – ergänzt eine zweistufige, additive Wiederherstellung aus bereits nativ zurückgelesenen und SHA-256-verifizierten .atmsarchive-Dateien. Vor Übernahme wird Storage V2 exakt geprüft und ein frisches vollständiges ATMS-Backup des aktuellen Bestands erstellt. Bestehende Fahrt-IDs werden niemals überschrieben; nur fehlende Archivfahrten werden als ältere Carryover ergänzt. Nach dem Schreiben müssen localStorage, Durable Shadow und Storage V2 den neuen Bestand bestätigen; bei Fehler wird der exakte Vorzustand zurückgerollt.
 // CORE-007D8A1F1D8P104_3 · 02.10.2026: LIVE APPBAR ANDROID SAFE-AREA FIX – trennt ausschließlich die ATMS-PRO-Kopfleiste der Fahrer-Fahrtenkontrolle visuell von der Android-Statusleiste. Die Appbar erhält auf Mobilgeräten einen eigenen oberen Safe-Area-Abstand, sodass Uhr/Netz/Akku nicht mehr mit „ATMS PRO“ überlagert wirken. Keine Änderung an Live-Dispo-Berechnung, Tracking, Nachrichten, Fahrten, Archiv, Storage V2, OCR, Import/Dedupe oder Persistenz.
 // CORE-007D8A1F1D8P104_2 · 02.10.2026: ARCHIVE BACK + PRIMARY SAFE-AREA POLISH – hält den P104-READ-ONLY-Viewer beim Zurück-Pfeil sicher innerhalb von „Backup & Wiederherstellen“, blendet währenddessen die äußere Settings-Zurückleiste aus und stellt sie danach wieder her. Nachrichten und Live-Dispo erhalten denselben Android-Safe-Area-Abstand wie die bestätigten Native-Top-Bars; beim echten Tabwechsel wird die vertikale Scrollposition sauber auf den Seitenanfang gesetzt, ohne laufende Live-Refreshes nach oben zu springen. Keine Änderung an Archiv-/SHA-Logik, Fahrten, Storage V2, OCR, Import, PLAN/DISPO/LIVE-Berechnung oder Persistenz.
 // CORE-007D8A1F1D8P104_1 · 02.10.2026: ARCHIVE BROWSER READ-ONLY UI-ANCHOR-FIX – rendert die bereits verifiziert gelesene Archivansicht als robuste Unteransicht direkt im sichtbaren Backup-Bereich statt als frei an <body> angehängtes Overlay. Nur UI-Anker/Navigation; Integritätsprüfung, Archivdaten, aktive Fahrten, Storage V2, Erledigt-Status, Overrides und Archive bleiben unverändert.
@@ -120,7 +121,7 @@ const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1',PLAN_KEEP_PINNED='atms_plan_keep_pinned_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;let storageV2ArchiveBusy=false,storageV2ArchiveReadBusy=false;const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1',PLAN_KEEP_PINNED='atms_plan_keep_pinned_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;const ARCHIVE_RESTORE_PREFLIGHT='atms_archive_restore_preflight_v1',ARCHIVE_RESTORE_LAST='atms_archive_restore_last_v1';let storageV2ArchiveBusy=false,storageV2ArchiveReadBusy=false;let p105ArchiveRestoreContext=null,p105ArchiveRestoreBusy=false,p105ArchiveRestoreReadyManifest=null,p105ArchiveRestoreStatusMessage='',p105ArchiveRestoreStatusType='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const PLAN_KEEP_CLEANUP_PREFLIGHT='atms_current_plan_cleanup_preflight_v1',PLAN_KEEP_CLEANUP_LAST='atms_current_plan_cleanup_last_v1';let p103CleanupBusy=false,p103CleanupStatusMessage='',p103CleanupStatusType='';
 
 let atmsToastTimer=0;
@@ -619,6 +620,7 @@ async function readStorageV2ArchiveVerified(entry){
 }
 let storageV2ArchiveViewerReturnScrollY=0;
 function closeStorageV2ArchiveViewer(){
+  p105ArchiveRestoreContext=null;p105ArchiveRestoreReadyManifest=null;p105ArchiveRestoreBusy=false;p105ArchiveRestoreStatusMessage='';p105ArchiveRestoreStatusType='';
   const viewer=$('atmsArchiveViewer');if(viewer)viewer.remove();
   const panel=$('atmsSettingsBackupPanel');if(panel)panel.classList.remove('atms-archive-viewer-open');
   const host=$('settingsBackupBody');
@@ -628,6 +630,7 @@ function closeStorageV2ArchiveViewer(){
 }
 function renderStorageV2ArchiveViewer(entry,archive,fileMeta){
   closeStorageV2ArchiveViewer();
+  p105ArchiveRestoreContext={entry,archive,fileMeta};
   const doneIds=new Set((Array.isArray(archive?.doneIds)?archive.doneIds:[]).map(String));
   const cards=(Array.isArray(archive?.rides)?archive.rides:[]).map((raw,i)=>{
     const n=norm(raw,i),id=String(raw?.id||n.id||''),time=String(first(raw?.dispoTime,raw?.dispo_abholzeit,raw?.time,raw?.planTime,raw?.plan_abholzeit,raw?.zeit_abfahrt,n.time)||'–'),driver=String(first(raw?.driver,raw?.fahrer,n.driver)||'Offen');
@@ -640,7 +643,7 @@ function renderStorageV2ArchiveViewer(entry,archive,fileMeta){
   const host=$('settingsBackupBody'),panel=$('atmsSettingsBackupPanel');
   storageV2ArchiveViewerReturnScrollY=Number(window.scrollY||document.documentElement?.scrollTop||0)||0;
   const viewer=document.createElement('section');viewer.id='atmsArchiveViewer';viewer.style.cssText='display:block!important;visibility:visible!important;opacity:1!important;position:relative;z-index:2;width:100%;min-height:70vh;background:#071923;color:#fff;padding:0 0 18px;box-sizing:border-box';
-  viewer.innerHTML=`<div class="atms-archive-viewer-head" style="position:sticky;top:0;z-index:3;background:#071923;border-bottom:1px solid rgba(255,255,255,.10);padding:8px 0 10px;display:flex;align-items:center;gap:10px"><button type="button" id="atmsArchiveViewerClose" style="width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font-size:25px">‹</button><div><div style="font-size:18px;font-weight:900">🗃️ Archiv · ${esc(storageV2ArchiveDateLabel(archive.archiveDate))}</div><div style="font-size:11px;opacity:.7">READ-ONLY · ${Number(archive.rideCount)||0} Fahrten · ${Number(archive.doneCount)||0} erledigt</div></div></div><main style="padding:12px 0 4px"><div style="padding:11px;border-radius:12px;background:rgba(33,196,111,.08);border:1px solid rgba(103,240,165,.20);font-size:11px;line-height:1.5;color:#b8f7d0"><b>✓ Verifiziert gelesen</b><br>Datei-SHA-256 ${esc(String(fileMeta?.sha256||'').slice(0,16))}… · ${Number(fileMeta?.byteLength)||0} Byte<br>${esc(entry.fileName||'')} · ${esc(fileMeta?.folderName||entry.folderName||'ATMS PRO Archive')}<br><b>Keine Wiederherstellung:</b> Diese Ansicht verändert aktive Fahrten oder Archive nicht.</div>${cards||'<div style="padding:20px;text-align:center;opacity:.7">Keine Fahrten im Archiv.</div>'}</main>`;
+  viewer.innerHTML=`<div class="atms-archive-viewer-head" style="position:sticky;top:0;z-index:3;background:#071923;border-bottom:1px solid rgba(255,255,255,.10);padding:8px 0 10px;display:flex;align-items:center;gap:10px"><button type="button" id="atmsArchiveViewerClose" style="width:42px;height:42px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font-size:25px">‹</button><div><div style="font-size:18px;font-weight:900">🗃️ Archiv · ${esc(storageV2ArchiveDateLabel(archive.archiveDate))}</div><div style="font-size:11px;opacity:.7">READ-ONLY · ${Number(archive.rideCount)||0} Fahrten · ${Number(archive.doneCount)||0} erledigt</div></div></div><main style="padding:12px 0 4px"><div style="padding:11px;border-radius:12px;background:rgba(33,196,111,.08);border:1px solid rgba(103,240,165,.20);font-size:11px;line-height:1.5;color:#b8f7d0"><b>✓ Verifiziert gelesen</b><br>Datei-SHA-256 ${esc(String(fileMeta?.sha256||'').slice(0,16))}… · ${Number(fileMeta?.byteLength)||0} Byte<br>${esc(entry.fileName||'')} · ${esc(fileMeta?.folderName||entry.folderName||'ATMS PRO Archive')}<br><b>READ-ONLY Vorschau:</b> Das Öffnen verändert aktive Fahrten oder Archive nicht. Eine Wiederherstellung ist ausschließlich über die separate zweistufige P105-Sicherheitsfreigabe möglich.</div><div id="p105ArchiveRestorePanel" style="margin-top:10px"></div>${cards||'<div style="padding:20px;text-align:center;opacity:.7">Keine Fahrten im Archiv.</div>'}</main>`;
   if(host){
     if(panel)panel.classList.add('atms-archive-viewer-open');
     Array.from(host.children).forEach(el=>{el.dataset.atmsArchiveViewerHidden='1';el.dataset.atmsArchiveViewerPrevDisplay=el.style.display||'';el.style.display='none'});
@@ -650,6 +653,7 @@ function renderStorageV2ArchiveViewer(entry,archive,fileMeta){
     document.body.insertBefore(viewer,document.body.firstChild||null);
   }
   $('atmsArchiveViewerClose')?.addEventListener('click',closeStorageV2ArchiveViewer);
+  p105RenderArchiveRestorePanel();
   requestAnimationFrame(()=>{try{viewer.scrollIntoView({block:'start',behavior:'auto'})}catch(_){viewer.scrollIntoView(true)}});
 }
 async function openStorageV2ArchiveViewerById(id){
@@ -658,6 +662,113 @@ async function openStorageV2ArchiveViewerById(id){
   try{const loaded=await readStorageV2ArchiveVerified(entry);renderStorageV2ArchiveViewer(entry,loaded.archive,loaded.fileMeta);storageV2ArchiveSetStatus('✓ Archivdatei verifiziert geöffnet · READ-ONLY','ok');persistAudit('storage_v2_p104_archive_opened',{archiveDate:entry.archiveDate,fileName:entry.fileName,fileSha256:entry.fileSha256,rideCount:entry.rideCount});return true}
   catch(e){const msg=String(e?.message||e||'Unbekannter Fehler');storageV2ArchiveSetStatus('⚠ Archiv konnte nicht sicher geöffnet werden: '+msg,'warn');persistAudit('storage_v2_p104_archive_open_failed',{fileName:entry.fileName,message:msg});showToast('Archiv konnte nicht sicher geöffnet werden','warn');return false}
   finally{storageV2ArchiveReadBusy=false;renderStorageV2ArchiveCard()}
+}
+
+
+// P105 · sichere, additive Archiv-Wiederherstellung.
+// Grundsatz: verifiziertes Archiv -> frisches externes Backup -> zweiter expliziter Nutzerentscheid
+// -> nur fehlende IDs addieren -> Durable Shadow + Storage V2 exakt bestaetigen. Nie ueberschreiben.
+function p105ArchiveRestorePreview(archive){
+  const ridesRaw=localStorage.getItem(KEY),doneRaw=localStorage.getItem(DONE);
+  if(ridesRaw===null||doneRaw===null)throw new Error('Wiederherstellung blockiert: Aktiver Fahrten-/Erledigt-Speicher fehlt.');
+  let currentRides,currentDone;try{currentRides=JSON.parse(ridesRaw);currentDone=JSON.parse(doneRaw)}catch(_){throw new Error('Wiederherstellung blockiert: Aktiver Fahrten-/Status-Speicher ist unlesbar.');}
+  if(!Array.isArray(currentRides)||!Array.isArray(currentDone))throw new Error('Wiederherstellung blockiert: Erwartete aktive Listenstruktur fehlt.');
+  const currentIds=currentRides.map(r=>String(r?.id||'').trim());
+  if(currentIds.some(id=>!id)||new Set(currentIds).size!==currentIds.length)throw new Error('Wiederherstellung blockiert: Aktiver Bestand enthält fehlende oder doppelte Fahrt-IDs.');
+  const archiveRides=Array.isArray(archive?.rides)?archive.rides:[],archiveIds=archiveRides.map(r=>String(r?.id||'').trim());
+  if(archiveIds.some(id=>!id)||new Set(archiveIds).size!==archiveIds.length)throw new Error('Wiederherstellung blockiert: Archiv-Fahrt-IDs sind nicht eindeutig.');
+  const currentSet=new Set(currentIds),additions=archiveRides.filter(r=>!currentSet.has(String(r?.id||'').trim())),existing=archiveRides.filter(r=>currentSet.has(String(r?.id||'').trim()));
+  const addIds=additions.map(r=>String(r?.id||'').trim()).sort(),existingIds=existing.map(r=>String(r?.id||'').trim()).sort(),archiveDone=new Set((Array.isArray(archive?.doneIds)?archive.doneIds:[]).map(String));
+  const doneToAdd=addIds.filter(id=>archiveDone.has(id));
+  return{ridesRaw,doneRaw,currentRides,currentDone,currentIds:currentIds.slice().sort(),archiveIds:archiveIds.slice().sort(),additions,existing,addIds,existingIds,doneToAdd,beforeCount:currentRides.length,afterCount:currentRides.length+additions.length};
+}
+function p105SameStrings(a,b){const x=(Array.isArray(a)?a:[]).map(String).slice().sort(),y=(Array.isArray(b)?b:[]).map(String).slice().sort();return JSON.stringify(x)===JSON.stringify(y)}
+function p105BackupMeta(){try{const x=JSON.parse(localStorage.getItem(BACKUP_META)||'{}');return x&&typeof x==='object'?x:{}}catch(_){return{}}}
+function p105RestoreManifestMatchesContext(manifest,ctx,preview){
+  return Boolean(manifest&&manifest.schema===1&&ctx&&preview
+    &&String(manifest.archiveId||'')===String(ctx.entry?.id||'')
+    &&String(manifest.fileSha256||'').toLowerCase()===String(ctx.entry?.fileSha256||'').toLowerCase()
+    &&String(manifest.payloadSha256||'').toLowerCase()===String(ctx.archive?.integrity?.payloadSha256||'').toLowerCase()
+    &&p105SameStrings(manifest.addIds,preview.addIds)
+    &&p105SameStrings(manifest.currentIds,preview.currentIds));
+}
+function p105SetRestoreStatus(message,type=''){p105ArchiveRestoreStatusMessage=String(message||'');p105ArchiveRestoreStatusType=String(type||'');p105RenderArchiveRestorePanel()}
+function p105RenderArchiveRestorePanel(){
+  const host=$('p105ArchiveRestorePanel'),ctx=p105ArchiveRestoreContext;if(!host||!ctx)return false;
+  let p;try{p=p105ArchiveRestorePreview(ctx.archive)}catch(e){host.innerHTML=`<div style="padding:11px;border-radius:12px;background:rgba(255,94,94,.10);border:1px solid rgba(255,94,94,.28);color:#ffb1b1;font-size:12px;line-height:1.45">⚠ ${esc(String(e?.message||e))}</div>`;return false}
+  const ready=p105RestoreManifestMatchesContext(p105ArchiveRestoreReadyManifest,ctx,p);
+  const tone=p105ArchiveRestoreStatusType==='ok'?'#9cf4c3':p105ArchiveRestoreStatusType==='warn'?'#ffd08a':'#cbefff';
+  const status=p105ArchiveRestoreStatusMessage||(!p.addIds.length?'✓ Alle Archivfahrten sind bereits im aktiven Bestand. Es wird nichts verändert.':'Noch keine Sicherheitsprüfung durchgeführt.');
+  host.innerHTML=`<section style="padding:12px;border-radius:13px;background:rgba(74,191,255,.07);border:1px solid rgba(74,191,255,.20)"><div style="font-size:15px;font-weight:900">♻️ P105 · Archiv sicher wiederherstellen</div><div style="font-size:11px;line-height:1.45;opacity:.82;margin-top:5px">Additiv und fail-closed: Bestehende Fahrt-IDs bleiben unverändert. Nur im aktiven Bestand fehlende Archivfahrten können ergänzt werden.</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px"><div style="padding:8px;border-radius:9px;background:rgba(0,0,0,.18)"><b style="font-size:18px">${p.addIds.length}</b><div style="font-size:9px;opacity:.7">neu hinzufügen</div></div><div style="padding:8px;border-radius:9px;background:rgba(0,0,0,.18)"><b style="font-size:18px">${p.existingIds.length}</b><div style="font-size:9px;opacity:.7">bereits vorhanden</div></div><div style="padding:8px;border-radius:9px;background:rgba(0,0,0,.18)"><b style="font-size:18px">0</b><div style="font-size:9px;opacity:.7">überschreiben</div></div></div><div style="font-size:10px;opacity:.72;margin-top:8px">Aktiv vorher: ${p.beforeCount} · danach: ${p.afterCount}${p.doneToAdd.length?` · davon ${p.doneToAdd.length} archiviert erledigt`:''}</div><button type="button" id="p105ArchiveRestorePreflight" ${p105ArchiveRestoreBusy||!p.addIds.length?'disabled':''} style="width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1px solid rgba(215,178,82,.45);background:rgba(215,178,82,.13);color:#f7e3a4;font-weight:900">🛡 Sicherheitsprüfung &amp; aktuelles Backup erstellen</button><button type="button" id="p105ArchiveRestoreApply" ${p105ArchiveRestoreBusy||!p.addIds.length||!ready?'disabled':''} style="width:100%;margin-top:7px;padding:10px;border-radius:10px;border:1px solid rgba(103,240,165,.35);background:rgba(33,196,111,.10);color:#b8f7d0;font-weight:900">♻️ ${p.addIds.length} Archivfahrt(en) wiederherstellen</button><div style="margin-top:9px;padding:9px;border-radius:9px;background:rgba(0,0,0,.16);font-size:10px;line-height:1.45;color:${tone}">${esc(status)}</div></section>`;
+  $('p105ArchiveRestorePreflight')?.addEventListener('click',p105PrepareArchiveRestore);
+  $('p105ArchiveRestoreApply')?.addEventListener('click',p105ApplyArchiveRestore);
+  return true;
+}
+async function p105PrepareArchiveRestore(){
+  if(p105ArchiveRestoreBusy||!p105ArchiveRestoreContext)return false;
+  const ctx=p105ArchiveRestoreContext;let preview;try{preview=p105ArchiveRestorePreview(ctx.archive)}catch(e){p105SetRestoreStatus(String(e?.message||e),'warn');return false}
+  if(!preview.addIds.length){p105SetRestoreStatus('✓ Alle Archivfahrten sind bereits aktiv. Keine Wiederherstellung nötig.','ok');return false}
+  if(!confirm(`P105 Sicherheitsprüfung starten?\n\nArchiv: ${storageV2ArchiveDateLabel(ctx.archive.archiveDate)}\nNeu hinzufügen: ${preview.addIds.length}\nBereits vorhanden: ${preview.existingIds.length}\nÜberschreiben: 0\n\nJetzt wird zuerst Storage V2 exakt geprüft und ein NEUES vollständiges ATMS-Backup des aktuellen Bestands erstellt. Noch wird KEINE Archivfahrt übernommen.`))return false;
+  p105ArchiveRestoreBusy=true;p105ArchiveRestoreReadyManifest=null;try{localStorage.removeItem(ARCHIVE_RESTORE_PREFLIGHT)}catch(_){}p105SetRestoreStatus('Storage V2 wird exakt geprüft …');
+  try{
+    const sync=await checkStorageV2Phase1('p105-before-restore-backup',false);if(!sync?.ok)throw new Error('Storage V2 ist nicht exakt synchron. Wiederherstellung bleibt blockiert.');
+    const ridesRaw=localStorage.getItem(KEY)||'',doneRaw=localStorage.getItem(DONE)||'',ridesSha=await storageV2ArchiveSha256(ridesRaw),doneSha=await storageV2ArchiveSha256(doneRaw);
+    const backupStarted=Date.now();p105SetRestoreStatus('Aktueller Bestand wird jetzt als vollständiges ATMS-Backup gesichert …');
+    const backupOk=await exportAtmsBackup();if(!backupOk)throw new Error('Aktuelles Backup wurde nicht bestätigt. Wiederherstellung bleibt blockiert.');
+    const backup=p105BackupMeta(),backupMs=Date.parse(String(backup.createdAt||''));
+    if(!Number.isFinite(backupMs)||backupMs<backupStarted-2000)throw new Error('Neues Backup konnte zeitlich nicht bestätigt werden.');
+    if(Number(backup.rideCount)!==preview.beforeCount||Number(backup.doneCount)!==preview.currentDone.length)throw new Error('Backup-Zähler stimmen nicht mit dem aktuellen Bestand überein.');
+    if(String(backup.ridesHash||'')!==storageV2Hash(ridesRaw)||String(backup.doneHash||'')!==storageV2Hash(doneRaw))throw new Error('Backup-Metadaten stimmen nicht mit dem aktuellen Bestand überein.');
+    const loaded=await readStorageV2ArchiveVerified(ctx.entry),again=p105ArchiveRestorePreview(loaded.archive);
+    if(await storageV2ArchiveSha256(localStorage.getItem(KEY)||'')!==ridesSha||await storageV2ArchiveSha256(localStorage.getItem(DONE)||'')!==doneSha)throw new Error('Aktiver Bestand hat sich während der Sicherheitsprüfung geändert.');
+    if(!p105SameStrings(preview.addIds,again.addIds)||!p105SameStrings(preview.currentIds,again.currentIds))throw new Error('Wiederherstellungs-Vorschau hat sich während der Sicherheitsprüfung geändert.');
+    const manifest={schema:1,createdAt:new Date().toISOString(),archiveId:String(ctx.entry?.id||''),archiveDate:String(loaded.archive.archiveDate||''),fileName:String(ctx.entry?.fileName||''),fileSha256:String(ctx.entry?.fileSha256||''),payloadSha256:String(loaded.archive.integrity?.payloadSha256||''),currentIds:again.currentIds,addIds:again.addIds,existingIds:again.existingIds,doneToAdd:again.doneToAdd,beforeCount:again.beforeCount,afterCount:again.afterCount,ridesRawSha256:ridesSha,doneRawSha256:doneSha,backupCreatedAt:String(backup.createdAt||'')};
+    if(!safePersistentSetItem(ARCHIVE_RESTORE_PREFLIGHT,JSON.stringify(manifest),'p105-archive-restore-preflight'))throw new Error('P105-Sicherheitsnachweis konnte nicht gespeichert werden.');
+    capturePersistenceSafety('p105-archive-restore-preflight');p105ArchiveRestoreReadyManifest=manifest;
+    persistAudit('p105_archive_restore_preflight_ok',{archiveDate:manifest.archiveDate,fileName:manifest.fileName,addCount:manifest.addIds.length,existingCount:manifest.existingIds.length,beforeCount:manifest.beforeCount,afterCount:manifest.afterCount,backupCreatedAt:manifest.backupCreatedAt});
+    p105ArchiveRestoreStatusMessage=`✓ Sicherheitsprüfung bestanden · neues Backup ${new Date(manifest.backupCreatedAt).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'})} · zweite Bestätigung freigeschaltet.`;p105ArchiveRestoreStatusType='ok';return true;
+  }catch(e){
+    const msg=String(e?.message||e||'Unbekannter Fehler');p105ArchiveRestoreReadyManifest=null;try{localStorage.removeItem(ARCHIVE_RESTORE_PREFLIGHT)}catch(_){}persistAudit('p105_archive_restore_preflight_failed',{message:msg});p105ArchiveRestoreStatusMessage='⚠ Sicherheitsprüfung abgebrochen: '+msg;p105ArchiveRestoreStatusType='warn';showToast('Archiv-Wiederherstellung bleibt blockiert','warn');return false;
+  }finally{p105ArchiveRestoreBusy=false;p105RenderArchiveRestorePanel()}
+}
+async function p105ApplyArchiveRestore(){
+  if(p105ArchiveRestoreBusy||!p105ArchiveRestoreContext)return false;
+  const ctx=p105ArchiveRestoreContext,manifest=p105ArchiveRestoreReadyManifest;if(!manifest){showToast('Zuerst P105-Sicherheitsprüfung durchführen','warn');return false}
+  p105ArchiveRestoreBusy=true;p105SetRestoreStatus('P105 prüft Archiv und aktiven Bestand erneut …');
+  let before=null;
+  try{
+    const loaded=await readStorageV2ArchiveVerified(ctx.entry),preview=p105ArchiveRestorePreview(loaded.archive);
+    if(!p105RestoreManifestMatchesContext(manifest,{...ctx,archive:loaded.archive},preview))throw new Error('Sicherheitsprüfung ist nicht mehr aktuell. Bitte neu durchführen.');
+    const ridesSha=await storageV2ArchiveSha256(preview.ridesRaw),doneSha=await storageV2ArchiveSha256(preview.doneRaw);
+    if(ridesSha!==String(manifest.ridesRawSha256||'')||doneSha!==String(manifest.doneRawSha256||''))throw new Error('Aktiver Bestand wurde seit der Sicherheitsprüfung verändert.');
+    const backup=p105BackupMeta();if(String(backup.createdAt||'')!==String(manifest.backupCreatedAt||''))throw new Error('Backup-Nachweis hat sich geändert. Bitte Sicherheitsprüfung neu durchführen.');
+    const v2=await checkStorageV2Phase1('p105-before-archive-restore',false);if(!v2?.ok)throw new Error('Storage V2 ist nicht exakt synchron.');
+    if(!preview.addIds.length){p105ArchiveRestoreReadyManifest=null;try{localStorage.removeItem(ARCHIVE_RESTORE_PREFLIGHT)}catch(_){}p105ArchiveRestoreStatusMessage='✓ Alle Archivfahrten sind bereits vorhanden. Keine Änderung nötig.';p105ArchiveRestoreStatusType='ok';return true}
+    if(!confirm(`JETZT Archivfahrten additiv wiederherstellen?\n\nARCHIV: ${storageV2ArchiveDateLabel(loaded.archive.archiveDate)}\nAKTUELL: ${preview.beforeCount} Fahrt(en)\nHINZUFÜGEN: ${preview.addIds.length} Fahrt(en)\nBEREITS VORHANDEN: ${preview.existingIds.length} Fahrt(en)\nÜBERSCHREIBEN: 0\nDANACH: ${preview.afterCount} Fahrt(en)\n\nSICHERHEIT:\n• frisches vollständiges Backup bestätigt\n• Archiv erneut per SHA-256 verifiziert\n• Storage V2 exakt synchron\n• bei Fehler automatischer Rollback\n\nFortfahren?`)){p105ArchiveRestoreStatusMessage='Sicherheitsprüfung bleibt gültig · Wiederherstellung wurde noch nicht ausgeführt.';p105ArchiveRestoreStatusType='ok';return false;}
+    before={ridesRaw:preview.ridesRaw,doneRaw:preview.doneRaw,rides:JSON.parse(preview.ridesRaw),done:JSON.parse(preview.doneRaw)};
+    const addSet=new Set(preview.addIds),restoredAt=new Date().toISOString();
+    const additions=loaded.archive.rides.filter(r=>addSet.has(String(r?.id||'').trim())).map(r=>({...JSON.parse(JSON.stringify(r)),_planCarryover:true,_planMissingFromLatest:true,_archiveRestored:true,_archiveRestoredAt:restoredAt,_archiveSourceDate:String(loaded.archive.archiveDate||''),_archiveSourceFile:String(ctx.entry?.fileName||'')}));
+    if(additions.length!==preview.addIds.length)throw new Error('Archiv-Zusatzmenge ist nicht mehr eindeutig.');
+    rides=[...before.rides,...additions].map((r,i)=>norm(r,i));done=new Set(before.done.map(String));preview.doneToAdd.forEach(id=>done.add(String(id)));
+    if(!save({silent:true,deferDurable:true}))throw new Error('Aktiver Fahrtenbestand konnte nicht vollständig gespeichert werden.');
+    const durable=await syncPersistenceDurableShadow('p105-archive-restore');if(!durable||durable.storage?.[KEY]!==localStorage.getItem(KEY)||durable.storage?.[DONE]!==localStorage.getItem(DONE))throw new Error('Durable Shadow konnte den neuen Bestand nicht exakt bestätigen.');
+    const s2=await syncStorageV2Phase1('p105-archive-restore');if(!s2?.ok)throw new Error('Storage V2 konnte den neuen Bestand nicht exakt bestätigen.');
+    let storedRides,storedDone;try{storedRides=JSON.parse(localStorage.getItem(KEY)||'[]');storedDone=JSON.parse(localStorage.getItem(DONE)||'[]')}catch(_){throw new Error('Write-Read-Prüfung des wiederhergestellten Bestands ist unlesbar.');}
+    const ids=storedRides.map(r=>String(r?.id||'').trim());if(storedRides.length!==preview.afterCount||new Set(ids).size!==ids.length||preview.addIds.some(id=>!ids.includes(id)))throw new Error('Write-Read-Prüfung des wiederhergestellten Fahrtenbestands fehlgeschlagen.');
+    if(preview.doneToAdd.some(id=>!storedDone.map(String).includes(id)))throw new Error('Write-Read-Prüfung der archivierten Erledigt-Status fehlgeschlagen.');
+    const report={schema:1,completedAt:new Date().toISOString(),archiveDate:String(loaded.archive.archiveDate||''),fileName:String(ctx.entry?.fileName||''),fileSha256:String(ctx.entry?.fileSha256||''),payloadSha256:String(loaded.archive.integrity?.payloadSha256||''),beforeCount:preview.beforeCount,addedCount:preview.addIds.length,existingCount:preview.existingIds.length,afterCount:preview.afterCount,addedIds:preview.addIds,doneAdded:preview.doneToAdd,backupCreatedAt:String(manifest.backupCreatedAt||'')};
+    safePersistentSetItem(ARCHIVE_RESTORE_LAST,JSON.stringify(report),'p105-archive-restore-result');try{localStorage.removeItem(ARCHIVE_RESTORE_PREFLIGHT)}catch(_){}capturePersistenceSafety('p105-archive-restore');
+    persistAudit('p105_archive_restore_success',{archiveDate:report.archiveDate,fileName:report.fileName,beforeCount:report.beforeCount,addedCount:report.addedCount,existingCount:report.existingCount,afterCount:report.afterCount});
+    p105ArchiveRestoreReadyManifest=null;p105ArchiveRestoreStatusMessage=`✓ Wiederherstellung bestätigt: ${report.addedCount} Fahrt(en) additiv ergänzt · ${report.existingCount} vorhandene unverändert · ${report.afterCount} aktiv.`;p105ArchiveRestoreStatusType='ok';
+    render();updateBackupUI();try{renderP102CurrentPlanPreview()}catch(_){}showToast(`${report.addedCount} Archivfahrten sicher wiederhergestellt`,'ok');return true;
+  }catch(e){
+    const msg=String(e?.message||e||'Unbekannter Fehler');let rollbackOk=false;
+    if(before){
+      try{localStorage.setItem(KEY,before.ridesRaw);localStorage.setItem(DONE,before.doneRaw);rides=before.rides.map((r,i)=>norm(r,i));done=new Set(before.done.map(String));capturePersistenceSafety('p105-archive-restore-rollback',false);const d=await syncPersistenceDurableShadow('p105-archive-restore-rollback'),s2=await syncStorageV2Phase1('p105-archive-restore-rollback');rollbackOk=Boolean(d&&s2?.ok&&localStorage.getItem(KEY)===before.ridesRaw&&localStorage.getItem(DONE)===before.doneRaw)}catch(_){rollbackOk=false}
+    }
+    p105ArchiveRestoreReadyManifest=null;try{localStorage.removeItem(ARCHIVE_RESTORE_PREFLIGHT)}catch(_){}persistAudit('p105_archive_restore_failed',{message:msg,rollbackAttempted:Boolean(before),rollbackOk});
+    p105ArchiveRestoreStatusMessage=`⚠ Wiederherstellung fehlgeschlagen: ${msg}${before?(rollbackOk?' · vorheriger Bestand wurde exakt wiederhergestellt.':' · ROLLBACK NICHT BESTÄTIGT – externes Backup verwenden.') : ''}`;p105ArchiveRestoreStatusType='warn';showToast(before?(rollbackOk?'Wiederherstellung abgebrochen · Rollback bestätigt':'KRITISCH: Rollback nicht bestätigt'):'Wiederherstellung blockiert','warn');return false;
+  }finally{p105ArchiveRestoreBusy=false;p105RenderArchiveRestorePanel()}
 }
 
 async function saveStorageV2ArchiveVerified(text,fileName,expectedFileSha256){
@@ -2476,8 +2587,9 @@ async function exportAtmsBackup(){
     // darf nicht als erfolgreich exportiert werden.
     const ridesRaw=localStorage.getItem(KEY);
     if(ridesRaw===null)throw Error('Fahrten-Speicher fehlt. Backup blockiert, damit keine unvollstaendige Sicherung entsteht.');
+    const doneRaw=localStorage.getItem(DONE)||'[]';
     let storedRides,storedDone;
-    try{storedRides=JSON.parse(ridesRaw);storedDone=JSON.parse(localStorage.getItem(DONE)||'[]')}catch(_){throw Error('Fahrten-/Status-Speicher ungueltig. Backup blockiert.');}
+    try{storedRides=JSON.parse(ridesRaw);storedDone=JSON.parse(doneRaw)}catch(_){throw Error('Fahrten-/Status-Speicher ungueltig. Backup blockiert.');}
     if(!Array.isArray(storedRides)||!Array.isArray(storedDone)||storedRides.length!==rides.length)
       throw Error(`Fahrten-Speicher nicht synchron: App ${rides.length}, gespeichert ${Array.isArray(storedRides)?storedRides.length:'ungueltig'}. Backup blockiert.`);
     if(storedDone.length!==done.size||!storedDone.every(id=>done.has(id)))
@@ -2485,15 +2597,17 @@ async function exportAtmsBackup(){
     const payload=backupPayload();
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/octet-stream'});
     await saveExportBlob(blob,backupFileName(),'application/octet-stream');
-    localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:payload.createdAt,appVersion:payload.appVersion}));
+    localStorage.setItem(BACKUP_META,JSON.stringify({createdAt:payload.createdAt,appVersion:payload.appVersion,rideCount:storedRides.length,doneCount:storedDone.length,ridesHash:storageV2Hash(ridesRaw),doneHash:storageV2Hash(doneRaw)}));
     updateBackupUI();
+    return true;
   }catch(e){
     const message=String(e?.message||e||'Unbekannter Fehler');
     if(/abgebrochen/i.test(message)){
       setBackupStatus('Backup-Speichern abgebrochen.','warn');
-      return;
+      return false;
     }
     setBackupStatus('Backup konnte nicht erstellt werden: '+message,'warn');
+    return false;
   }
 }
 function chooseBackupFile(){const input=$('backupFileInput');if(input){input.value='';input.click();}}
