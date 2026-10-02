@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P99 · 02.10.2026: SOURCE-ROW REIMPORT + DATE-SAFE BUNDLES – ersetzt bei erneutem Import derselben Quellzeile sicher ältere OCR-/Datumsvarianten statt sie als Carryover zu behalten und verhindert implizite Bündel über verschiedene Fahrtage. P98-Import-Integrity, Adressbuch-Kandidaten, Storage V2 und FLIGHT-008 bleiben unverändert.
 // CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY + ADDRESS-CANDIDATES – verhindert implizite Bündel bei widersprüchlichem Fahrzeug/Preis, sammelt nach bestätigten Imports unbekannte Routenorte persistent als manuell prüfbare Adressbuch-Kandidaten und schützt diese zusätzlich in Safety/IndexedDB/Backup. Keine automatische Adressübernahme; Storage V2 und FLIGHT-008 bleiben unverändert.
 // STORAGE V2 PHASE 2A + FINAL ICON · 01.10.2026: Nicht-destruktives Tagesarchiv mit SHA-256, nativer Write-Read-Verifikation und read-only Archivübersicht. localStorage bleibt Hauptspeicher; keine automatische Löschung/Archivierung/Umschaltung.
 // STORAGE V2 PHASE 1 · 01.10.2026: Additiver IndexedDB-Paralleltest für Fahrten + Erledigt-Status. localStorage bleibt Source of Truth; keine automatische Löschung, Archivierung, Reparatur oder Umschaltung. Sichtbare Verifikation in Backup & Wiederherstellen.
@@ -908,7 +909,7 @@ function openManualFlightEditor(){
 }
 function isAirport(v){return Boolean(flightAirportIataFromPlace(v))}
 function directionOf(r){if(isAirport(r.pickup)&&!isAirport(r.destination))return'airport_to_hotels';if(!isAirport(r.pickup)&&isAirport(r.destination))return'hotels_to_airport';return'normal'}
-function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';return [normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),String(r?.sourcePlanAirportIata||'').toUpperCase(),dir].join('|')}
+function bundleGroupKey(r){const dir=directionOf(r);if(dir==='normal')return'';const rideDate=String(first(r?.date,r?.datum)||'').trim();return [rideDate,normKey(r.driver),planTimeOf(r),normKey(r.flightNumber),normKey(r.company||r.partner||r.airline),String(r?.sourcePlanAirportIata||'').toUpperCase(),dir].join('|')}
 function implicitBundleRowsCompatible(a,b){
   if(a===b)return true;
   const av=normKey(a?.vehicle),bv=normKey(b?.vehicle);
@@ -4040,6 +4041,19 @@ function planImportStableRideIdentity(r){
     ? ['stable-flight',date,flight,dir,airport,rideTime,pickup,destination,driver].join('|')
     : ['stable-ride',date,rideTime,pickup,destination,driver].join('|');
 }
+// P99: dieselbe Bild-/Planquellzeile darf nach einer sicheren OCR-/Datums-Korrektur
+// nicht als neue Fahrt neben der alten Variante stehen bleiben. Datei + Quellzeile +
+// Plantag sind hier die staerkste Herkunftsidentitaet; die eigentlichen Fahrtdaten bleiben
+// absichtlich ausserhalb, weil Zeit, Fahrt-Datum, Route, Flug/Firma usw. durch eine spaetere
+// sichere OCR-/Importkorrektur gerade geaendert werden koennen. Ohne expliziten Plantag gilt
+// die Regel nicht (fail closed fuer Alt-/Fremdimporte).
+function planImportSourceRowIdentity(r){
+  const sourceFile=planImportNorm(r?.sourceFile);
+  const sourceRow=Number(r?.sourceRow||0)||0;
+  const planDate=String(r?.planDate||r?.plan_date||'').trim();
+  if(!sourceFile||sourceRow<=0||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(planDate))return'';
+  return ['source-row',sourceFile,sourceRow,planDate].join('|');
+}
 // P77 – one-time Legacy-Dedupe mit fail-closed Beweiskette.
 // Die Migration ist absichtlich enger als P73: sie bereinigt nur bereits vorhandene
 // Altstände und verändert die normale Import-Matchinglogik nicht.
@@ -4200,15 +4214,29 @@ function planImportPreserveStableId(oldRide,newRide){
   return out;
 }
 function mergePlanImportByIdentity(current,incoming){
-  const exactBuckets=new Map(),stableBuckets=new Map();
+  const exactBuckets=new Map(),stableBuckets=new Map(),sourceRowBuckets=new Map();
   (current||[]).forEach(r=>{
-    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r);
+    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r),sourceRow=planImportSourceRowIdentity(r);
     if(!exactBuckets.has(exact))exactBuckets.set(exact,[]);exactBuckets.get(exact).push(r);
     if(!stableBuckets.has(stable))stableBuckets.set(stable,[]);stableBuckets.get(stable).push(r);
+    if(sourceRow){if(!sourceRowBuckets.has(sourceRow))sourceRowBuckets.set(sourceRow,[]);sourceRowBuckets.get(sourceRow).push(r)}
   });
   const used=new Set(),merged=[];let matched=0,deduped=0;
   (incoming||[]).forEach(r=>{
-    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r);
+    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r),sourceRow=planImportSourceRowIdentity(r);
+    const sourceCandidates=sourceRow?(sourceRowBuckets.get(sourceRow)||[]).filter(x=>!used.has(String(x.id))):[];
+    if(sourceCandidates.length){
+      const preferred=sourceCandidates.find(x=>planImportRideIdentity(x)===exact&&!x?._planCarryover&&!x?._planMissingFromLatest)
+        || sourceCandidates.find(x=>planImportRideIdentity(x)===exact)
+        || sourceCandidates.find(x=>!x?._planCarryover&&!x?._planMissingFromLatest)
+        || sourceCandidates[0];
+      sourceCandidates.forEach(x=>used.add(String(x.id)));
+      deduped+=Math.max(0,sourceCandidates.length-1);
+      const sameExact=planImportRideIdentity(preferred)===exact;
+      merged.push(sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r));
+      matched++;
+      return;
+    }
     const exactCandidates=(exactBuckets.get(exact)||[]).filter(x=>!used.has(String(x.id)));
     if(exactCandidates.length===1){
       const preferred=exactCandidates[0];
