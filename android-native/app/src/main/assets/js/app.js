@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P99.1 · 02.10.2026: LEGACY FLIGHT-METADATA DEDUPE – entfernt beim erneuten Import genau eine noch verbliebene Carryover-Altvariante derselben fachlich identischen Fahrt, wenn deren Flugmetadaten nachweisbar unvollständiger sind (z. B. Flugzeit irrtümlich = Fahrtzeit und Flugort fehlt). Frühzeit-/Folgetag-Korrekturen werden nur zwischen Plantag und bestätigtem Folgetag berücksichtigt; erledigte, Bundle- oder mehrdeutige Kandidaten bleiben fail-closed unangetastet. P99/P98, Storage V2 und FLIGHT-008 bleiben unverändert.
 // CORE-007D8A1F1D8P99 · 02.10.2026: SOURCE-ROW REIMPORT + DATE-SAFE BUNDLES – ersetzt bei erneutem Import derselben Quellzeile sicher ältere OCR-/Datumsvarianten statt sie als Carryover zu behalten und verhindert implizite Bündel über verschiedene Fahrtage. P98-Import-Integrity, Adressbuch-Kandidaten, Storage V2 und FLIGHT-008 bleiben unverändert.
 // CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY + ADDRESS-CANDIDATES – verhindert implizite Bündel bei widersprüchlichem Fahrzeug/Preis, sammelt nach bestätigten Imports unbekannte Routenorte persistent als manuell prüfbare Adressbuch-Kandidaten und schützt diese zusätzlich in Safety/IndexedDB/Backup. Keine automatische Adressübernahme; Storage V2 und FLIGHT-008 bleiben unverändert.
 // STORAGE V2 PHASE 2A + FINAL ICON · 01.10.2026: Nicht-destruktives Tagesarchiv mit SHA-256, nativer Write-Read-Verifikation und read-only Archivübersicht. localStorage bleibt Hauptspeicher; keine automatische Löschung/Archivierung/Umschaltung.
@@ -4054,6 +4055,57 @@ function planImportSourceRowIdentity(r){
   if(!sourceFile||sourceRow<=0||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(planDate))return'';
   return ['source-row',sourceFile,sourceRow,planDate].join('|');
 }
+// P99.1: extrem enger Fallback nur fuer bereits als fehlend markierte Carryover-Altvarianten.
+// Die fachliche Kernidentitaet ignoriert bewusst Datum/Flugmetadaten; die separaten Guards unten
+// erlauben aber nur gleichen Tag oder die konkrete Plantag->Folgetag-Korrektur einer Fruehfahrt.
+function planImportLegacyFlightCoreIdentity(r){
+  const flight=flightCacheNumber(r?.flightNumber||'');
+  if(!flight)return'';
+  const direction=String(first(r?.flightDirection,flightDirectionForGemini(r))||'unknown').trim().toLowerCase();
+  return [
+    'legacy-flight-core',flight,direction,String(planTimeOf(r)||'').trim(),
+    planImportNorm(r?.driver||r?.fahrer),
+    planImportNorm(r?.pickup||r?.abholort),
+    planImportNorm(r?.destination||r?.zielort||r?.ziel),
+    planImportNorm(r?.company||r?.firma||r?.partner),
+    planImportNorm(r?.customer||r?.kunde),
+    planImportNorm(r?.vehicle||r?.fahrzeug),
+    String(Number(r?.persons||r?.personen||0)),
+    String(Number(r?.price||r?.preis||0).toFixed(2)),
+    planImportNorm(r?.currency||'EUR')
+  ].join('|');
+}
+function planImportIsoDatePlusOne(date){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||'')))return'';
+  const d=new Date(`${date}T00:00:00Z`);if(Number.isNaN(d.getTime()))return'';
+  d.setUTCDate(d.getUTCDate()+1);return d.toISOString().slice(0,10);
+}
+function planImportLegacyDateCompatible(oldRide,newRide){
+  const oldDate=String(first(oldRide?.date,oldRide?.datum)||'').trim();
+  const newDate=String(first(newRide?.date,newRide?.datum)||'').trim();
+  if(!oldDate||!newDate)return false;
+  if(oldDate===newDate)return true;
+  const planDate=String(newRide?.planDate||newRide?.plan_date||'').trim();
+  const rideMinute=p77LegacyMinutes(planTimeOf(newRide));
+  if(!planDate||rideMinute===null||rideMinute>=360)return false;
+  return oldDate===planDate&&newDate===planImportIsoDatePlusOne(planDate);
+}
+function planImportResolvedFlightPlace(r){
+  const location=planImportNorm(r?.flightLocation||r?.flugort);
+  const iata=String(r?.iata||'').trim().toUpperCase();
+  return Boolean((location&&!/nicht verfuegbar|nicht verfügbar|unknown|unbekannt/.test(location))||/^[A-Z]{3}$/.test(iata));
+}
+function planImportLegacyFlightMetadataInferior(oldRide,newRide){
+  if(planImportResolvedFlightPlace(oldRide)||!planImportResolvedFlightPlace(newRide))return false;
+  const oldPlan=String(planTimeOf(oldRide)||'').trim();
+  const oldFlight=String(listedFlightTimeOf(oldRide)||'').trim();
+  const newPlan=String(planTimeOf(newRide)||'').trim();
+  const newFlight=String(listedFlightTimeOf(newRide)||'').trim();
+  if(!newFlight||newFlight===newPlan)return false;
+  // Altvariante ist nur beweisbar schlechter, wenn ihre Listen-Flugzeit fehlt oder exakt
+  // auf die Fahrtzeit kollabiert ist; abweichende echte Flugzeiten werden nie automatisch entfernt.
+  return !oldFlight||oldFlight===oldPlan;
+}
 // P77 – one-time Legacy-Dedupe mit fail-closed Beweiskette.
 // Die Migration ist absichtlich enger als P73: sie bereinigt nur bereits vorhandene
 // Altstände und verändert die normale Import-Matchinglogik nicht.
@@ -4214,12 +4266,13 @@ function planImportPreserveStableId(oldRide,newRide){
   return out;
 }
 function mergePlanImportByIdentity(current,incoming){
-  const exactBuckets=new Map(),stableBuckets=new Map(),sourceRowBuckets=new Map();
+  const exactBuckets=new Map(),stableBuckets=new Map(),sourceRowBuckets=new Map(),legacyCoreBuckets=new Map();
   (current||[]).forEach(r=>{
-    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r),sourceRow=planImportSourceRowIdentity(r);
+    const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r),sourceRow=planImportSourceRowIdentity(r),legacyCore=planImportLegacyFlightCoreIdentity(r);
     if(!exactBuckets.has(exact))exactBuckets.set(exact,[]);exactBuckets.get(exact).push(r);
     if(!stableBuckets.has(stable))stableBuckets.set(stable,[]);stableBuckets.get(stable).push(r);
     if(sourceRow){if(!sourceRowBuckets.has(sourceRow))sourceRowBuckets.set(sourceRow,[]);sourceRowBuckets.get(sourceRow).push(r)}
+    if(legacyCore){if(!legacyCoreBuckets.has(legacyCore))legacyCoreBuckets.set(legacyCore,[]);legacyCoreBuckets.get(legacyCore).push(r)}
   });
   const used=new Set(),merged=[];let matched=0,deduped=0;
   (incoming||[]).forEach(r=>{
@@ -4265,6 +4318,23 @@ function mergePlanImportByIdentity(current,incoming){
       return;
     }
     merged.push(r);
+  });
+  // P99.1: Nach dem normalen P73/P99-Matching duerfen exakt EINDEUTIGE alte Carryover-Reste
+  // derselben Fahrt verschwinden, wenn nur ihre Flugmetadaten klar schlechter sind. Wir entfernen
+  // nie erledigte Fahrten, Bundles oder mehrdeutige Gruppen und nur bei sicherer Datumsrelation.
+  (incoming||[]).forEach(r=>{
+    const core=planImportLegacyFlightCoreIdentity(r);if(!core)return;
+    const candidates=(legacyCoreBuckets.get(core)||[]).filter(oldRide=>{
+      const id=String(oldRide?.id||'');
+      return id&&!used.has(id)&&!done.has(id)
+        && oldRide?._planCarryover===true&&oldRide?._planMissingFromLatest===true
+        && !p77LegacyIsBundle(oldRide)
+        && planImportLegacyDateCompatible(oldRide,r)
+        && planImportLegacyFlightMetadataInferior(oldRide,r);
+    });
+    if(candidates.length!==1)return; // fail closed bei 0 oder Mehrdeutigkeit
+    used.add(String(candidates[0].id));
+    deduped++;
   });
   const carry=(current||[]).filter(r=>!used.has(String(r.id))&&!done.has(r.id)).map(r=>({...r,_planCarryover:true,_planMissingFromLatest:true}));
   return{rides:[...merged,...carry],matched,carryover:carry.length,deduped,incomingCount:(incoming||[]).length};
