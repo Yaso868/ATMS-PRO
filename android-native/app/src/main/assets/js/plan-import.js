@@ -6266,6 +6266,30 @@
     return left[index].length === right[index].length ? 'substitution' : 'insertion_deletion';
   }
 
+  // P106.4: Ein OCR-Fehler kann gleichzeitig einen Trenner verschlucken und genau
+  // einen Buchstaben verlieren (z. B. ein zusammengerutschtes Ortslabel). Das alte
+  // 3+-Token-Gate erkennt diesen Fall absichtlich nicht. Daher gibt es einen zweiten,
+  // strengeren Konsenspfad: Nur ein EINMAL vorkommender Text darf gegen ein mindestens
+  // dreimal identisch wiederholtes Routenlabel korrigiert werden, wenn sich die
+  // Tokenisierung unterscheidet und die kompakten Zeichenketten entweder identisch
+  // oder genau eine Einfuegung/Loeschung voneinander entfernt sind. Gleich lange
+  // Buchstaben-Substitutionen bleiben weiterhin manuell offen.
+  function routeCompactConsensusVariantKind(rawValue, candidateValue) {
+    const rawTokens = routeConsistencyTokens(rawValue);
+    const candidateTokens = routeConsistencyTokens(candidateValue);
+    if (!rawTokens.length || candidateTokens.length < 2 || rawTokens.length === candidateTokens.length) return '';
+
+    const rawCompact = rawTokens.join('');
+    const candidateCompact = candidateTokens.join('');
+    if (Math.min(rawCompact.length, candidateCompact.length) < 8) return '';
+    if (rawCompact[0] !== candidateCompact[0] || rawCompact[rawCompact.length - 1] !== candidateCompact[candidateCompact.length - 1]) return '';
+
+    if (rawCompact === candidateCompact) return 'compact_separator_only';
+    if (rawCompact.length === candidateCompact.length) return '';
+    if (!oneEditApartToken(rawCompact, candidateCompact)) return '';
+    return 'compact_insertion_deletion';
+  }
+
   function applyRepeatedTextConsistency(rides) {
     if (!Array.isArray(rides) || rides.length < 3) return rides;
 
@@ -6325,16 +6349,28 @@
         const raw = cellText(ride?.[field]).normalize('NFC').trim();
         if (!raw || Number(counts.get(raw) || 0) !== 1) return;
         const candidates = repeated
-          .map(([candidate, count]) => ({ candidate, count, kind: candidate !== raw ? routeOneCharacterVariantKind(raw, candidate) : '' }))
+          .map(([candidate, count]) => {
+            if (candidate === raw) return { candidate, count, kind: '' };
+            const strictKind = routeOneCharacterVariantKind(raw, candidate);
+            return {
+              candidate,
+              count,
+              kind: strictKind || routeCompactConsensusVariantKind(raw, candidate)
+            };
+          })
           .filter(item => item.kind)
           .sort((a,b) => b.count - a.count || a.candidate.localeCompare(b.candidate, 'de-DE'));
         if (!candidates.length) return;
         const winner = candidates[0];
         const runner = candidates[1] || null;
-        const safeMajority = winner.count >= 2 && (!runner || winner.count > runner.count);
-        // Automatisch nur echte Einfüge-/Löschfehler korrigieren. Eine gleich lange
-        // 1-Zeichen-Substitution kann ein echter anderer Eigenname sein und bleibt offen.
-        if (!safeMajority || winner.kind !== 'insertion_deletion') {
+        const isCompactConsensus = winner.kind === 'compact_separator_only' || winner.kind === 'compact_insertion_deletion';
+        const minimumEvidence = isCompactConsensus ? 3 : 2;
+        const safeMajority = winner.count >= minimumEvidence && (!runner || winner.count > runner.count);
+        const autoFixKind = winner.kind === 'insertion_deletion' || isCompactConsensus;
+        // Gleich lange 1-Zeichen-Substitutionen koennen echte andere Eigennamen sein
+        // und bleiben offen. Der neue kompakte Pfad verlangt zusaetzlich >=3 identische
+        // Vergleichszeilen, damit aus einem Einzel-OCR-Ausreisser kein Orts-Hardcode wird.
+        if (!safeMajority || !autoFixKind) {
           out[index].routeTextConsistencyNeedsReview = {
             ...(out[index].routeTextConsistencyNeedsReview || {}),
             [field]: { value: raw, candidates: candidates.map(item => ({ value: item.candidate, count: item.count, kind: item.kind })) }
