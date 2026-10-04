@@ -47,6 +47,34 @@
     if(!winner||winner[1]<3||winner[1]<=initialVotes||(runner&&winner[1]<=runner[1]))return null;
     return {candidate:winner[0],votes:winner[1],crops:crops.get(winner[0])?.size||0,initialVotes};
   }
+  function parseClockTime(value){
+    const raw=text(value).replace(/[Oo]/g,'0').replace(/[Il]/g,'1').trim();
+    if(!raw)return'';
+    let m=raw.match(/^([0-2]?\d)[:.]([0-5]\d)$/);
+    if(m){const hh=Number(m[1]),mm=Number(m[2]);if(hh<=23)return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;}
+    if(/^\d{3,4}$/.test(raw)){const d=raw.padStart(4,'0'),hh=Number(d.slice(0,2)),mm=Number(d.slice(2));if(hh<=23&&mm<=59)return `${d.slice(0,2)}:${d.slice(2)}`;}
+    return'';
+  }
+  function inferRideTimeColumnFromMatrix(matrix,headerIndex,mapping){
+    const rows=Array.isArray(matrix)?matrix:[];
+    const pickup=Number(mapping?.pickup);
+    if(!Number.isInteger(pickup)||pickup<=0)return null;
+    const candidate=pickup-1;
+    for(const [field,index] of Object.entries(mapping||{})){
+      if(field!=='time'&&Number(index)===candidate)return null;
+    }
+    let seen=0,valid=0;
+    for(const row of rows.slice(Math.max(0,Number(headerIndex||0)+1),Math.max(0,Number(headerIndex||0)+1)+40)){
+      if(!Array.isArray(row))continue;
+      const raw=text(row[candidate]);
+      if(!raw)continue;
+      seen++;
+      if(parseClockTime(raw))valid++;
+    }
+    if(valid>=3&&seen>=3&&valid/seen>=0.60)return{index:candidate,valid,seen,reason:'validated_time_column_left_of_pickup'};
+    return null;
+  }
+
   function parseEuropeanNumber(value){
     if(typeof value==='number')return Number.isFinite(value)?value:0;
     const normalized=text(value).replace(/[^0-9,.-]/g,'').replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.');
@@ -77,5 +105,5 @@
     list.forEach((ride,i)=>{if(i===index)return;if(text(ride?.flightDirection)!==direction)return;if(key(ride?.flightLocation)!==location)return;if(flight(ride?.flightNumber)===candidate)count++;});
     return count;
   }
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,suggestLongPrefixCorrection,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,listConsensusPeerCount});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,listConsensusPeerCount});
 });

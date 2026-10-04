@@ -26,6 +26,18 @@ const rides=[
   {flightDirection:'arrival',flightLocation:'Rom',flightNumber:'EW9882'}
 ];
 assert.strictEqual(core.listConsensusPeerCount(rides,0,'EW9882'),2);
+
+// P107.2: image OCR may omit the ride-time header; structural recovery is allowed
+// only for the column directly left of pickup and only with repeated valid times.
+const timeMatrix=[
+  ['Preis','Spalte 2','Von','Nach','Name'],
+  ['65,45','01:35','CGN Vorfeld','Adagio','Corendon'],
+  ['65,45','02:50','Adagio','CGN Vorfeld','Corendon'],
+  ['47,60','04:30','Holiday Inn DUS','DUS Airport','Eurowings'],
+  ['47,60','not-a-time','NH Nord DUS','DUS Airport','Eurowings']
+];
+assert.deepStrictEqual(core.inferRideTimeColumnFromMatrix(timeMatrix,0,{pickup:2,destination:3}),{index:1,valid:3,seen:4,reason:'validated_time_column_left_of_pickup'});
+assert.strictEqual(core.inferRideTimeColumnFromMatrix([['Spalte 1','Von','Nach'],['x','foo','bar'],['y','baz','qux']],0,{pickup:1,destination:2}),null);
 const fs=require('fs'),path=require('path');
 const productionFiles=[
   '../app/src/main/assets/js/ocr-integrity-core.js',
@@ -37,4 +49,4 @@ for(const source of productionFiles){
     assert(!source.includes(fixtureLiteral),`TEST fixture leaked into production: ${fixtureLiteral}`);
   }
 }
-console.log('P107.1 OCR regression self-test: PASS');
+console.log('P107.2 OCR regression self-test: PASS');

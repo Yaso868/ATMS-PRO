@@ -1,5 +1,5 @@
-// CORE-007D8A1F1D8P1071 · 04.10.2026: cache shared OCR-integrity core for offline/native shell.
-const CACHE_NAME = "atms-pro-pwa-2026-10-04-p1071";
+// CORE-007D8A1F1D8P1072 · 04.10.2026: refresh cache after image time-header recovery.
+const CACHE_NAME = "atms-pro-pwa-2026-10-04-p1072";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -16,8 +16,8 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=CORE-004C",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P1071",
-  "./js/plan-import.js?v=CORE-006D",
+  "./js/ocr-integrity-core.js?v=P1072",
+  "./js/plan-import.js?v=P1072",
   "./js/pwa.js?v=CORE-004C",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
@@ -69,7 +69,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=CORE-006D");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1072");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}

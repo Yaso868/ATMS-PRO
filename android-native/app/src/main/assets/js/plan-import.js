@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1072 · 04.10.2026: IMAGE TIME-HEADER RECOVERY – when image OCR drops the ride-time header completely, ATMS may recover ONLY the column directly left of the already-recognized pickup column and ONLY when at least three non-empty data cells contain valid clock times with >=60% agreement. No time values are invented; ambiguous layouts remain blocked.
 // CORE-007D8A1F1D8P1071 · 04.10.2026: OCR INTEGRITY REVIEW GATE – unresolved suspicious flight OCR is import-blocking with a generic correction UI; safe repeated-list consensus may auto-resolve only when the locally suggested candidate is independently repeated at least twice in the same direction/location context. Driver ?/! uncertainty is preserved, repeated edge-noise cleanup is generic, and driver-cell colors are sampled with a spatial fallback. No flight/airline/driver/location production hardcodes added.
 // CORE-007D8A1F1D8P99_4R · 02.10.2026: DRIVER CELL MODE-PARALLEL OCR ROLLBACK – Realgeraet-P99.4 zeigte zwar einen schnelleren missing_driver_targeted_ocr-Pfad, aber deutliche Gesamtregressionen in mehreren anderen Tesseract-Schritten und eine Gesamtanalyse von 58–63 s statt zuvor ca. 37 s. Daher wird ausschliesslich die P99.4-Promise.all-Parallelisierung rueckgaengig gemacht und der vorherige strikt sequenzielle Modusablauf wiederhergestellt. Crop-Geometrie, Sprache, drei Modi, drei Skalierungen, Kandidatenbereinigung, Stimmen, Zwei-Treffer-Mindestkonsens, Gleichstandsblockade, manuelle Pruefflags und alle Uebernahmeschwellen bleiben unveraendert. Keine Aenderung an Fahrerinhalt, Datum, PLAN/DISPO/LIVE, FLIGHT-008, Import/Dedupe/Bundles, Storage V2 oder Persistenz.
 // CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY PACK – schützt gültige Frühzeiten vor widersprüchlicher Nach-OCR, trennt eine im Bildimport zusammengefallene Firma+Uhrzeit-Zelle ohne Firmen-/Zeit-Hardcodes und erlaubt bei zwei identischen deutschen Routen-Nachscans eine Distanz-2-Diakritikreparatur nur dann, wenn genau das geänderte Primärwort nachweislich sehr schwach erkannt wurde. Folgetag-Entscheidung, FLIGHT-008, PLAN/DISPO/LIVE und übrige OCR-Sicherheitsgrenzen bleiben unverändert.
@@ -434,6 +435,14 @@
         state.dateBoundaryDecision = '';
         state.rides = assignRideDates(state.rides);
         state.issues = validate(state.rides);
+      if (mappingInfo.timeHeaderRecovery) {
+        state.issues.unshift({
+          level: 'info',
+          kind: 'ocr_recovery',
+          row: headerDetection.index + 1,
+          text: `Uhrzeit-Kopfwort fehlte im OCR; Fahrtzeitspalte wurde strukturell aus ${Number(mappingInfo.timeHeaderRecovery.valid || 0)}/${Number(mappingInfo.timeHeaderRecovery.seen || 0)} gültigen Zeitwerten direkt links von „Von“ wiederhergestellt`
+        });
+      }
         render();
       }
     });
@@ -8069,6 +8078,26 @@
             : (mappingInfo.confidence >= 0.85 ? 'ATMS Bildimport Flex' : 'ATMS Bildimport – Prüfung nötig')
         };
       }
+      // P107.2: Tesseract can occasionally drop the FIRST "Uhrzeit" header even
+      // when the same image otherwise has a strong ATMS header. Recover only from
+      // structural + repeated data evidence: the candidate must be directly left of
+      // the already-recognized pickup column and contain at least three valid clock
+      // values with >=60% agreement. No actual ride time is guessed or rewritten.
+      if (result.imageOcr && mappingInfo.mapping.time === undefined && ocrIntegrityCore?.inferRideTimeColumnFromMatrix) {
+        const timeRecovery = ocrIntegrityCore.inferRideTimeColumnFromMatrix(matrix, headerDetection.index, mappingInfo.mapping);
+        if (timeRecovery && Number.isInteger(Number(timeRecovery.index))) {
+          mappingInfo = {
+            ...mappingInfo,
+            mapping: { ...mappingInfo.mapping, time: Number(timeRecovery.index) },
+            ambiguities: (Array.isArray(mappingInfo.ambiguities) ? mappingInfo.ambiguities : []).filter(item =>
+              item !== 'Keine normale Fahrtzeit-Spalte erkannt' &&
+              item !== 'Normale Fahrtzeit konnte nicht sicher zugeordnet werden'
+            ),
+            timeHeaderRecovery: timeRecovery
+          };
+        }
+      }
+
       const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
       if (missing.length) throw new Error(`Pflichtspalten nicht erkannt: ${missing.join(', ')}.`);
       if (Array.isArray(mappingInfo.ambiguities) && mappingInfo.ambiguities.length) {
