@@ -1,4 +1,4 @@
-// ATMS PRO P107.1 – browser/node shared OCR-integrity helpers.
+// ATMS PRO P107.3 – browser/node shared OCR-integrity helpers.
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
   const api=factory();
@@ -29,6 +29,33 @@
     if(!im||!cm||candidate===initial)return false;
     if(im[2]===cm[2]&&singleDeletionPrefixMatch(im[1],cm[1]))return true;
     return boundaryGlyphShift(initial,candidate);
+  }
+  function oneNumericEditFlightAlternative(initialValue,candidateValue){
+    const initial=flight(initialValue),candidate=flight(candidateValue);
+    const im=initial.match(/^([A-Z0-9]{2})(\d{1,4})([A-Z]?)$/);
+    const cm=candidate.match(/^([A-Z0-9]{2})(\d{1,4})([A-Z]?)$/);
+    if(!im||!cm||initial===candidate)return false;
+    if(im[1]!==cm[1]||im[3]!==cm[3]||im[2].length!==cm[2].length)return false;
+    let edits=0;
+    for(let i=0;i<im[2].length;i++)if(im[2][i]!==cm[2][i])edits++;
+    return edits===1;
+  }
+  function suggestOneNumericEditCorrection(initialValue,attempts){
+    const initial=flight(initialValue);if(!initial)return null;
+    const votes=new Map(),crops=new Map();
+    for(const attempt of (Array.isArray(attempts)?attempts:[])){
+      const unique=[...new Set((Array.isArray(attempt?.candidates)?attempt.candidates:[]).map(flight).filter(Boolean))];
+      if(unique.length!==1)continue;
+      const c=unique[0];
+      if(c!==initial&&!oneNumericEditFlightAlternative(initial,c))continue;
+      votes.set(c,(votes.get(c)||0)+1);
+      if(!crops.has(c))crops.set(c,new Set());
+      const crop=Number(attempt?.crop||0);if(crop)crops.get(c).add(crop);
+    }
+    const ranked=[...votes.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+    const winner=ranked[0],runner=ranked[1];
+    if(!winner||winner[1]<3||(crops.get(winner[0])?.size||0)<2||(runner&&winner[1]<=runner[1]))return null;
+    return {candidate:winner[0],votes:winner[1],crops:crops.get(winner[0])?.size||0,changed:winner[0]!==initial};
   }
   function suggestLongPrefixCorrection(initialValue,attempts){
     const initial=flight(initialValue);if(!initial)return null;
@@ -105,5 +132,5 @@
     list.forEach((ride,i)=>{if(i===index)return;if(text(ride?.flightDirection)!==direction)return;if(key(ride?.flightLocation)!==location)return;if(flight(ride?.flightNumber)===candidate)count++;});
     return count;
   }
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,listConsensusPeerCount});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,listConsensusPeerCount});
 });

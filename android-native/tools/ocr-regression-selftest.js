@@ -6,6 +6,17 @@ const core=require('../app/src/main/assets/js/ocr-integrity-core.js');
 assert(core.safeLongPrefixFlightAlternative('EWQ882','EW9882'));
 assert(core.safeLongPrefixFlightAlternative('EWS5702','EW5702'));
 assert(!core.safeLongPrefixFlightAlternative('EWS5702','EW5703'));
+assert(core.oneNumericEditFlightAlternative('EW8578','EW9578'));
+assert(core.oneNumericEditFlightAlternative('EW8773','EW9773'));
+assert(!core.oneNumericEditFlightAlternative('EW8578','EW9678'));
+assert(!core.oneNumericEditFlightAlternative('EW8578','LH9578'));
+const weakFlightAttempts=[
+  {crop:1,mode:'single-line',candidates:['EW9773']},
+  {crop:1,mode:'single-word',candidates:['EW9773']},
+  {crop:2,mode:'single-line',candidates:['EW9773']},
+  {crop:2,mode:'single-word',candidates:['EW8773']}
+];
+assert.deepStrictEqual(core.suggestOneNumericEditCorrection('EW8773',weakFlightAttempts),{candidate:'EW9773',votes:3,crops:2,changed:true});
 const attempts=[
   {crop:1,mode:'default',candidates:['EW5702']},
   {crop:1,mode:'single-line',candidates:['EW5702']},
@@ -45,8 +56,8 @@ const productionFiles=[
   '../app/src/main/assets/js/app.js'
 ].map(p=>fs.readFileSync(path.join(__dirname,p),'utf8'));
 for(const source of productionFiles){
-  for(const fixtureLiteral of ['EWQ882','EWS5702','EW9882','EW5702','Daniel?','Avion ~~']){
+  for(const fixtureLiteral of ['EWQ882','EWS5702','EW9882','EW5702','EW8578','EW9578','EW8773','EW9773','Daniel?','Avion ~~']){
     assert(!source.includes(fixtureLiteral),`TEST fixture leaked into production: ${fixtureLiteral}`);
   }
 }
-console.log('P107.2 OCR regression self-test: PASS');
+console.log('P107.3 OCR regression self-test: PASS');

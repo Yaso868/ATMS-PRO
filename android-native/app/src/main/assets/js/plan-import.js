@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1073 · 04.10.2026: STANDARD-FLIGHT LOW-CONFIDENCE CELL RECHECK – formally plausible 2-character-designator flight numbers are locally re-read only when their primary flight-cell OCR is weak and unique, or when a same-time peer differs by exactly one digit. Correction requires multi-crop/multi-mode local OCR consensus; unresolved weak cells become import-blocking with the existing manual correction UI. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1072 · 04.10.2026: IMAGE TIME-HEADER RECOVERY – when image OCR drops the ride-time header completely, ATMS may recover ONLY the column directly left of the already-recognized pickup column and ONLY when at least three non-empty data cells contain valid clock times with >=60% agreement. No time values are invented; ambiguous layouts remain blocked.
 // CORE-007D8A1F1D8P1071 · 04.10.2026: OCR INTEGRITY REVIEW GATE – unresolved suspicious flight OCR is import-blocking with a generic correction UI; safe repeated-list consensus may auto-resolve only when the locally suggested candidate is independently repeated at least twice in the same direction/location context. Driver ?/! uncertainty is preserved, repeated edge-noise cleanup is generic, and driver-cell colors are sampled with a spatial fallback. No flight/airline/driver/location production hardcodes added.
 // CORE-007D8A1F1D8P99_4R · 02.10.2026: DRIVER CELL MODE-PARALLEL OCR ROLLBACK – Realgeraet-P99.4 zeigte zwar einen schnelleren missing_driver_targeted_ocr-Pfad, aber deutliche Gesamtregressionen in mehreren anderen Tesseract-Schritten und eine Gesamtanalyse von 58–63 s statt zuvor ca. 37 s. Daher wird ausschliesslich die P99.4-Promise.all-Parallelisierung rueckgaengig gemacht und der vorherige strikt sequenzielle Modusablauf wiederhergestellt. Crop-Geometrie, Sprache, drei Modi, drei Skalierungen, Kandidatenbereinigung, Stimmen, Zwei-Treffer-Mindestkonsens, Gleichstandsblockade, manuelle Pruefflags und alle Uebernahmeschwellen bleiben unveraendert. Keine Aenderung an Fahrerinhalt, Datum, PLAN/DISPO/LIVE, FLIGHT-008, Import/Dedupe/Bundles, Storage V2 oder Persistenz.
@@ -1154,6 +1155,25 @@
       }
       if (ride.flightManualOcrCorrection?.to) {
         issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Flugnummer ${ride.flightManualOcrCorrection.from || '–'} → ${ride.flightManualOcrCorrection.to} ausdrücklich bestätigt` });
+      }
+      if (ride.flightLowConfidenceOcrUnresolved && ride.flightNumber) {
+        issues.push({
+          level: 'error',
+          kind: 'flight_ocr',
+          row,
+          rideId: ride.id,
+          originalFlight: ride.flightNumber,
+          suggestedFlight: normalizeFlightNumber(ride.flightLowConfidenceSuggestedCorrection),
+          text: `Flugnummer ${ride.flightNumber} stammt aus einer schwachen/abweichenden Flugzellen-OCR und muss vor dem Import bestätigt oder korrigiert werden`
+        });
+      }
+      if (ride.flightRecoveredFromLowConfidenceOcr && ride.flightLowConfidenceOcrInitial && ride.flightNumber) {
+        issues.push({
+          level: 'info',
+          kind: 'ocr_recovery',
+          row,
+          text: `Flugnummer ${ride.flightLowConfidenceOcrInitial} → ${ride.flightNumber} durch eindeutige lokale Mehrfach-OCR einer schwachen Flugzelle korrigiert`
+        });
       }
       if (ride.flightLongPrefixOcrUnresolved && ride.flightNumber) {
         issues.push({
@@ -5971,6 +5991,178 @@
     return words.every(value => /^[-–—~_.]+$/.test(value));
   }
 
+
+  function oneNumericEditFlightAlternative(initialValue, candidateValue) {
+    if (ocrIntegrityCore?.oneNumericEditFlightAlternative) {
+      return Boolean(ocrIntegrityCore.oneNumericEditFlightAlternative(initialValue, candidateValue));
+    }
+    const initial = normalizeFlightNumber(initialValue);
+    const candidate = normalizeFlightNumber(candidateValue);
+    const im = initial.match(/^([A-Z0-9]{2})(\d{1,4})([A-Z]?)$/);
+    const cm = candidate.match(/^([A-Z0-9]{2})(\d{1,4})([A-Z]?)$/);
+    if (!im || !cm || initial === candidate || im[1] !== cm[1] || im[3] !== cm[3] || im[2].length !== cm[2].length) return false;
+    let edits = 0;
+    for (let i = 0; i < im[2].length; i++) if (im[2][i] !== cm[2][i]) edits++;
+    return edits === 1;
+  }
+
+  function primaryFlightCellConfidence(imageMeta, rowMeta, columnIndex, flightValue) {
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[columnIndex + 1]);
+    const expected = normalizeFlightNumber(flightValue);
+    if (!expected || !Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return null;
+    const y0 = Number(rowMeta.y0 || 0), y1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, y1 - y0);
+    let best = null;
+    rawWords.forEach(word => {
+      const cx = (Number(word?.x0 || 0) + Number(word?.x1 || 0)) / 2;
+      const cy = (Number(word?.y0 || 0) + Number(word?.y1 || 0)) / 2;
+      if (cx < left || cx >= right || cy < y0 - rowHeight * 0.22 || cy > y1 + rowHeight * 0.22) return;
+      const compact = cellText(word?.text).toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (normalizeFlightNumber(compact) !== expected) return;
+      const confidence = Number(word?.confidence ?? 0);
+      if (Number.isFinite(confidence) && (best === null || confidence > best)) best = confidence;
+    });
+    return best;
+  }
+
+  function hasOneNumericEditSameTimePeer(rides, index, initialValue) {
+    const list = Array.isArray(rides) ? rides : [];
+    const target = list[index];
+    const initial = normalizeFlightNumber(initialValue);
+    const direction = cellText(target?.flightDirection);
+    const flightTime = normalizeTime(target?.flightTime);
+    if (!target || !initial || !direction || !flightTime) return false;
+    return list.some((ride, i) => {
+      if (i === index) return false;
+      if (cellText(ride?.flightDirection) !== direction) return false;
+      if (normalizeTime(ride?.flightTime) !== flightTime) return false;
+      return oneNumericEditFlightAlternative(initial, ride?.flightNumber);
+    });
+  }
+
+  async function recoverWeakStandardFlightNumbersTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const status = $('importStatus');
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const exactCounts = new Map();
+    out.forEach(ride => {
+      const flight = normalizeFlightNumber(ride?.flightNumber);
+      if (flight) exactCounts.set(flight, (exactCounts.get(flight) || 0) + 1);
+    });
+    const workers = new Map();
+    const modes = [
+      { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
+      { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
+    ];
+    const getWorker = async mode => {
+      if (workers.has(mode.name)) return workers.get(mode.name);
+      if (typeof Tesseract.createWorker !== 'function') return null;
+      const worker = await Tesseract.createWorker('eng', undefined, mode.options || {});
+      workers.set(mode.name, worker);
+      return worker;
+    };
+    try {
+      for (let i = 0; i < out.length; i++) {
+        const ride = out[i];
+        const initial = normalizeFlightNumber(ride?.flightNumber);
+        if (!/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(initial)) continue;
+        if (ride.flightRecoveredFromLongPrefixOcr || ride.flightManualOcrCorrection?.to) continue;
+        const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+        const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
+        const colIndex = field ? mapping?.[field] : undefined;
+        const matrixIndex = Number(ride.sourceRow || 0) - 1;
+        const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+        if (colIndex === undefined || !rowMeta) continue;
+        const confidence = primaryFlightCellConfidence(imageMeta, rowMeta, colIndex, initial);
+        const weakUnique = (exactCounts.get(initial) || 0) === 1 && (confidence === null || confidence < 70);
+        const contextualPeer = hasOneNumericEditSameTimePeer(out, i, initial);
+        if (!weakUnique && !contextualPeer) continue;
+
+        const boundaries = imageMeta.boundaries || [];
+        const left = Number(boundaries[colIndex]), right = Number(boundaries[colIndex + 1]);
+        if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
+        const y0 = Number(rowMeta.y0 || 0), y1 = Number(rowMeta.y1 || 0);
+        const rowHeight = Math.max(18, y1 - y0), cellWidth = Math.max(8, right - left);
+        const regions = [
+          [left + cellWidth * 0.03, y0 - rowHeight * 0.16, right - cellWidth * 0.03, y1 + rowHeight * 0.16, 2],
+          [left + cellWidth * 0.08, y0 - rowHeight * 0.10, right - cellWidth * 0.08, y1 + rowHeight * 0.10, 3]
+        ];
+        if (status) status.textContent = `Schwache Flugzelle Zeile ${ride.sourceRow} wird lokal gegengeprüft …`;
+        const votes = new Map(), cropSupport = new Map(), attempts = [];
+        try {
+          for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
+            const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
+            const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+            const results = await Promise.all(modes.map(async mode => {
+              const worker = await getWorker(mode);
+              const second = worker ? await worker.recognize(crop) : await Tesseract.recognize(crop, 'eng', mode.options);
+              return { mode, second };
+            }));
+            for (const { mode, second } of results) {
+              const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
+                .filter(candidate => candidate === initial || oneNumericEditFlightAlternative(initial, candidate)))];
+              attempts.push({ crop: cropIndex + 1, mode: mode.name, candidates: candidates.slice() });
+              if (candidates.length !== 1) continue;
+              const candidate = candidates[0];
+              votes.set(candidate, (votes.get(candidate) || 0) + 1);
+              if (!cropSupport.has(candidate)) cropSupport.set(candidate, new Set());
+              cropSupport.get(candidate).add(cropIndex);
+            }
+          }
+        } catch (_) {
+          ride.flightLowConfidenceOcrAttempts = attempts;
+          ride.flightLowConfidenceOcrUnresolved = true;
+          ride.flightLowConfidenceOcrInitial = initial;
+          ride.flightNeedsManualCheck = true;
+          ride.flightCheckConfidence = 'uncertain';
+          continue;
+        }
+        ride.flightLowConfidenceOcrAttempts = attempts;
+        ride.flightLowConfidenceOcrInitial = initial;
+        ride.flightPrimaryCellConfidence = confidence;
+        const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const winner = ranked[0] || null, runner = ranked[1] || null;
+        const winnerCrops = winner ? (cropSupport.get(winner[0])?.size || 0) : 0;
+        const coreSuggestion = ocrIntegrityCore?.suggestOneNumericEditCorrection
+          ? ocrIntegrityCore.suggestOneNumericEditCorrection(initial, attempts)
+          : null;
+        const strongWinner = Boolean(coreSuggestion?.candidate) || Boolean(winner && winner[1] >= 3 && winnerCrops >= 2 && (!runner || winner[1] > runner[1]));
+        const selectedCandidate = normalizeFlightNumber(coreSuggestion?.candidate || winner?.[0]);
+        if (strongWinner && selectedCandidate === initial) {
+          ride.flightLowConfidenceOcrConfirmed = true;
+          ride.flightLowConfidenceOcrUnresolved = false;
+          continue;
+        }
+        if (strongWinner && oneNumericEditFlightAlternative(initial, selectedCandidate)) {
+          const recovered = selectedCandidate;
+          ride.flightNumber = recovered;
+          if (routeType === 'arrival') ride.arrivalFlight = recovered;
+          if (routeType === 'departure') ride.departureFlight = recovered;
+          ride.flightDirection = routeType;
+          ride.flightRecoveredFromLowConfidenceOcr = true;
+          ride.flightLowConfidenceOcrUnresolved = false;
+          ride.flightNeedsManualCheck = true;
+          ride.flightCheckConfidence = 'uncertain';
+          ride.flightLowConfidenceOcrEvidence = { votes: winner[1], crops: winnerCrops, primaryConfidence: confidence };
+          continue;
+        }
+        const suggested = ranked.find(([candidate]) => oneNumericEditFlightAlternative(initial, candidate));
+        ride.flightLowConfidenceSuggestedCorrection = suggested?.[0] || '';
+        ride.flightLowConfidenceOcrUnresolved = true;
+        ride.flightNeedsManualCheck = true;
+        ride.flightCheckConfidence = 'uncertain';
+      }
+    } finally {
+      for (const worker of workers.values()) {
+        if (worker && typeof worker.terminate === 'function') { try { await worker.terminate(); } catch (_) {} }
+      }
+    }
+    return out;
+  }
+
   // CORE-007D8A1F1/P46: Drei oder mehr Buchstaben vor dem Zahlenteil werden NICHT
   // pauschal gekürzt. Nur die konkrete Flugzelle wird erneut gelesen. Eine alternative
   // 2-stellige Lesart braucht mindestens drei Stimmen, Evidenz aus mindestens zwei Crops
@@ -7458,6 +7650,8 @@
     if (routeType === 'departure') ride.departureFlight = corrected;
     ride.flightDirection = routeType;
     ride.flightLongPrefixOcrUnresolved = false;
+    ride.flightLowConfidenceOcrUnresolved = false;
+    ride.flightLowConfidenceSuggestedCorrection = '';
     ride.flightNeedsManualCheck = true;
     ride.flightCheckConfidence = 'uncertain';
     ride.flightManualOcrCorrection = {
@@ -8217,6 +8411,12 @@
           mappingInfo.mapping
         ));
         preparedRides = p54MeasureSync('flight_list_consensus', () => applyRepeatedFlightConsensusToLongPrefixRides(preparedRides));
+        preparedRides = await p54MeasureAsync('low_confidence_flight_ocr', () => recoverWeakStandardFlightNumbersTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
         preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));
@@ -11467,7 +11667,8 @@
     window.ATMSP1071RegressionHooks = Object.freeze({
       repeatedTextSignature,
       normalizeTextBoundaryOcrNoise,
-      safeLongPrefixFlightAlternative
+      safeLongPrefixFlightAlternative,
+      oneNumericEditFlightAlternative
     });
   } catch (_) {}
 
