@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1075 · 04.10.2026: STANDARD-FLIGHT TIGHT-CELL CONSENSUS + REVIEW VISIBILITY – weak/one-digit-conflicting standard flight numbers are re-read from two tight, row-interior crops around the primary flight token (PSM 6/7/8) before any wider fallback. This avoids horizontal grid-line/background bleed and lets true one-digit OCR slips converge without flight-number hardcodes. Import-blocking OCR errors are always rendered before non-blocking info/warnings so their manual correction controls cannot be hidden by the 20-item preview cap.
 // CORE-007D8A1F1D8P1074 · 04.10.2026: STANDARD-FLIGHT RECHECK PRECISION – same-time one-digit peer checks are now limited to the same flight context (same direction/time and, when present, same flight location). Local re-OCR uses exact primary-word crops plus correctly applied Tesseract PSM/whitelist parameters. This removes P107.3 cross-flight false positives while retaining fail-closed review for genuinely weak/conflicting cells. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1073 · 04.10.2026: STANDARD-FLIGHT LOW-CONFIDENCE CELL RECHECK – formally plausible 2-character-designator flight numbers are locally re-read only when their primary flight-cell OCR is weak and unique, or when a same-time peer differs by exactly one digit. Correction requires multi-crop/multi-mode local OCR consensus; unresolved weak cells become import-blocking with the existing manual correction UI. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1072 · 04.10.2026: IMAGE TIME-HEADER RECOVERY – when image OCR drops the ride-time header completely, ATMS may recover ONLY the column directly left of the already-recognized pickup column and ONLY when at least three non-empty data cells contain valid clock times with >=60% agreement. No time values are invented; ambiguous layouts remain blocked.
@@ -6073,6 +6074,7 @@
     });
     const workers = new Map();
     const modes = [
+      { name: 'single-block', options: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
       { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
       { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
     ];
@@ -6109,18 +6111,30 @@
         if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
         const y0 = Number(rowMeta.y0 || 0), y1 = Number(rowMeta.y1 || 0);
         const rowHeight = Math.max(18, y1 - y0), cellWidth = Math.max(8, right - left);
-        // P107.4: Wenn das Primärwort räumlich bekannt ist, wird zuerst genau dieses
-        // Token (mit kleinem Rand) erneut gelesen. Das verhindert, dass benachbarte
-        // Tabelleninhalte eine eigentlich korrekte Flugnummer unnötig blockieren.
+        // P107.5: Breite Crops koennen bei farbigen Tabellen horizontale Rasterlinien
+        // oder Nachbarpixel mitlesen. Deshalb werden zuerst zwei enge, vollstaendig
+        // innerhalb der Datenzeile liegende Crops verwendet. Nur die vorhandene
+        // Primaerwort-Geometrie bestimmt den Ausschnitt; keine Flugnummern-Hardcodes.
         const regions = primaryEvidence && primaryEvidence.x1 > primaryEvidence.x0 && primaryEvidence.y1 > primaryEvidence.y0
           ? [
-              [primaryEvidence.x0 - cellWidth * 0.08, primaryEvidence.y0 - rowHeight * 0.24, primaryEvidence.x1 + cellWidth * 0.08, primaryEvidence.y1 + rowHeight * 0.24, 3],
-              [primaryEvidence.x0 - cellWidth * 0.14, primaryEvidence.y0 - rowHeight * 0.34, primaryEvidence.x1 + cellWidth * 0.14, primaryEvidence.y1 + rowHeight * 0.34, 4],
-              [left + cellWidth * 0.08, y0 - rowHeight * 0.10, right - cellWidth * 0.08, y1 + rowHeight * 0.10, 3]
+              [
+                Math.max(left + cellWidth * 0.02, primaryEvidence.x0 - cellWidth * 0.035),
+                Math.max(y0 + rowHeight * 0.10, primaryEvidence.y0 - rowHeight * 0.05),
+                Math.min(right - cellWidth * 0.02, primaryEvidence.x1 + cellWidth * 0.035),
+                Math.min(y1 - rowHeight * 0.10, primaryEvidence.y1 + rowHeight * 0.05),
+                6
+              ],
+              [
+                Math.max(left + cellWidth * 0.04, primaryEvidence.x0 - cellWidth * 0.06),
+                Math.max(y0 + rowHeight * 0.06, primaryEvidence.y0 - rowHeight * 0.09),
+                Math.min(right - cellWidth * 0.04, primaryEvidence.x1 + cellWidth * 0.06),
+                Math.min(y1 - rowHeight * 0.06, primaryEvidence.y1 + rowHeight * 0.09),
+                5
+              ]
             ]
           : [
-              [left + cellWidth * 0.03, y0 - rowHeight * 0.16, right - cellWidth * 0.03, y1 + rowHeight * 0.16, 2],
-              [left + cellWidth * 0.08, y0 - rowHeight * 0.10, right - cellWidth * 0.08, y1 + rowHeight * 0.10, 3]
+              [left + cellWidth * 0.08, y0 + rowHeight * 0.12, right - cellWidth * 0.08, y1 - rowHeight * 0.12, 5],
+              [left + cellWidth * 0.04, y0 + rowHeight * 0.06, right - cellWidth * 0.04, y1 - rowHeight * 0.06, 4]
             ];
         if (status) status.textContent = `Schwache Flugzelle Zeile ${ride.sourceRow} wird lokal gegengeprüft …`;
         const votes = new Map(), cropSupport = new Map(), attempts = [];
@@ -7751,8 +7765,17 @@
     }
     if ($('copyFlightCheckBtn')) $('copyFlightCheckBtn').disabled = !rides.some(ride => ride.flightNumber);
 
-    const actionableHtml = actionableIssues.length
-      ? actionableIssues.slice(0, 20).map(issue => {
+    // P107.5: Blockierende Fehler duerfen nie hinter vielen Info-/Recovery-Zeilen
+    // verschwinden. Zuerst alle Errors, danach Warnings, danach reine Infos.
+    // Der 20er-Cap bleibt fuer nicht-blockierende Diagnoseflut bestehen.
+    const issuePriority = issue => issue?.level === 'error' ? 0 : issue?.level === 'warning' ? 1 : 2;
+    const visibleActionableIssues = actionableIssues
+      .map((issue, index) => ({ issue, index }))
+      .sort((a, b) => issuePriority(a.issue) - issuePriority(b.issue) || a.index - b.index)
+      .map(entry => entry.issue);
+    const visibleIssueLimit = Math.max(20, visibleActionableIssues.filter(issue => issue.level === 'error').length);
+    const actionableHtml = visibleActionableIssues.length
+      ? visibleActionableIssues.slice(0, visibleIssueLimit).map(issue => {
           const rows = Array.isArray(issue.rows) && issue.rows.length ? issue.rows : [issue.row];
           const rowLabel = rows.length === 1
             ? `Zeile ${rows[0]}`

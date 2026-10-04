@@ -87,4 +87,18 @@ for(const source of productionFiles){
     assert(!source.includes(fixtureLiteral),`TEST fixture leaked into production: ${fixtureLiteral}`);
   }
 }
-console.log('P107.4 OCR regression self-test: PASS');
+// P107.5: two independent tight crops with 3 OCR modes each can safely
+// converge on a one-digit correction, while an exact initial consensus remains unchanged.
+const tightCorrectionAttempts=[
+  {crop:1,mode:'single-block',candidates:['EW9578']},
+  {crop:1,mode:'single-line',candidates:['EW9578']},
+  {crop:1,mode:'single-word',candidates:['EW9578']},
+  {crop:2,mode:'single-block',candidates:['EW9578']},
+  {crop:2,mode:'single-line',candidates:['EW9578']},
+  {crop:2,mode:'single-word',candidates:['EW9578']}
+];
+assert.deepStrictEqual(core.suggestOneNumericEditCorrection('EW8578',tightCorrectionAttempts),{candidate:'EW9578',votes:6,crops:2,changed:true});
+const planImportSource=productionFiles[1];
+assert(planImportSource.includes('visibleActionableIssues'), 'P107.5 must prioritize visible blocking OCR issues');
+assert(planImportSource.includes("name: 'single-block'"), 'P107.5 tight-cell OCR must include PSM 6 mode');
+console.log('P107.5 OCR regression self-test: PASS');
