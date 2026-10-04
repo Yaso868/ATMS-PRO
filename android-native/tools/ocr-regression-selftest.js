@@ -49,6 +49,33 @@ const timeMatrix=[
 ];
 assert.deepStrictEqual(core.inferRideTimeColumnFromMatrix(timeMatrix,0,{pickup:2,destination:3}),{index:1,valid:3,seen:4,reason:'validated_time_column_left_of_pickup'});
 assert.strictEqual(core.inferRideTimeColumnFromMatrix([['Spalte 1','Von','Nach'],['x','foo','bar'],['y','baz','qux']],0,{pickup:1,destination:2}),null);
+
+// P107.4: same-time one-digit peers are only comparable inside the same flight
+// context. Different known flight locations must never trigger each other.
+assert.strictEqual(core.standardFlightPeerContextMatch(
+  {flightDirection:'departure',flightTime:'04:30',flightLocation:'Split'},
+  {flightDirection:'departure',flightTime:'04:30',flightLocation:'Teneriffa'}
+),false);
+assert.strictEqual(core.standardFlightPeerContextMatch(
+  {flightDirection:'departure',flightTime:'07:05',flightLocation:''},
+  {flightDirection:'departure',flightTime:'07:05',flightLocation:''}
+),true);
+const contextRides=[
+  {flightDirection:'departure',flightTime:'04:30',flightLocation:'Split',flightNumber:'EW9958'},
+  {flightDirection:'departure',flightTime:'04:30',flightLocation:'Teneriffa',flightNumber:'EW9558'},
+  {flightDirection:'departure',flightTime:'07:05',flightLocation:'',flightNumber:'EW8578'},
+  {flightDirection:'departure',flightTime:'07:05',flightLocation:'',flightNumber:'EW9578'}
+];
+assert.deepStrictEqual(core.oneNumericEditContextPeerIndices(contextRides,0),[]);
+assert.deepStrictEqual(core.oneNumericEditContextPeerIndices(contextRides,2),[3]);
+const confirmInitialAttempts=[
+  {crop:1,mode:'single-line',candidates:['EW9958']},
+  {crop:1,mode:'single-word',candidates:['EW9958']},
+  {crop:2,mode:'single-line',candidates:['EW9958']},
+  {crop:2,mode:'single-word',candidates:['EW9958']}
+];
+assert.deepStrictEqual(core.suggestOneNumericEditCorrection('EW9958',confirmInitialAttempts),{candidate:'EW9958',votes:4,crops:2,changed:false});
+
 const fs=require('fs'),path=require('path');
 const productionFiles=[
   '../app/src/main/assets/js/ocr-integrity-core.js',
@@ -60,4 +87,4 @@ for(const source of productionFiles){
     assert(!source.includes(fixtureLiteral),`TEST fixture leaked into production: ${fixtureLiteral}`);
   }
 }
-console.log('P107.3 OCR regression self-test: PASS');
+console.log('P107.4 OCR regression self-test: PASS');

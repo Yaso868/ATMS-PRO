@@ -1,4 +1,4 @@
-// ATMS PRO P107.3 – browser/node shared OCR-integrity helpers.
+// ATMS PRO P107.4 – browser/node shared OCR-integrity helpers.
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
   const api=factory();
@@ -125,6 +125,27 @@
     return {body,marker:m[1],display:`${body}${m[1]}`};
   }
   const key=v=>text(v).toLocaleLowerCase('de-DE').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'');
+
+  function standardFlightPeerContextMatch(leftRide,rightRide){
+    const left=leftRide||{},right=rightRide||{};
+    const ld=text(left.flightDirection),rd=text(right.flightDirection);
+    if(!ld||ld!==rd)return false;
+    const lt=parseClockTime(left.flightTime),rt=parseClockTime(right.flightTime);
+    if(!lt||lt!==rt)return false;
+    const ll=key(left.flightLocation),rl=key(right.flightLocation);
+    if(ll||rl)return Boolean(ll&&rl&&ll===rl);
+    return true;
+  }
+  function oneNumericEditContextPeerIndices(rides,index){
+    const list=Array.isArray(rides)?rides:[],target=list[index],initial=flight(target?.flightNumber);
+    if(!target||!initial)return[];
+    const hits=[];
+    list.forEach((ride,i)=>{
+      if(i===index||!standardFlightPeerContextMatch(target,ride))return;
+      if(oneNumericEditFlightAlternative(initial,ride?.flightNumber))hits.push(i);
+    });
+    return hits;
+  }
   function listConsensusPeerCount(rides,index,candidateValue){
     const list=Array.isArray(rides)?rides:[],target=list[index],candidate=flight(candidateValue);if(!target||!candidate)return 0;
     const direction=text(target.flightDirection),location=key(target.flightLocation);if(!direction||!location)return 0;
@@ -132,5 +153,5 @@
     list.forEach((ride,i)=>{if(i===index)return;if(text(ride?.flightDirection)!==direction)return;if(key(ride?.flightLocation)!==location)return;if(flight(ride?.flightNumber)===candidate)count++;});
     return count;
   }
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,listConsensusPeerCount});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount});
 });

@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1074 · 04.10.2026: STANDARD-FLIGHT RECHECK PRECISION – same-time one-digit peer checks are now limited to the same flight context (same direction/time and, when present, same flight location). Local re-OCR uses exact primary-word crops plus correctly applied Tesseract PSM/whitelist parameters. This removes P107.3 cross-flight false positives while retaining fail-closed review for genuinely weak/conflicting cells. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1073 · 04.10.2026: STANDARD-FLIGHT LOW-CONFIDENCE CELL RECHECK – formally plausible 2-character-designator flight numbers are locally re-read only when their primary flight-cell OCR is weak and unique, or when a same-time peer differs by exactly one digit. Correction requires multi-crop/multi-mode local OCR consensus; unresolved weak cells become import-blocking with the existing manual correction UI. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1072 · 04.10.2026: IMAGE TIME-HEADER RECOVERY – when image OCR drops the ride-time header completely, ATMS may recover ONLY the column directly left of the already-recognized pickup column and ONLY when at least three non-empty data cells contain valid clock times with >=60% agreement. No time values are invented; ambiguous layouts remain blocked.
 // CORE-007D8A1F1D8P1071 · 04.10.2026: OCR INTEGRITY REVIEW GATE – unresolved suspicious flight OCR is import-blocking with a generic correction UI; safe repeated-list consensus may auto-resolve only when the locally suggested candidate is independently repeated at least twice in the same direction/location context. Driver ?/! uncertainty is preserved, repeated edge-noise cleanup is generic, and driver-cell colors are sampled with a spatial fallback. No flight/airline/driver/location production hardcodes added.
@@ -6006,7 +6007,7 @@
     return edits === 1;
   }
 
-  function primaryFlightCellConfidence(imageMeta, rowMeta, columnIndex, flightValue) {
+  function primaryFlightCellEvidence(imageMeta, rowMeta, columnIndex, flightValue) {
     const boundaries = imageMeta?.boundaries || [];
     const rawWords = imageMeta?.rawOcrWords || [];
     const left = Number(boundaries[columnIndex]);
@@ -6023,22 +6024,40 @@
       const compact = cellText(word?.text).toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (normalizeFlightNumber(compact) !== expected) return;
       const confidence = Number(word?.confidence ?? 0);
-      if (Number.isFinite(confidence) && (best === null || confidence > best)) best = confidence;
+      if (!Number.isFinite(confidence)) return;
+      if (!best || confidence > best.confidence) {
+        best = {
+          confidence,
+          x0: Number(word?.x0 || 0), y0: Number(word?.y0 || 0),
+          x1: Number(word?.x1 || 0), y1: Number(word?.y1 || 0)
+        };
+      }
     });
     return best;
+  }
+
+  function primaryFlightCellConfidence(imageMeta, rowMeta, columnIndex, flightValue) {
+    return primaryFlightCellEvidence(imageMeta, rowMeta, columnIndex, flightValue)?.confidence ?? null;
   }
 
   function hasOneNumericEditSameTimePeer(rides, index, initialValue) {
     const list = Array.isArray(rides) ? rides : [];
     const target = list[index];
     const initial = normalizeFlightNumber(initialValue);
+    if (!target || !initial) return false;
+    if (ocrIntegrityCore?.oneNumericEditContextPeerIndices) {
+      return ocrIntegrityCore.oneNumericEditContextPeerIndices(list, index).length > 0;
+    }
     const direction = cellText(target?.flightDirection);
     const flightTime = normalizeTime(target?.flightTime);
-    if (!target || !initial || !direction || !flightTime) return false;
+    const targetLocation = cleanKey(normalizeFlightLocation(target?.flightLocation));
+    if (!direction || !flightTime) return false;
     return list.some((ride, i) => {
       if (i === index) return false;
       if (cellText(ride?.flightDirection) !== direction) return false;
       if (normalizeTime(ride?.flightTime) !== flightTime) return false;
+      const peerLocation = cleanKey(normalizeFlightLocation(ride?.flightLocation));
+      if ((targetLocation || peerLocation) && (!targetLocation || !peerLocation || targetLocation !== peerLocation)) return false;
       return oneNumericEditFlightAlternative(initial, ride?.flightNumber);
     });
   }
@@ -6060,7 +6079,10 @@
     const getWorker = async mode => {
       if (workers.has(mode.name)) return workers.get(mode.name);
       if (typeof Tesseract.createWorker !== 'function') return null;
-      const worker = await Tesseract.createWorker('eng', undefined, mode.options || {});
+      const worker = await Tesseract.createWorker('eng');
+      if (worker && typeof worker.setParameters === 'function') {
+        await worker.setParameters(mode.options || {});
+      }
       workers.set(mode.name, worker);
       return worker;
     };
@@ -6076,7 +6098,8 @@
         const matrixIndex = Number(ride.sourceRow || 0) - 1;
         const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
         if (colIndex === undefined || !rowMeta) continue;
-        const confidence = primaryFlightCellConfidence(imageMeta, rowMeta, colIndex, initial);
+        const primaryEvidence = primaryFlightCellEvidence(imageMeta, rowMeta, colIndex, initial);
+        const confidence = primaryEvidence?.confidence ?? null;
         const weakUnique = (exactCounts.get(initial) || 0) === 1 && (confidence === null || confidence < 70);
         const contextualPeer = hasOneNumericEditSameTimePeer(out, i, initial);
         if (!weakUnique && !contextualPeer) continue;
@@ -6086,10 +6109,19 @@
         if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
         const y0 = Number(rowMeta.y0 || 0), y1 = Number(rowMeta.y1 || 0);
         const rowHeight = Math.max(18, y1 - y0), cellWidth = Math.max(8, right - left);
-        const regions = [
-          [left + cellWidth * 0.03, y0 - rowHeight * 0.16, right - cellWidth * 0.03, y1 + rowHeight * 0.16, 2],
-          [left + cellWidth * 0.08, y0 - rowHeight * 0.10, right - cellWidth * 0.08, y1 + rowHeight * 0.10, 3]
-        ];
+        // P107.4: Wenn das Primärwort räumlich bekannt ist, wird zuerst genau dieses
+        // Token (mit kleinem Rand) erneut gelesen. Das verhindert, dass benachbarte
+        // Tabelleninhalte eine eigentlich korrekte Flugnummer unnötig blockieren.
+        const regions = primaryEvidence && primaryEvidence.x1 > primaryEvidence.x0 && primaryEvidence.y1 > primaryEvidence.y0
+          ? [
+              [primaryEvidence.x0 - cellWidth * 0.08, primaryEvidence.y0 - rowHeight * 0.24, primaryEvidence.x1 + cellWidth * 0.08, primaryEvidence.y1 + rowHeight * 0.24, 3],
+              [primaryEvidence.x0 - cellWidth * 0.14, primaryEvidence.y0 - rowHeight * 0.34, primaryEvidence.x1 + cellWidth * 0.14, primaryEvidence.y1 + rowHeight * 0.34, 4],
+              [left + cellWidth * 0.08, y0 - rowHeight * 0.10, right - cellWidth * 0.08, y1 + rowHeight * 0.10, 3]
+            ]
+          : [
+              [left + cellWidth * 0.03, y0 - rowHeight * 0.16, right - cellWidth * 0.03, y1 + rowHeight * 0.16, 2],
+              [left + cellWidth * 0.08, y0 - rowHeight * 0.10, right - cellWidth * 0.08, y1 + rowHeight * 0.10, 3]
+            ];
         if (status) status.textContent = `Schwache Flugzelle Zeile ${ride.sourceRow} wird lokal gegengeprüft …`;
         const votes = new Map(), cropSupport = new Map(), attempts = [];
         try {
