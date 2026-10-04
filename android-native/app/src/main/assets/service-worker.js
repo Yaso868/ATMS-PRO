@@ -1,4 +1,5 @@
-const CACHE_NAME = "atms-pro-pwa-2026-09-09-core-006e";
+// CORE-007D8A1F1D8P1071 · 04.10.2026: cache shared OCR-integrity core for offline/native shell.
+const CACHE_NAME = "atms-pro-pwa-2026-10-04-p1071";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -15,6 +16,7 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=CORE-004C",
   "./js/flight-engine.js?v=CORE-004C",
+  "./js/ocr-integrity-core.js?v=P1071",
   "./js/plan-import.js?v=CORE-006D",
   "./js/pwa.js?v=CORE-004C",
   "./js/firebase-ai.js?v=CORE-004D",

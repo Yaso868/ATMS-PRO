@@ -44,3 +44,14 @@ android {
 dependencies {
     implementation 'androidx.webkit:webkit:1.12.1'
 }
+
+
+// P107.1: deterministic OCR-integrity gate. GitHub Actions assembleDebug must fail
+// before packaging if a solved golden parser/integrity case regresses.
+tasks.register('ocrIntegrityRegression', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/ocr-regression-selftest.js'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('ocrIntegrityRegression')
+}

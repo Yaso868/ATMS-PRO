@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1071 · 04.10.2026: OCR INTEGRITY REVIEW GATE – unresolved suspicious flight OCR is import-blocking with a generic correction UI; safe repeated-list consensus may auto-resolve only when the locally suggested candidate is independently repeated at least twice in the same direction/location context. Driver ?/! uncertainty is preserved, repeated edge-noise cleanup is generic, and driver-cell colors are sampled with a spatial fallback. No flight/airline/driver/location production hardcodes added.
 // CORE-007D8A1F1D8P99_4R · 02.10.2026: DRIVER CELL MODE-PARALLEL OCR ROLLBACK – Realgeraet-P99.4 zeigte zwar einen schnelleren missing_driver_targeted_ocr-Pfad, aber deutliche Gesamtregressionen in mehreren anderen Tesseract-Schritten und eine Gesamtanalyse von 58–63 s statt zuvor ca. 37 s. Daher wird ausschliesslich die P99.4-Promise.all-Parallelisierung rueckgaengig gemacht und der vorherige strikt sequenzielle Modusablauf wiederhergestellt. Crop-Geometrie, Sprache, drei Modi, drei Skalierungen, Kandidatenbereinigung, Stimmen, Zwei-Treffer-Mindestkonsens, Gleichstandsblockade, manuelle Pruefflags und alle Uebernahmeschwellen bleiben unveraendert. Keine Aenderung an Fahrerinhalt, Datum, PLAN/DISPO/LIVE, FLIGHT-008, Import/Dedupe/Bundles, Storage V2 oder Persistenz.
 // CORE-007D8A1F1D8P98 · 01.10.2026: IMPORT-INTEGRITY PACK – schützt gültige Frühzeiten vor widersprüchlicher Nach-OCR, trennt eine im Bildimport zusammengefallene Firma+Uhrzeit-Zelle ohne Firmen-/Zeit-Hardcodes und erlaubt bei zwei identischen deutschen Routen-Nachscans eine Distanz-2-Diakritikreparatur nur dann, wenn genau das geänderte Primärwort nachweislich sehr schwach erkannt wurde. Folgetag-Entscheidung, FLIGHT-008, PLAN/DISPO/LIVE und übrige OCR-Sicherheitsgrenzen bleiben unverändert.
 // P95 UX CORRECTIONS 30.09.2026: Strict near-primary OCR route recovery for empty same-cell route with unanimous cropped OCR and exact sibling.
@@ -151,6 +152,7 @@
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
   const cellText = value => value === null || value === undefined ? '' : String(value).trim();
+  const ocrIntegrityCore = (() => { try { return window.ATMSOcrIntegrityCore || null; } catch (_) { return null; } })();
 
   function berlinToday() {
     try {
@@ -468,6 +470,7 @@
   }
 
   function parseNumber(value) {
+    if (ocrIntegrityCore?.parseEuropeanNumber) return ocrIntegrityCore.parseEuropeanNumber(value);
     if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
     const normalized = cellText(value).replace(/[^0-9,.-]/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
     const number = Number(normalized);
@@ -475,6 +478,7 @@
   }
 
   function pricePlausibility(value) {
+    if (ocrIntegrityCore?.pricePlausibility) return ocrIntegrityCore.pricePlausibility(value);
     const price = Number(value) || 0;
     // CORE-004K: 0/leer ist NICHT automatisch plausibel. Ein fehlender OCR-Preis
     // muss vor dem Import ausdrücklich eingegeben oder als 0,00 € bestätigt werden.
@@ -872,12 +876,26 @@
     return fixedPersons > 0 ? fixedPersons : 0;
   }
 
+  function normalizeTextBoundaryOcrNoise(value) {
+    const raw = cellText(value);
+    if (!raw) return { value: '', changed: false, raw: '' };
+    // Generisch nur eindeutige Rand-Artefakte entfernen: mindestens zwei typische
+    // OCR-Linien-/Tildezeichen am ENDE. Buchstaben, Ziffern und normale Namenszeichen
+    // werden niemals geraten oder ersetzt.
+    const cleaned = raw.replace(/\s*[~¦│|]{2,}\s*$/u, '').trim();
+    if (!cleaned || cleaned === raw) return { value: raw, changed: false, raw };
+    return { value: cleaned, changed: true, raw };
+  }
+
   function makeRide(row, rowNumber, mapping, fileName, options = {}) {
-    let arrivalFlight = normalizeFlightNumber(valueAt(row, mapping, 'arrivalFlight'));
-    let departureFlight = normalizeFlightNumber(valueAt(row, mapping, 'departureFlight'));
+    const arrivalFlightRawOcr = cellText(valueAt(row, mapping, 'arrivalFlight'));
+    const departureFlightRawOcr = cellText(valueAt(row, mapping, 'departureFlight'));
+    let arrivalFlight = normalizeFlightNumber(arrivalFlightRawOcr);
+    let departureFlight = normalizeFlightNumber(departureFlightRawOcr);
     const pickup = cellText(valueAt(row, mapping, 'pickup'));
     const destination = cellText(valueAt(row, mapping, 'destination'));
-    const customer = cellText(valueAt(row, mapping, 'customer'));
+    const customerNoise = normalizeTextBoundaryOcrNoise(valueAt(row, mapping, 'customer'));
+    const customer = customerNoise.value;
 
     // P98: Bei kompakten Bildlisten kann die zweite Uhrzeit-Spalte geometrisch mit
     // „Firma“ zusammenfallen (z. B. „WT 22:25“ / „Get-E | 22:45“). Ausschließlich
@@ -957,6 +975,8 @@
       pickup,
       destination,
       customer,
+      customerRawOcr: customerNoise.changed ? customerNoise.raw : '',
+      customerRecoveredFromBoundaryNoise: Boolean(customerNoise.changed),
       company,
       companyRawOcr: companyEmbeddedTime ? rawCompanyCell : '',
       companyTimeRecoveredFromCollapsedCell: Boolean(companyEmbeddedTime),
@@ -964,6 +984,15 @@
       arrivalFlight,
       departureFlight,
       flightNumber,
+      flightNumberRawOcr: (() => {
+        const raw = arrivalFlightRawOcr || departureFlightRawOcr;
+        const compact = cellText(raw).toUpperCase().replace(/\s+/g, '');
+        return compact && flightNumber && compact !== flightNumber ? raw : '';
+      })(),
+      flightNormalizedFromRaw: Boolean((arrivalFlightRawOcr || departureFlightRawOcr) && (() => {
+        const raw = cellText(arrivalFlightRawOcr || departureFlightRawOcr).toUpperCase().replace(/\s+/g, '');
+        return raw && flightNumber && raw !== flightNumber;
+      })()),
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
       flightLocation,
       dispatcherTime,
@@ -1096,6 +1125,8 @@
       });
       if (!ride.driver) {
         issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+      } else if (ride.driverUncertaintyMarker) {
+        issues.push({ level: 'warning', kind: 'driver_uncertainty', row, text: `Fahrer „${ride.driver}“ enthält eine Unsicherheitsmarkierung (${ride.driverUncertaintyMarker}) – nicht als sichere Fahrerzuordnung behandeln` });
       } else if (ride.driverNeedsManualCheck) {
         // CORE-007A: Nur wirklich ungelöste Fahrer-OCR bleibt sichtbar.
         // Erfolgreiche Boundary-/Targeted-OCR-Korrekturen sind bereits verifiziert
@@ -1112,13 +1143,36 @@
       if (ride.flightOcrAmbiguityNeedsReview && ride.flightNumber) {
         issues.push({ level: 'warning', row, text: `Flugnummer ${ride.flightNumber} enthält ein OCR-mehrdeutiges Zeichen (I/1/L oder O/0) – Original bitte prüfen` });
       }
+      if (ride.flightManualOcrCorrection?.to) {
+        issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Flugnummer ${ride.flightManualOcrCorrection.from || '–'} → ${ride.flightManualOcrCorrection.to} ausdrücklich bestätigt` });
+      }
       if (ride.flightLongPrefixOcrUnresolved && ride.flightNumber) {
         issues.push({
-          level: 'warning',
+          level: 'error',
           kind: 'flight_ocr',
           row,
-          text: `Flugnummer ${ride.flightNumber} hat einen auffälligen langen Präfix und konnte lokal nicht sicher bestätigt/korrigiert werden – Original-Planliste prüfen`
+          rideId: ride.id,
+          originalFlight: ride.flightNumber,
+          suggestedFlight: normalizeFlightNumber(ride.flightLongPrefixSuggestedCorrection),
+          text: `Flugnummer ${ride.flightNumber} hat einen auffälligen langen Präfix und muss vor dem Import bestätigt/korrigiert werden`
         });
+      }
+      if (ride.flightRecoveredFromLongPrefixOcr && ride.flightLongPrefixOcrInitial && ride.flightNumber) {
+        issues.push({
+          level: 'info',
+          kind: 'ocr_recovery',
+          row,
+          text: `Flugnummer ${ride.flightLongPrefixOcrInitial} → ${ride.flightNumber} durch ${ride.flightRecoveredFromListConsensus ? 'lokale OCR + Listen-Konsens' : 'eindeutige lokale Flugzellen-OCR'} korrigiert`
+        });
+      }
+      if (ride.flightNormalizedFromRaw && ride.flightNumberRawOcr && ride.flightNumber) {
+        issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Flugnummer ${ride.flightNumberRawOcr} → ${ride.flightNumber} durch formale Flugnummern-Normalisierung` });
+      }
+      if (ride.sourceFlightLocationRaw && ride.flightLocation && cellText(ride.sourceFlightLocationRaw) !== cellText(ride.flightLocation)) {
+        issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Flugort ${ride.sourceFlightLocationRaw} → ${ride.flightLocation} normalisiert` });
+      }
+      if (ride.customerRecoveredFromBoundaryNoise && ride.customerRawOcr && ride.customer) {
+        issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Name ${ride.customerRawOcr} → ${ride.customer} durch generische OCR-Randzeichen-Bereinigung` });
       }
       if (ride.flightTrailingSuffixOcrNeedsReview && ride.flightNumber) {
         issues.push({
@@ -1487,10 +1541,8 @@
     const right = Math.min(sourceCanvas.width, Math.ceil(Number(x1) || 0));
     if (!(y1 > y0 + 2) || !(right > left + 3)) return null;
     const ctx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-    // P75A: Die Fahrerfarbe sitzt in echten Planlisten in der letzten Fahrer-/Wg-Zelle.
-    // Deshalb nur den Innenbereich dieser Zelle auswerten und Text/Rahmen möglichst ausblenden.
-    const marginY = Math.max(1, Math.floor((y1 - y0) * 0.16));
-    const marginX = Math.max(2, Math.floor((right - left) * 0.08));
+    const marginY = Math.max(1, Math.floor((y1 - y0) * 0.12));
+    const marginX = Math.max(2, Math.floor((right - left) * 0.06));
     const sy = Math.max(0, y0 + marginY);
     const sh = Math.max(1, Math.min(sourceCanvas.height - sy, (y1 - y0) - marginY * 2));
     const sx = Math.max(0, left + marginX);
@@ -1500,7 +1552,7 @@
     const data = image.data;
     const buckets = new Map();
     let colorful = 0, sampled = 0;
-    const pixelStep = Math.max(1, Math.floor(Math.sqrt((sw * sh) / 3500)));
+    const pixelStep = Math.max(1, Math.floor(Math.sqrt((sw * sh) / 4200)));
     for (let y = 0; y < sh; y += pixelStep) {
       for (let x = 0; x < sw; x += pixelStep) {
         const idx = (y * sw + x) * 4;
@@ -1510,27 +1562,38 @@
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
         const chroma = max - min;
         const brightness = (r + g + b) / 3;
-        if (brightness < 90 || brightness > 253 || chroma < 30) continue;
+        // P107.1: Fahrerzellen koennen pastelliger sein als die bisherige 30er-
+        // Chroma-Schwelle. Niedrig gesaettigte Grautoene bleiben ausgeschlossen.
+        if (brightness < 70 || brightness > 254 || chroma < 18) continue;
         colorful++;
         const qr = Math.round(r / 20) * 20, qg = Math.round(g / 20) * 20, qb = Math.round(b / 20) * 20;
         const key = `${qr}|${qg}|${qb}`;
-        const item = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0 };
+        const item = buckets.get(key) || { count: 0, r: 0, g: 0, b: 0, quadrants: new Set() };
         item.count++; item.r += r; item.g += g; item.b += b;
+        const quadrant = (x >= sw / 2 ? 1 : 0) + (y >= sh / 2 ? 2 : 0);
+        item.quadrants.add(quadrant);
         buckets.set(key, item);
       }
     }
-    if (!colorful || colorful < Math.max(10, sampled * 0.20) || !buckets.size) return null;
+    if (!colorful || !buckets.size || !sampled) return null;
     const best = [...buckets.values()].sort((a, b) => b.count - a.count)[0];
     const dominance = best.count / colorful;
-    const colorfulShare = colorful / Math.max(1, sampled);
-    if (dominance < 0.42 || colorfulShare < 0.20) return null;
+    const colorfulShare = colorful / sampled;
+    const bestShare = best.count / sampled;
+    const spatialSupport = best.quadrants?.size || 0;
+    // Zwei Sicherheitswege: normal dominanter Zellhintergrund ODER pastelliger,
+    // aber ueber mindestens drei Zellquadranten raeumlich verteilter Hintergrund.
+    const strict = colorful >= Math.max(10, sampled * 0.14) && dominance >= 0.34 && colorfulShare >= 0.10;
+    const spatialFallback = best.count >= Math.max(8, sampled * 0.055) && bestShare >= 0.055 && spatialSupport >= 3 && dominance >= 0.28;
+    if (!strict && !spatialFallback) return null;
     const r = best.r / best.count, g = best.g / best.count, b = best.b / best.count;
     return {
       hex: rgbHex(r, g, b),
-      confidence: Math.min(1, dominance * 0.72 + colorfulShare * 0.28),
+      confidence: Math.min(1, dominance * 0.58 + colorfulShare * 0.22 + Math.min(1, spatialSupport / 4) * 0.20),
       dominance,
       colorfulShare,
-      source: 'driver_cell'
+      spatialSupport,
+      source: spatialFallback && !strict ? 'driver_cell_spatial_fallback' : 'driver_cell'
     };
   }
 
@@ -1564,7 +1627,7 @@
       const matrixIndex = Number(ride?.sourceRow || 0) - 1;
       const color = map[matrixIndex];
       if (!color?.hex) return ride;
-      return { ...ride, sourcePlanColorHex: color.hex, sourcePlanColorConfidence: Number(color.confidence || 0), sourcePlanColorSource: 'image_driver_cell' };
+      return { ...ride, sourcePlanColorHex: color.hex, sourcePlanColorConfidence: Number(color.confidence || 0), sourcePlanColorSource: color.source || 'image_driver_cell' };
     });
   }
 
@@ -4110,6 +4173,18 @@
 
       ride.driverRawOcr = originalDriver;
 
+      // P107.1: Ein vom Disponenten gesetztes finales ?/! ist semantische Unsicherheit,
+      // kein OCR-Randmuell. Es bleibt sichtbar am Fahrer und erzwingt Review statt
+      // stiller Normalisierung zu einer vermeintlich sicheren Fahrerzuordnung.
+      const uncertainty = ocrIntegrityCore?.driverUncertaintyMarker?.(originalDriver) || null;
+      if (uncertainty?.marker) {
+        ride.driver = uncertainty.display || originalDriver;
+        ride.driverUncertaintyMarker = uncertainty.marker;
+        ride.driverNeedsManualCheck = true;
+        ride.driverRecoverySource = 'driver_uncertainty_preserved';
+        continue;
+      }
+
       // CORE-006H: Wenn ausschließlich offensichtliche Randzeichen den ansonsten
       // vollständig gültigen Namen verunreinigen, ist keine semantische Korrektur
       // nötig. Beispielklasse: "‘Name", ": Name |", "Name |".
@@ -6052,6 +6127,13 @@
       const runner = alternatives[1] || null;
       const initialVotes = Number(votes.get(initial) || 0);
       const supportingCrops = winner ? (cropSupport.get(winner[0])?.size || 0) : 0;
+      const manualSuggestion = ocrIntegrityCore?.suggestLongPrefixCorrection
+        ? ocrIntegrityCore.suggestLongPrefixCorrection(initial, attempts)
+        : null;
+      if (manualSuggestion?.candidate) {
+        ride.flightLongPrefixSuggestedCorrection = manualSuggestion.candidate;
+        ride.flightLongPrefixSuggestionEvidence = manualSuggestion;
+      }
       const winnerAccepted = Boolean(
         winner
         && winner[1] >= 3
@@ -6210,16 +6292,50 @@
     return out;
   }
 
+  function applyRepeatedFlightConsensusToLongPrefixRides(rides) {
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    out.forEach((ride, index) => {
+      if (!ride?.flightLongPrefixOcrUnresolved) return;
+      const initial = normalizeFlightNumber(ride?.flightLongPrefixOcrInitial || ride?.flightNumber);
+      const candidate = normalizeFlightNumber(ride?.flightLongPrefixSuggestedCorrection);
+      if (!initial || !candidate || !safeLongPrefixFlightAlternative(initial, candidate)) return;
+      const peerCount = ocrIntegrityCore?.listConsensusPeerCount
+        ? Number(ocrIntegrityCore.listConsensusPeerCount(out, index, candidate) || 0)
+        : 0;
+      // Mindestens ZWEI weitere, bereits normal erkannte Fahrten derselben Liste mit
+      // gleicher Richtung + gleichem Flugort muessen exakt denselben Kandidaten tragen.
+      if (peerCount < 2) return;
+      const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      ride.flightNumber = candidate;
+      if (routeType === 'arrival') ride.arrivalFlight = candidate;
+      if (routeType === 'departure') ride.departureFlight = candidate;
+      ride.flightDirection = routeType;
+      ride.flightRecoveredFromLongPrefixOcr = true;
+      ride.flightRecoveredFromListConsensus = true;
+      ride.flightLongPrefixOcrUnresolved = false;
+      ride.flightNeedsManualCheck = true;
+      ride.flightCheckConfidence = 'uncertain';
+      ride.flightLongPrefixOcrEvidence = {
+        ...(ride.flightLongPrefixOcrEvidence || {}),
+        mode: 'local_ocr_plus_repeated_list_consensus',
+        peerCount,
+        candidate
+      };
+    });
+    return out;
+  }
+
   // CORE-007D6: Wiederkehrende OCR-Texte nur dann vereinheitlichen, wenn
   // sich ihre Schreibweisen ausschließlich durch Trenner/Leerzeichen oder Groß-/
   // Kleinschreibung unterscheiden. Inhaltliche Buchstaben-/Ziffern-Abweichungen,
   // Diakritik-Abweichungen oder Einzelbeobachtungen bleiben unangetastet.
   function repeatedTextSignature(value) {
+    if (ocrIntegrityCore?.repeatedTextSignature) return ocrIntegrityCore.repeatedTextSignature(value);
     const text = cellText(value).normalize('NFC').trim();
     if (!text) return '';
     return text
       .toLocaleLowerCase('de-DE')
-      .replace(/[\s·._\-–—/:\\|]+/g, '');
+      .replace(/[\s·._~\-–—/:\\|]+/g, '');
   }
 
   function routeConsistencyTokens(value) {
@@ -7318,6 +7434,34 @@
   }
 
 
+  function resolveFlightOcrIssue(rideId, flightValue, action = 'manual') {
+    const ride = state.rides.find(item => String(item.id) === String(rideId));
+    if (!ride) return;
+    const corrected = normalizeFlightNumber(flightValue);
+    if (!corrected || !looksLikeFlight(corrected) || diagnosticFlightPrefixLength(corrected) >= 3) {
+      if (typeof window.showToast === 'function') window.showToast('Bitte eine plausible Flugnummer mit kurzem Designator eingeben', 'warn');
+      return;
+    }
+    const previous = normalizeFlightNumber(ride.flightNumber);
+    const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+    ride.flightNumber = corrected;
+    if (routeType === 'arrival') ride.arrivalFlight = corrected;
+    if (routeType === 'departure') ride.departureFlight = corrected;
+    ride.flightDirection = routeType;
+    ride.flightLongPrefixOcrUnresolved = false;
+    ride.flightNeedsManualCheck = true;
+    ride.flightCheckConfidence = 'uncertain';
+    ride.flightManualOcrCorrection = {
+      from: previous,
+      to: corrected,
+      action: action === 'suggestion' ? 'local_ocr_suggestion_confirmed' : 'manual_confirmed',
+      at: new Date().toISOString()
+    };
+    if (typeof window.showToast === 'function') window.showToast(`${previous || 'Flug'} → ${corrected} bestätigt`, 'ok');
+    state.issues = validate(state.rides);
+    render();
+  }
+
   function resolvePriceIssue(rideId, action, priceValue) {
     const ride = state.rides.find(item => String(item.id) === String(rideId));
     if (!ride) return;
@@ -7386,6 +7530,19 @@
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
                 <button type="button" class="date-boundary-btn" data-date-action="next_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(String(issue.count))} Fahrt(en) → ${escapeHtml(formatPlanDate(issue.nextDate))}</button>
                 <button type="button" class="date-boundary-btn" data-date-action="same_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">Alle bleiben ${escapeHtml(formatPlanDate(issue.baseDate))}</button>
+              </div>
+            </div>`;
+          }
+
+          if (issue.kind === 'flight_ocr') {
+            const suggestion = normalizeFlightNumber(issue.suggestedFlight);
+            return `<div class="plan-issue error" style="padding-bottom:12px">
+              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              <div style="font-size:12px;opacity:.82;margin-top:7px">Die Fahrt wird erst nach einer expliziten Korrektur freigegeben. ATMS rät keine Flugnummer.</div>
+              <input type="text" inputmode="text" autocapitalize="characters" class="flight-ocr-manual-input" data-ride-id="${escapeHtml(issue.rideId)}" value="${escapeHtml(suggestion || '')}" placeholder="Flugnummer z. B. AB1234" style="width:100%;box-sizing:border-box;margin-top:10px;padding:11px;border-radius:10px;text-transform:uppercase">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+                ${suggestion ? `<button type="button" class="flight-ocr-review-btn" data-flight-action="suggestion" data-ride-id="${escapeHtml(issue.rideId)}" data-suggested-flight="${escapeHtml(suggestion)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(suggestion)} übernehmen</button>` : ''}
+                <button type="button" class="flight-ocr-review-btn" data-flight-action="manual" data-ride-id="${escapeHtml(issue.rideId)}" style="flex:1;min-width:145px;padding:10px;border-radius:10px;font-weight:800">Eingabe übernehmen</button>
               </div>
             </div>`;
           }
@@ -7768,6 +7925,18 @@
       });
     });
 
+    $('planIssues').querySelectorAll('.flight-ocr-review-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        let value = button.dataset.suggestedFlight || '';
+        if (button.dataset.flightAction === 'manual') {
+          const input = Array.from($('planIssues').querySelectorAll('.flight-ocr-manual-input'))
+            .find(item => String(item.dataset.rideId) === String(button.dataset.rideId));
+          value = input?.value || '';
+        }
+        resolveFlightOcrIssue(button.dataset.rideId, value, button.dataset.flightAction || 'manual');
+      });
+    });
+
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
       const rowIssues = actionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
       // P76: reine Info-/Recovery-Einträge sind bereits gelöst und bleiben oberhalb
@@ -8018,6 +8187,7 @@
           result.imageMeta,
           mappingInfo.mapping
         ));
+        preparedRides = p54MeasureSync('flight_list_consensus', () => applyRepeatedFlightConsensusToLongPrefixRides(preparedRides));
         preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));
@@ -11263,6 +11433,14 @@
   // CORE-005J:
   // Preis und PLAN/DISPO/LIVE werden jetzt nativ in app.js / pwa.js gerendert.
   // Kein MutationObserver-/Textknoten-Hack mehr in plan-import.js.
+
+  try {
+    window.ATMSP1071RegressionHooks = Object.freeze({
+      repeatedTextSignature,
+      normalizeTextBoundaryOcrNoise,
+      safeLongPrefixFlightAlternative
+    });
+  } catch (_) {}
 
   document.addEventListener('DOMContentLoaded', init);
 })();
