@@ -133,4 +133,16 @@ assert.strictEqual(core.oneNumericEditConflictEvidence('EW8773',oneCropNoise),nu
 assert(planImportSource.includes('recoveredMissingFlight'), 'P107.7 must selectively recheck unique missing-flight recoveries');
 assert(planImportSource.includes('oneNumericEditConflictEvidence'), 'P107.7 hard blockers must require positive competing evidence');
 assert(planImportSource.includes('flightLowConfidenceOcrInconclusive'), 'P107.7 inconclusive rechecks must remain non-blocking');
-console.log('P107.7 OCR regression self-test: PASS');
+// P108.0 Import Quality Gate: production must use cell-level multiword route evidence,
+// all-valid-time batch checking, fail-closed daytime conflicts, tight raw-word long-prefix
+// crops, and clustered/current-plan-only driver colors. Concrete WA0029 values remain test-only.
+assert(planImportSource.includes('rawCellSequence'), 'P108.0 must compose raw route words at cell level');
+assert(planImportSource.includes('if (initialMinutes === null) return null;'), 'P108.0 time gate must cover all valid ride times');
+assert(planImportSource.includes('timeSuspiciousHardBlock'), 'P108.0 daytime OCR conflicts must be able to block import');
+assert(planImportSource.includes('longPrefixFullFlightProbeRegions'), 'P108.0 long-prefix recheck must use tight raw-word geometry');
+assert(planImportSource.includes('CLUSTER_DISTANCE = 50'), 'P108.0 driver colors must cluster neighboring RGB buckets without lowering thresholds');
+assert(planImportSource.includes("sourcePlanColorSource = 'driver_plan_consensus'"), 'P108.0 may recover weak driver color only from current-plan same-driver consensus');
+for(const forbidden of ['EWS522','EW522','16:10','15:10']){
+  for(const source of productionFiles) assert(!source.includes(forbidden),`P108.0 fixture leaked into production: ${forbidden}`);
+}
+console.log('P108.0 Import Quality Gate regression self-test: PASS');

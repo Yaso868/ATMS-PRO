@@ -1,4 +1,4 @@
-// ATMS PRO P107.7 – browser/node shared OCR-integrity helpers.
+// ATMS PRO P108.0 – browser/node shared OCR-integrity helpers.
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
   const api=factory();

@@ -1119,9 +1119,11 @@
       }
       if (ride.timeSuspiciousConflict && ride.timeSuspiciousPrimaryKept && !ride.timeSuspiciousMirrorConfirmed) {
         issues.push({
-          level: 'warning',
+          level: ride.timeSuspiciousHardBlock ? 'error' : 'warning',
           row,
-          text: `Frühzeit ${cellText(ride.timeOcrInitial || ride.time)} blieb erhalten; Nach-OCR ${cellText(ride.timeSuspiciousBatchCandidate)} widerspricht ohne unabhängige Spiegelbestätigung – Original-Planliste prüfen`
+          text: ride.timeSuspiciousHardBlock
+            ? `Abholzeit ${cellText(ride.timeOcrInitial || ride.time)} widerspricht mehrfacher Nach-OCR ${cellText(ride.timeSuspiciousBatchCandidate)} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
+            : `Frühzeit ${cellText(ride.timeOcrInitial || ride.time)} blieb erhalten; Nach-OCR ${cellText(ride.timeSuspiciousBatchCandidate)} widerspricht ohne unabhängige Spiegelbestätigung – Original-Planliste prüfen`
         });
       }
       if (!ride.pickup) issues.push({ level: 'error', row, text: 'Abholort fehlt' });
@@ -1608,7 +1610,40 @@
       }
     }
     if (!colorful || !buckets.size || !sampled) return null;
-    const best = [...buckets.values()].sort((a, b) => b.count - a.count)[0];
+
+    // P108.0: JPEG-/Skalierungsrauschen verteilt einen einheitlichen Zellhintergrund
+    // haeufig auf mehrere benachbarte 20er-RGB-Buckets. Die bisherigen Schwellen
+    // bleiben unveraendert; bewertet wird jetzt jedoch ein zusammenhaengender
+    // Farbcluster statt nur der staerkste Einzelbucket. Keine Fahrer-/Farbhardcodes.
+    const bucketItems = [...buckets.values()].map(item => ({
+      ...item,
+      cr: item.r / item.count,
+      cg: item.g / item.count,
+      cb: item.b / item.count
+    }));
+    const visited = new Set();
+    const clusters = [];
+    const CLUSTER_DISTANCE = 50;
+    for (let start = 0; start < bucketItems.length; start++) {
+      if (visited.has(start)) continue;
+      const queue = [start];
+      visited.add(start);
+      const cluster = { count: 0, r: 0, g: 0, b: 0, quadrants: new Set(), bucketCount: 0 };
+      while (queue.length) {
+        const index = queue.shift();
+        const item = bucketItems[index];
+        cluster.count += item.count; cluster.r += item.r; cluster.g += item.g; cluster.b += item.b; cluster.bucketCount++;
+        item.quadrants?.forEach(q => cluster.quadrants.add(q));
+        for (let next = 0; next < bucketItems.length; next++) {
+          if (visited.has(next)) continue;
+          const other = bucketItems[next];
+          const distance = Math.hypot(item.cr - other.cr, item.cg - other.cg, item.cb - other.cb);
+          if (distance <= CLUSTER_DISTANCE) { visited.add(next); queue.push(next); }
+        }
+      }
+      clusters.push(cluster);
+    }
+    const best = clusters.sort((a, b) => b.count - a.count)[0];
     const dominance = best.count / colorful;
     const colorfulShare = colorful / sampled;
     const bestShare = best.count / sampled;
@@ -1625,7 +1660,10 @@
       dominance,
       colorfulShare,
       spatialSupport,
-      source: spatialFallback && !strict ? 'driver_cell_spatial_fallback' : 'driver_cell'
+      clusterBucketCount: best.bucketCount,
+      source: best.bucketCount > 1
+        ? (spatialFallback && !strict ? 'driver_cell_cluster_spatial_fallback' : 'driver_cell_cluster')
+        : (spatialFallback && !strict ? 'driver_cell_spatial_fallback' : 'driver_cell')
     };
   }
 
@@ -1689,24 +1727,50 @@
     });
     groups.forEach(items => {
       const usable = items.filter(ride => planColorRgb(ride?.sourcePlanColorHex) && Number(ride?.sourcePlanColorConfidence || 0) >= 0.25);
-      items.forEach(ride => {
-        if (!planColorRgb(ride?.sourcePlanColorHex) || Number(ride?.sourcePlanColorConfidence || 0) < 0.25) {
-          ride.driverPlanColorNeedsManualCheck = true;
-          ride.driverPlanColorIssue = 'driver_cell_color_missing_or_weak';
-        }
-      });
-      if (usable.length < 2) return;
       let maxSpread = 0;
       for (let i = 0; i < usable.length; i++) {
         for (let j = i + 1; j < usable.length; j++) maxSpread = Math.max(maxSpread, planColorDistance(usable[i].sourcePlanColorHex, usable[j].sourcePlanColorHex));
       }
-      if (maxSpread > 58) {
+      if (usable.length >= 2 && maxSpread > 58) {
         items.forEach(ride => {
           ride.driverPlanColorNeedsManualCheck = true;
           ride.driverPlanColorIssue = 'same_driver_color_inconsistent';
           ride.driverPlanColorSpread = Math.round(maxSpread);
         });
+        return;
       }
+
+      // P108.0: Eine fehlende/schwache Einzelzelle darf ausschliesslich aus mehreren
+      // sicheren Zeilen DESSELBEN Fahrers DERSELBEN aktuellen Planliste rekonstruiert
+      // werden. Kein Stammdatum, keine Altplanfarbe, keine Fahrername->Farbe-Regel.
+      // Nur ein enger Farbcluster (max. 36 RGB-Einheiten Spread) darf heilen.
+      const canRecoverFromPlanConsensus = usable.length >= 2 && maxSpread <= 36;
+      let consensusHex = '';
+      let consensusConfidence = 0;
+      if (canRecoverFromPlanConsensus) {
+        const rgbs = usable.map(ride => planColorRgb(ride.sourcePlanColorHex)).filter(Boolean);
+        const r = rgbs.reduce((sum, value) => sum + value.r, 0) / rgbs.length;
+        const g = rgbs.reduce((sum, value) => sum + value.g, 0) / rgbs.length;
+        const b = rgbs.reduce((sum, value) => sum + value.b, 0) / rgbs.length;
+        consensusHex = rgbHex(r, g, b);
+        consensusConfidence = Math.min(0.82, Math.max(0.25, usable.reduce((sum, ride) => sum + Number(ride.sourcePlanColorConfidence || 0), 0) / usable.length * 0.92));
+      }
+
+      items.forEach(ride => {
+        if (planColorRgb(ride?.sourcePlanColorHex) && Number(ride?.sourcePlanColorConfidence || 0) >= 0.25) return;
+        if (consensusHex) {
+          ride.sourcePlanColorHex = consensusHex;
+          ride.sourcePlanColorConfidence = consensusConfidence;
+          ride.sourcePlanColorSource = 'driver_plan_consensus';
+          ride.driverPlanColorRecoveredFromCurrentPlan = true;
+          ride.driverPlanColorConsensusPeers = usable.length;
+          ride.driverPlanColorNeedsManualCheck = false;
+          ride.driverPlanColorIssue = '';
+          return;
+        }
+        ride.driverPlanColorNeedsManualCheck = true;
+        ride.driverPlanColorIssue = 'driver_cell_color_missing_or_weak';
+      });
     });
     return out;
   }
@@ -4603,6 +4667,20 @@
 
         const rawItems = rawRouteEvidenceItemsForCell(imageMeta, rowMeta, left, right);
         const rawEvidence = new Set(rawItems.map(item => item.key));
+        // P108.0: Roh-OCR liegt wortweise vor, die gezielte Zell-OCR liefert dagegen
+        // den kompletten Mehrwort-Zelltext. Deshalb zusaetzlich genau die geometrisch
+        // in dieser Zelle vorhandenen Rohwoerter in X-Reihenfolge zusammensetzen.
+        // Es wird kein Wort ergaenzt und kein Ortslexikon benutzt.
+        if (rawItems.length >= 2) {
+          const rawCellSequence = rawItems
+            .slice()
+            .sort((a,b) => Number(a.x0 || 0) - Number(b.x0 || 0))
+            .map(item => missingRouteCandidate(item.candidate))
+            .filter(Boolean)
+            .join(' ');
+          const rawCellKey = routeOcrBase(rawCellSequence);
+          if (rawCellKey) rawEvidence.add(rawCellKey);
+        }
         if (!rawEvidence.size) continue;
 
         const cellWidth = Math.max(8, right - left);
@@ -5367,7 +5445,10 @@
     const rowsWithMeta = out.map((ride, rideIndex) => {
       const initial = normalizeTime(ride.time || ride.dispoTime || ride.planTime);
       const initialMinutes = timeToMinutes(initial);
-      if (initialMinutes === null || initialMinutes >= NEXT_DAY_CUTOFF_MINUTES) return null;
+      // P108.0: Formal gueltige Tageszeiten koennen ebenfalls OCR-Ziffernfehler
+      // enthalten (z. B. 5/6). Deshalb die vorhandene gebuendelte Gegen-OCR auf
+      // ALLE gueltigen Fahrzeiten anwenden; weiterhin nur drei Spalten-Batchlaeufe.
+      if (initialMinutes === null) return null;
 
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
@@ -5390,15 +5471,15 @@
     const cellWidth = Math.max(8, right - left);
     const padX = Math.max(1, cellWidth * 0.035);
     const attempts = [
-      { name: 'early-time-column-psm4', scale: 2, options: { tessedit_pageseg_mode: '4', tessedit_char_whitelist: '0123456789:.' } },
-      { name: 'early-time-column-psm6', scale: 3, options: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: '0123456789:.' } },
-      { name: 'early-time-column-psm11', scale: 2, options: { tessedit_pageseg_mode: '11', tessedit_char_whitelist: '0123456789:.' } }
+      { name: 'ride-time-column-psm4', scale: 2, options: { tessedit_pageseg_mode: '4', tessedit_char_whitelist: '0123456789:.' } },
+      { name: 'ride-time-column-psm6', scale: 3, options: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: '0123456789:.' } },
+      { name: 'ride-time-column-psm11', scale: 2, options: { tessedit_pageseg_mode: '11', tessedit_char_whitelist: '0123456789:.' } }
     ];
     const votesByRow = new Map();
     const attemptLogByRow = new Map();
 
     if (status) {
-      status.textContent = `${rowsWithMeta.length} frühe Uhrzeit(en) werden gebündelt lokal gegengeprüft …`;
+      status.textContent = `${rowsWithMeta.length} Fahrzeit(en) werden gebündelt durch das Zeit-Quality-Gate gegengeprüft …`;
     }
 
     try {
@@ -5466,9 +5547,18 @@
       if (!mirror || mirror !== recovered) {
         ride.timeSuspiciousPrimaryKept = true;
         ride.timeSuspiciousMirrorConfirmed = Boolean(mirror && mirror === item.initial);
+        // P108.0 fail-closed fuer normale Tageszeiten: Ein starker Batch-Konflikt
+        // darf nicht mehr still als formal gueltiger Wert importiert werden.
+        // Eine unabhaengige Spiegelzeit darf den Primärwert weiterhin bestaetigen.
+        const initialMinutes = timeToMinutes(item.initial);
+        const daytime = initialMinutes !== null && initialMinutes >= NEXT_DAY_CUTOFF_MINUTES;
+        const mirrorContradictsBoth = Boolean(mirror && mirror !== item.initial && mirror !== recovered);
+        ride.timeSuspiciousHardBlock = Boolean(daytime && (!mirror || mirrorContradictsBoth));
         ride.timeRecoverySource = mirror === item.initial
           ? 'targeted_suspicious_time_conflict_mirror_confirms_primary'
-          : 'targeted_suspicious_time_conflict_primary_kept';
+          : (ride.timeSuspiciousHardBlock
+              ? 'targeted_daytime_conflict_blocked'
+              : 'targeted_suspicious_time_conflict_primary_kept');
         return;
       }
 
@@ -5937,6 +6027,31 @@
     return { x0, x1, y0, y1, cellLeft: left, cellRight: right };
   }
 
+  // P108.0: Auffaellige lange Flugpraefixe werden primaer auf der Bounding-Box
+  // des tatsaechlich gelesenen Flugworts erneut gelesen. Damit fallen Nachbartext,
+  // Zellraster und grosse Leerflaechen aus dem Crop. Die bestehende Mehrfach-Crop-/
+  // Mehrfach-Modus-Abstimmung und alle Fail-Closed-Schwellen bleiben unveraendert.
+  function longPrefixFullFlightProbeRegions(imageMeta, rowMeta, columnIndex, initialValue, fallbackRegions) {
+    const word = primaryRawFlightWordBounds(imageMeta, rowMeta, columnIndex, initialValue);
+    if (!word) return Array.isArray(fallbackRegions) ? fallbackRegions : [];
+    const width = Math.max(1, word.x1 - word.x0);
+    const height = Math.max(1, word.y1 - word.y0);
+    if (width < 12 || height < 5) return Array.isArray(fallbackRegions) ? fallbackRegions : [];
+    const specs = [
+      { xPad: 0.10, yPad: 0.28, scale: 4 },
+      { xPad: 0.18, yPad: 0.42, scale: 5 },
+      { xPad: 0.26, yPad: 0.56, scale: 6 }
+    ];
+    const regions = specs.map(spec => [
+      Math.max(word.cellLeft + 1, word.x0 - width * spec.xPad),
+      word.y0 - height * spec.yPad,
+      Math.min(word.cellRight - 1, word.x1 + width * spec.xPad),
+      word.y1 + height * spec.yPad,
+      spec.scale
+    ]).filter(region => region[2] - region[0] >= 8 && region[3] - region[1] >= 5);
+    return regions.length === specs.length ? regions : (Array.isArray(fallbackRegions) ? fallbackRegions : regions);
+  }
+
   function sNineBoundaryTailProbeRegions(imageMeta, rowMeta, columnIndex, initialValue) {
     const initial = normalizeFlightNumber(initialValue);
     const probe = sNineBoundaryDigitProbeSpec(initial);
@@ -6324,13 +6439,14 @@
       const cellWidth = Math.max(8, right - left);
       const padY = Math.max(2, rowHeight * 0.16);
       const padX = Math.max(2, cellWidth * 0.03);
-      const regions = [
+      const fallbackRegions = [
         [left + padX, y0 - padY, right - padX, y1 + padY, 1],
         [left + cellWidth * 0.04, y0 - rowHeight * 0.12, right - cellWidth * 0.04, y1 + rowHeight * 0.12, 2],
         [left + cellWidth * 0.10, y0 - rowHeight * 0.08, right - cellWidth * 0.10, y1 + rowHeight * 0.08, 3]
       ];
+      const regions = longPrefixFullFlightProbeRegions(imageMeta, rowMeta, colIndex, initial, fallbackRegions);
       const ocrModes = [
-        { name: 'default', options: {} },
+        { name: 'single-block', options: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
         { name: 'single-line', options: { tessedit_pageseg_mode: '7', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
         { name: 'single-word', options: { tessedit_pageseg_mode: '8', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } }
       ];
