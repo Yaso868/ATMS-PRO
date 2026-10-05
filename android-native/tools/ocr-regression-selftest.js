@@ -114,6 +114,23 @@ const mixedInitialAlternative=[
   {crop:2,mode:'single-word',candidates:['EW8773']}
 ];
 assert.strictEqual(core.suggestOneNumericEditCorrection('EW8773',mixedInitialAlternative),null);
-assert(planImportSource.includes('ride.flightRecoveredFromTargetedOcr'), 'P107.6 must not re-block already recovered missing-flight cells');
 assert(planImportSource.includes('currentExactCount'), 'P107.6 must evaluate duplicate support against the current corrected list');
-console.log('P107.6 OCR regression self-test: PASS');
+// P107.7: only positive competing evidence from two independent crops may create
+// a new hard blocker. Inconclusive confirmation alone is not enough.
+const conflictingMixedEvidence=[
+  {crop:1,mode:'single-line',candidates:['EW9773']},
+  {crop:1,mode:'single-word',candidates:['EW8773']},
+  {crop:2,mode:'single-line',candidates:['EW9773']},
+  {crop:2,mode:'single-word',candidates:['EW8773']}
+];
+assert.deepStrictEqual(core.oneNumericEditConflictEvidence('EW8773',conflictingMixedEvidence),{candidate:'EW9773',votes:2,crops:2});
+const oneCropNoise=[
+  {crop:1,mode:'single-line',candidates:['EW9773']},
+  {crop:1,mode:'single-word',candidates:['EW9773']},
+  {crop:2,mode:'single-line',candidates:['EW8773']}
+];
+assert.strictEqual(core.oneNumericEditConflictEvidence('EW8773',oneCropNoise),null);
+assert(planImportSource.includes('recoveredMissingFlight'), 'P107.7 must selectively recheck unique missing-flight recoveries');
+assert(planImportSource.includes('oneNumericEditConflictEvidence'), 'P107.7 hard blockers must require positive competing evidence');
+assert(planImportSource.includes('flightLowConfidenceOcrInconclusive'), 'P107.7 inconclusive rechecks must remain non-blocking');
+console.log('P107.7 OCR regression self-test: PASS');

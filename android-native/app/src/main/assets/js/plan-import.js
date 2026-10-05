@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P1076 · 04.10.2026: STANDARD-FLIGHT EVIDENCE GATE – already recovered missing-flight cells are not re-judged by the weaker standard-flight pass; duplicate counts are evaluated against the current corrected list instead of a stale pre-pass snapshot; and a changed one-digit candidate may auto-correct with two-crop consensus only when the original candidate receives zero targeted votes. No flight-number hardcodes.
+// CORE-007D8A1F1D8P1077 · 05.10.2026: STANDARD-FLIGHT CONFLICT EVIDENCE – unique flights recovered from an initially empty cell are rechecked with the tight standard-flight crops, while duplicate recovered values remain fast-path protected. Inconclusive re-OCR no longer creates a hard blocker by itself; a blocking review now requires positive one-digit alternative evidence from at least two independent crops. Strong two-crop alternatives still auto-correct. No flight-number hardcodes.
 // CORE-007D8A1F1D8P1074 · 04.10.2026: STANDARD-FLIGHT RECHECK PRECISION – same-time one-digit peer checks are now limited to the same flight context (same direction/time and, when present, same flight location). Local re-OCR uses exact primary-word crops plus correctly applied Tesseract PSM/whitelist parameters. This removes P107.3 cross-flight false positives while retaining fail-closed review for genuinely weak/conflicting cells. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1073 · 04.10.2026: STANDARD-FLIGHT LOW-CONFIDENCE CELL RECHECK – formally plausible 2-character-designator flight numbers are locally re-read only when their primary flight-cell OCR is weak and unique, or when a same-time peer differs by exactly one digit. Correction requires multi-crop/multi-mode local OCR consensus; unresolved weak cells become import-blocking with the existing manual correction UI. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1072 · 04.10.2026: IMAGE TIME-HEADER RECOVERY – when image OCR drops the ride-time header completely, ATMS may recover ONLY the column directly left of the already-recognized pickup column and ONLY when at least three non-empty data cells contain valid clock times with >=60% agreement. No time values are invented; ambiguous layouts remain blocked.
@@ -6088,11 +6088,12 @@
         const ride = out[i];
         const initial = normalizeFlightNumber(ride?.flightNumber);
         if (!/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(initial)) continue;
-        // P107.6: Missing-flight recovery already used its own dedicated multi-crop OCR.
-        // Re-running a weaker low-confidence pass on that recovered value can only add
-        // false blockers when the primary OCR had no token at all. Long-prefix/manual
-        // corrections remain protected for the same reason.
-        if (ride.flightRecoveredFromLongPrefixOcr || ride.flightRecoveredFromTargetedOcr || ride.flightManualOcrCorrection?.to) continue;
+        // P107.7: Long-prefix/manual decisions stay protected. Missing-flight recovery
+        // is different: a UNIQUE value recovered from an initially empty cell is worth one
+        // tight-cell recheck because this is exactly where a single wrong digit can survive.
+        // Repeated recovered values keep the fast path unless a same-context one-digit peer
+        // proves that the row is genuinely in conflict.
+        if (ride.flightRecoveredFromLongPrefixOcr || ride.flightManualOcrCorrection?.to) continue;
         const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
         const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
         const colIndex = field ? mapping?.[field] : undefined;
@@ -6101,14 +6102,17 @@
         if (colIndex === undefined || !rowMeta) continue;
         const primaryEvidence = primaryFlightCellEvidence(imageMeta, rowMeta, colIndex, initial);
         const confidence = primaryEvidence?.confidence ?? null;
-        // P107.6: Count against the CURRENT list. Earlier rows in this same pass may
-        // already have been corrected to the same flight number. A frozen pre-pass map
-        // made the now-confirming neighbour look unique and blocked it unnecessarily.
+        // P107.7: Count against the CURRENT list. Earlier rows in this same pass may
+        // already have converged to the same flight number. Recovered missing-flight cells
+        // are rechecked only while unique (or when a same-context one-digit peer exists),
+        // preserving P107.6 performance for already repeated/confirmed values.
         const currentExactCount = out.reduce((count, item) =>
           count + (normalizeFlightNumber(item?.flightNumber) === initial ? 1 : 0), 0);
         const weakUnique = currentExactCount === 1 && (confidence === null || confidence < 70);
         const contextualPeer = hasOneNumericEditSameTimePeer(out, i, initial);
-        if (!weakUnique && !contextualPeer) continue;
+        const recoveredMissingFlight = Boolean(ride.flightRecoveredFromTargetedOcr);
+        if (recoveredMissingFlight && currentExactCount > 1 && !contextualPeer) continue;
+        if (!weakUnique && !contextualPeer && !recoveredMissingFlight) continue;
 
         const boundaries = imageMeta.boundaries || [];
         const left = Number(boundaries[colIndex]), right = Number(boundaries[colIndex + 1]);
@@ -6203,11 +6207,27 @@
           };
           continue;
         }
-        const suggested = ranked.find(([candidate]) => oneNumericEditFlightAlternative(initial, candidate));
-        ride.flightLowConfidenceSuggestedCorrection = suggested?.[0] || '';
-        ride.flightLowConfidenceOcrUnresolved = true;
-        ride.flightNeedsManualCheck = true;
-        ride.flightCheckConfidence = 'uncertain';
+        // P107.7: An inconclusive safety re-read is not itself evidence that a valid
+        // primary/recovered flight number is wrong. A hard OCR blocker requires a competing
+        // one-digit candidate supported by at least two independent crops. This keeps
+        // fail-closed behavior for real conflicts while eliminating false blockers caused
+        // merely by a weak/blurred confirmation pass.
+        const conflictEvidence = ocrIntegrityCore?.oneNumericEditConflictEvidence
+          ? ocrIntegrityCore.oneNumericEditConflictEvidence(initial, attempts)
+          : null;
+        ride.flightLowConfidenceSuggestedCorrection = normalizeFlightNumber(conflictEvidence?.candidate);
+        if (conflictEvidence?.candidate) {
+          ride.flightLowConfidenceOcrUnresolved = true;
+          ride.flightNeedsManualCheck = true;
+          ride.flightCheckConfidence = 'uncertain';
+          ride.flightLowConfidenceConflictEvidence = {
+            votes: Number(conflictEvidence.votes || 0),
+            crops: Number(conflictEvidence.crops || 0)
+          };
+        } else {
+          ride.flightLowConfidenceOcrUnresolved = false;
+          ride.flightLowConfidenceOcrInconclusive = true;
+        }
       }
     } finally {
       for (const worker of workers.values()) {
