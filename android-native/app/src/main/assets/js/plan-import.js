@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P1090 · 05.10.2026: TEXT CELL INTEGRITY GATE – independent German column OCR plus local multi-crop rechecks for customer/company/flight-location text. No name/location dictionaries or per-row hardcodes. Strong changed consensus may auto-correct; unresolved image conflicts become import-blocking; suspicious edge punctuation is review-only. Raw customer OCR is retained for diagnostics.
+// CORE-007D8A1F1D8P1091 · 05.10.2026: TEXT CELL INTEGRITY GATE follow-up – one composite DEU batch OCR replaces three separate full-column passes, a shared worker is reused for local rechecks, edge-punctuation conflicts may be promoted only by image evidence + same-plan peer consensus, and the staged JSON preview is refreshed even when import is blocked. No customer/place/row/file hardcodes.
 // CORE-007D8A1F1D8P1078 · 05.10.2026: IMPORT STATUS CLARITY – trennt die zeilenbezogene OCR-/Datenprüfung sichtbar von der separaten Flugprüfung. Die Vorschau nennt ungelöste Warnungen jetzt „Hinweis“ statt missverständlich „Prüfen“, der Flugprüfungsblock erklärt die Trennung ausdrücklich, und die Bildimport-Zuordnung zeigt die Fahrer-Spalte semantisch als „Name (Fahrer)“ statt eines ggf. fehlerhaft OCR-gelesenen Headertexts. Keine Änderung an OCR, Flugverifikation, Mapping-Index, Fahrtdaten, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P1077 · 05.10.2026: STANDARD-FLIGHT CONFLICT EVIDENCE – unique flights recovered from an initially empty cell are rechecked with the tight standard-flight crops, while duplicate recovered values remain fast-path protected. Inconclusive re-OCR no longer creates a hard blocker by itself; a blocking review now requires positive one-digit alternative evidence from at least two independent crops. Strong two-crop alternatives still auto-correct. No flight-number hardcodes.
 // CORE-007D8A1F1D8P1074 · 04.10.2026: STANDARD-FLIGHT RECHECK PRECISION – same-time one-digit peer checks are now limited to the same flight context (same direction/time and, when present, same flight location). Local re-OCR uses exact primary-word crops plus correctly applied Tesseract PSM/whitelist parameters. This removes P107.3 cross-flight false positives while retaining fail-closed review for genuinely weak/conflicting cells. No airline/flight/route hardcodes.
@@ -5320,6 +5320,103 @@
     return byRow;
   }
 
+  function buildTextIntegrityCompositeBatchCanvas(imageCanvas, regions, minY, maxY, scale = 2) {
+    if (!imageCanvas || !Array.isArray(regions) || !regions.length) return null;
+    const sy = Math.max(0, Math.floor(minY));
+    const sh = Math.max(1, Math.min(imageCanvas.height - sy, Math.ceil(maxY - minY)));
+    const gap = Math.max(24, Math.round(18 * scale));
+    const pieces = regions.map(region => {
+      const sx = Math.max(0, Math.floor(region.innerLeft));
+      const sw = Math.max(1, Math.min(imageCanvas.width - sx, Math.ceil(region.innerRight - region.innerLeft)));
+      return { ...region, sx, sw, dw: Math.max(1, Math.round(sw * scale)) };
+    });
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, pieces.reduce((sum, piece) => sum + piece.dw, 0) + gap * Math.max(0, pieces.length - 1));
+    out.height = Math.max(1, Math.round(sh * scale));
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.imageSmoothingEnabled = scale > 1;
+    if (scale > 1 && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+    let dx = 0;
+    const segments = [];
+    pieces.forEach(piece => {
+      ctx.drawImage(imageCanvas, piece.sx, sy, piece.sw, sh, dx, 0, piece.dw, out.height);
+      segments.push({ field: piece.field, batchX0: dx, batchX1: dx + piece.dw });
+      dx += piece.dw + gap;
+    });
+    return { canvas: out, segments, cropTop: sy, scale };
+  }
+
+  function textIntegrityCompositeCandidatesByField(result, cropTop, cropScale, rowsWithMeta, segments) {
+    const grouped = new Map();
+    const words = Array.isArray(result?.data?.words) ? result.data.words : [];
+    words.forEach(word => {
+      const bbox = word?.bbox || {};
+      const x0 = Number(bbox.x0), x1 = Number(bbox.x1), y0 = Number(bbox.y0), y1 = Number(bbox.y1);
+      const confidence = Number(word?.confidence);
+      if (![x0, x1, y0, y1].every(Number.isFinite)) return;
+      if (Number.isFinite(confidence) && confidence < 20) return;
+      const cx = (x0 + x1) / 2;
+      const segment = (segments || []).find(item => cx >= item.batchX0 && cx <= item.batchX1);
+      if (!segment) return;
+      const text = textIntegrityCellCandidate(word?.text, segment.field);
+      if (!text) return;
+      const sourceCy = cropTop + ((y0 + y1) / 2) / cropScale;
+      let best = null, bestDistance = Infinity;
+      rowsWithMeta.forEach(item => {
+        const meta = item.meta;
+        const rowHeight = Math.max(8, Number(meta.y1) - Number(meta.y0));
+        const pad = Math.max(2, rowHeight * 0.28);
+        if (sourceCy < Number(meta.y0) - pad || sourceCy > Number(meta.y1) + pad) return;
+        const distance = Math.abs(sourceCy - Number(meta.cy));
+        if (distance < bestDistance) { best = item; bestDistance = distance; }
+      });
+      if (!best) return;
+      const key = `${segment.field}\u0000${best.sourceRow}`;
+      const list = grouped.get(key) || [];
+      list.push({ text, x: x0 });
+      grouped.set(key, list);
+    });
+
+    const byField = new Map();
+    grouped.forEach((items, key) => {
+      const split = key.split('\u0000');
+      const field = split[0];
+      const sourceRow = Number(split[1]);
+      const value = textIntegrityCellCandidate(items.sort((a,b) => a.x - b.x).map(item => item.text).join(' '), field);
+      if (!value) return;
+      const rows = byField.get(field) || new Map();
+      rows.set(sourceRow, value);
+      byField.set(field, rows);
+    });
+    return byField;
+  }
+
+  function textIntegritySamePlanPeerCount(rides, descriptor, sourceRow, candidate) {
+    const candidateKey = textIntegrityCellCandidate(candidate, descriptor.field).normalize('NFKC').toLocaleLowerCase('de-DE');
+    if (!candidateKey) return 0;
+    return rides.filter(other => {
+      if (Number(other.sourceRow) === Number(sourceRow)) return false;
+      const peerSource = descriptor.field === 'flightLocation'
+        ? (other.sourceFlightLocationRaw || other.flightLocation)
+        : descriptor.field === 'customer'
+          ? (other.customerRawOcr || other.customer)
+          : other[descriptor.field];
+      const peer = textIntegrityCellCandidate(peerSource, descriptor.field);
+      return peer && peer.normalize('NFKC').toLocaleLowerCase('de-DE') === candidateKey;
+    }).length;
+  }
+
+  function textIntegrityEdgeConflictCanPromote(decision, original, candidate, peerCount) {
+    if (decision?.status !== 'conflict' || !textIntegrityEdgeAlternative(original, candidate) || peerCount < 2) return false;
+    const evidence = decision?.evidence || {};
+    // P109.1: Same-plan repetition may only break an edge-punctuation tie when the
+    // candidate is also independently visible in BOTH the composite DEU batch read
+    // and at least one local cell read. Peer text alone can never correct a cell.
+    return Number(evidence.batch || 0) >= 1 && Number(evidence.local || 0) >= 1;
+  }
+
   async function recoverTextIntegrityTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!Array.isArray(rides) || !imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const boundaries = imageMeta.boundaries || [];
@@ -5344,113 +5441,135 @@
 
     const minY = Math.min(...rowsWithMeta.map(item => item.meta.y0));
     const maxY = Math.max(...rowsWithMeta.map(item => item.meta.y1));
-
-    for (const descriptor of descriptors) {
+    const activeDescriptors = descriptors.map(descriptor => {
       const column = mapping?.[descriptor.field];
-      if (column === undefined) continue;
+      if (column === undefined) return null;
       const left = Number(boundaries[column]);
       const right = Number(boundaries[Number(column) + 1]);
-      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) continue;
-
+      if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return null;
       const cellWidth = Math.max(8, right - left);
       const padX = Math.max(1, cellWidth * 0.025);
-      // P109.0 performance gate: one cheap independent DEU column pass is enough
-      // to trigger the expensive local recheck. Auto-correction still requires this
-      // batch evidence PLUS two separate local cell reads.
-      const batchAttempts = [
-        { name: 'text-deu-column-psm6', scale: 3, options: { tessedit_pageseg_mode: '6' } }
-      ];
-      const attemptLogByRow = new Map();
-      const batchCandidatesByRow = new Map();
+      return { ...descriptor, column, left, right, cellWidth, innerLeft: left + padX, innerRight: right - padX };
+    }).filter(Boolean);
+    if (!activeDescriptors.length) return out;
 
-      if (status) status.textContent = `${descriptor.label}-Spalte wird mit deutscher OCR gegengeprüft …`;
-      try {
-        const jobs = batchAttempts.map(attempt => {
-          const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-          return Tesseract.recognize(crop, 'deu', attempt.options)
-            .then(second => ({ ok: true, attempt, second }))
-            .catch(error => ({ ok: false, attempt, error }));
-        });
-        const results = await Promise.all(jobs);
-        for (const result of results) {
-          if (!result?.ok) continue;
-          const { attempt, second } = result;
-          const rowCandidates = textWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta, descriptor.field);
-          rowsWithMeta.forEach(item => {
-            const candidate = textIntegrityCellCandidate(rowCandidates.get(item.sourceRow) || '', descriptor.field);
-            const log = attemptLogByRow.get(item.sourceRow) || [];
-            log.push({ scope: 'batch', mode: attempt.name, candidate });
-            attemptLogByRow.set(item.sourceRow, log);
-            const list = batchCandidatesByRow.get(item.sourceRow) || [];
-            list.push(candidate);
-            batchCandidatesByRow.set(item.sourceRow, list);
-          });
-        }
-      } catch (_) {
-        // Ein fehlender DEU-Spaltenlauf darf keine Werte erfinden. Ohne Gegenbeweis
-        // bleibt der Primärwert bestehen; vorhandene Randauffälligkeiten bleiben sichtbar.
+    const attemptLogByField = new Map(activeDescriptors.map(item => [item.field, new Map()]));
+    const batchCandidatesByField = new Map(activeDescriptors.map(item => [item.field, new Map()]));
+    let worker = null;
+
+    try {
+      if (typeof Tesseract.createWorker === 'function') {
+        try { worker = await Tesseract.createWorker('deu'); } catch (_) { worker = null; }
       }
 
-      const reviewRows = [];
-      out.forEach(ride => {
-        const sourceRow = Number(ride.sourceRow);
-        const originalSource = descriptor.field === 'flightLocation'
-          ? (ride.sourceFlightLocationRaw || ride.flightLocation)
-          : descriptor.field === 'customer'
-            ? (ride.customerRawOcr || ride.customer)
-            : ride[descriptor.field];
-        const original = textIntegrityCellCandidate(originalSource, descriptor.field);
-        ride[`${descriptor.field}TargetedOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
-        if (!original) return;
-        const batchCandidates = (batchCandidatesByRow.get(sourceRow) || []).filter(Boolean);
-        const hasNearAlternative = batchCandidates.some(candidate => candidate !== original && textIntegrityAlternativeIsSafe(original, candidate));
-        if (hasNearAlternative || textIntegritySuspiciousEdge(original) || textIntegrityPotentialGlyphSplit(original)) {
-          reviewRows.push({ ride, sourceRow, original });
+      // P109.1 performance gate: all eligible text columns are packed side-by-side
+      // into ONE compact canvas and recognized in ONE DEU batch pass. This preserves
+      // independent image evidence while avoiding three full-height worker/column runs.
+      const batchScale = 2;
+      const composite = buildTextIntegrityCompositeBatchCanvas(imageCanvas, activeDescriptors, minY, maxY, batchScale);
+      if (composite?.canvas) {
+        if (status) status.textContent = 'Textspalten werden gemeinsam mit deutscher OCR gegengeprüft …';
+        try {
+          let batchResult;
+          if (worker && typeof worker.recognize === 'function') {
+            if (typeof worker.setParameters === 'function') await worker.setParameters({ tessedit_pageseg_mode: '6' });
+            batchResult = await worker.recognize(composite.canvas);
+          } else {
+            batchResult = await Tesseract.recognize(composite.canvas, 'deu', { tessedit_pageseg_mode: '6' });
+          }
+          const parsed = textIntegrityCompositeCandidatesByField(
+            batchResult,
+            composite.cropTop,
+            composite.scale,
+            rowsWithMeta,
+            composite.segments
+          );
+          activeDescriptors.forEach(descriptor => {
+            const rows = parsed.get(descriptor.field) || new Map();
+            const attemptLogByRow = attemptLogByField.get(descriptor.field);
+            const batchCandidatesByRow = batchCandidatesByField.get(descriptor.field);
+            rowsWithMeta.forEach(item => {
+              const candidate = textIntegrityCellCandidate(rows.get(item.sourceRow) || '', descriptor.field);
+              const log = attemptLogByRow.get(item.sourceRow) || [];
+              log.push({ scope: 'batch', mode: 'text-deu-composite-psm6', candidate });
+              attemptLogByRow.set(item.sourceRow, log);
+              const list = batchCandidatesByRow.get(item.sourceRow) || [];
+              list.push(candidate);
+              batchCandidatesByRow.set(item.sourceRow, list);
+            });
+          });
+        } catch (_) {
+          // No batch result means no changed value may be invented. Local review is
+          // still permitted for primary edge/glyph triggers, but correction remains
+          // impossible unless the independent batch evidence is present.
         }
+      }
+
+      const reviewItems = [];
+      activeDescriptors.forEach(descriptor => {
+        const attemptLogByRow = attemptLogByField.get(descriptor.field);
+        const batchCandidatesByRow = batchCandidatesByField.get(descriptor.field);
+        out.forEach(ride => {
+          const sourceRow = Number(ride.sourceRow);
+          const originalSource = descriptor.field === 'flightLocation'
+            ? (ride.sourceFlightLocationRaw || ride.flightLocation)
+            : descriptor.field === 'customer'
+              ? (ride.customerRawOcr || ride.customer)
+              : ride[descriptor.field];
+          const original = textIntegrityCellCandidate(originalSource, descriptor.field);
+          ride[`${descriptor.field}TargetedOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
+          if (!original) return;
+          const batchCandidates = (batchCandidatesByRow.get(sourceRow) || []).filter(Boolean);
+          const hasNearAlternative = batchCandidates.some(candidate => candidate !== original && textIntegrityAlternativeIsSafe(original, candidate));
+          if (hasNearAlternative || textIntegritySuspiciousEdge(original) || textIntegrityPotentialGlyphSplit(original)) {
+            reviewItems.push({ descriptor, ride, sourceRow, original });
+          }
+        });
       });
 
-      let worker = null;
-      try {
-        if (reviewRows.length && typeof Tesseract.createWorker === 'function') worker = await Tesseract.createWorker('deu');
-        for (const item of reviewRows) {
-          const rowMeta = rowsWithMeta.find(row => row.sourceRow === item.sourceRow)?.meta;
-          if (!rowMeta) continue;
-          const rowHeight = Math.max(8, rowMeta.y1 - rowMeta.y0);
-          const localAttempts = [
-            { name: 'text-deu-cell-psm7', scale: 3, psm: '7', xPad: Math.max(1, cellWidth * 0.018), yPad: Math.max(1, rowHeight * 0.08) },
-            { name: 'text-deu-cell-psm6', scale: 4, psm: '6', xPad: Math.max(1, cellWidth * 0.035), yPad: Math.max(1, rowHeight * 0.03) }
-          ];
-          for (const attempt of localAttempts) {
-            let candidate = '';
-            try {
-              const crop = cropCanvasRegion(
-                imageCanvas,
-                left + attempt.xPad,
-                rowMeta.y0 - attempt.yPad,
-                right - attempt.xPad,
-                rowMeta.y1 + attempt.yPad,
-                attempt.scale
-              );
-              let result;
-              if (worker && typeof worker.recognize === 'function') {
-                if (typeof worker.setParameters === 'function') await worker.setParameters({ tessedit_pageseg_mode: attempt.psm });
-                result = await worker.recognize(crop);
-              } else {
-                result = await Tesseract.recognize(crop, 'deu', { tessedit_pageseg_mode: attempt.psm });
-              }
-              candidate = textIntegrityCellCandidate(result?.data?.text || '', descriptor.field);
-            } catch (_) {}
-            const log = attemptLogByRow.get(item.sourceRow) || [];
-            log.push({ scope: 'local', mode: attempt.name, candidate });
-            attemptLogByRow.set(item.sourceRow, log);
-          }
-        }
-      } finally {
-        if (worker && typeof worker.terminate === 'function') {
-          try { await worker.terminate(); } catch (_) {}
+      for (const item of reviewItems) {
+        const descriptor = item.descriptor;
+        const rowMeta = rowsWithMeta.find(row => row.sourceRow === item.sourceRow)?.meta;
+        if (!rowMeta) continue;
+        const rowHeight = Math.max(8, rowMeta.y1 - rowMeta.y0);
+        const localAttempts = [
+          { name: 'text-deu-cell-psm7', scale: 3, psm: '7', xPad: Math.max(1, descriptor.cellWidth * 0.018), yPad: Math.max(1, rowHeight * 0.08) },
+          { name: 'text-deu-cell-psm6', scale: 4, psm: '6', xPad: Math.max(1, descriptor.cellWidth * 0.035), yPad: Math.max(1, rowHeight * 0.03) }
+        ];
+        for (const attempt of localAttempts) {
+          let candidate = '';
+          try {
+            const crop = cropCanvasRegion(
+              imageCanvas,
+              descriptor.left + attempt.xPad,
+              rowMeta.y0 - attempt.yPad,
+              descriptor.right - attempt.xPad,
+              rowMeta.y1 + attempt.yPad,
+              attempt.scale
+            );
+            let result;
+            if (worker && typeof worker.recognize === 'function') {
+              if (typeof worker.setParameters === 'function') await worker.setParameters({ tessedit_pageseg_mode: attempt.psm });
+              result = await worker.recognize(crop);
+            } else {
+              result = await Tesseract.recognize(crop, 'deu', { tessedit_pageseg_mode: attempt.psm });
+            }
+            candidate = textIntegrityCellCandidate(result?.data?.text || '', descriptor.field);
+          } catch (_) {}
+          const attemptLogByRow = attemptLogByField.get(descriptor.field);
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          log.push({ scope: 'local', mode: attempt.name, candidate });
+          attemptLogByRow.set(item.sourceRow, log);
         }
       }
+    } finally {
+      if (worker && typeof worker.terminate === 'function') {
+        try { await worker.terminate(); } catch (_) {}
+      }
+    }
 
+    activeDescriptors.forEach(descriptor => {
+      const attemptLogByRow = attemptLogByField.get(descriptor.field);
       out.forEach(ride => {
         const sourceRow = Number(ride.sourceRow);
         const originalSource = descriptor.field === 'flightLocation'
@@ -5463,35 +5582,39 @@
         ride[`${descriptor.field}TargetedOcrAttempts`] = attempts;
         if (!original) return;
         const decision = textIntegrityDecision(original, attempts);
-        if (decision?.status === 'correct' && decision.candidate && textIntegrityAlternativeIsSafe(original, decision.candidate)) {
-          const edgeAlternative = textIntegrityEdgeAlternative(original, decision.candidate);
-          const peerCount = edgeAlternative ? out.filter(other => {
-            if (Number(other.sourceRow) === sourceRow) return false;
-            const peerSource = descriptor.field === 'flightLocation'
-              ? (other.sourceFlightLocationRaw || other.flightLocation)
-              : descriptor.field === 'customer'
-                ? (other.customerRawOcr || other.customer)
-                : other[descriptor.field];
-            return textIntegrityCellCandidate(peerSource, descriptor.field) === decision.candidate;
-          }).length : 0;
-          // Randinterpunktion ist besonders fehleranfällig. Selbst ein starker OCR-Konsens
-          // darf dort nur korrigieren, wenn derselbe Kandidat zusätzlich mindestens zweimal
-          // unabhängig in derselben aktuellen Planliste vorkommt. Ohne diese dritte Evidenz
-          // wird fail-closed blockiert statt legitime Interpunktion wegzutrimmen.
+        const candidate = textIntegrityCellCandidate(decision?.candidate || '', descriptor.field);
+        const edgeAlternative = candidate ? textIntegrityEdgeAlternative(original, candidate) : false;
+        const peerCount = edgeAlternative ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, candidate) : 0;
+        const promotedEdgeConflict = candidate
+          ? textIntegrityEdgeConflictCanPromote(decision, original, candidate, peerCount)
+          : false;
+        const canCorrect = Boolean(
+          candidate &&
+          textIntegrityAlternativeIsSafe(original, candidate) &&
+          (decision?.status === 'correct' || promotedEdgeConflict)
+        );
+
+        if (canCorrect) {
+          // Randinterpunktion ist besonders fehleranfällig. Auch P109.1 korrigiert
+          // sie nur mit mindestens zwei gleichen Peers aus der aktuellen Planliste.
           if (edgeAlternative && peerCount < 2) {
             ride[`${descriptor.field}OcrConflict`] = true;
-            ride[`${descriptor.field}OcrConflictCandidate`] = decision.candidate;
-            ride[`${descriptor.field}OcrEvidence`] = { ...(decision.evidence || {}), samePlanPeerCount: peerCount };
+            ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
+            ride[`${descriptor.field}OcrEvidence`] = { ...(decision?.evidence || {}), samePlanPeerCount: peerCount };
             return;
           }
           ride[`${descriptor.field}OcrInitial`] = original;
           ride[`${descriptor.field}OcrAutoCorrected`] = true;
           ride[`${descriptor.field}OcrCorrectionSource`] = edgeAlternative
-            ? 'deu_column_plus_local_cell_plus_same_plan_consensus'
-            : 'deu_column_plus_local_cell_consensus';
-          ride[`${descriptor.field}OcrEvidence`] = { ...(decision.evidence || {}), ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {}) };
-          if (descriptor.field === 'flightLocation') ride.flightLocation = normalizeFlightLocation(decision.candidate);
-          else ride[descriptor.field] = decision.candidate;
+            ? 'deu_composite_batch_plus_local_cell_plus_same_plan_consensus'
+            : 'deu_composite_batch_plus_local_cell_consensus';
+          ride[`${descriptor.field}OcrEvidence`] = {
+            ...(decision?.evidence || {}),
+            ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {}),
+            ...(promotedEdgeConflict ? { promotedFromConflict: true } : {})
+          };
+          if (descriptor.field === 'flightLocation') ride.flightLocation = normalizeFlightLocation(candidate);
+          else ride[descriptor.field] = candidate;
           if (descriptor.field === 'customer' || descriptor.field === 'company') {
             ride.partner = cellText(ride.customer) || cellText(ride.company);
           }
@@ -5499,15 +5622,18 @@
         }
         if (decision?.status === 'conflict') {
           ride[`${descriptor.field}OcrConflict`] = true;
-          ride[`${descriptor.field}OcrConflictCandidate`] = decision.candidate || '';
-          ride[`${descriptor.field}OcrEvidence`] = decision.evidence || null;
+          ride[`${descriptor.field}OcrConflictCandidate`] = candidate || '';
+          ride[`${descriptor.field}OcrEvidence`] = {
+            ...(decision?.evidence || {}),
+            ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {})
+          };
           return;
         }
         if (decision?.status === 'suspicious') {
           ride[`${descriptor.field}OcrSuspicious`] = true;
         }
       });
-    }
+    });
 
     return out;
   }
@@ -8775,6 +8901,7 @@
         if (window.ATMSFlight) state.rides = window.ATMSFlight.prepareRides(state.rides);
         state.meta = { sheetName: 'JSON', profile: 'ATMS JSON' };
         state.issues = validate(state.rides.map((ride, index) => ({ ...ride, sourceRow: index + 1 })));
+        writeCurrentAnalysisJsonPreview(state.rides);
         if ($('planProfileInfo')) $('planProfileInfo').innerHTML = '<b>ATMS JSON</b><span>100 % Erkennung</span><small>Bestehende ATMS-Datenstruktur erkannt.</small>';
         render();
         pipelineStarted = maybeAutoImportCleanPlan();
@@ -9001,6 +9128,7 @@
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
+      writeCurrentAnalysisJsonPreview(state.rides);
       localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);
       render();
@@ -9042,6 +9170,7 @@
     try { window.ATMSP41BoardArrivalTimeFieldDiagnostic = null; } catch (_) {}
     try { window.ATMSP42CurrentSchemaTimeDiagnostic = null; } catch (_) {}
     if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
+    if ($('jsonInput')) $('jsonInput').value = '';
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
     state.dateInfo = {};
@@ -9082,6 +9211,16 @@
       }
     } catch (_) {}
   });
+
+  function writeCurrentAnalysisJsonPreview(rides) {
+    const input = $('jsonInput');
+    if (!input) return;
+    try {
+      input.value = JSON.stringify({ rides: Array.isArray(rides) ? rides : [] }, null, 2);
+    } catch (_) {
+      input.value = '';
+    }
+  }
 
   async function importRides(options = {}) {
     if (!state.rides.length) return false;

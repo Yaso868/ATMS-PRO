@@ -1,4 +1,4 @@
-// ATMS PRO P109.0 – browser/node shared OCR-integrity helpers.
+// ATMS PRO P109.1 – browser/node shared OCR-integrity helpers (P109.0 decision rules retained; orchestration fixed in plan-import).
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
   const api=factory();

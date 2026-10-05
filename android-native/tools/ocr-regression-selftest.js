@@ -180,12 +180,17 @@ assert.strictEqual(core.decideTextIntegrity('Avion',[
   {scope:'batch',candidate:'Avion'},
   {scope:'local',candidate:'Avion'}
 ]).status,'ok');
-assert(planImportSource.includes('recoverTextIntegrityTargeted'), 'P109.0 must run the generic text integrity OCR gate');
-assert(planImportSource.includes('text_integrity_ocr'), 'P109.0 must expose text integrity performance timing');
-assert(planImportSource.includes('OcrConflict'), 'P109.0 unresolved text OCR conflicts must be import-blocking');
-assert(planImportSource.includes('deu_column_plus_local_cell_consensus'), 'P109.0 auto-correction must require independent column + local OCR evidence');
-assert(planImportSource.includes('samePlanPeerCount'), 'P109.0 edge-punctuation correction must require current-plan peer evidence');
+assert(planImportSource.includes('recoverTextIntegrityTargeted'), 'P109.1 must run the generic text integrity OCR gate');
+assert(planImportSource.includes('text_integrity_ocr'), 'P109.1 must expose text integrity performance timing');
+assert(planImportSource.includes('OcrConflict'), 'P109.1 unresolved text OCR conflicts must remain import-blocking');
+assert(planImportSource.includes('buildTextIntegrityCompositeBatchCanvas'), 'P109.1 must use one compact composite DEU batch canvas');
+assert(planImportSource.includes('text-deu-composite-psm6'), 'P109.1 must log the composite batch evidence');
+assert(planImportSource.includes('textIntegrityEdgeConflictCanPromote'), 'P109.1 must evaluate edge conflicts against image + current-plan evidence');
+assert(planImportSource.includes('Number(evidence.batch || 0) >= 1 && Number(evidence.local || 0) >= 1'), 'P109.1 peer promotion must still require independent batch + local image evidence');
+assert(planImportSource.includes('samePlanPeerCount'), 'P109.1 edge-punctuation correction must require current-plan peer evidence');
+assert(planImportSource.includes('writeCurrentAnalysisJsonPreview'), 'P109.1 blocked analyses must refresh the staged JSON preview');
+assert(planImportSource.includes('deu_composite_batch_plus_local_cell_plus_same_plan_consensus'), 'P109.1 correction source must identify composite image + peer evidence');
 for(const forbidden of ['Schiitz','‘Avion']){
-  for(const source of productionFiles) assert(!source.includes(forbidden),`P109.0 fixture leaked into production: ${forbidden}`);
+  for(const source of productionFiles) assert(!source.includes(forbidden),`P109.1 fixture leaked into production: ${forbidden}`);
 }
-console.log('P109.0 Text Cell Integrity Gate regression self-test: PASS');
+console.log('P109.1 Text Cell Integrity Gate follow-up regression self-test: PASS');
