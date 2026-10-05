@@ -145,4 +145,47 @@ assert(planImportSource.includes("sourcePlanColorSource = 'driver_plan_consensus
 for(const forbidden of ['EWS522','EW522','16:10','15:10']){
   for(const source of productionFiles) assert(!source.includes(forbidden),`P108.0 fixture leaked into production: ${forbidden}`);
 }
-console.log('P108.0 Import Quality Gate regression self-test: PASS');
+
+// P109.0 Text Cell Integrity Gate: changed text may auto-correct only when a
+// safe near-image alternative has strong independent column + local evidence.
+assert(core.safeTextIntegrityAlternative('‘Avion','Avion'));
+assert(core.safeTextIntegrityAlternative('Schiitz','Schütz'));
+assert(core.safeTextIntegrityAlternative('Miinchen','München'));
+assert.strictEqual(core.safeTextIntegrityAlternative('Avion','Eurowings'),false);
+assert.strictEqual(core.textIntegrityPotentialGlyphSplit('Miinchen'),true);
+assert.strictEqual(core.textIntegrityPotentialGlyphSplit('Hawaii'),false);
+assert.deepStrictEqual(core.decideTextIntegrity('Schiitz',[
+  {scope:'batch',candidate:'Schütz'},
+  {scope:'batch',candidate:'Schütz'},
+  {scope:'local',candidate:'Schütz'},
+  {scope:'local',candidate:'Schütz'}
+]),{status:'correct',candidate:'Schütz',evidence:{total:4,batch:2,local:2}});
+assert.deepStrictEqual(core.decideTextIntegrity('‘Avion',[
+  {scope:'batch',candidate:'Avion'},
+  {scope:'batch',candidate:''},
+  {scope:'local',candidate:'Avion'},
+  {scope:'local',candidate:'Avion'}
+]),{status:'correct',candidate:'Avion',evidence:{total:3,batch:1,local:2}});
+assert.deepStrictEqual(core.decideTextIntegrity('Schiitz',[
+  {scope:'batch',candidate:'Schütz'},
+  {scope:'batch',candidate:'Schütz'},
+  {scope:'local',candidate:'Schiitz'},
+  {scope:'local',candidate:'Schiitz'}
+]),{status:'conflict',candidate:'Schütz',evidence:{total:2,batch:2,local:0}});
+assert.deepStrictEqual(core.decideTextIntegrity('Miinchen',[
+  {scope:'local',candidate:'München'},
+  {scope:'local',candidate:'München'}
+]),{status:'conflict',candidate:'München',evidence:{total:2,batch:0,local:2}});
+assert.strictEqual(core.decideTextIntegrity('Avion',[
+  {scope:'batch',candidate:'Avion'},
+  {scope:'local',candidate:'Avion'}
+]).status,'ok');
+assert(planImportSource.includes('recoverTextIntegrityTargeted'), 'P109.0 must run the generic text integrity OCR gate');
+assert(planImportSource.includes('text_integrity_ocr'), 'P109.0 must expose text integrity performance timing');
+assert(planImportSource.includes('OcrConflict'), 'P109.0 unresolved text OCR conflicts must be import-blocking');
+assert(planImportSource.includes('deu_column_plus_local_cell_consensus'), 'P109.0 auto-correction must require independent column + local OCR evidence');
+assert(planImportSource.includes('samePlanPeerCount'), 'P109.0 edge-punctuation correction must require current-plan peer evidence');
+for(const forbidden of ['Schiitz','‘Avion']){
+  for(const source of productionFiles) assert(!source.includes(forbidden),`P109.0 fixture leaked into production: ${forbidden}`);
+}
+console.log('P109.0 Text Cell Integrity Gate regression self-test: PASS');

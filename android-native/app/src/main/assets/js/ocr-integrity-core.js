@@ -1,4 +1,4 @@
-// ATMS PRO P108.0 – browser/node shared OCR-integrity helpers.
+// ATMS PRO P109.0 – browser/node shared OCR-integrity helpers.
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
   const api=factory();
@@ -183,5 +183,102 @@
     list.forEach((ride,i)=>{if(i===index)return;if(text(ride?.flightDirection)!==direction)return;if(key(ride?.flightLocation)!==location)return;if(flight(ride?.flightNumber)===candidate)count++;});
     return count;
   }
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount});
+
+  function textIntegrityNormalize(value){
+    return text(value).normalize('NFC').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim();
+  }
+  function textIntegrityEditDistance(leftValue,rightValue){
+    const a=textIntegrityNormalize(leftValue).toLocaleLowerCase('de-DE');
+    const b=textIntegrityNormalize(rightValue).toLocaleLowerCase('de-DE');
+    if(a===b)return 0;
+    if(!a)return b.length;
+    if(!b)return a.length;
+    const prev=Array.from({length:b.length+1},(_,i)=>i);
+    for(let i=1;i<=a.length;i++){
+      let diagonal=prev[0];
+      prev[0]=i;
+      for(let j=1;j<=b.length;j++){
+        const old=prev[j];
+        prev[j]=Math.min(prev[j]+1,prev[j-1]+1,diagonal+(a[i-1]===b[j-1]?0:1));
+        diagonal=old;
+      }
+    }
+    return prev[b.length];
+  }
+  function textIntegrityHasDiacritic(value){
+    const normalized=textIntegrityNormalize(value);
+    if(!normalized)return false;
+    return /[\u0300-\u036f]/u.test(normalized.normalize('NFD')) || /ß/u.test(normalized);
+  }
+  function textIntegritySuspiciousEdgePunctuation(value){
+    const raw=textIntegrityNormalize(value);
+    if(!raw)return false;
+    return /^[‘’“”"'`´|¦│~]{1,2}(?=[A-Za-zÄÖÜäöüßÀ-ÿ0-9])/u.test(raw) ||
+      /[A-Za-zÄÖÜäöüßÀ-ÿ0-9][‘’“”"'`´|¦│~]{1,2}$/u.test(raw);
+  }
+  function textIntegrityPotentialGlyphSplit(value){
+    const raw=textIntegrityNormalize(value);
+    // Trigger only: a repeated narrow-glyph sequence may be a segmented diacritic.
+    // It NEVER changes text by itself; only independent image OCR can decide.
+    return /[A-Za-zÄÖÜäöüßÀ-ÿ]ii[A-Za-zÄÖÜäöüßÀ-ÿ]/iu.test(raw);
+  }
+  function textIntegrityEdgeCore(value){
+    return textIntegrityNormalize(value)
+      .replace(/^[‘’“”"'`´|¦│~]{1,2}/u,'')
+      .replace(/[‘’“”"'`´|¦│~]{1,2}$/u,'')
+      .trim();
+  }
+  function textIntegrityEdgePunctuationAlternative(originalValue,candidateValue){
+    const original=textIntegrityNormalize(originalValue);
+    const candidate=textIntegrityNormalize(candidateValue);
+    if(!original||!candidate||original===candidate)return false;
+    const ol=original.toLocaleLowerCase('de-DE');
+    const cl=candidate.toLocaleLowerCase('de-DE');
+    const oc=textIntegrityEdgeCore(ol),cc=textIntegrityEdgeCore(cl);
+    return Boolean(oc&&cc&&oc===cc&&(oc!==ol||cc!==cl));
+  }
+  function safeTextIntegrityAlternative(originalValue,candidateValue){
+    const original=textIntegrityNormalize(originalValue);
+    const candidate=textIntegrityNormalize(candidateValue);
+    if(!original||!candidate||original===candidate)return false;
+    const ol=original.toLocaleLowerCase('de-DE');
+    const cl=candidate.toLocaleLowerCase('de-DE');
+    if(textIntegrityEdgePunctuationAlternative(original,candidate))return true;
+    const distance=textIntegrityEditDistance(ol,cl);
+    if(distance===1 && Math.min(ol.length,cl.length)>=3)return true;
+    const candidateHasDiacritic=textIntegrityHasDiacritic(candidate);
+    const originalHasDiacritic=textIntegrityHasDiacritic(original);
+    if(distance<=2 && candidateHasDiacritic && !originalHasDiacritic &&
+       ol[0]===cl[0] && ol[ol.length-1]===cl[cl.length-1] && Math.min(ol.length,cl.length)>=4)return true;
+    return false;
+  }
+  function decideTextIntegrity(originalValue,attempts){
+    const original=textIntegrityNormalize(originalValue);
+    const normalizedAttempts=(Array.isArray(attempts)?attempts:[])
+      .map(item=>({scope:text(item?.scope)||'unknown',candidate:textIntegrityNormalize(item?.candidate)}))
+      .filter(item=>item.candidate && (item.candidate===original || safeTextIntegrityAlternative(original,item.candidate)));
+    const stats=new Map();
+    for(const item of normalizedAttempts){
+      const key=item.candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+      const current=stats.get(key)||{candidate:item.candidate,total:0,batch:0,local:0};
+      current.total++;
+      if(item.scope==='batch')current.batch++;
+      if(item.scope==='local')current.local++;
+      stats.set(key,current);
+    }
+    const ranked=[...stats.values()].sort((a,b)=>b.total-a.total||b.local-a.local||b.batch-a.batch||a.candidate.localeCompare(b.candidate,'de'));
+    const winner=ranked[0]||null,runner=ranked[1]||null;
+    if(winner && winner.candidate!==original && safeTextIntegrityAlternative(original,winner.candidate) &&
+       winner.total>=3 && winner.local>=2 && winner.batch>=1 && (!runner || runner.total<=1)){
+      return {status:'correct',candidate:winner.candidate,evidence:{total:winner.total,batch:winner.batch,local:winner.local}};
+    }
+    const competing=ranked.filter(item=>item.candidate!==original && safeTextIntegrityAlternative(original,item.candidate));
+    const conflict=competing.find(item=>item.local>=2 || item.batch>=2 || (item.batch>=1&&item.local>=1));
+    if(conflict){
+      return {status:'conflict',candidate:conflict.candidate,evidence:{total:conflict.total,batch:conflict.batch,local:conflict.local}};
+    }
+    return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
+  }
+
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,decideTextIntegrity});
 });

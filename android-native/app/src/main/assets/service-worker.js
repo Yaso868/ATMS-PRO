@@ -1,5 +1,5 @@
-// CORE-007D8A1F1D8P1080 · 05.10.2026: refresh cache after Import Quality Gate / Golden Regression patch.
-const CACHE_NAME = "atms-pro-pwa-2026-10-05-p1080";
+// CORE-007D8A1F1D8P1090 · 05.10.2026: refresh cache after Text Cell Integrity Gate patch.
+const CACHE_NAME = "atms-pro-pwa-2026-10-05-p1090";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -16,8 +16,8 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=CORE-004C",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P1080",
-  "./js/plan-import.js?v=P1080",
+  "./js/ocr-integrity-core.js?v=P1090",
+  "./js/plan-import.js?v=P1090",
   "./js/pwa.js?v=CORE-004C",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
@@ -69,7 +69,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1080");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1090");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}
