@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1079 · 05.10.2026: NATIVE ROOT DOUBLE-BACK EXIT – exposes a minimal native exit bridge used only after ATMS JS confirms the second Android Back on root Fahrten.
 // CORE-007D8A1F1D8P1061 · 02.10.2026: NATIVE FILE PICKER REGRESSION FIX – SAF-Auswahl unterstützt Einzel- und Mehrfachdateien explizit; ClipData/data-URI werden robust an WebView zurückgegeben. Keine OCR-/Importlogik geändert.
 // STORAGE V2 P104 · 02.10.2026: Native read-only archive reader for exact files inside the persisted SAF archive folder. Returns bytes only after exact-name lookup and permission/origin checks; no restore/delete/write path is added.
 // STORAGE V2 PHASE 2B · 02.10.2026: Persistenter Android-Archivordner via Storage Access Framework. Einmalige Ordnerfreigabe wird dauerhaft gehalten; .atmsarchive-Dateien werden kollisionsfrei im Ordner erstellt, nativ zurückgelesen und byte-/SHA-256-genau verifiziert. Keine automatische Löschung aktiver Daten.
@@ -84,7 +85,7 @@ public final class MainActivity extends Activity {
         // P97-2B: Android 13+ Predictive-Back / Randgeste explizit abfangen.
         // Auf aktuellen Android-Versionen wird die Randgeste nicht verlaesslich
         // ueber Activity.onBackPressed() zugestellt. Beide System-Randgesten
-        // sollen innerhalb von ATMS navigieren und die Activity niemals direkt beenden.
+        // sollen zunaechst innerhalb von ATMS navigieren; P1079 erlaubt das Beenden nur nach expliziter JS-Doppel-Zurueck-Freigabe auf root Fahrten.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                     OnBackInvokedDispatcher.PRIORITY_DEFAULT,
@@ -118,6 +119,9 @@ public final class MainActivity extends Activity {
         webView.addJavascriptInterface(
                 new AtmsNativeFileExportBridge(),
                 "ATMSNativeFileExportHost");
+        webView.addJavascriptInterface(
+                new AtmsNativeAppBridge(),
+                "ATMSNativeAppHost");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -420,6 +424,17 @@ public final class MainActivity extends Activity {
                     false);
             pendingGeolocationCallback = null;
             pendingGeolocationOrigin = null;
+        }
+    }
+
+    private final class AtmsNativeAppBridge {
+        @JavascriptInterface
+        public void exitApp() {
+            runOnUiThread(() -> {
+                if (!isFinishing()) {
+                    finish();
+                }
+            });
         }
     }
 

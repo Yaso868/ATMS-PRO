@@ -2036,6 +2036,17 @@ const ATMS_P95_PRIMARY_KEY='atms_p95_primary_tab_v1';
 const ATMS_P95_PRIMARY_DEPTH='atms_p95_primary_depth_v1';
 const ATMS_P95_MODAL_KEY='atms_p95_modal_v1';
 let atmsPrimaryTab='rides';
+let atmsRootNativeBackArmedAt=0;
+const ATMS_ROOT_BACK_EXIT_WINDOW_MS=3200;
+function atmsRequestNativeExit(){
+  try{
+    if(window.ATMSNativeAppHost&&typeof window.ATMSNativeAppHost.exitApp==='function'){
+      window.ATMSNativeAppHost.exitApp();
+      return true;
+    }
+  }catch(_){ }
+  return false;
+}
 function atmsPrimaryEnsureState(){
   try{
     if(!history.state?.[ATMS_P95_PRIMARY_KEY])history.replaceState({...history.state,[ATMS_P95_PRIMARY_KEY]:atmsPrimaryTab,[ATMS_P95_PRIMARY_DEPTH]:Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0},'',location.href);
@@ -2075,25 +2086,40 @@ function atmsPrimaryCloseDriverDialog({selected=false}={}){
     else{try{history.back()}catch(_){ }}
   }
 }
-function atmsPrimaryBack(){
-  if($('atmsArchiveViewer')){closeStorageV2ArchiveViewer();return}
-  if(!$('driverDialog')?.classList.contains('hidden')){atmsPrimaryCloseDriverDialog();return}
+// CORE-007D8A1F1D8P1079 · 05.10.2026: ROOT NATIVE BACK EXIT
+// Hauptbereiche bleiben im ATMS-Verlauf. Auf der Wurzel „Fahrten“ beendet erst
+// ein zweiter Android-System-Zurück-Impuls innerhalb eines kurzen Zeitfensters
+// die Activity. Der sichtbare Fahrten-Zurück-Button beendet die App weiterhin nie.
+function atmsPrimaryBack(options={}){
+  const nativeBack=Boolean(options&&options.native);
+  if($('atmsArchiveViewer')){atmsRootNativeBackArmedAt=0;closeStorageV2ArchiveViewer();return}
+  if(!$('driverDialog')?.classList.contains('hidden')){atmsRootNativeBackArmedAt=0;atmsPrimaryCloseDriverDialog();return}
   if($('settingsView')&&!$('settingsView').classList.contains('hidden')&&atmsSettingsActivePanel()){
-    atmsSettingsBack();return;
+    atmsRootNativeBackArmedAt=0;atmsSettingsBack();return;
   }
   if(atmsPrimaryTab==='rides'&&(Number(history.state?.[ATMS_P95_PRIMARY_DEPTH])||0)===0&&!history.state?.[ATMS_SETTINGS_HISTORY_KEY]){
-    // On root Fahrten Android's system Back may leave; the on-screen button doesn't
-    // unexpectedly close the native app.
-    showToast('Du bist bereits auf Fahrten.');return;
+    if(!nativeBack){showToast('Du bist bereits auf Fahrten.');return}
+    const now=Date.now();
+    if(atmsRootNativeBackArmedAt&&now-atmsRootNativeBackArmedAt<=ATMS_ROOT_BACK_EXIT_WINDOW_MS){
+      atmsRootNativeBackArmedAt=0;
+      if(atmsRequestNativeExit())return;
+      showToast('App-Beenden ist in dieser Umgebung nicht verfügbar.','warn');
+      return;
+    }
+    atmsRootNativeBackArmedAt=now;
+    showToast('Noch einmal Zurück zum Beenden.');
+    return;
   }
+  atmsRootNativeBackArmedAt=0;
   try{history.back()}catch(_){atmsPrimaryRestore('rides',null)}
 }
 function atmsInstallPrimaryBackNavigation(){
   atmsPrimaryEnsureState();
-  // P97-2C: bridge Android native Back / edge gesture into the existing ATMS back navigation.
+  // P97-2C/P1079: Android Back / edge gesture uses the ATMS navigation first;
+  // only the explicit double-back root rule may request a native Activity exit.
   if(!window.__ATMS_P97_NATIVE_BACK_BOUND){
     window.__ATMS_P97_NATIVE_BACK_BOUND=true;
-    window.addEventListener('atms-native-back',atmsPrimaryBack);
+    window.addEventListener('atms-native-back',()=>atmsPrimaryBack({native:true}));
   }
   window.addEventListener('popstate',e=>{
     const state=e.state||{};
@@ -2118,7 +2144,7 @@ function atmsInstallRidesHeader(){
     top.insertBefore(panel,search);panel.querySelector('.atms-rides-search-input').appendChild(search);
   }
   const button=$('ridesSearchToggle');if(!button)return;
-  $('ridesTopBack')?.addEventListener('click',atmsPrimaryBack);
+  $('ridesTopBack')?.addEventListener('click',()=>atmsPrimaryBack({native:false}));
   let expanded=true;
   const setExpanded=next=>{expanded=Boolean(next);top.classList.toggle('atms-rides-collapsed',!expanded);button.setAttribute('aria-expanded',String(expanded));button.setAttribute('aria-label',expanded?'Suche ausblenden':'Suche einblenden')};
   button.addEventListener('click',()=>{setExpanded(!expanded);if(expanded){try{search?.focus({preventScroll:true})}catch(_){search?.focus()}}});

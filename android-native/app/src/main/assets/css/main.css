@@ -1684,3 +1684,34 @@ html,body{
     padding-top:calc(max(30px,env(safe-area-inset-top,0px)) + 7px)!important;
   }
 }
+
+
+/* CORE-007D8A1F1D8P1079 · 05.10.2026: ABOUT HERO POLISH
+   Etwas mehr Luft oben, kleineres Fahrzeug und ruhiger durchgehender Goldrahmen. */
+#settingsView.settings-about-open #infoCard{
+  border-color:#b89552!important;
+  box-shadow:0 0 0 1px rgba(216,177,88,.10),0 14px 32px rgba(0,0,0,.28)!important;
+}
+@media(max-width:760px){
+  #settingsView.settings-about-open #settingsAboutBody{
+    padding-top:calc(var(--atms-fixed-topbar-space,90px) + 11px)!important;
+  }
+  #settingsView.settings-about-open #infoCard .info-hero{
+    padding:15px 10px 14px!important;
+  }
+  #settingsView.settings-about-open .info-shield{
+    width:152px!important;height:95px!important;margin:1px auto 6px!important;
+  }
+  #settingsView.settings-about-open .info-shield:before{
+    inset:5px 22px 4px!important;border-color:#d2ad5b!important;
+  }
+  #settingsView.settings-about-open .info-van{
+    width:138px!important;max-height:88px!important;transform:none!important;
+  }
+  #settingsView.settings-about-open .info-over{margin-top:3px!important;}
+}
+@media(max-width:760px) and (max-height:700px){
+  #settingsView.settings-about-open #infoCard .info-hero{padding:9px 8px 9px!important}
+  #settingsView.settings-about-open .info-shield{height:78px!important;width:136px!important;margin-bottom:4px!important}
+  #settingsView.settings-about-open .info-van{width:122px!important;max-height:76px!important}
+}

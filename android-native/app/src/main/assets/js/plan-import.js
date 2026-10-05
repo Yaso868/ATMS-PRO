@@ -7612,8 +7612,14 @@
     return candidates.length === 1 ? candidates[0] : null;
   }
 
-  function unresolvedFlightRideCount() {
-    const unresolved = new Set();
+  // CORE-007D8A1F1D8P1079 · 05.10.2026: FLIGHT SUMMARY CONSISTENCY
+  // Eine nach der automatischen Prüfung weiterhin nicht streng verifizierte Flugzuordnung
+  // muss auch im sichtbaren Bereich „Flugprüfung offen“ erscheinen. Das gilt insbesondere
+  // für sichere Unsupported-/Fremdairport-Fälle (z. B. VL1972), die nicht in der DUS-
+  // Provider-Menge vorkommen und deshalb bisher nur in der Auto-Import-Statuszeile als
+  // „bleibt sicher offen“ sichtbar waren. Keine Route/kein Flugort wird verändert.
+  function unresolvedFlightCheckGroups() {
+    const unresolved = new Map();
     for (const ride of Array.isArray(state.rides) ? state.rides : []) {
       const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
       if (!flightNumber) continue;
@@ -7633,9 +7639,22 @@
         stagedAirportIata(ride),
         normalizeTime(ride?.flightTime) || ''
       ].join('|');
-      unresolved.add(key);
+      if (!unresolved.has(key)) unresolved.set(key, {
+        flightNumber,
+        location: normalizeFlightLocation(location),
+        rows: []
+      });
+      const row = Number(ride?.sourceRow || 0);
+      if (row > 0) unresolved.get(key).rows.push(row);
     }
-    return unresolved.size;
+    return [...unresolved.values()].map(group => ({
+      ...group,
+      rows: [...new Set(group.rows)].sort((a,b) => a-b)
+    }));
+  }
+
+  function unresolvedFlightRideCount() {
+    return unresolvedFlightCheckGroups().length;
   }
 
   function stagedPlanIsActive() {
@@ -7869,12 +7888,19 @@
         }).join('')
       : '<div class="plan-issue ok">✓ OCR-Analyse sauber: Keine ungelösten OCR-Hinweise.</div>';
 
-    const flightCheckHtml = flightChecks.length
+    // P1079: Sobald die Auto-Flugprüfung gelaufen ist, ist deren strenger
+    // Verifikationszustand die maßgebliche Anzeigequelle. So kann die Kopfzeile
+    // nicht mehr „Keine Flugprüfung offen“ melden, während die Auto-Pipeline
+    // gleichzeitig noch sichere offene Flugzuordnungen zählt. Vor der Auto-Prüfung
+    // bleibt die bestehende issue-basierte Anzeige unverändert.
+    const autoFlightChecks = state.autoFlightSummary ? unresolvedFlightCheckGroups() : [];
+    const visibleFlightChecks = state.autoFlightSummary ? autoFlightChecks : flightChecks;
+    const flightCheckHtml = visibleFlightChecks.length
       ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(72,156,255,.45);background:rgba(7,33,63,.45)">
-          <div><b>✈ Flugprüfung offen: ${escapeHtml(String(flightChecks.length))}</b></div>
-          <div style="font-size:12px;opacity:.82;margin-top:5px">Diese Punkte stammen aus fehlenden oder noch nicht verifizierten Flugorten und zählen nicht als OCR-Fehler.</div>
+          <div><b>✈ Flugprüfung offen: ${escapeHtml(String(visibleFlightChecks.length))}</b></div>
+          <div style="font-size:12px;opacity:.82;margin-top:5px">Diese Punkte stammen aus fehlenden oder noch nicht streng verifizierten Flugzuordnungen und zählen nicht als OCR-Fehler.</div>
           <div style="font-size:12px;opacity:.82;margin-top:4px">Die Spalte „Zeilenprüfung“ unten zeigt ausschließlich zeilenbezogene OCR-/Datenhinweise; sie ist nicht der Flugstatus.</div>
-          <div style="font-size:12px;line-height:1.5;margin-top:7px">${flightChecks.map(issue => escapeHtml(issue.flightNumber || '')).filter(Boolean).join(' · ')}</div>
+          <div style="font-size:12px;line-height:1.5;margin-top:7px">${visibleFlightChecks.map(issue => escapeHtml(issue.flightNumber || '')).filter(Boolean).join(' · ')}</div>
         </div>`
       : '<div class="plan-issue ok" style="margin-top:10px">✓ Keine Flugprüfung offen.</div>';
 
@@ -8682,6 +8708,9 @@
 
       if (generation !== state.pipelineGeneration) return false;
       state.autoFlightSummary = flightSummary;
+      // P1079: Auto-Prüfstatus sofort in der sichtbaren Flugprüfungs-Zusammenfassung spiegeln,
+      // noch bevor die saubere Planliste automatisch übernommen wird.
+      render();
 
       // P31F5F1: Die vom echten Analyse-Klick stammende Pipeline-Freigabe wird
       // erst JETZT in die kurzlebige Import-Freigabe umgewandelt. Dadurch darf
