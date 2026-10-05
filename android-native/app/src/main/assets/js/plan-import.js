@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1078 · 05.10.2026: IMPORT STATUS CLARITY – trennt die zeilenbezogene OCR-/Datenprüfung sichtbar von der separaten Flugprüfung. Die Vorschau nennt ungelöste Warnungen jetzt „Hinweis“ statt missverständlich „Prüfen“, der Flugprüfungsblock erklärt die Trennung ausdrücklich, und die Bildimport-Zuordnung zeigt die Fahrer-Spalte semantisch als „Name (Fahrer)“ statt eines ggf. fehlerhaft OCR-gelesenen Headertexts. Keine Änderung an OCR, Flugverifikation, Mapping-Index, Fahrtdaten, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P1077 · 05.10.2026: STANDARD-FLIGHT CONFLICT EVIDENCE – unique flights recovered from an initially empty cell are rechecked with the tight standard-flight crops, while duplicate recovered values remain fast-path protected. Inconclusive re-OCR no longer creates a hard blocker by itself; a blocking review now requires positive one-digit alternative evidence from at least two independent crops. Strong two-crop alternatives still auto-correct. No flight-number hardcodes.
 // CORE-007D8A1F1D8P1074 · 04.10.2026: STANDARD-FLIGHT RECHECK PRECISION – same-time one-digit peer checks are now limited to the same flight context (same direction/time and, when present, same flight location). Local re-OCR uses exact primary-word crops plus correctly applied Tesseract PSM/whitelist parameters. This removes P107.3 cross-flight false positives while retaining fail-closed review for genuinely weak/conflicting cells. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1073 · 04.10.2026: STANDARD-FLIGHT LOW-CONFIDENCE CELL RECHECK – formally plausible 2-character-designator flight numbers are locally re-read only when their primary flight-cell OCR is weak and unique, or when a same-time peer differs by exactly one digit. Correction requires multi-crop/multi-mode local OCR consensus; unresolved weak cells become import-blocking with the existing manual correction UI. No airline/flight/route hardcodes.
@@ -7375,9 +7376,15 @@
   }
 
   function renderMapping(headers, mappingInfo) {
-    const labels = Object.entries(mappingInfo.mapping).map(([field, index]) => `${field}: ${headers[index]?.label || `Spalte ${index + 1}`}`);
     const el = $('planProfileInfo');
     const imageMode = Boolean(state.file && isImageFile(state.file));
+    const labels = Object.entries(mappingInfo.mapping).map(([field, index]) => {
+      const rawLabel = headers[index]?.label || `Spalte ${index + 1}`;
+      // P1078: Bei Bildimporten ist der letzte Fahrer-Header OCR-anfällig (z. B. fälschlich „Wg“).
+      // Die interne Zuordnung bleibt unverändert; nur die Nutzeranzeige benennt die semantische Rolle eindeutig.
+      const displayLabel = imageMode && field === 'driver' ? 'Name (Fahrer)' : rawLabel;
+      return `${field}: ${displayLabel}`;
+    });
     // CORE-005A/007B: Mapping-Konfidenz ist eine technische Struktur-Sicherheit,
     // keine belegte Trefferquote aller Fahrtdaten. Sie bleibt intern erhalten,
     // wird beim Bildimport aber nicht mehr als allgemeine '% Erkennung' angezeigt.
@@ -7866,6 +7873,7 @@
       ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(72,156,255,.45);background:rgba(7,33,63,.45)">
           <div><b>✈ Flugprüfung offen: ${escapeHtml(String(flightChecks.length))}</b></div>
           <div style="font-size:12px;opacity:.82;margin-top:5px">Diese Punkte stammen aus fehlenden oder noch nicht verifizierten Flugorten und zählen nicht als OCR-Fehler.</div>
+          <div style="font-size:12px;opacity:.82;margin-top:4px">Die Spalte „Zeilenprüfung“ unten zeigt ausschließlich zeilenbezogene OCR-/Datenhinweise; sie ist nicht der Flugstatus.</div>
           <div style="font-size:12px;line-height:1.5;margin-top:7px">${flightChecks.map(issue => escapeHtml(issue.flightNumber || '')).filter(Boolean).join(' · ')}</div>
         </div>`
       : '<div class="plan-issue ok" style="margin-top:10px">✓ Keine Flugprüfung offen.</div>';
@@ -8225,11 +8233,11 @@
 
     $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
       const rowIssues = actionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
-      // P76: reine Info-/Recovery-Einträge sind bereits gelöst und bleiben oberhalb
-      // transparent sichtbar. Die Statuszelle darf deshalb nur ungelöste Warnungen
-      // oder Fehler als „Prüfen“/„Fehler“ markieren.
+      // P76/P1078: reine Info-/Recovery-Einträge sind bereits gelöst und bleiben oberhalb
+      // transparent sichtbar. Die Zeilenprüfung zeigt nur ungelöste OCR-/Datenwarnungen
+      // oder Fehler; die separate Flugprüfung wird bewusst nicht in diese Zelle gemischt.
       const unresolvedRowIssues = rowIssues.filter(issue => issue.level === 'warning' || issue.level === 'error');
-      const status = unresolvedRowIssues.some(issue => issue.level === 'error') ? 'Fehler' : unresolvedRowIssues.length ? 'Prüfen' : 'OK';
+      const status = unresolvedRowIssues.some(issue => issue.level === 'error') ? 'Fehler' : unresolvedRowIssues.length ? 'Hinweis' : 'OK';
       const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
       return `<tr>
         <td>${escapeHtml(ride.time || '–')}<div style="font-size:11px;opacity:.72;margin-top:3px">${escapeHtml(formatPlanDate(ride.date))}</div></td>
