@@ -185,12 +185,36 @@ assert(planImportSource.includes('text_integrity_ocr'), 'P109.1 must expose text
 assert(planImportSource.includes('OcrConflict'), 'P109.1 unresolved text OCR conflicts must remain import-blocking');
 assert(planImportSource.includes('buildTextIntegrityCompositeBatchCanvas'), 'P109.1 must use one compact composite DEU batch canvas');
 assert(planImportSource.includes('text-deu-composite-psm6'), 'P109.1 must log the composite batch evidence');
-assert(planImportSource.includes('textIntegrityEdgeConflictCanPromote'), 'P109.1 must evaluate edge conflicts against image + current-plan evidence');
-assert(planImportSource.includes('Number(evidence.batch || 0) >= 1 && Number(evidence.local || 0) >= 1'), 'P109.1 peer promotion must still require independent batch + local image evidence');
-assert(planImportSource.includes('samePlanPeerCount'), 'P109.1 edge-punctuation correction must require current-plan peer evidence');
-assert(planImportSource.includes('writeCurrentAnalysisJsonPreview'), 'P109.1 blocked analyses must refresh the staged JSON preview');
-assert(planImportSource.includes('deu_composite_batch_plus_local_cell_plus_same_plan_consensus'), 'P109.1 correction source must identify composite image + peer evidence');
+assert(planImportSource.includes('textIntegrityEdgeConflictPromotion'), 'P109.2 must evaluate edge conflicts against generic image + current-plan evidence');
+assert(planImportSource.includes('samePlanPeerCount'), 'P109.2 edge-punctuation correction must require current-plan peer evidence');
+assert(planImportSource.includes('writeCurrentAnalysisJsonPreview'), 'P109.2 blocked analyses must refresh the staged JSON preview');
+assert(planImportSource.includes('deu_composite_batch_plus_local_cell_plus_same_plan_consensus'), 'P109.2 must retain the classic batch+local+peer correction path');
+assert(planImportSource.includes('deu_dual_local_cell_plus_same_plan_edge_consensus'), 'P109.2 must identify the dual-local edge-consensus correction path');
+
+// P109.2: A pure boundary-punctuation conflict may be promoted when two distinct
+// local OCR modes unanimously show the same clean candidate and >=2 current-plan
+// peers show that same candidate. A noisy third batch candidate is allowed, but a
+// batch vote for the original or any competing local reading keeps fail-closed.
+assert.deepStrictEqual(core.textIntegrityEdgeConflictPromotion('‘Alpha','Alpha',[
+  {scope:'batch',mode:'text-deu-composite-psm6',candidate:'Alph'},
+  {scope:'local',mode:'text-deu-cell-psm7',candidate:'Alpha'},
+  {scope:'local',mode:'text-deu-cell-psm6',candidate:'Alpha'}
+],3),{ok:true,mode:'dual_local_peers',candidateBatch:0,candidateLocal:2,localModes:2,localOther:0,originalBatch:0});
+assert.strictEqual(core.textIntegrityEdgeConflictPromotion('‘Alpha','Alpha',[
+  {scope:'batch',mode:'text-deu-composite-psm6',candidate:'‘Alpha'},
+  {scope:'local',mode:'text-deu-cell-psm7',candidate:'Alpha'},
+  {scope:'local',mode:'text-deu-cell-psm6',candidate:'Alpha'}
+],3).ok,false);
+assert.strictEqual(core.textIntegrityEdgeConflictPromotion('‘Alpha','Alpha',[
+  {scope:'batch',mode:'text-deu-composite-psm6',candidate:'Alph'},
+  {scope:'local',mode:'text-deu-cell-psm7',candidate:'Alpha'},
+  {scope:'local',mode:'text-deu-cell-psm6',candidate:'Alfa'}
+],3).ok,false);
+assert.strictEqual(core.textIntegrityEdgeConflictPromotion('‘Alpha','Alpha',[
+  {scope:'local',mode:'text-deu-cell-psm7',candidate:'Alpha'},
+  {scope:'local',mode:'text-deu-cell-psm6',candidate:'Alpha'}
+],1).ok,false);
 for(const forbidden of ['Schiitz','‘Avion']){
-  for(const source of productionFiles) assert(!source.includes(forbidden),`P109.1 fixture leaked into production: ${forbidden}`);
+  for(const source of productionFiles) assert(!source.includes(forbidden),`P109.2 fixture leaked into production: ${forbidden}`);
 }
-console.log('P109.1 Text Cell Integrity Gate follow-up regression self-test: PASS');
+console.log('P109.2 Text Cell Integrity Gate edge-consensus regression self-test: PASS');

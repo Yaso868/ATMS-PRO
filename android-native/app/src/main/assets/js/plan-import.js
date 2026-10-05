@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P1091 · 05.10.2026: TEXT CELL INTEGRITY GATE follow-up – one composite DEU batch OCR replaces three separate full-column passes, a shared worker is reused for local rechecks, edge-punctuation conflicts may be promoted only by image evidence + same-plan peer consensus, and the staged JSON preview is refreshed even when import is blocked. No customer/place/row/file hardcodes.
+// CORE-007D8A1F1D8P1092 · 05.10.2026: TEXT CELL INTEGRITY EDGE CONSENSUS – for pure removable edge-punctuation OCR conflicts, two unanimous local DEU cell reads from distinct modes plus >=2 matching current-plan peers may safely resolve a noisy/missing composite batch read, unless the batch supports the original or local reads compete. Same-plan text alone never corrects; unresolved conflicts stay fail-closed. P109.1 composite-batch performance and staged-JSON fixes are retained. No customer/place/row/file hardcodes.
 // CORE-007D8A1F1D8P1078 · 05.10.2026: IMPORT STATUS CLARITY – trennt die zeilenbezogene OCR-/Datenprüfung sichtbar von der separaten Flugprüfung. Die Vorschau nennt ungelöste Warnungen jetzt „Hinweis“ statt missverständlich „Prüfen“, der Flugprüfungsblock erklärt die Trennung ausdrücklich, und die Bildimport-Zuordnung zeigt die Fahrer-Spalte semantisch als „Name (Fahrer)“ statt eines ggf. fehlerhaft OCR-gelesenen Headertexts. Keine Änderung an OCR, Flugverifikation, Mapping-Index, Fahrtdaten, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P1077 · 05.10.2026: STANDARD-FLIGHT CONFLICT EVIDENCE – unique flights recovered from an initially empty cell are rechecked with the tight standard-flight crops, while duplicate recovered values remain fast-path protected. Inconclusive re-OCR no longer creates a hard blocker by itself; a blocking review now requires positive one-digit alternative evidence from at least two independent crops. Strong two-crop alternatives still auto-correct. No flight-number hardcodes.
 // CORE-007D8A1F1D8P1074 · 04.10.2026: STANDARD-FLIGHT RECHECK PRECISION – same-time one-digit peer checks are now limited to the same flight context (same direction/time and, when present, same flight location). Local re-OCR uses exact primary-word crops plus correctly applied Tesseract PSM/whitelist parameters. This removes P107.3 cross-flight false positives while retaining fail-closed review for genuinely weak/conflicting cells. No airline/flight/route hardcodes.
@@ -5408,13 +5408,18 @@
     }).length;
   }
 
-  function textIntegrityEdgeConflictCanPromote(decision, original, candidate, peerCount) {
-    if (decision?.status !== 'conflict' || !textIntegrityEdgeAlternative(original, candidate) || peerCount < 2) return false;
+  function textIntegrityEdgeConflictPromotion(decision, original, candidate, peerCount, attempts) {
+    if (decision?.status !== 'conflict' || !textIntegrityEdgeAlternative(original, candidate) || peerCount < 2) {
+      return { ok: false, mode: '' };
+    }
+    if (ocrIntegrityCore?.textIntegrityEdgeConflictPromotion) {
+      return ocrIntegrityCore.textIntegrityEdgeConflictPromotion(original, candidate, attempts, peerCount);
+    }
     const evidence = decision?.evidence || {};
-    // P109.1: Same-plan repetition may only break an edge-punctuation tie when the
-    // candidate is also independently visible in BOTH the composite DEU batch read
-    // and at least one local cell read. Peer text alone can never correct a cell.
-    return Number(evidence.batch || 0) >= 1 && Number(evidence.local || 0) >= 1;
+    return {
+      ok: Number(evidence.batch || 0) >= 1 && Number(evidence.local || 0) >= 1,
+      mode: 'batch_local_peers'
+    };
   }
 
   async function recoverTextIntegrityTargeted(rides, imageCanvas, imageMeta, mapping) {
@@ -5585,9 +5590,10 @@
         const candidate = textIntegrityCellCandidate(decision?.candidate || '', descriptor.field);
         const edgeAlternative = candidate ? textIntegrityEdgeAlternative(original, candidate) : false;
         const peerCount = edgeAlternative ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, candidate) : 0;
-        const promotedEdgeConflict = candidate
-          ? textIntegrityEdgeConflictCanPromote(decision, original, candidate, peerCount)
-          : false;
+        const edgePromotion = candidate
+          ? textIntegrityEdgeConflictPromotion(decision, original, candidate, peerCount, attempts)
+          : { ok: false, mode: '' };
+        const promotedEdgeConflict = Boolean(edgePromotion?.ok);
         const canCorrect = Boolean(
           candidate &&
           textIntegrityAlternativeIsSafe(original, candidate) &&
@@ -5606,12 +5612,14 @@
           ride[`${descriptor.field}OcrInitial`] = original;
           ride[`${descriptor.field}OcrAutoCorrected`] = true;
           ride[`${descriptor.field}OcrCorrectionSource`] = edgeAlternative
-            ? 'deu_composite_batch_plus_local_cell_plus_same_plan_consensus'
+            ? (edgePromotion?.mode === 'dual_local_peers'
+                ? 'deu_dual_local_cell_plus_same_plan_edge_consensus'
+                : 'deu_composite_batch_plus_local_cell_plus_same_plan_consensus')
             : 'deu_composite_batch_plus_local_cell_consensus';
           ride[`${descriptor.field}OcrEvidence`] = {
             ...(decision?.evidence || {}),
             ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {}),
-            ...(promotedEdgeConflict ? { promotedFromConflict: true } : {})
+            ...(promotedEdgeConflict ? { promotedFromConflict: true, edgePromotionMode: edgePromotion?.mode || '' } : {})
           };
           if (descriptor.field === 'flightLocation') ride.flightLocation = normalizeFlightLocation(candidate);
           else ride[descriptor.field] = candidate;

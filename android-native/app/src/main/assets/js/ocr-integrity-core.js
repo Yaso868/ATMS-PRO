@@ -1,4 +1,4 @@
-// ATMS PRO P109.1 – browser/node shared OCR-integrity helpers (P109.0 decision rules retained; orchestration fixed in plan-import).
+// ATMS PRO P109.2 – browser/node shared OCR-integrity helpers (generic edge-consensus promotion added; fail-closed retained).
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
   const api=factory();
@@ -252,6 +252,48 @@
        ol[0]===cl[0] && ol[ol.length-1]===cl[cl.length-1] && Math.min(ol.length,cl.length)>=4)return true;
     return false;
   }
+  function textIntegrityEdgeConflictPromotion(originalValue,candidateValue,attempts,peerCount){
+    const original=textIntegrityNormalize(originalValue);
+    const candidate=textIntegrityNormalize(candidateValue);
+    const peers=Number(peerCount||0);
+    if(!original||!candidate||peers<2||!textIntegrityEdgePunctuationAlternative(original,candidate)){
+      return {ok:false,mode:'',candidateBatch:0,candidateLocal:0,localModes:0,localOther:0,originalBatch:0};
+    }
+    const originalKey=original.normalize('NFKC').toLocaleLowerCase('de-DE');
+    const candidateKey=candidate.normalize('NFKC').toLocaleLowerCase('de-DE');
+    let candidateBatch=0,candidateLocal=0,localOther=0,originalBatch=0;
+    const localModes=new Set();
+    for(const attempt of (Array.isArray(attempts)?attempts:[])){
+      const scope=text(attempt?.scope)||'unknown';
+      const value=textIntegrityNormalize(attempt?.candidate);
+      if(!value)continue;
+      const valueKey=value.normalize('NFKC').toLocaleLowerCase('de-DE');
+      if(scope==='batch'&&valueKey===originalKey)originalBatch++;
+      if(valueKey===candidateKey){
+        if(scope==='batch')candidateBatch++;
+        if(scope==='local'){
+          candidateLocal++;
+          localModes.add(text(attempt?.mode)||`local-${candidateLocal}`);
+        }
+      }else if(scope==='local'){
+        localOther++;
+      }
+    }
+    // Classic P109.1 path: one batch + one local image read + >=2 current-plan peers.
+    if(candidateBatch>=1&&candidateLocal>=1){
+      return {ok:true,mode:'batch_local_peers',candidateBatch,candidateLocal,localModes:localModes.size,localOther,originalBatch};
+    }
+    // P109.2 path: for PURE edge-punctuation alternatives only, two unanimous local
+    // image reads from distinct OCR modes/crops plus >=2 peers may resolve the tie even
+    // when the single composite batch read is noisy or favors a third near candidate.
+    // A batch vote for the original or any competing non-empty local reading keeps the
+    // case fail-closed. Same-plan repetition alone can never promote a correction.
+    if(candidateLocal>=2&&localModes.size>=2&&localOther===0&&originalBatch===0){
+      return {ok:true,mode:'dual_local_peers',candidateBatch,candidateLocal,localModes:localModes.size,localOther,originalBatch};
+    }
+    return {ok:false,mode:'',candidateBatch,candidateLocal,localModes:localModes.size,localOther,originalBatch};
+  }
+
   function decideTextIntegrity(originalValue,attempts){
     const original=textIntegrityNormalize(originalValue);
     const normalizedAttempts=(Array.isArray(attempts)?attempts:[])
@@ -280,5 +322,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });
