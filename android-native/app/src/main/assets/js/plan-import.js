@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P1075 · 04.10.2026: STANDARD-FLIGHT TIGHT-CELL CONSENSUS + REVIEW VISIBILITY – weak/one-digit-conflicting standard flight numbers are re-read from two tight, row-interior crops around the primary flight token (PSM 6/7/8) before any wider fallback. This avoids horizontal grid-line/background bleed and lets true one-digit OCR slips converge without flight-number hardcodes. Import-blocking OCR errors are always rendered before non-blocking info/warnings so their manual correction controls cannot be hidden by the 20-item preview cap.
+// CORE-007D8A1F1D8P1076 · 04.10.2026: STANDARD-FLIGHT EVIDENCE GATE – already recovered missing-flight cells are not re-judged by the weaker standard-flight pass; duplicate counts are evaluated against the current corrected list instead of a stale pre-pass snapshot; and a changed one-digit candidate may auto-correct with two-crop consensus only when the original candidate receives zero targeted votes. No flight-number hardcodes.
 // CORE-007D8A1F1D8P1074 · 04.10.2026: STANDARD-FLIGHT RECHECK PRECISION – same-time one-digit peer checks are now limited to the same flight context (same direction/time and, when present, same flight location). Local re-OCR uses exact primary-word crops plus correctly applied Tesseract PSM/whitelist parameters. This removes P107.3 cross-flight false positives while retaining fail-closed review for genuinely weak/conflicting cells. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1073 · 04.10.2026: STANDARD-FLIGHT LOW-CONFIDENCE CELL RECHECK – formally plausible 2-character-designator flight numbers are locally re-read only when their primary flight-cell OCR is weak and unique, or when a same-time peer differs by exactly one digit. Correction requires multi-crop/multi-mode local OCR consensus; unresolved weak cells become import-blocking with the existing manual correction UI. No airline/flight/route hardcodes.
 // CORE-007D8A1F1D8P1072 · 04.10.2026: IMAGE TIME-HEADER RECOVERY – when image OCR drops the ride-time header completely, ATMS may recover ONLY the column directly left of the already-recognized pickup column and ONLY when at least three non-empty data cells contain valid clock times with >=60% agreement. No time values are invented; ambiguous layouts remain blocked.
@@ -6067,11 +6067,6 @@
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const status = $('importStatus');
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
-    const exactCounts = new Map();
-    out.forEach(ride => {
-      const flight = normalizeFlightNumber(ride?.flightNumber);
-      if (flight) exactCounts.set(flight, (exactCounts.get(flight) || 0) + 1);
-    });
     const workers = new Map();
     const modes = [
       { name: 'single-block', options: { tessedit_pageseg_mode: '6', tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' } },
@@ -6093,7 +6088,11 @@
         const ride = out[i];
         const initial = normalizeFlightNumber(ride?.flightNumber);
         if (!/^[A-Z0-9]{2}\d{1,4}[A-Z]?$/.test(initial)) continue;
-        if (ride.flightRecoveredFromLongPrefixOcr || ride.flightManualOcrCorrection?.to) continue;
+        // P107.6: Missing-flight recovery already used its own dedicated multi-crop OCR.
+        // Re-running a weaker low-confidence pass on that recovered value can only add
+        // false blockers when the primary OCR had no token at all. Long-prefix/manual
+        // corrections remain protected for the same reason.
+        if (ride.flightRecoveredFromLongPrefixOcr || ride.flightRecoveredFromTargetedOcr || ride.flightManualOcrCorrection?.to) continue;
         const routeType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
         const field = routeType === 'arrival' ? 'arrivalFlight' : routeType === 'departure' ? 'departureFlight' : '';
         const colIndex = field ? mapping?.[field] : undefined;
@@ -6102,7 +6101,12 @@
         if (colIndex === undefined || !rowMeta) continue;
         const primaryEvidence = primaryFlightCellEvidence(imageMeta, rowMeta, colIndex, initial);
         const confidence = primaryEvidence?.confidence ?? null;
-        const weakUnique = (exactCounts.get(initial) || 0) === 1 && (confidence === null || confidence < 70);
+        // P107.6: Count against the CURRENT list. Earlier rows in this same pass may
+        // already have been corrected to the same flight number. A frozen pre-pass map
+        // made the now-confirming neighbour look unique and blocked it unnecessarily.
+        const currentExactCount = out.reduce((count, item) =>
+          count + (normalizeFlightNumber(item?.flightNumber) === initial ? 1 : 0), 0);
+        const weakUnique = currentExactCount === 1 && (confidence === null || confidence < 70);
         const contextualPeer = hasOneNumericEditSameTimePeer(out, i, initial);
         if (!weakUnique && !contextualPeer) continue;
 
@@ -6192,7 +6196,11 @@
           ride.flightLowConfidenceOcrUnresolved = false;
           ride.flightNeedsManualCheck = true;
           ride.flightCheckConfidence = 'uncertain';
-          ride.flightLowConfidenceOcrEvidence = { votes: winner[1], crops: winnerCrops, primaryConfidence: confidence };
+          ride.flightLowConfidenceOcrEvidence = {
+            votes: Number(votes.get(recovered) || 0),
+            crops: cropSupport.get(recovered)?.size || 0,
+            primaryConfidence: confidence
+          };
           continue;
         }
         const suggested = ranked.find(([candidate]) => oneNumericEditFlightAlternative(initial, candidate));

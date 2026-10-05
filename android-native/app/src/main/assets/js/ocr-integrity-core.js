@@ -1,4 +1,4 @@
-// ATMS PRO P107.5 – browser/node shared OCR-integrity helpers.
+// ATMS PRO P107.6 – browser/node shared OCR-integrity helpers.
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
   const api=factory();
@@ -53,9 +53,19 @@
       const crop=Number(attempt?.crop||0);if(crop)crops.get(c).add(crop);
     }
     const ranked=[...votes.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
-    const winner=ranked[0],runner=ranked[1];
-    if(!winner||winner[1]<3||(crops.get(winner[0])?.size||0)<2||(runner&&winner[1]<=runner[1]))return null;
-    return {candidate:winner[0],votes:winner[1],crops:crops.get(winner[0])?.size||0,changed:winner[0]!==initial};
+    const winner=ranked[0],runner=ranked[1],winnerCrops=winner?(crops.get(winner[0])?.size||0):0;
+    if(!winner||winnerCrops<2||(runner&&winner[1]<=runner[1]))return null;
+    const changed=winner[0]!==initial,initialVotes=Number(votes.get(initial)||0);
+    // P107.6: For a changed one-digit reading, two genuinely separate crops are enough
+    // only when the original value receives ZERO targeted votes. Confirmation of an
+    // unchanged value keeps the stricter 3-vote threshold. This lets clear two-crop
+    // corrections converge without allowing a mixed initial/alternative vote to auto-win.
+    if(changed){
+      const strongClassic=winner[1]>=3&&winner[1]>initialVotes;
+      const cleanTwoCrop=winner[1]>=2&&initialVotes===0;
+      if(!strongClassic&&!cleanTwoCrop)return null;
+    }else if(winner[1]<3)return null;
+    return {candidate:winner[0],votes:winner[1],crops:winnerCrops,changed};
   }
   function suggestLongPrefixCorrection(initialValue,attempts){
     const initial=flight(initialValue);if(!initial)return null;

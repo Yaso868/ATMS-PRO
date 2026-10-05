@@ -101,4 +101,19 @@ assert.deepStrictEqual(core.suggestOneNumericEditCorrection('EW8578',tightCorrec
 const planImportSource=productionFiles[1];
 assert(planImportSource.includes('visibleActionableIssues'), 'P107.5 must prioritize visible blocking OCR issues');
 assert(planImportSource.includes("name: 'single-block'"), 'P107.5 tight-cell OCR must include PSM 6 mode');
-console.log('P107.5 OCR regression self-test: PASS');
+// P107.6: A changed one-digit candidate may converge with exactly one vote from
+// each of two tight crops, but NEVER if the initial reading receives any targeted vote.
+const twoCropOnlyCorrection=[
+  {crop:1,mode:'single-line',candidates:['EW9773']},
+  {crop:2,mode:'single-line',candidates:['EW9773']}
+];
+assert.deepStrictEqual(core.suggestOneNumericEditCorrection('EW8773',twoCropOnlyCorrection),{candidate:'EW9773',votes:2,crops:2,changed:true});
+const mixedInitialAlternative=[
+  {crop:1,mode:'single-line',candidates:['EW9773']},
+  {crop:2,mode:'single-line',candidates:['EW9773']},
+  {crop:2,mode:'single-word',candidates:['EW8773']}
+];
+assert.strictEqual(core.suggestOneNumericEditCorrection('EW8773',mixedInitialAlternative),null);
+assert(planImportSource.includes('ride.flightRecoveredFromTargetedOcr'), 'P107.6 must not re-block already recovered missing-flight cells');
+assert(planImportSource.includes('currentExactCount'), 'P107.6 must evaluate duplicate support against the current corrected list');
+console.log('P107.6 OCR regression self-test: PASS');
