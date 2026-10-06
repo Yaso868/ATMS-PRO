@@ -163,10 +163,11 @@
   const ocrIntegrityCore = (() => { try { return window.ATMSOcrIntegrityCore || null; } catch (_) { return null; } })();
 
 
-  // P109.2D/P109.3: OCR lifecycle instrumentation stays active for real-device proof.
-  // P109.3 keeps the same recognition calls/images/languages and consensus logic, but
-  // routes the high-cost calls through one reusable worker per language.
-  const P109PERF_VERSION = 'CORE-007D8A1F1D8P1093';
+  // P109.2D/P109.3/P109.3D2: OCR lifecycle instrumentation stays active for real-device proof.
+  // P109.3D2 is DIAGNOSTIC-ONLY: recognition calls/images/languages, crop geometry,
+  // shared-worker scheduling and consensus logic are unchanged. It only timestamps the
+  // ACTUAL browser serialization methods invoked while worker.recognize(canvas) is active.
+  const P109PERF_VERSION = 'CORE-007D8A1F1D8P1093D2';
   function p109PerfReset() {
     try {
       window.ATMSP109PerfDiagnostic = {
@@ -220,6 +221,270 @@
     if (events.some(item => item.status === status)) return;
     events.push({ status, atMs: Math.max(0, performance.now() - startedAt) });
   }
+
+
+  // P109.3D2 DIAGNOSTIC-ONLY -------------------------------------------------
+  // Goal: split the already-proven pre-recognize wait into:
+  //   (a) browser-side canvas/blob serialization actually invoked by Tesseract.js
+  //   (b) the remaining wait after serialization until logger status "recognizing text".
+  // No extra toBlob()/toDataURL()/arrayBuffer() probe is executed. We wrap only the
+  // native methods that the existing recognition path itself calls, so the bytes and
+  // recognition input remain exactly the same. The wrappers only timestamp and forward.
+  const p109D2SerializationProbe = { installed: false };
+
+  function p109D2ActiveRecognizeOperation() {
+    const state = p109PerfState();
+    if (!state || !Array.isArray(state.records)) return null;
+    for (let i = state.records.length - 1; i >= 0; i -= 1) {
+      const record = state.records[i];
+      const op = record?._activeOperation || null;
+      if (op?.type === 'recognize' && op?._startedAt) return { record, op };
+    }
+    return null;
+  }
+
+  function p109D2BeginSerialization(kind, owner, detail = {}) {
+    const active = p109D2ActiveRecognizeOperation();
+    if (!active?.op) return null;
+    // Canvas serializers must belong to the exact canvas passed to recognize().
+    // Blob/FileReader stages are derived from that canvas inside Tesseract.js and are
+    // therefore recorded while the same recognize operation is active.
+    if (owner && active.op._imageRef && owner instanceof HTMLCanvasElement && owner !== active.op._imageRef) return null;
+    const startedAt = performance.now();
+    const evt = {
+      kind: cellText(kind) || 'serialization',
+      startMs: Math.max(0, startedAt - Number(active.op._startedAt || startedAt)),
+      endMs: 0,
+      totalMs: 0,
+      detail: { ...(detail || {}) }
+    };
+    if (!Array.isArray(active.op.serializationEvents)) active.op.serializationEvents = [];
+    active.op.serializationEvents.push(evt);
+    return { op: active.op, evt, startedAt };
+  }
+
+  function p109D2EndSerialization(token, detail = {}) {
+    if (!token?.evt) return;
+    const endedAt = performance.now();
+    token.evt.endMs = Math.max(0, endedAt - Number(token.op?._startedAt || endedAt));
+    token.evt.totalMs = Math.max(0, endedAt - Number(token.startedAt || endedAt));
+    token.evt.detail = { ...(token.evt.detail || {}), ...(detail || {}) };
+  }
+
+  function p109D2BeginTransport(kind, detail = {}) {
+    const active = p109D2ActiveRecognizeOperation();
+    if (!active?.op) return null;
+    const startedAt = performance.now();
+    const evt = {
+      kind: cellText(kind) || 'transport',
+      startMs: Math.max(0, startedAt - Number(active.op._startedAt || startedAt)),
+      endMs: 0,
+      totalMs: 0,
+      detail: { ...(detail || {}) }
+    };
+    if (!Array.isArray(active.op.transportEvents)) active.op.transportEvents = [];
+    active.op.transportEvents.push(evt);
+    return { op: active.op, evt, startedAt };
+  }
+
+  function p109D2EndTransport(token, detail = {}) {
+    if (!token?.evt) return;
+    const endedAt = performance.now();
+    token.evt.endMs = Math.max(0, endedAt - Number(token.op?._startedAt || endedAt));
+    token.evt.totalMs = Math.max(0, endedAt - Number(token.startedAt || endedAt));
+    token.evt.detail = { ...(token.evt.detail || {}), ...(detail || {}) };
+  }
+
+  function p109D2InstallSerializationProbe() {
+    if (p109D2SerializationProbe.installed) return;
+    p109D2SerializationProbe.installed = true;
+
+    try {
+      const proto = window.HTMLCanvasElement?.prototype;
+      const original = proto?.toBlob;
+      if (proto && typeof original === 'function' && !original.__atmsP1093D2Wrapped) {
+        const wrapped = function(callback, ...args) {
+          const token = p109D2BeginSerialization('canvas.toBlob', this, {
+            width: Number(this?.width || 0), height: Number(this?.height || 0), type: cellText(args?.[0]) || 'image/png'
+          });
+          const cb = typeof callback === 'function' ? callback : () => {};
+          try {
+            return original.call(this, blob => {
+              p109D2EndSerialization(token, { bytes: Number(blob?.size || 0), blobType: cellText(blob?.type) || '' });
+              cb(blob);
+            }, ...args);
+          } catch (error) {
+            p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || 'toBlob_failed') });
+            throw error;
+          }
+        };
+        try { Object.defineProperty(wrapped, '__atmsP1093D2Wrapped', { value: true }); } catch (_) {}
+        proto.toBlob = wrapped;
+      }
+    } catch (_) {}
+
+    try {
+      const proto = window.HTMLCanvasElement?.prototype;
+      const original = proto?.toDataURL;
+      if (proto && typeof original === 'function' && !original.__atmsP1093D2Wrapped) {
+        const wrapped = function(...args) {
+          const token = p109D2BeginSerialization('canvas.toDataURL', this, {
+            width: Number(this?.width || 0), height: Number(this?.height || 0), type: cellText(args?.[0]) || 'image/png'
+          });
+          try {
+            const value = original.apply(this, args);
+            p109D2EndSerialization(token, { chars: String(value || '').length });
+            return value;
+          } catch (error) {
+            p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || 'toDataURL_failed') });
+            throw error;
+          }
+        };
+        try { Object.defineProperty(wrapped, '__atmsP1093D2Wrapped', { value: true }); } catch (_) {}
+        proto.toDataURL = wrapped;
+      }
+    } catch (_) {}
+
+    try {
+      const proto = window.CanvasRenderingContext2D?.prototype;
+      const original = proto?.getImageData;
+      if (proto && typeof original === 'function' && !original.__atmsP1093D2Wrapped) {
+        const wrapped = function(...args) {
+          const ownerCanvas = this?.canvas || null;
+          const active = p109D2ActiveRecognizeOperation();
+          const isTarget = active?.op?._imageRef && ownerCanvas === active.op._imageRef;
+          if (!isTarget) return original.apply(this, args);
+          const token = p109D2BeginSerialization('canvas.getImageData', ownerCanvas, {
+            sx: Number(args?.[0] || 0), sy: Number(args?.[1] || 0),
+            width: Number(args?.[2] || 0), height: Number(args?.[3] || 0)
+          });
+          try {
+            const value = original.apply(this, args);
+            p109D2EndSerialization(token, { rawBytes: Number(value?.data?.byteLength || 0) });
+            return value;
+          } catch (error) {
+            p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || 'getImageData_failed') });
+            throw error;
+          }
+        };
+        try { Object.defineProperty(wrapped, '__atmsP1093D2Wrapped', { value: true }); } catch (_) {}
+        proto.getImageData = wrapped;
+      }
+    } catch (_) {}
+
+    try {
+      const proto = window.Worker?.prototype;
+      const original = proto?.postMessage;
+      if (proto && typeof original === 'function' && !original.__atmsP1093D2Wrapped) {
+        const wrapped = function(message, ...args) {
+          const token = p109D2BeginTransport('worker.postMessage', {
+            action: cellText(message?.action) || '', jobId: cellText(message?.jobId) || ''
+          });
+          try {
+            const value = original.call(this, message, ...args);
+            p109D2EndTransport(token);
+            return value;
+          } catch (error) {
+            p109D2EndTransport(token, { error: cellText(error?.message) || String(error || 'worker_postMessage_failed') });
+            throw error;
+          }
+        };
+        try { Object.defineProperty(wrapped, '__atmsP1093D2Wrapped', { value: true }); } catch (_) {}
+        proto.postMessage = wrapped;
+      }
+    } catch (_) {}
+
+    try {
+      const proto = window.OffscreenCanvas?.prototype;
+      const original = proto?.convertToBlob;
+      if (proto && typeof original === 'function' && !original.__atmsP1093D2Wrapped) {
+        const wrapped = function(...args) {
+          const token = p109D2BeginSerialization('offscreen.convertToBlob', this, {
+            width: Number(this?.width || 0), height: Number(this?.height || 0)
+          });
+          try {
+            return Promise.resolve(original.apply(this, args)).then(blob => {
+              p109D2EndSerialization(token, { bytes: Number(blob?.size || 0), blobType: cellText(blob?.type) || '' });
+              return blob;
+            }, error => {
+              p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || 'convertToBlob_failed') });
+              throw error;
+            });
+          } catch (error) {
+            p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || 'convertToBlob_failed') });
+            throw error;
+          }
+        };
+        try { Object.defineProperty(wrapped, '__atmsP1093D2Wrapped', { value: true }); } catch (_) {}
+        proto.convertToBlob = wrapped;
+      }
+    } catch (_) {}
+
+    try {
+      const proto = window.Blob?.prototype;
+      const original = proto?.arrayBuffer;
+      if (proto && typeof original === 'function' && !original.__atmsP1093D2Wrapped) {
+        const wrapped = function(...args) {
+          const token = p109D2BeginSerialization('blob.arrayBuffer', null, {
+            bytes: Number(this?.size || 0), blobType: cellText(this?.type) || ''
+          });
+          try {
+            return Promise.resolve(original.apply(this, args)).then(value => {
+              p109D2EndSerialization(token, { outBytes: Number(value?.byteLength || 0) });
+              return value;
+            }, error => {
+              p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || 'blob_arrayBuffer_failed') });
+              throw error;
+            });
+          } catch (error) {
+            p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || 'blob_arrayBuffer_failed') });
+            throw error;
+          }
+        };
+        try { Object.defineProperty(wrapped, '__atmsP1093D2Wrapped', { value: true }); } catch (_) {}
+        proto.arrayBuffer = wrapped;
+      }
+    } catch (_) {}
+
+    try {
+      const proto = window.FileReader?.prototype;
+      const wrapReaderMethod = method => {
+        const original = proto?.[method];
+        if (!proto || typeof original !== 'function' || original.__atmsP1093D2Wrapped) return;
+        const wrapped = function(blob, ...args) {
+          const token = p109D2BeginSerialization(`filereader.${method}`, null, {
+            bytes: Number(blob?.size || 0), blobType: cellText(blob?.type) || ''
+          });
+          if (token) {
+            try {
+              this.addEventListener('loadend', () => {
+                const result = this?.result;
+                p109D2EndSerialization(token, {
+                  outBytes: Number(result?.byteLength || 0), outChars: typeof result === 'string' ? result.length : 0
+                });
+              }, { once: true });
+            } catch (_) {}
+          }
+          try { return original.call(this, blob, ...args); }
+          catch (error) {
+            p109D2EndSerialization(token, { error: cellText(error?.message) || String(error || `${method}_failed`) });
+            throw error;
+          }
+        };
+        try { Object.defineProperty(wrapped, '__atmsP1093D2Wrapped', { value: true }); } catch (_) {}
+        proto[method] = wrapped;
+      };
+      wrapReaderMethod('readAsArrayBuffer');
+      wrapReaderMethod('readAsDataURL');
+    } catch (_) {}
+  }
+
+  function p109D2CropMeta(image) {
+    try { return image?.__atmsP1093D2CropMeta ? { ...(image.__atmsP1093D2CropMeta || {}) } : {}; }
+    catch (_) { return {}; }
+  }
+
+  p109D2InstallSerializationProbe();
   async function p109PerfRecognizeOneShot(phase, language, image, options, detail = {}) {
     const record = p109PerfNewRecord(phase, language, 'oneshot', { ...detail, ...p109PerfImageSize(image) });
     const startedAt = performance.now();
@@ -309,10 +574,13 @@
     const op = {
       type: 'recognize',
       phase: cellText(phase) || record?.phase || 'unknown',
-      detail: { ...detail, ...p109PerfImageSize(image) },
+      detail: { ...detail, ...p109PerfImageSize(image), ...p109D2CropMeta(image) },
       reuse: priorRecognizes > 0 ? 'YES' : 'NO',
       events: [],
+      serializationEvents: [],
+      transportEvents: [],
       _startedAt: startedAt,
+      _imageRef: image,
       _downstreamLogger: typeof downstreamLogger === 'function' ? downstreamLogger : null
     };
     if (record) { record.operations.push(op); record._activeOperation = op; }
@@ -328,7 +596,20 @@
       const recognizeEvent = (op.events || []).find(item => item.status === 'recognizing text') || null;
       op.preRecognizeMs = recognizeEvent ? recognizeEvent.atMs : 0;
       op.activeRecognizeMs = recognizeEvent ? Math.max(0, op.totalMs - recognizeEvent.atMs) : op.totalMs;
+      const serEvents = Array.isArray(op.serializationEvents) ? op.serializationEvents : [];
+      op.serializationMs = serEvents.reduce((sum, item) => sum + Number(item?.totalMs || 0), 0);
+      op.serializationEndMs = serEvents.reduce((max, item) => Math.max(max, Number(item?.endMs || 0)), 0);
+      op.postSerializationPreRecognizeMs = recognizeEvent
+        ? Math.max(0, Number(recognizeEvent.atMs || 0) - Number(op.serializationEndMs || 0))
+        : 0;
+      const transportEvents = Array.isArray(op.transportEvents) ? op.transportEvents : [];
+      op.transportMs = transportEvents.reduce((sum, item) => sum + Number(item?.totalMs || 0), 0);
+      op.transportEndMs = transportEvents.reduce((max, item) => Math.max(max, Number(item?.endMs || 0)), 0);
+      op.postTransportPreRecognizeMs = recognizeEvent
+        ? Math.max(0, Number(recognizeEvent.atMs || 0) - Number(op.transportEndMs || 0))
+        : 0;
       delete op._startedAt;
+      delete op._imageRef;
       delete op._downstreamLogger;
       if (record) record._activeOperation = null;
     }
@@ -3397,6 +3678,7 @@
   // Es wird niemals geraten: nur genau EIN formal plausibler Kandidat wird übernommen
   // und anschließend als manuell/aktuell zu prüfen markiert.
   function cropCanvasRegion(source, x0, y0, x1, y1, scale = 3) {
+    const p109D2CropStartedAt = performance.now();
     const sx = Math.max(0, Math.floor(x0));
     const sy = Math.max(0, Math.floor(y0));
     const sw = Math.max(1, Math.min(source.width - sx, Math.ceil(x1 - x0)));
@@ -3408,6 +3690,19 @@
     ctx.imageSmoothingEnabled = scale > 1;
     if (scale > 1 && 'imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+    try {
+      Object.defineProperty(out, '__atmsP1093D2CropMeta', {
+        configurable: true,
+        value: {
+          cropMs: Math.max(0, performance.now() - p109D2CropStartedAt),
+          cropScale: Number(scale || 1),
+          sourceWidth: Number(source?.width || 0),
+          sourceHeight: Number(source?.height || 0),
+          cropSourceWidth: sw,
+          cropSourceHeight: sh
+        }
+      });
+    } catch (_) {}
     return out;
   }
 
@@ -7986,6 +8281,47 @@
     return `v=${cellText(value.version) || '?'}; elapsed=${ms(elapsed)}; workers=${value.records.length}; phases=[${phaseText || '∅'}]; detail=[${workers || '∅'}]`;
   }
 
+
+  function formatP109D2SerializationDiagnostic(value) {
+    if (!value || !Array.isArray(value.records)) return '∅';
+    const ms = input => `${Math.round(Number(input || 0))}ms`;
+    const bytes = input => `${Math.round(Number(input || 0))}B`;
+    const rows = [];
+    value.records.forEach(record => {
+      (Array.isArray(record?.operations) ? record.operations : []).forEach(op => {
+        if (op?.type !== 'recognize') return;
+        const events = Array.isArray(op?.serializationEvents) ? op.serializationEvents : [];
+        const eventText = events.map(item => {
+          const detail = item?.detail || {};
+          const payload = Number(detail?.bytes || detail?.outBytes || detail?.rawBytes || 0);
+          return `${cellText(item?.kind) || '?'}@${ms(item?.startMs)}+${ms(item?.totalMs)}${payload ? `/${bytes(payload)}` : ''}`;
+        }).join(',') || '∅';
+        const transport = Array.isArray(op?.transportEvents) ? op.transportEvents : [];
+        const transportText = transport.map(item => {
+          const detail = item?.detail || {};
+          const label = cellText(detail?.action) || cellText(item?.kind) || '?';
+          return `${label}@${ms(item?.startMs)}+${ms(item?.totalMs)}`;
+        }).join(',') || '∅';
+        const size = op?.detail?.width && op?.detail?.height ? `${op.detail.width}x${op.detail.height}` : '-';
+        rows.push([
+          `${record.id}/${cellText(op?.detail?.mode) || cellText(op?.phase) || '?'}`,
+          size,
+          `crop=${ms(op?.detail?.cropMs)}`,
+          `pre=${ms(op?.preRecognizeMs)}`,
+          `ser=${ms(op?.serializationMs)}`,
+          `serEnd=${ms(op?.serializationEndMs)}`,
+          `postSer=${ms(op?.postSerializationPreRecognizeMs)}`,
+          `tx=${ms(op?.transportMs)}`,
+          `txEnd=${ms(op?.transportEndMs)}`,
+          `workerWait=${ms(op?.postTransportPreRecognizeMs)}`,
+          `events=[${eventText}]`,
+          `transport=[${transportText}]`
+        ].join(':'));
+      });
+    });
+    return `v=CORE-007D8A1F1D8P1093D2; ops=${rows.length}; detail=[${rows.join(' | ') || '∅'}]`;
+  }
+
   function formatP75GFirstRowDiagnostic(diag) {
     if (!diag || typeof diag !== 'object') return '∅';
     const n = value => Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
@@ -8066,6 +8402,7 @@
       `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`,
       `P63Primary=[${formatP63PrimaryDiagnostic(p63Primary)}]`,
       `P109Perf=[${formatP109PerfDiagnostic(p109Perf)}]`,
+      `P109D2=[${formatP109D2SerializationDiagnostic(p109Perf)}]`,
       `P75G=[${formatP75GFirstRowDiagnostic(check.p75gFirstRowDiagnostic)}]`,
       `P75H=[${formatP75HFirstPostHeaderRecovery(check.p75hFirstPostHeaderRecovery)}]`
     ].join(' · ');
