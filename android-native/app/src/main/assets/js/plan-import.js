@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P110 · 06.10.2026: GOLDEN ERROR PACK BUNDLE FIX – generischer Nach→Kunde-Grenztransfer nur nach wiederholtem hochkonfidentem geometrischem Routen-Randbeleg + aktuellem Kunden-Peer-Konsens; sichere Fahrzeug-Randzeichenbereinigung; kurze Firmen-Codes werden nur per eindeutiger Case-Konsensmehrheit vereinheitlicht; gemischter 3-Zeichen-Flugpräfix (Ziffer + 2 Buchstaben) wird wie andere auffällige Langpräfixe ausschließlich per lokaler Mehrfach-OCR fail-closed geprüft; P109.4 PNG-Transport wird auch in der Low-Confidence-Flugzellen-OCR genutzt. Keine Flugnummern-/Hotel-/Kunden-Hardcodes, keine Lockerung von FLIGHT-008, keine Änderung an PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: OCR IMAGE PIPELINE PERFORMANCE FIX – bypasses the Android-WebView HTMLCanvasElement.toBlob() stall proven by P109.3D2 by converting only the existing shared-worker Canvas inputs to lossless PNG data URLs immediately before Tesseract recognition. Crop geometry, pixel dimensions, scaling, languages, PSM behavior, OCR pass count, consensus/fail-closed rules, P108 time gate, P109.2 Avion/Schütz integrity logic, FLIGHT-008, import/persistence and PLAN/DISPO/LIVE behavior remain unchanged. P109PERF/P109D2 timing stays enabled for Run A/Run B acceptance proof.
 // CORE-007D8A1F1D8P1093 · 06.10.2026: OCR SHARED-WORKER SESSION PERFORMANCE FIX – reuses one ENG and one DEU Tesseract worker across the already-existing P109.2/P109.2D OCR phases instead of repeatedly creating one-shot workers. Calls are serialized per language to keep each crop/result isolated; existing crops, languages, one-shot option semantics, consensus/fail-closed rules, P108 time gate, P109 text-integrity decisions, FLIGHT-008, import/persistence and PLAN/DISPO/LIVE behavior remain unchanged. P109PERF stays enabled for real-device proof and now reports the reused worker operations.
 // CORE-007D8A1F1D8P1092D · 06.10.2026: P109PERF WORKER-LIFECYCLE DIAGNOSTIC ONLY – adds timing/worker-ID instrumentation around the existing P109.2 OCR calls (primary, early time, price, route, driver, text-integrity, missing-flight). It records one-shot Tesseract lifecycle status timestamps and explicit-worker create/setParameters/recognize/terminate timings. No crop, language, PSM option, consensus rule, import decision, flight verification, persistence, PLAN/DISPO/LIVE or user data is changed.
@@ -1465,8 +1466,16 @@
   }
 
 
+  function normalizeVehicleBoundaryOcrNoise(value) {
+    const raw = cellText(value).trim();
+    if (!raw) return '';
+    // P110: Nur eindeutige Tabellen-/OCR-Randzeichen am Anfang/Ende entfernen.
+    // Buchstaben/Ziffern im eigentlichen Fahrzeugwert bleiben unverändert.
+    return raw.replace(/^[|¦│=~]+\s*/u, '').replace(/\s*[|¦│=~]+$/u, '').trim();
+  }
+
   function getVehicleValue(row, mapping, options = {}) {
-    const mapped = cellText(valueAt(row, mapping, 'vehicle'));
+    const mapped = normalizeVehicleBoundaryOcrNoise(valueAt(row, mapping, 'vehicle'));
     if (mapped && !/^\d+(?:[.,]\d+)?$/.test(mapped)) return mapped;
 
     // CORE-005A: Beim Bildimport keine festen Nachbarspalten als Fallback.
@@ -1474,7 +1483,7 @@
     if (options.imageOcr) return '';
 
     // Legacy-Fallback nur fuer bereits strukturierte Altimporte.
-    const fixedVehicle = cellText(row[8]);
+    const fixedVehicle = normalizeVehicleBoundaryOcrNoise(row[8]);
     if (fixedVehicle && !/^\d+(?:[.,]\d+)?$/.test(fixedVehicle)) return fixedVehicle;
     return mapped || 'Pkw';
   }
@@ -1571,6 +1580,9 @@
     const mirroredDispoTime = mappedMirrorTime || companyEmbeddedTime;
     const dispoTime = primaryDispoTime || mirroredDispoTime;
     const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
+    const rawVehicleCell = cellText(valueAt(row, mapping, 'vehicle')).trim();
+    const vehicle = getVehicleValue(row, mapping, options);
+    const vehicleBoundaryCleaned = Boolean(options.imageOcr && rawVehicleCell && vehicle && rawVehicleCell !== vehicle);
 
     return {
       id: `import-${Date.now()}-${rowNumber}`,
@@ -1618,7 +1630,9 @@
       flightRecoveredFromRow: Boolean(recoveredFlight),
       flightRecoveryAmbiguous,
       flightNeedsManualCheck: Boolean(recoveredFlight || flightRecoveryAmbiguous),
-      vehicle: getVehicleValue(row, mapping, options),
+      vehicle,
+      vehicleRawOcr: vehicleBoundaryCleaned ? rawVehicleCell : '',
+      vehicleRecoveredFromBoundaryNoise: vehicleBoundaryCleaned,
       persons: getPersonsValue(row, mapping, options),
       price: findPriceValue(row, mapping, options),
       priceRequired: !(options.imageOcr && mapping.price === undefined),
@@ -1807,9 +1821,25 @@
       if (ride.sourceFlightLocationRaw && ride.flightLocation && cellText(ride.sourceFlightLocationRaw) !== cellText(ride.flightLocation)) {
         issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Flugort ${ride.sourceFlightLocationRaw} → ${ride.flightLocation} normalisiert` });
       }
-      if (ride.customerRecoveredFromBoundaryNoise && ride.customerRawOcr && ride.customer) {
+      if (ride.customerRecoveredFromRouteBoundaryTransfer && ride.destinationRecoveredFromBoundaryOcr) {
+        issues.push({
+          level: 'info',
+          kind: 'ocr_recovery',
+          row,
+          text: `Ziel/Kunde an Tabellenkante durch wiederholten geometrischen Routen-Randbeleg + Listen-Konsens sicher getrennt`
+        });
+      }
+      if (ride.vehicleRecoveredFromBoundaryNoise && ride.vehicleRawOcr && ride.vehicle) {
+        issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Fahrzeug ${ride.vehicleRawOcr} → ${ride.vehicle} durch generische OCR-Randzeichen-Bereinigung` });
+      }
+      if (ride.customerRecoveredFromBoundaryNoise && ride.customerRawOcr && ride.customer && !ride.customerRecoveredFromRouteBoundaryTransfer) {
         issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Name ${ride.customerRawOcr} → ${ride.customer} durch generische OCR-Randzeichen-Bereinigung` });
       }
+      const repeatedText = ride.repeatedTextConsistency && typeof ride.repeatedTextConsistency === 'object' ? ride.repeatedTextConsistency : {};
+      Object.entries(repeatedText).forEach(([field, data]) => {
+        const label = field === 'company' ? 'Firma' : field === 'customer' ? 'Name/Kunde' : field;
+        issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `${label} ${cellText(data?.from)} → ${cellText(data?.to)} durch eindeutigen Listen-Textkonsens vereinheitlicht` });
+      });
       [
         { field: 'customer', label: 'Name/Kunde' },
         { field: 'company', label: 'Firma' },
@@ -5684,8 +5714,14 @@
           const cx = (x0 + x1) / 2;
           if (!(x0 < right && x1 > right && cx >= right)) return false;
           if (x0 < right - maxLeftReach || x1 > right + maxRightReach) return false;
-          const overlapRatio = (right - x0) / Math.max(1, x1 - x0);
-          return overlapRatio >= 0.25;
+          const overlapPixels = right - x0;
+          const overlapRatio = overlapPixels / Math.max(1, x1 - x0);
+          // P110: Das bisherige 25%-Gate war fuer sehr klare, hochkonfidente Randwoerter
+          // minimal zu streng. Ein flacherer Ueberlapp wird nur bei >=90 OCR-Confidence
+          // UND mindestens 7 echten Pixeln zugelassen. Der spaetere 2-Zeilen-Konsens,
+          // identische Basisroute + identisches Randwort und alle Geometrie-Gates bleiben.
+          const strongShallowOverlap = confidence >= 90 && overlapPixels >= 7 && overlapRatio >= 0.15;
+          return overlapRatio >= 0.25 || strongShallowOverlap;
         }).sort((a,b) => Number(a.x0 || 0) - Number(b.x0 || 0));
 
         // Mehrere gleichzeitig überlappende Wörter wären strukturell nicht eindeutig.
@@ -5722,6 +5758,7 @@
         ride[`${item.field}RecoveredFromBoundaryOcr`] = true;
         ride[`${item.field}BoundaryRecoverySource`] = 'repeated_right_boundary_overlap';
         ride[`${item.field}BoundaryRecoveryEvidence`] = distinctRows.size;
+        ride[`${item.field}BoundaryRecoveryToken`] = item.token;
       });
     });
 
@@ -5856,6 +5893,51 @@
     return out;
   }
 
+
+  // P110: Sobald die bestehende geometrische Routen-Randwort-Recovery ein Wort
+  // bereits mit wiederholter Bild-Evidenz sicher dem Ziel zugeordnet hat, kann dasselbe
+  // Wort aus der direkt folgenden Kundenzelle entfernt werden. Auch dann gilt ein zweites
+  // Gate: Der verbleibende Kundenwert muss mindestens zweimal in derselben Liste vorkommen.
+  function recoverCustomerAfterRouteBoundarySpillover(rides) {
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    if (!ocrIntegrityCore?.suggestNeighborCustomerAfterRouteBoundaryRecovery || out.length < 3) return out;
+    const peerCustomers = out.map(ride => cellText(ride?.customer)).filter(Boolean);
+
+    out.forEach(ride => {
+      if (!ride?.destinationRecoveredFromBoundaryOcr || !ride?.destinationBoundaryRecoveryToken) return;
+      const originalCustomer = cellText(ride?.customerRawOcr || ride?.customer);
+      if (!originalCustomer) return;
+      const suggestion = ocrIntegrityCore.suggestNeighborCustomerAfterRouteBoundaryRecovery(
+        originalCustomer,
+        ride.destinationBoundaryRecoveryToken,
+        peerCustomers
+      );
+      if (!suggestion?.customer) return;
+      ride.customerBoundaryTransferInitial = originalCustomer;
+      ride.customer = suggestion.customer;
+      ride.partner = cellText(ride.customer) || cellText(ride.company);
+      ride.customerRecoveredFromRouteBoundaryTransfer = true;
+      ride.routeCustomerBoundaryTransferEvidence = {
+        token: suggestion.recoveredToken,
+        customerPeerCount: Number(suggestion.customerPeerCount || 0),
+        routeEvidenceCount: Number(ride.destinationBoundaryRecoveryEvidence || 0)
+      };
+    });
+    return out;
+  }
+
+  function textIntegritySourceForRide(ride, field) {
+    if (field === 'flightLocation') return ride?.sourceFlightLocationRaw || ride?.flightLocation;
+    if (field === 'customer') {
+      // P110: Nach einem streng belegten Cross-Column-Transfer darf die spaetere
+      // Text-Integrity-OCR nicht erneut den bewusst archivierten Roh-Spilloverwert
+      // (z. B. Randwort + Kunde) als aktuellen Kundenwert verwenden.
+      return ride?.customerRecoveredFromRouteBoundaryTransfer
+        ? ride?.customer
+        : (ride?.customerRawOcr || ride?.customer);
+    }
+    return ride?.[field];
+  }
 
   function textIntegrityCellCandidate(value, field) {
     let result = cellText(value)
@@ -6010,11 +6092,7 @@
     if (!candidateKey) return 0;
     return rides.filter(other => {
       if (Number(other.sourceRow) === Number(sourceRow)) return false;
-      const peerSource = descriptor.field === 'flightLocation'
-        ? (other.sourceFlightLocationRaw || other.flightLocation)
-        : descriptor.field === 'customer'
-          ? (other.customerRawOcr || other.customer)
-          : other[descriptor.field];
+      const peerSource = textIntegritySourceForRide(other, descriptor.field);
       const peer = textIntegrityCellCandidate(peerSource, descriptor.field);
       return peer && peer.normalize('NFKC').toLocaleLowerCase('de-DE') === candidateKey;
     }).length;
@@ -6133,11 +6211,7 @@
         const batchCandidatesByRow = batchCandidatesByField.get(descriptor.field);
         out.forEach(ride => {
           const sourceRow = Number(ride.sourceRow);
-          const originalSource = descriptor.field === 'flightLocation'
-            ? (ride.sourceFlightLocationRaw || ride.flightLocation)
-            : descriptor.field === 'customer'
-              ? (ride.customerRawOcr || ride.customer)
-              : ride[descriptor.field];
+          const originalSource = textIntegritySourceForRide(ride, descriptor.field);
           const original = textIntegrityCellCandidate(originalSource, descriptor.field);
           ride[`${descriptor.field}TargetedOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
           if (!original) return;
@@ -6193,11 +6267,7 @@
       const attemptLogByRow = attemptLogByField.get(descriptor.field);
       out.forEach(ride => {
         const sourceRow = Number(ride.sourceRow);
-        const originalSource = descriptor.field === 'flightLocation'
-          ? (ride.sourceFlightLocationRaw || ride.flightLocation)
-          : descriptor.field === 'customer'
-            ? (ride.customerRawOcr || ride.customer)
-            : ride[descriptor.field];
+        const originalSource = textIntegritySourceForRide(ride, descriptor.field);
         const original = textIntegrityCellCandidate(originalSource, descriptor.field);
         const attempts = attemptLogByRow.get(sourceRow) || [];
         ride[`${descriptor.field}TargetedOcrAttempts`] = attempts;
@@ -6999,7 +7069,7 @@
   function safeLongPrefixFlightAlternative(initialValue, candidateValue) {
     const initial = normalizeFlightNumber(initialValue);
     const candidate = normalizeFlightNumber(candidateValue);
-    const initialMatch = initial.match(/^([A-Z]{3,4})(\d{1,4}[A-Z]?)$/);
+    const initialMatch = initial.match(/^([A-Z]{3,4}|[0-9][A-Z]{2})(\d{1,4}[A-Z]?)$/);
     const candidateMatch = candidate.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
     if (!initialMatch || !candidateMatch || candidate === initial) return false;
     if (initialMatch[2] === candidateMatch[2] && singleDeletionPrefixMatch(initialMatch[1], candidateMatch[1])) return true;
@@ -7318,9 +7388,14 @@
           for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
             const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
             const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+            // P110: P109.4 hat den Android-WebView-toBlob-Stall fuer Shared-Worker
+            // beseitigt. Diese Low-Confidence-Pruefung nutzt eigene Mode-Worker und
+            // muss deshalb denselben verlustfreien PNG-Data-URL-Transport explizit
+            // anwenden. Crop, Pixel, PSM, Whitelist, Passzahl und Konsens bleiben gleich.
+            const preparedCrop = p1094PrepareSharedWorkerImage(crop);
             const results = await Promise.all(modes.map(async mode => {
               const worker = await getWorker(mode);
-              const second = worker ? await worker.recognize(crop) : await Tesseract.recognize(crop, 'eng', mode.options);
+              const second = worker ? await worker.recognize(preparedCrop) : await Tesseract.recognize(preparedCrop, 'eng', mode.options);
               return { mode, second };
             }));
             for (const { mode, second } of results) {
@@ -7522,6 +7597,10 @@
         for (let cropIndex = 0; cropIndex < regions.length; cropIndex++) {
           const [x0, cy0, x1, cy1, scale] = regions[cropIndex];
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+          // P110/P109.4: Auch die spezialisierte Long-Prefix-Pruefung umgeht den
+          // Android-WebView-Canvas-toBlob-Transportstau verlustfrei via PNG data URL.
+          // Crop, OCR-Modi, Parallelitaet, Passzahl und Konsensregeln bleiben identisch.
+          const preparedCrop = p1094PrepareSharedWorkerImage(crop);
           // P55: Die drei bestehenden Modi arbeiten auf drei getrennten P53-Workern.
           // Deshalb können sie für denselben unveränderten Crop parallel laufen, ohne
           // einen Worker gleichzeitig doppelt zu benutzen. Promise.all bewahrt die
@@ -7529,8 +7608,8 @@
           const modeResults = await Promise.all(ocrModes.map(async mode => {
             const modeWorker = await getLongPrefixModeWorker(mode);
             const second = modeWorker
-              ? await modeWorker.recognize(crop)
-              : await Tesseract.recognize(crop, 'eng', mode.options);
+              ? await modeWorker.recognize(preparedCrop)
+              : await Tesseract.recognize(preparedCrop, 'eng', mode.options);
             return { mode, second };
           }));
           for (const { mode, second } of modeResults) {
@@ -7623,7 +7702,8 @@
           for (let cropIndex = 0; cropIndex < digitRegions.length; cropIndex++) {
             const region = digitRegions[cropIndex];
             const crop = cropCanvasRegion(imageCanvas, region.x0, region.y0, region.x1, region.y1, region.scale);
-            const second = await digitWorker.recognize(crop);
+            const preparedCrop = p1094PrepareSharedWorkerImage(crop);
+            const second = await digitWorker.recognize(preparedCrop);
             const digitTokens = digitOnlyTokensFromOcrResult(second);
             const exactExpected = digitTokens.includes(sNineProbe.expectedTail);
             const sameLengthCompetitors = digitTokens.filter(token =>
@@ -7861,8 +7941,11 @@
       out.forEach((ride, index) => {
         const raw = cellText(ride?.[field]).normalize('NFC').trim();
         const signature = repeatedTextSignature(raw);
-        // Kurze Codes/Initialen bleiben bewusst unberührt.
-        if (!raw || signature.length < 4) return;
+        // P110: Kunden-/Namenswerte bleiben wie bisher ab Laenge 4. In der Firma-
+        // Spalte duerfen 2–3 reine Buchstaben-Codes aufgenommen werden, aber nur fuer
+        // denselben Signature-Key und weiterhin nur bei eindeutiger Mehrheitsform.
+        const shortCompanyCode = field === 'company' && /^[A-Za-z]{2,3}$/.test(raw.replace(/\s+/g, ''));
+        if (!raw || (signature.length < 4 && !shortCompanyCode)) return;
         if (!groups.has(signature)) groups.set(signature, []);
         groups.get(signature).push({ index, raw });
       });
@@ -7952,8 +8035,13 @@
 
   function diagnosticFlightPrefixLength(value) {
     const flight = normalizeFlightNumber(value);
-    const match = flight.match(/^([A-Z]+)(\d{1,4}[A-Z]?)$/);
-    return match ? match[1].length : 0;
+    const alphaMatch = flight.match(/^([A-Z]+)(\d{1,4}[A-Z]?)$/);
+    if (alphaMatch) return alphaMatch[1].length;
+    // P110: Ein einzelnes fuehrendes OCR-Ziffernartefakt vor einem normalen
+    // zweibuchstabigen Designator wird als auffaelliger 3er-Praefix lokal geprueft.
+    // Normale zweistellige alphanumerische Designatoren (z. B. A1/1A) bleiben unberuehrt.
+    const mixedMatch = flight.match(/^([0-9][A-Z]{2})(\d{1,4}[A-Z]?)$/);
+    return mixedMatch ? mixedMatch[1].length : 0;
   }
 
   function formatRawDiagnosticWords(words) {
@@ -9765,6 +9853,7 @@
           result.imageMeta,
           mappingInfo.mapping
         ));
+        preparedRides = p54MeasureSync('route_customer_boundary_cleanup', () => recoverCustomerAfterRouteBoundarySpillover(preparedRides));
         preparedRides = await p54MeasureAsync('route_deu_column_ocr', () => recoverRouteDiacriticsTargeted(
           preparedRides,
           result.imageCanvas,

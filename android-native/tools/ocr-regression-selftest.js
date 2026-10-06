@@ -218,3 +218,49 @@ for(const forbidden of ['Schiitz','‘Avion']){
   for(const source of productionFiles) assert(!source.includes(forbidden),`P109.2 fixture leaked into production: ${forbidden}`);
 }
 console.log('P109.2 Text Cell Integrity Gate edge-consensus regression self-test: PASS');
+
+// P110 Golden Error Pack: confirmed 06.10.2026 production regressions stay test-only.
+const goldenPath=path.join(__dirname,'fixtures','ATMS_GOLDEN_ERROR_PACK_2026-10-06_manifest.json');
+const golden=JSON.parse(fs.readFileSync(goldenPath,'utf8'));
+assert.strictEqual(golden.format,'ATMS_GOLDEN_ERROR_PACK');
+assert.strictEqual(golden.plantag,'2026-10-06');
+assert.strictEqual(golden.pack_rows.length,16);
+assert(golden.pack_rows.some(row=>row.class==='boundary_destination_to_customer'));
+assert(golden.pack_rows.some(row=>row.class==='flight_ocr_O_vs_0_prefix'));
+assert(golden.pack_rows.some(row=>row.class==='cell_cleanup_vehicle'));
+assert(golden.pack_rows.some(row=>row.class==='cell_cleanup_company'));
+assert(golden.pack_rows.some(row=>row.class==='control_boundary'));
+
+// A recovered route-boundary token may be removed from the neighboring customer only
+// with >=2 exact same-plan customer peers. Historical values are fixtures, never mappings.
+assert.deepStrictEqual(core.suggestNeighborCustomerAfterRouteBoundaryRecovery(
+  'Inn Eurowings','Inn',['Eurowings','Eurowings','Avion','Eurowings']
+),{customer:'Eurowings',recoveredToken:'Inn',customerPeerCount:3});
+assert.deepStrictEqual(core.suggestNeighborCustomerAfterRouteBoundaryRecovery(
+  'DUS Avion','DUS',['Avion','Avion','Eurowings']
+),{customer:'Avion',recoveredToken:'DUS',customerPeerCount:2});
+assert.strictEqual(core.suggestNeighborCustomerAfterRouteBoundaryRecovery(
+  'Inn Eurowings','Inn',['Eurowings','Avion']
+),null);
+assert.strictEqual(core.suggestNeighborCustomerAfterRouteBoundaryRecovery(
+  'Real Customer','Inn',['Customer','Customer','Customer']
+),null);
+
+// Mixed 3-char OCR prefix is not normalized blindly. It only becomes an eligible
+// long-prefix alternative when local OCR independently proposes the shorter 2-char form.
+assert.strictEqual(core.safeLongPrefixFlightAlternative('0OS165','OS165'),true);
+assert.strictEqual(core.safeLongPrefixFlightAlternative('0OS165','OS166'),false);
+
+assert(planImportSource.includes('strongShallowOverlap'), 'P110 must retain the high-confidence shallow route-boundary evidence gate');
+assert(planImportSource.includes('overlapRatio >= 0.15'), 'P110 route-boundary recovery must include the proven shallow-overlap threshold');
+assert(planImportSource.includes('recoverCustomerAfterRouteBoundarySpillover'), 'P110 must clean the neighboring customer only after proven route-boundary recovery');
+assert(planImportSource.includes('normalizeVehicleBoundaryOcrNoise'), 'P110 must remove only explicit vehicle edge artifacts');
+assert(planImportSource.includes("field === 'company' && /^[A-Za-z]{2,3}$/"), 'P110 short company-code consensus must remain case-only and scoped to company');
+assert(planImportSource.includes('const preparedCrop = p1094PrepareSharedWorkerImage(crop);'), 'P110 low-confidence flight OCR must use the P109.4 PNG transport');
+assert(planImportSource.includes("mixedMatch = flight.match(/^([0-9][A-Z]{2})"), 'P110 suspicious mixed flight prefix must be routed into local OCR review');
+
+for(const fixtureLiteral of ['0OS165','OS165','Inn Eurowings','DUS Avion','US Avion']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P110 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+console.log('P110 Golden Error Pack deterministic regression self-test: PASS');
+

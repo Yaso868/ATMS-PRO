@@ -1,3 +1,4 @@
+// ATMS PRO P110 – Golden Error Pack helpers: neighbor-cell cleanup after proven route-boundary recovery + suspicious mixed flight-prefix support; fail-closed retained.
 // ATMS PRO P109.2 – browser/node shared OCR-integrity helpers (generic edge-consensus promotion added; fail-closed retained).
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
 (function(root,factory){
@@ -25,7 +26,12 @@
   }
   function safeLongPrefixFlightAlternative(initialValue,candidateValue){
     const initial=flight(initialValue),candidate=flight(candidateValue);
-    const im=initial.match(/^([A-Z]{3,4})(\d{1,4}[A-Z]?)$/),cm=candidate.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
+    // P110: Neben 3–4 Buchstaben ist ein führendes OCR-Ziffernartefakt vor einem
+    // zweibuchstabigen Designator auffällig (z. B. Struktur 0AB123 -> AB123).
+    // Es wird NICHT blind entfernt: diese Funktion bewertet nur einen bereits lokal
+    // aus derselben Flugzelle gelesenen 2-stelligen Kandidaten; die bestehende
+    // Mehrfach-OCR-/Mehrcrop-Konsenslogik entscheidet anschließend fail-closed.
+    const im=initial.match(/^([A-Z]{3,4}|[0-9][A-Z]{2})(\d{1,4}[A-Z]?)$/),cm=candidate.match(/^([A-Z0-9]{2})(\d{1,4}[A-Z]?)$/);
     if(!im||!cm||candidate===initial)return false;
     if(im[2]===cm[2]&&singleDeletionPrefixMatch(im[1],cm[1]))return true;
     return boundaryGlyphShift(initial,candidate);
@@ -205,6 +211,34 @@
     }
     return prev[b.length];
   }
+
+  // P110: Nach einer bereits geometrisch + wiederholt belegten Routen-Randwort-
+  // Recovery darf dasselbe Wort aus der direkt benachbarten Kundenzelle entfernt
+  // werden, aber nur wenn der verbleibende Kundenwert mindestens zweimal in derselben
+  // Liste exakt vorkommt. Diese Funktion entscheidet NICHT, ob das Randwort zur Route
+  // gehoert; sie verarbeitet nur den bereits extern belegten Recovery-Token.
+  function suggestNeighborCustomerAfterRouteBoundaryRecovery(customerValue,recoveredTokenValue,peerCustomerValues){
+    const customer=textIntegrityNormalize(customerValue);
+    const recoveredToken=textIntegrityNormalize(recoveredTokenValue);
+    if(!customer||!recoveredToken)return null;
+    const parts=customer.split(/\s+/).filter(Boolean);
+    if(parts.length<2)return null;
+    const firstKey=parts[0].normalize('NFKC').toLocaleLowerCase('de-DE');
+    const tokenKey=recoveredToken.normalize('NFKC').toLocaleLowerCase('de-DE');
+    if(firstKey!==tokenKey)return null;
+    const remainder=parts.slice(1).join(' ');
+    if(!/[A-Za-zÄÖÜäöüßÀ-ÿ]/u.test(remainder))return null;
+    const remainderKey=remainder.normalize('NFKC').toLocaleLowerCase('de-DE');
+    const peers=(Array.isArray(peerCustomerValues)?peerCustomerValues:[])
+      .map(textIntegrityNormalize)
+      .filter(Boolean)
+      .filter(value=>value.normalize('NFKC').toLocaleLowerCase('de-DE')===remainderKey);
+    if(peers.length<2)return null;
+    const counts=new Map();
+    for(const value of peers)counts.set(value,(counts.get(value)||0)+1);
+    const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'de-DE'));
+    return {customer:ranked[0]?.[0]||remainder,recoveredToken,customerPeerCount:peers.length};
+  }
   function textIntegrityHasDiacritic(value){
     const normalized=textIntegrityNormalize(value);
     if(!normalized)return false;
@@ -322,5 +356,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });

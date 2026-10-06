@@ -1,0 +1,278 @@
+{
+  "format": "ATMS_GOLDEN_ERROR_PACK",
+  "version": 1,
+  "plantag": "2026-10-06",
+  "purpose": "Regressionstest nach gebündeltem OCR-/Boundary-/Normalisierungs-Patch",
+  "pixel_policy": "Originalzeilen unverändert; keine Skalierung, Retusche, Schärfung oder Textänderung.",
+  "sources": {
+    "WA0016": "IMG-20261006-WA0016.jpg",
+    "WA0017": "IMG-20261006-WA0017.jpg"
+  },
+  "pack_rows": [
+    {
+      "pack_row": 1,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 2,
+      "note": "Boundary: Ziel NH Nord-Holiday Inn / Kunde Eurowings",
+      "expected": {
+        "destination": "NH Nord-Holiday Inn",
+        "customer": "Eurowings",
+        "flightNumber": "EW9637",
+        "vehicle": "Van",
+        "driver": "Ghasem"
+      },
+      "previous_atms": {
+        "destination": "NH Nord-Holiday",
+        "customer": "in Eurowings"
+      },
+      "class": "boundary_destination_to_customer"
+    },
+    {
+      "pack_row": 2,
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0017.jpg",
+      "sourceRow": 4,
+      "note": "Kontrolle: NH Nord-Holiday Inn + Eurowings korrekt",
+      "expected": {
+        "destination": "NH Nord-Holiday Inn",
+        "customer": "Eurowings",
+        "flightNumber": "EW9613",
+        "vehicle": "Van",
+        "driver": "Yannik"
+      },
+      "previous_atms": "korrekt",
+      "class": "control_boundary"
+    },
+    {
+      "pack_row": 3,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 11,
+      "note": "Boundary: Ziel NH Nord-Holiday Inn / Kunde Eurowings",
+      "expected": {
+        "destination": "NH Nord-Holiday Inn",
+        "customer": "Eurowings",
+        "flightNumber": "EW9613",
+        "vehicle": "Van",
+        "driver": "Yannik"
+      },
+      "previous_atms": {
+        "destination": "NH Nord-Holiday",
+        "customer": "in Eurowings"
+      },
+      "class": "boundary_destination_to_customer"
+    },
+    {
+      "pack_row": 4,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 12,
+      "note": "Boundary + Low-Confidence-Perf: Marriott Seestern DUS / Avion / EW9845",
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "customer": "Avion",
+        "flightNumber": "EW9845",
+        "vehicle": "Van",
+        "driver": "Ghasem"
+      },
+      "previous_atms": {
+        "destination": "Marriott Seestern",
+        "customer": "US Avion"
+      },
+      "class": "boundary_destination_to_customer_and_low_confidence_perf"
+    },
+    {
+      "pack_row": 5,
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0017.jpg",
+      "sourceRow": 5,
+      "note": "Kontrolle: Marriott Seestern DUS + Avion + EW9845 korrekt",
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "customer": "Avion",
+        "flightNumber": "EW9845",
+        "vehicle": "Van",
+        "driver": "Ghasem"
+      },
+      "previous_atms": "korrekt",
+      "class": "control_boundary"
+    },
+    {
+      "pack_row": 6,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 15,
+      "note": "Boundary: Marriott Seestern DUS / Avion",
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "customer": "Avion",
+        "flightNumber": "EW9815",
+        "vehicle": "Van",
+        "driver": "Yannik"
+      },
+      "previous_atms": {
+        "destination": "Marriott Seestern",
+        "customer": "US Avion"
+      },
+      "class": "boundary_destination_to_customer"
+    },
+    {
+      "pack_row": 7,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 3,
+      "note": "Interne Zellbereinigung: vehicle '| Van'",
+      "expected": {
+        "vehicle": "Van",
+        "flightNumber": "EW9444",
+        "driver": "Yannik"
+      },
+      "previous_atms": {
+        "vehicle": "| Van"
+      },
+      "class": "cell_cleanup_vehicle"
+    },
+    {
+      "pack_row": 8,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 4,
+      "note": "Interne Zellbereinigung: vehicle '= Pkw'",
+      "expected": {
+        "vehicle": "Pkw",
+        "flightNumber": "EW9854",
+        "driver": "Lana"
+      },
+      "previous_atms": {
+        "vehicle": "= Pkw"
+      },
+      "class": "cell_cleanup_vehicle"
+    },
+    {
+      "pack_row": 9,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 14,
+      "note": "Interne Zellbereinigung: vehicle '| Van'",
+      "expected": {
+        "vehicle": "Van",
+        "flightNumber": "EW9344",
+        "driver": "Lana"
+      },
+      "previous_atms": {
+        "vehicle": "| Van"
+      },
+      "class": "cell_cleanup_vehicle"
+    },
+    {
+      "pack_row": 10,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 7,
+      "note": "Interne Zellbereinigung: company 'wT' statt 'WT'",
+      "expected": {
+        "company": "WT",
+        "flightNumber": "EW9784",
+        "driver": "Ghasem"
+      },
+      "previous_atms": {
+        "company": "wT"
+      },
+      "class": "cell_cleanup_company"
+    },
+    {
+      "pack_row": 11,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 9,
+      "note": "Interne Zellbereinigung: company 'wT' statt 'WT'",
+      "expected": {
+        "company": "WT",
+        "flightNumber": "EW9220",
+        "driver": "Lana"
+      },
+      "previous_atms": {
+        "company": "wT"
+      },
+      "class": "cell_cleanup_company"
+    },
+    {
+      "pack_row": 12,
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0016.jpg",
+      "sourceRow": 13,
+      "note": "Kontrolle: Fahrerunsicherheit 'Storno?' muss erhalten bleiben",
+      "expected": {
+        "driver": "Storno?",
+        "driverNeedsManualCheck": true
+      },
+      "previous_atms": "korrekt als unsicher markiert",
+      "class": "control_driver_uncertainty"
+    },
+    {
+      "pack_row": 13,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0017.jpg",
+      "sourceRow": 8,
+      "note": "Flugnummern-OCR: OS165 wurde zu 0OS165",
+      "expected": {
+        "flightNumber": "OS165",
+        "flightLocation": "Vienna",
+        "driver": "Lana"
+      },
+      "previous_atms": {
+        "flightNumber": "0OS165"
+      },
+      "class": "flight_ocr_O_vs_0_prefix"
+    },
+    {
+      "pack_row": 14,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0017.jpg",
+      "sourceRow": 6,
+      "note": "Interne Zellbereinigung: vehicle '| Van'",
+      "expected": {
+        "vehicle": "Van",
+        "flightNumber": "EW9344",
+        "driver": "Yannik"
+      },
+      "previous_atms": {
+        "vehicle": "| Van"
+      },
+      "class": "cell_cleanup_vehicle"
+    },
+    {
+      "pack_row": 15,
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0017.jpg",
+      "sourceRow": 9,
+      "note": "Interne Zellbereinigung: company 'wT' statt 'WT'",
+      "expected": {
+        "company": "WT",
+        "flightNumber": "EW4205",
+        "driver": "Lana"
+      },
+      "previous_atms": {
+        "company": "wT"
+      },
+      "class": "cell_cleanup_company"
+    },
+    {
+      "pack_row": 16,
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0017.jpg",
+      "sourceRow": 10,
+      "note": "Kontrolle: Marriott Seestern DUS / Avion / EW9823",
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "customer": "Avion",
+        "flightNumber": "EW9823",
+        "vehicle": "Pkw",
+        "driver": "Lana"
+      },
+      "previous_atms": "korrekt",
+      "class": "control_boundary"
+    }
+  ]
+}
