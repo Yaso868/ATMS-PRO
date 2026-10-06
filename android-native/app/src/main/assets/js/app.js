@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P111 · 06.10.2026: LIVE-COCKPIT TARGET PROMOTION – die bestaetigte Zielbild-Demo wird zur produktiven Echt-Daten-Darstellung befoerdert: Demo-Schalter/-Banner verschwinden aus dem normalen Live-Dispo, GPS-Karte nutzt ausschliesslich aktuelle lokale Position plus reale Routenorte der naechsten Fahrerfahrt, GPS-Qualitaet wird aus der gemessenen Genauigkeit abgeleitet und fehlende Fahrer-ID bleibt ehrlich „–“. Keine erfundenen ETA-/Verspaetungs-/Warnwerte, keine Aenderung an LIVE-/PLAN-/DISPO-, Tracking-, Routing-, Nachrichten-, Fahrer-, OCR-, Import-, Storage- oder Persistenzlogik.
 // CORE-007D8A1F1D8P1071 · 04.10.2026: RIDE-SOURCE DRIVER COLOR – jede Fahrt rendert zuerst ihre direkt aus DER aktuellen Planlisten-Fahrerzelle gespeicherte Farbe. Fahrer-Stammdaten/alte Planfarben dürfen eine bereits am Ride gespeicherte aktuelle Planfarbe nicht überschreiben. Fallback bleibt nur für Fahrten ohne sichere Quellfarbe.
 // CORE-007D8A1F1D8P106 · 02.10.2026: CURRENT PLAN DRIVER COLORS – aktuelle, konsistente Fahrerzellfarben des gerade importierten Plans ersetzen veraltete automatische Planfarben desselben Fahrers. Manuell gesperrte P74-Farben bleiben unangetastet; alte Farben anderer, im aktuellen Import nicht vorkommender Fahrer blockieren keine neue Planfarbe mehr.
 // CORE-007D8A1F1D8P105 · 02.10.2026: SAFE ARCHIVE RESTORE – ergänzt eine zweistufige, additive Wiederherstellung aus bereits nativ zurückgelesenen und SHA-256-verifizierten .atmsarchive-Dateien. Vor Übernahme wird Storage V2 exakt geprüft und ein frisches vollständiges ATMS-Backup des aktuellen Bestands erstellt. Bestehende Fahrt-IDs werden niemals überschrieben; nur fehlende Archivfahrten werden als ältere Carryover ergänzt. Nach dem Schreiben müssen localStorage, Durable Shadow und Storage V2 den neuen Bestand bestätigen; bei Fehler wird der exakte Vorzustand zurückgerollt.
@@ -5972,6 +5973,44 @@ function applyLiveDispositionTargetCleanup(){
   atmsLiveHideLegacyBlock('liveTimeline','Fahrtenfolge');
   const modeEls=[$('liveSystemPill'),$('liveModeStandard'),$('liveModeRoute')].filter(Boolean);modeEls.forEach(el=>{el.style.display='none';el.setAttribute('aria-hidden','true')});
 }
+// CORE-007D8A1F1D8P111 – Zielbild wird produktive Echt-Daten-Ansicht. Reine Darstellung aus bereits vorhandenen lokalen Daten.
+function atmsP111LiveTargetRouteLabels(ride){
+  if(!ride)return[];
+  const raw=typeof routePointsForRide==='function'?routePointsForRide(ride):[ride.pickup,ride.destination];
+  const unique=[];
+  (Array.isArray(raw)?raw:[]).forEach(v=>{const s=String(v||'').trim();if(s&&!unique.some(x=>normKey(x)===normKey(s)))unique.push(s)});
+  if(unique.length<=3)return unique;
+  return [unique[0],unique[Math.floor((unique.length-1)/2)],unique[unique.length-1]];
+}
+function atmsP111LiveTargetGpsQuality(geo,active,consent){
+  if(geo){
+    const accuracy=Number(geo.accuracy);
+    if(Number.isFinite(accuracy)){
+      if(accuracy<=15)return{label:'● Sehr gut',className:'is-live'};
+      if(accuracy<=35)return{label:'● Gut',className:'is-live'};
+      if(accuracy<=75)return{label:'● Ausreichend',className:'is-wait'};
+      return{label:'● Schwach',className:'is-wait'};
+    }
+    return{label:'● GPS aktiv',className:'is-live'};
+  }
+  if(active)return{label:'GPS wartet',className:'is-wait'};
+  if(consent)return{label:'Bereit',className:'is-wait'};
+  return{label:'Nicht aktiv',className:''};
+}
+function atmsP111PromoteLiveTarget(){
+  const view=$('liveDispositionView');if(!view)return;
+  view.dataset.atmsP26gDemo='0';
+  const btn=$('atmsLiveTargetDemoBtn');if(btn)btn.remove();
+  const banner=$('atmsLiveTargetDemoBanner');if(banner)banner.remove();
+  if(!$('atmsLiveTargetP111Style')){
+    const style=document.createElement('style');style.id='atmsLiveTargetP111Style';style.textContent=`
+      #liveDispositionView #atmsLiveTargetDemoBtn,#liveDispositionView #atmsLiveTargetDemoBanner{display:none!important}
+      #atmsLiveTargetPositionBody .atms-p111-map-label{position:absolute;z-index:2;max-width:46%;padding:2px 5px;border-radius:6px;background:rgba(0,20,32,.46);font-size:9px;font-weight:850;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.82}
+      #atmsLiveTargetPositionBody .atms-p111-map-label.l1{left:7%;top:14%}#atmsLiveTargetPositionBody .atms-p111-map-label.l2{right:7%;top:24%}#atmsLiveTargetPositionBody .atms-p111-map-label.l3{right:11%;bottom:14%}
+      #atmsLiveTargetPositionBody .atms-p111-map-context{position:absolute;left:10px;bottom:8px;z-index:2;font-size:8px;font-weight:800;opacity:.62}
+    `;document.head.appendChild(style)
+  }
+}
 function ensureLiveDispositionTargetPositionInfo(){
   const view=$('liveDispositionView'),top=$('atmsLiveTargetTop');if(!view||!top)return null;
   let shell=$('atmsLiveTargetPositionInfo');
@@ -5994,15 +6033,22 @@ function ensureLiveDispositionTargetPositionInfo(){
 }
 function renderLiveDispositionTargetPositionInfo(driver,settings,consent){
   const shell=ensureLiveDispositionTargetPositionInfo();if(!shell)return;
+  atmsP111PromoteLiveTarget();
   const session=getDriverSession(),sessionMatches=Boolean(driver&&session.active&&session.driverId===driver.id),active=Boolean(sessionMatches&&consent),geo=active&&settings?.lastGeo&&settings.lastGeo.driverId===driver.id?settings.lastGeo:null;
+  const driverRides=driver?ridesForLiveDriver(driver.name):[],routeRide=driverRides[0]||null,routeLabels=atmsP111LiveTargetRouteLabels(routeRide);
   const body=$('atmsLiveTargetPositionBody'),open=$('atmsLiveTargetOpenPositionBtn');
-  if(body){const lat=geo?Number(geo.lat):NaN,lng=geo?Number(geo.lng):NaN,coords=Number.isFinite(lat)&&Number.isFinite(lng)?`${lat.toFixed(5)}, ${lng.toFixed(5)}`:'';body.className='atms-live-target-position-body '+(geo?'is-live':'');body.innerHTML=geo?`<div class="atms-live-target-map-road r1"></div><div class="atms-live-target-map-road r2"></div><div class="atms-live-target-map-road r3"></div><div class="atms-live-target-geo-dot"></div><div class="atms-live-target-map-caption"><b>${esc(atmsLiveTargetRelativeTime(geo.time))}</b>${Number.isFinite(Number(geo.accuracy))?`<span>Genauigkeit ${Math.round(Number(geo.accuracy))} m</span>`:''}${coords?`<small>${esc(coords)}</small>`:''}</div>`:`<b>Keine aktuelle Position</b><span>${!consent?'Zustimmung ist noch offen.':!sessionMatches?'Schicht ist nicht gestartet.':'GPS-Position wird noch ermittelt.'}</span>`}
+  if(body){
+    const lat=geo?Number(geo.lat):NaN,lng=geo?Number(geo.lng):NaN,coords=Number.isFinite(lat)&&Number.isFinite(lng)?`${lat.toFixed(5)}, ${lng.toFixed(5)}`:'';
+    const labels=routeLabels.map((label,i)=>`<span class="atms-p111-map-label l${i+1}" title="${esc(label)}">${esc(label)}</span>`).join('');
+    body.className='atms-live-target-position-body '+(geo?'is-live':'');
+    body.innerHTML=geo?`<div class="atms-live-target-map-road r1"></div><div class="atms-live-target-map-road r2"></div><div class="atms-live-target-map-road r3"></div>${labels}<div class="atms-live-target-geo-dot"></div><div class="atms-live-target-map-caption"><b>${esc(atmsLiveTargetRelativeTime(geo.time))}</b>${Number.isFinite(Number(geo.accuracy))?`<span>Genauigkeit ${Math.round(Number(geo.accuracy))} m</span>`:''}${coords?`<small>${esc(coords)}</small>`:''}</div>${routeRide?'<span class="atms-p111-map-context">Nächste Fahrt · reale Routendaten</span>':''}`:`<b>Keine aktuelle Position</b><span>${!consent?'Zustimmung ist noch offen.':!sessionMatches?'Schicht ist nicht gestartet.':'GPS-Position wird noch ermittelt.'}</span>`;
+  }
   if(open)open.disabled=!geo;
   const driverName=$('atmsLiveTargetInfoDriver');if(driverName)driverName.textContent=driver?.name||'–';
   const infoId=$('atmsLiveTargetInfoId');if(infoId)infoId.textContent=String(driver?.staffId||driver?.driverId||driver?.employeeId||'').trim()||'–';
   const vehicle=$('atmsLiveTargetInfoVehicle');if(vehicle)vehicle.textContent=driver?.vehicle||'Nicht hinterlegt';
   const shift=$('atmsLiveTargetInfoShift');if(shift)shift.textContent=sessionMatches?`Aktiv seit ${session.startedAt?new Date(session.startedAt).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}):'–'}`:'Nicht gestartet';
-  const connection=$('atmsLiveTargetInfoConnection');if(connection){connection.textContent=geo?'GPS aktiv':active?'GPS wartet':consent?'Bereit':'Nicht aktiv';connection.className=geo?'is-live':active||consent?'is-wait':''}
+  const connection=$('atmsLiveTargetInfoConnection');if(connection){const quality=atmsP111LiveTargetGpsQuality(geo,active,consent);connection.textContent=quality.label;connection.className=quality.className}
 }
 
 function ensureLiveDispositionTargetRideControl(){
@@ -6113,7 +6159,7 @@ function ensureLiveDispositionTargetDemo(){
     `;document.head.appendChild(style);
   }
   let banner=$('atmsLiveTargetDemoBanner');if(!banner){banner=document.createElement('div');banner.id='atmsLiveTargetDemoBanner';banner.textContent='🧪 ZIELBILD-DEMO · Nur Darstellung mit Beispieldaten. Echte ATMS-Daten werden nicht verändert.';$('atmsLiveTargetTop')?.insertAdjacentElement('afterend',banner)}
-  positionLiveDispositionTargetDemoButton();
+  atmsP111PromoteLiveTarget();
   return btn;
 }
 function positionLiveDispositionTargetDemoButton(){
@@ -6445,14 +6491,12 @@ function ensureLiveDispositionTargetFinish(){
   const settingsNav=document.querySelector('.nav[data-nav="settings"]');
   if(settingsNav?.parentElement)settingsNav.parentElement.classList.add('atms-live-six-nav');
   restoreLiveBottomNavBaseline();
-  positionLiveDispositionTargetDemoButton();
   const old=$('atmsLiveTargetSettingsBtn');
   if(old&&old.dataset.atmsP26fBound!=='1'){
     const fresh=old.cloneNode(true);fresh.dataset.atmsP26fBound='1';old.replaceWith(fresh);fresh.addEventListener('click',toggleLiveDispositionTargetAdvanced);
   }
   applyLiveDispositionTargetFinishCleanup();
-  ensureLiveDispositionTargetDemo();
-  applyLiveDispositionTargetDemo();
+  atmsP111PromoteLiveTarget();
   renderLiveDispositionTargetAppBar();
 }
 
@@ -6460,7 +6504,7 @@ function renderLiveDispositionTargetBlock(driver,settings,consent){
   const shell=ensureLiveDispositionTargetBlock();if(!shell)return;applyLiveDispositionTargetCleanup();
   const select=$('atmsLiveTargetDriverSelect'),drivers=liveDriverList();
   if(select){select.innerHTML=drivers.map(d=>`<option value="${esc(d.id)}" ${driver&&d.id===driver.id?'selected':''}>${d.favorite?'⭐ ':''}${esc(d.name)}${d.vehicle?' · '+esc(d.vehicle):''}</option>`).join('');if(driver)select.value=driver.id}
-  const meta=$('atmsLiveTargetDriverMeta');if(meta){const driverId=String(driver?.staffId||driver?.driverId||driver?.employeeId||'').trim();meta.textContent=driver?(driverId||driver.vehicle||'Fahrzeug nicht hinterlegt'):'Kein Fahrer verfügbar'};
+  const meta=$('atmsLiveTargetDriverMeta');if(meta){const driverId=String(driver?.staffId||driver?.driverId||driver?.employeeId||'').trim();meta.textContent=driver?(driverId||'–'):'Kein Fahrer verfügbar'};
   const threshold=Math.max(1,Math.min(60,Number(settings?.warnThreshold||7)));const value=$('atmsLiveTargetThreshold'),note=$('atmsLiveTargetThresholdNote');if(value)value.textContent=String(threshold);if(note)note.textContent=`Warnung ab ${threshold} Minuten Verspätung`;
   const session=getDriverSession(),sessionMatches=Boolean(driver&&session.active&&session.driverId===driver.id),active=Boolean(sessionMatches&&consent),geo=active&&settings?.lastGeo&&settings.lastGeo.driverId===driver.id?settings.lastGeo:null;let state='● Zustimmung offen';
   if(active)state=geo?'● Tracking aktiv':'● Tracking gestartet · Position ausstehend';else if(consent)state='● Tracking freigegeben · Schicht nicht gestartet';
