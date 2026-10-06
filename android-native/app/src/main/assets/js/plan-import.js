@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1093 · 06.10.2026: OCR SHARED-WORKER SESSION PERFORMANCE FIX – reuses one ENG and one DEU Tesseract worker across the already-existing P109.2/P109.2D OCR phases instead of repeatedly creating one-shot workers. Calls are serialized per language to keep each crop/result isolated; existing crops, languages, one-shot option semantics, consensus/fail-closed rules, P108 time gate, P109 text-integrity decisions, FLIGHT-008, import/persistence and PLAN/DISPO/LIVE behavior remain unchanged. P109PERF stays enabled for real-device proof and now reports the reused worker operations.
 // CORE-007D8A1F1D8P1092D · 06.10.2026: P109PERF WORKER-LIFECYCLE DIAGNOSTIC ONLY – adds timing/worker-ID instrumentation around the existing P109.2 OCR calls (primary, early time, price, route, driver, text-integrity, missing-flight). It records one-shot Tesseract lifecycle status timestamps and explicit-worker create/setParameters/recognize/terminate timings. No crop, language, PSM option, consensus rule, import decision, flight verification, persistence, PLAN/DISPO/LIVE or user data is changed.
 // CORE-007D8A1F1D8P1092 · 05.10.2026: TEXT CELL INTEGRITY EDGE CONSENSUS – for pure removable edge-punctuation OCR conflicts, two unanimous local DEU cell reads from distinct modes plus >=2 matching current-plan peers may safely resolve a noisy/missing composite batch read, unless the batch supports the original or local reads compete. Same-plan text alone never corrects; unresolved conflicts stay fail-closed. P109.1 composite-batch performance and staged-JSON fixes are retained. No customer/place/row/file hardcodes.
 // CORE-007D8A1F1D8P1078 · 05.10.2026: IMPORT STATUS CLARITY – trennt die zeilenbezogene OCR-/Datenprüfung sichtbar von der separaten Flugprüfung. Die Vorschau nennt ungelöste Warnungen jetzt „Hinweis“ statt missverständlich „Prüfen“, der Flugprüfungsblock erklärt die Trennung ausdrücklich, und die Bildimport-Zuordnung zeigt die Fahrer-Spalte semantisch als „Name (Fahrer)“ statt eines ggf. fehlerhaft OCR-gelesenen Headertexts. Keine Änderung an OCR, Flugverifikation, Mapping-Index, Fahrtdaten, PLAN/DISPO/LIVE oder Persistenz.
@@ -162,10 +163,10 @@
   const ocrIntegrityCore = (() => { try { return window.ATMSOcrIntegrityCore || null; } catch (_) { return null; } })();
 
 
-  // P109.2D: read-only OCR lifecycle instrumentation. The wrappers below preserve
-  // the exact OCR call count, images, languages and existing options. They only add
-  // logger observation/timing and diagnostic worker IDs.
-  const P109PERF_VERSION = 'CORE-007D8A1F1D8P1092D';
+  // P109.2D/P109.3: OCR lifecycle instrumentation stays active for real-device proof.
+  // P109.3 keeps the same recognition calls/images/languages and consensus logic, but
+  // routes the high-cost calls through one reusable worker per language.
+  const P109PERF_VERSION = 'CORE-007D8A1F1D8P1093';
   function p109PerfReset() {
     try {
       window.ATMSP109PerfDiagnostic = {
@@ -245,14 +246,19 @@
       }
     }
   }
-  async function p109PerfCreateWorker(phase, language, detail = {}) {
+  async function p109PerfCreateWorker(phase, language, detail = {}, createDownstreamLogger = null) {
     const record = p109PerfNewRecord(phase, language, 'explicit', detail);
     const startedAt = performance.now();
     const logger = message => {
       try {
         const active = record?._activeOperation || null;
-        if (active) p109PerfPushFirstStatus(active, message, Number(active._startedAt || startedAt));
-        else p109PerfPushFirstStatus(record, message, startedAt);
+        if (active) {
+          p109PerfPushFirstStatus(active, message, Number(active._startedAt || startedAt));
+          if (typeof active._downstreamLogger === 'function') active._downstreamLogger(message);
+        } else {
+          p109PerfPushFirstStatus(record, message, startedAt);
+          if (typeof createDownstreamLogger === 'function') createDownstreamLogger(message);
+        }
       } catch (_) {}
     };
     try {
@@ -295,7 +301,7 @@
       if (record) record._activeOperation = null;
     }
   }
-  async function p109PerfWorkerRecognize(worker, phase, image, detail = {}) {
+  async function p109PerfWorkerRecognize(worker, phase, image, detail = {}, downstreamLogger = null) {
     if (!worker || typeof worker.recognize !== 'function') throw new Error('p109perf_worker_recognize_unavailable');
     const record = p109PerfWorkerRecord(worker);
     const startedAt = performance.now();
@@ -306,7 +312,8 @@
       detail: { ...detail, ...p109PerfImageSize(image) },
       reuse: priorRecognizes > 0 ? 'YES' : 'NO',
       events: [],
-      _startedAt: startedAt
+      _startedAt: startedAt,
+      _downstreamLogger: typeof downstreamLogger === 'function' ? downstreamLogger : null
     };
     if (record) { record.operations.push(op); record._activeOperation = op; }
     try {
@@ -322,6 +329,7 @@
       op.preRecognizeMs = recognizeEvent ? recognizeEvent.atMs : 0;
       op.activeRecognizeMs = recognizeEvent ? Math.max(0, op.totalMs - recognizeEvent.atMs) : op.totalMs;
       delete op._startedAt;
+      delete op._downstreamLogger;
       if (record) record._activeOperation = null;
     }
   }
@@ -345,6 +353,92 @@
         record.sessionEndMs = p109PerfElapsed(p109PerfState());
       }
     }
+  }
+
+  // P109.3: The high-cost P109PERF phases previously used Tesseract.recognize(),
+  // which creates/initializes/terminates a fresh worker for every call. On Android
+  // WebView the P109.2D trace proved long pre-recognize stalls on those fresh workers.
+  // Keep exactly one worker per OCR language for the duration of one image import.
+  // Jobs are serialized per language so no crop can overlap another call on the same
+  // worker. IMPORTANT: we deliberately do NOT translate the old one-shot `options`
+  // object into worker.setParameters(); Tesseract.js v5 treated those arguments as
+  // worker-creation options in the old path. Applying them as OCR parameters here
+  // would change recognition semantics and therefore is forbidden by this patch.
+  const p109SharedOcrSession = { workers: new Map(), workerPromises: new Map(), tails: new Map() };
+
+  function p109SharedOcrReset() {
+    const staleWorkers = [...p109SharedOcrSession.workers.values()];
+    p109SharedOcrSession.workers.clear();
+    p109SharedOcrSession.workerPromises.clear();
+    p109SharedOcrSession.tails.clear();
+    staleWorkers.forEach(worker => {
+      try { Promise.resolve(worker?.terminate?.()).catch(() => {}); } catch (_) {}
+    });
+  }
+
+  async function p109SharedOcrEnsureWorker(language, initialLogger = null) {
+    const lang = cellText(language) || 'eng';
+    if (p109SharedOcrSession.workers.has(lang)) return p109SharedOcrSession.workers.get(lang);
+    if (!p109SharedOcrSession.workerPromises.has(lang)) {
+      const promise = p109PerfCreateWorker('shared_ocr_session', lang, { mode: `p1093-shared-${lang}` }, initialLogger)
+        .then(worker => {
+          p109SharedOcrSession.workers.set(lang, worker);
+          return worker;
+        })
+        .catch(error => {
+          p109SharedOcrSession.workerPromises.delete(lang);
+          throw error;
+        });
+      p109SharedOcrSession.workerPromises.set(lang, promise);
+    }
+    return p109SharedOcrSession.workerPromises.get(lang);
+  }
+
+  function p109SharedOcrRun(language, task, initialLogger = null) {
+    const lang = cellText(language) || 'eng';
+    const prior = p109SharedOcrSession.tails.get(lang) || Promise.resolve();
+    const run = prior.catch(() => {}).then(async () => {
+      const worker = await p109SharedOcrEnsureWorker(lang, initialLogger);
+      return task(worker);
+    });
+    p109SharedOcrSession.tails.set(lang, run.catch(() => {}));
+    return run;
+  }
+
+  function p109SharedOcrRecognize(phase, language, image, options, detail = {}) {
+    const downstreamLogger = typeof options?.logger === 'function' ? options.logger : null;
+    return p109SharedOcrRun(language, worker =>
+      p109PerfWorkerRecognize(worker, phase, image, detail, downstreamLogger),
+      downstreamLogger
+    );
+  }
+
+  async function p109SharedOcrWithWorker(language, task) {
+    return p109SharedOcrRun(language, task);
+  }
+
+  async function p109SharedOcrTerminateAll() {
+    const languages = [...new Set([
+      ...p109SharedOcrSession.workers.keys(),
+      ...p109SharedOcrSession.workerPromises.keys(),
+      ...p109SharedOcrSession.tails.keys()
+    ])];
+    for (const language of languages) {
+      const tail = p109SharedOcrSession.tails.get(language);
+      if (tail) { try { await tail; } catch (_) {} }
+      let worker = p109SharedOcrSession.workers.get(language) || null;
+      if (!worker) {
+        try { worker = await p109SharedOcrSession.workerPromises.get(language); } catch (_) { worker = null; }
+      }
+      if (worker) {
+        try { await p109PerfWorkerTerminate(worker, 'shared_ocr_session'); } catch (_) {
+          try { await worker.terminate(); } catch (_) {}
+        }
+      }
+    }
+    p109SharedOcrSession.workers.clear();
+    p109SharedOcrSession.workerPromises.clear();
+    p109SharedOcrSession.tails.clear();
   }
 
   function berlinToday() {
@@ -4711,7 +4805,7 @@
       // Auswertung, Stimmen, Mindestkonsens und Sicherheitsregeln bleiben identisch.
       const attemptResults = await Promise.all(attempts.map(attempt => {
         const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-        return p109PerfRecognizeOneShot('driver_deu_column_ocr', 'deu', crop, attempt.options, { mode: attempt.name })
+        return p109SharedOcrRecognize('driver_deu_column_ocr', 'deu', crop, attempt.options, { mode: attempt.name })
           .then(second => ({ attempt, second }));
       }));
 
@@ -5357,7 +5451,7 @@
         // attempts-Reihenfolge; Crops, Kandidatenlogik und Konsens bleiben identisch.
         const attemptJobs = attempts.map(attempt => {
           const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-          return p109PerfRecognizeOneShot('route_deu_column_ocr', 'deu', crop, attempt.options, { mode: attempt.name, field: descriptor.field })
+          return p109SharedOcrRecognize('route_deu_column_ocr', 'deu', crop, attempt.options, { mode: attempt.name, field: descriptor.field })
             .then(second => ({ ok: true, attempt, second }))
             .catch(error => ({ ok: false, attempt, error }));
         });
@@ -5651,7 +5745,12 @@
 
     try {
       if (typeof Tesseract.createWorker === 'function') {
-        try { worker = await p109PerfCreateWorker('text_integrity_ocr', 'deu', { mode: 'shared-text-integrity-worker' }); } catch (_) { worker = null; }
+        try {
+          // P109.3: Continue on the already-warmed DEU session used by route/driver OCR.
+          // Text-integrity remains the only phase that intentionally calls setParameters();
+          // it still uses the exact P109.1/P109.2 PSM sequence below.
+          worker = await p109SharedOcrWithWorker('deu', async sharedWorker => sharedWorker);
+        } catch (_) { worker = null; }
       }
 
       // P109.1 performance gate: all eligible text columns are packed side-by-side
@@ -5755,9 +5854,8 @@
         }
       }
     } finally {
-      if (worker && typeof worker.terminate === 'function') {
-        try { await p109PerfWorkerTerminate(worker, 'text_integrity_ocr'); } catch (_) {}
-      }
+      // P109.3: The DEU worker belongs to the import-scoped shared session and is
+      // terminated once after all shared OCR phases, not here.
     }
 
     activeDescriptors.forEach(descriptor => {
@@ -5902,7 +6000,7 @@
         // Auswertung, Stimmen, Mindestkonsens und Sicherheitsregeln bleiben identisch.
         const regionResults = await Promise.allSettled(regions.map(async ([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          const second = await p109PerfRecognizeOneShot('price_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `price-cell-${scale}x` });
+          const second = await p109SharedOcrRecognize('price_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `price-cell-${scale}x` });
           return priceCandidatesFromOcrResult(second);
         }));
 
@@ -6111,7 +6209,7 @@
       // weiterhin strikt in attempts-Reihenfolge; Crops, Stimmen und Konsens bleiben identisch.
       const attemptJobs = attempts.map(attempt => {
         const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-        return p109PerfRecognizeOneShot('early_time_batch_ocr', 'eng', crop, attempt.options, { mode: attempt.name })
+        return p109SharedOcrRecognize('early_time_batch_ocr', 'eng', crop, attempt.options, { mode: attempt.name })
           .then(second => ({ ok: true, attempt, second }))
           .catch(error => ({ ok: false, attempt, error }));
       });
@@ -6274,7 +6372,7 @@
         // Kandidaten, Versuchsliste und Stimmenlogik danach exakt wie zuvor ausgewertet werden.
         const regionResults = await Promise.all(regions.map(([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          return p109PerfRecognizeOneShot('missing_flight_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `flight-cell-${scale}x` });
+          return p109SharedOcrRecognize('missing_flight_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `flight-cell-${scale}x` });
         }));
         for (const second of regionResults) {
           const candidates = [...new Set(
@@ -7838,7 +7936,22 @@
       `${shortStatus(item?.status) || '?'}@${ms(item?.atMs)}`
     ).join(',') || '∅';
     const phaseTotals = new Map();
+    const addPhase = (phase, count, total) => {
+      const key = cellText(phase) || '?';
+      const entry = phaseTotals.get(key) || { count: 0, ms: 0 };
+      entry.count += Number(count || 0);
+      entry.ms += Number(total || 0);
+      phaseTotals.set(key, entry);
+    };
     value.records.forEach(record => {
+      if (record?.kind === 'explicit' && record?.phase === 'shared_ocr_session') {
+        addPhase('shared_worker_setup', 1, Number(record?.createMs || 0));
+        (Array.isArray(record?.operations) ? record.operations : []).forEach(op => {
+          if (op?.type === 'terminate') addPhase('shared_worker_terminate', 1, Number(op?.totalMs || 0));
+          else addPhase(cellText(op?.phase) || 'shared_ocr_session', 1, Number(op?.totalMs || 0));
+        });
+        return;
+      }
       const phase = cellText(record?.phase) || '?';
       let total = Number(record?.totalMs || 0);
       if (record?.kind === 'explicit') {
@@ -7846,10 +7959,7 @@
           ? record.operations.reduce((sum, op) => sum + Number(op?.totalMs || 0), 0)
           : 0);
       }
-      const entry = phaseTotals.get(phase) || { count: 0, ms: 0 };
-      entry.count += 1;
-      entry.ms += total;
-      phaseTotals.set(phase, entry);
+      addPhase(phase, 1, total);
     });
     const phaseText = [...phaseTotals.entries()].map(([phase, item]) =>
       `${phase}:${item.count}/${ms(item.ms)}`
@@ -7963,6 +8073,7 @@
 
   async function readImagePlan(file) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
+    p109SharedOcrReset();
     p109PerfReset();
     const perfStartedAt = performance.now();
     const perfStages = [];
@@ -8013,7 +8124,7 @@
         status.textContent = `Bildanalyse: ${message.status}`;
       }
     };
-    const result = await measureAsync('primary_ocr', () => p109PerfRecognizeOneShot('primary_ocr', 'eng', canvas, {
+    const result = await measureAsync('primary_ocr', () => p109SharedOcrRecognize('primary_ocr', 'eng', canvas, {
       logger: p63Logger
     }, { mode: 'full-image-primary' }));
     const p63PrimaryTotalMs = performance.now() - p63PrimaryStartedAt;
@@ -9310,6 +9421,7 @@
           result.imageMeta,
           mappingInfo.mapping
         ));
+        await p54MeasureAsync('shared_ocr_session_terminate', () => p109SharedOcrTerminateAll());
         preparedRides = await p54MeasureAsync('ambiguous_flight_targeted_ocr', () => recoverAmbiguousFlightNumbersTargeted(
           preparedRides,
           result.imageCanvas,
