@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1092D · 06.10.2026: P109PERF WORKER-LIFECYCLE DIAGNOSTIC ONLY – adds timing/worker-ID instrumentation around the existing P109.2 OCR calls (primary, early time, price, route, driver, text-integrity, missing-flight). It records one-shot Tesseract lifecycle status timestamps and explicit-worker create/setParameters/recognize/terminate timings. No crop, language, PSM option, consensus rule, import decision, flight verification, persistence, PLAN/DISPO/LIVE or user data is changed.
 // CORE-007D8A1F1D8P1092 · 05.10.2026: TEXT CELL INTEGRITY EDGE CONSENSUS – for pure removable edge-punctuation OCR conflicts, two unanimous local DEU cell reads from distinct modes plus >=2 matching current-plan peers may safely resolve a noisy/missing composite batch read, unless the batch supports the original or local reads compete. Same-plan text alone never corrects; unresolved conflicts stay fail-closed. P109.1 composite-batch performance and staged-JSON fixes are retained. No customer/place/row/file hardcodes.
 // CORE-007D8A1F1D8P1078 · 05.10.2026: IMPORT STATUS CLARITY – trennt die zeilenbezogene OCR-/Datenprüfung sichtbar von der separaten Flugprüfung. Die Vorschau nennt ungelöste Warnungen jetzt „Hinweis“ statt missverständlich „Prüfen“, der Flugprüfungsblock erklärt die Trennung ausdrücklich, und die Bildimport-Zuordnung zeigt die Fahrer-Spalte semantisch als „Name (Fahrer)“ statt eines ggf. fehlerhaft OCR-gelesenen Headertexts. Keine Änderung an OCR, Flugverifikation, Mapping-Index, Fahrtdaten, PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P1077 · 05.10.2026: STANDARD-FLIGHT CONFLICT EVIDENCE – unique flights recovered from an initially empty cell are rechecked with the tight standard-flight crops, while duplicate recovered values remain fast-path protected. Inconclusive re-OCR no longer creates a hard blocker by itself; a blocking review now requires positive one-digit alternative evidence from at least two independent crops. Strong two-crop alternatives still auto-correct. No flight-number hardcodes.
@@ -159,6 +160,192 @@
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
   const cellText = value => value === null || value === undefined ? '' : String(value).trim();
   const ocrIntegrityCore = (() => { try { return window.ATMSOcrIntegrityCore || null; } catch (_) { return null; } })();
+
+
+  // P109.2D: read-only OCR lifecycle instrumentation. The wrappers below preserve
+  // the exact OCR call count, images, languages and existing options. They only add
+  // logger observation/timing and diagnostic worker IDs.
+  const P109PERF_VERSION = 'CORE-007D8A1F1D8P1092D';
+  function p109PerfReset() {
+    try {
+      window.ATMSP109PerfDiagnostic = {
+        version: P109PERF_VERSION,
+        startedAt: performance.now(),
+        nextWorkerId: 1,
+        records: []
+      };
+    } catch (_) {}
+  }
+  function p109PerfState() {
+    try {
+      if (!window.ATMSP109PerfDiagnostic) p109PerfReset();
+      return window.ATMSP109PerfDiagnostic || null;
+    } catch (_) { return null; }
+  }
+  function p109PerfElapsed(state) {
+    return state ? Math.max(0, performance.now() - Number(state.startedAt || performance.now())) : 0;
+  }
+  function p109PerfNewRecord(phase, language, kind, detail = {}) {
+    const state = p109PerfState();
+    if (!state) return null;
+    const record = {
+      id: `OCR-W${Number(state.nextWorkerId || 1)}`,
+      phase: cellText(phase) || 'unknown',
+      language: cellText(language) || '?',
+      kind: cellText(kind) || 'unknown',
+      detail: { ...(detail || {}) },
+      sessionStartMs: p109PerfElapsed(state),
+      events: [],
+      operations: [],
+      ok: false
+    };
+    state.nextWorkerId = Number(state.nextWorkerId || 1) + 1;
+    state.records.push(record);
+    return record;
+  }
+  function p109PerfImageSize(image) {
+    const width = Number(image?.width || image?.naturalWidth || 0);
+    const height = Number(image?.height || image?.naturalHeight || 0);
+    return {
+      width: Number.isFinite(width) ? Math.round(width) : 0,
+      height: Number.isFinite(height) ? Math.round(height) : 0
+    };
+  }
+  function p109PerfPushFirstStatus(target, message, startedAt) {
+    if (!target || !message?.status) return;
+    const status = cellText(message.status);
+    if (!status) return;
+    const events = Array.isArray(target.events) ? target.events : (target.events = []);
+    if (events.some(item => item.status === status)) return;
+    events.push({ status, atMs: Math.max(0, performance.now() - startedAt) });
+  }
+  async function p109PerfRecognizeOneShot(phase, language, image, options, detail = {}) {
+    const record = p109PerfNewRecord(phase, language, 'oneshot', { ...detail, ...p109PerfImageSize(image) });
+    const startedAt = performance.now();
+    const downstreamLogger = typeof options?.logger === 'function' ? options.logger : null;
+    const wrappedOptions = { ...(options || {}) };
+    wrappedOptions.logger = message => {
+      try { p109PerfPushFirstStatus(record, message, startedAt); } catch (_) {}
+      if (downstreamLogger) downstreamLogger(message);
+    };
+    try {
+      const value = await Tesseract.recognize(image, language, wrappedOptions);
+      if (record) record.ok = true;
+      return value;
+    } catch (error) {
+      if (record) record.error = cellText(error?.message) || String(error || 'recognize_failed');
+      throw error;
+    } finally {
+      if (record) {
+        record.totalMs = performance.now() - startedAt;
+        const recognizeEvent = (record.events || []).find(item => item.status === 'recognizing text') || null;
+        record.preRecognizeMs = recognizeEvent ? recognizeEvent.atMs : record.totalMs;
+        record.activeRecognizeMs = recognizeEvent ? Math.max(0, record.totalMs - recognizeEvent.atMs) : 0;
+        record.sessionEndMs = p109PerfElapsed(p109PerfState());
+      }
+    }
+  }
+  async function p109PerfCreateWorker(phase, language, detail = {}) {
+    const record = p109PerfNewRecord(phase, language, 'explicit', detail);
+    const startedAt = performance.now();
+    const logger = message => {
+      try {
+        const active = record?._activeOperation || null;
+        if (active) p109PerfPushFirstStatus(active, message, Number(active._startedAt || startedAt));
+        else p109PerfPushFirstStatus(record, message, startedAt);
+      } catch (_) {}
+    };
+    try {
+      const worker = await Tesseract.createWorker(language, undefined, { logger });
+      if (record) {
+        record.ok = true;
+        record.createMs = performance.now() - startedAt;
+        record.createEvents = Array.isArray(record.events) ? record.events.slice() : [];
+        record.events = [];
+      }
+      try { Object.defineProperty(worker, '__atmsP109PerfRecord', { value: record, configurable: true }); }
+      catch (_) { try { worker.__atmsP109PerfRecord = record; } catch (_) {} }
+      return worker;
+    } catch (error) {
+      if (record) {
+        record.createMs = performance.now() - startedAt;
+        record.error = cellText(error?.message) || String(error || 'create_worker_failed');
+      }
+      throw error;
+    }
+  }
+  function p109PerfWorkerRecord(worker) {
+    try { return worker?.__atmsP109PerfRecord || null; } catch (_) { return null; }
+  }
+  async function p109PerfWorkerSetParameters(worker, phase, params, detail = {}) {
+    if (!worker || typeof worker.setParameters !== 'function') return;
+    const record = p109PerfWorkerRecord(worker);
+    const startedAt = performance.now();
+    const op = { type: 'setParameters', phase: cellText(phase) || record?.phase || 'unknown', detail: { ...(detail || {}) }, events: [], _startedAt: startedAt };
+    if (record) { record.operations.push(op); record._activeOperation = op; }
+    try {
+      await worker.setParameters(params);
+      op.ok = true;
+    } catch (error) {
+      op.error = cellText(error?.message) || String(error || 'set_parameters_failed');
+      throw error;
+    } finally {
+      op.totalMs = performance.now() - startedAt;
+      delete op._startedAt;
+      if (record) record._activeOperation = null;
+    }
+  }
+  async function p109PerfWorkerRecognize(worker, phase, image, detail = {}) {
+    if (!worker || typeof worker.recognize !== 'function') throw new Error('p109perf_worker_recognize_unavailable');
+    const record = p109PerfWorkerRecord(worker);
+    const startedAt = performance.now();
+    const priorRecognizes = record ? record.operations.filter(item => item.type === 'recognize').length : 0;
+    const op = {
+      type: 'recognize',
+      phase: cellText(phase) || record?.phase || 'unknown',
+      detail: { ...detail, ...p109PerfImageSize(image) },
+      reuse: priorRecognizes > 0 ? 'YES' : 'NO',
+      events: [],
+      _startedAt: startedAt
+    };
+    if (record) { record.operations.push(op); record._activeOperation = op; }
+    try {
+      const value = await worker.recognize(image);
+      op.ok = true;
+      return value;
+    } catch (error) {
+      op.error = cellText(error?.message) || String(error || 'worker_recognize_failed');
+      throw error;
+    } finally {
+      op.totalMs = performance.now() - startedAt;
+      const recognizeEvent = (op.events || []).find(item => item.status === 'recognizing text') || null;
+      op.preRecognizeMs = recognizeEvent ? recognizeEvent.atMs : 0;
+      op.activeRecognizeMs = recognizeEvent ? Math.max(0, op.totalMs - recognizeEvent.atMs) : op.totalMs;
+      delete op._startedAt;
+      if (record) record._activeOperation = null;
+    }
+  }
+  async function p109PerfWorkerTerminate(worker, phase) {
+    if (!worker || typeof worker.terminate !== 'function') return;
+    const record = p109PerfWorkerRecord(worker);
+    const startedAt = performance.now();
+    const op = { type: 'terminate', phase: cellText(phase) || record?.phase || 'unknown', detail: {}, events: [], _startedAt: startedAt };
+    if (record) { record.operations.push(op); record._activeOperation = op; }
+    try {
+      await worker.terminate();
+      op.ok = true;
+    } catch (error) {
+      op.error = cellText(error?.message) || String(error || 'terminate_failed');
+      throw error;
+    } finally {
+      op.totalMs = performance.now() - startedAt;
+      delete op._startedAt;
+      if (record) {
+        record._activeOperation = null;
+        record.sessionEndMs = p109PerfElapsed(p109PerfState());
+      }
+    }
+  }
 
   function berlinToday() {
     try {
@@ -4524,7 +4711,7 @@
       // Auswertung, Stimmen, Mindestkonsens und Sicherheitsregeln bleiben identisch.
       const attemptResults = await Promise.all(attempts.map(attempt => {
         const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-        return Tesseract.recognize(crop, 'deu', attempt.options)
+        return p109PerfRecognizeOneShot('driver_deu_column_ocr', 'deu', crop, attempt.options, { mode: attempt.name })
           .then(second => ({ attempt, second }));
       }));
 
@@ -5170,7 +5357,7 @@
         // attempts-Reihenfolge; Crops, Kandidatenlogik und Konsens bleiben identisch.
         const attemptJobs = attempts.map(attempt => {
           const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-          return Tesseract.recognize(crop, 'deu', attempt.options)
+          return p109PerfRecognizeOneShot('route_deu_column_ocr', 'deu', crop, attempt.options, { mode: attempt.name, field: descriptor.field })
             .then(second => ({ ok: true, attempt, second }))
             .catch(error => ({ ok: false, attempt, error }));
         });
@@ -5464,7 +5651,7 @@
 
     try {
       if (typeof Tesseract.createWorker === 'function') {
-        try { worker = await Tesseract.createWorker('deu'); } catch (_) { worker = null; }
+        try { worker = await p109PerfCreateWorker('text_integrity_ocr', 'deu', { mode: 'shared-text-integrity-worker' }); } catch (_) { worker = null; }
       }
 
       // P109.1 performance gate: all eligible text columns are packed side-by-side
@@ -5477,10 +5664,10 @@
         try {
           let batchResult;
           if (worker && typeof worker.recognize === 'function') {
-            if (typeof worker.setParameters === 'function') await worker.setParameters({ tessedit_pageseg_mode: '6' });
-            batchResult = await worker.recognize(composite.canvas);
+            if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', { tessedit_pageseg_mode: '6' }, { mode: 'text-deu-composite-psm6' });
+            batchResult = await p109PerfWorkerRecognize(worker, 'text_integrity_ocr', composite.canvas, { mode: 'text-deu-composite-psm6' });
           } else {
-            batchResult = await Tesseract.recognize(composite.canvas, 'deu', { tessedit_pageseg_mode: '6' });
+            batchResult = await p109PerfRecognizeOneShot('text_integrity_ocr', 'deu', composite.canvas, { tessedit_pageseg_mode: '6' }, { mode: 'text-deu-composite-psm6-fallback' });
           }
           const parsed = textIntegrityCompositeCandidatesByField(
             batchResult,
@@ -5554,10 +5741,10 @@
             );
             let result;
             if (worker && typeof worker.recognize === 'function') {
-              if (typeof worker.setParameters === 'function') await worker.setParameters({ tessedit_pageseg_mode: attempt.psm });
-              result = await worker.recognize(crop);
+              if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', { tessedit_pageseg_mode: attempt.psm }, { mode: attempt.name, sourceRow: item.sourceRow });
+              result = await p109PerfWorkerRecognize(worker, 'text_integrity_ocr', crop, { mode: attempt.name, sourceRow: item.sourceRow });
             } else {
-              result = await Tesseract.recognize(crop, 'deu', { tessedit_pageseg_mode: attempt.psm });
+              result = await p109PerfRecognizeOneShot('text_integrity_ocr', 'deu', crop, { tessedit_pageseg_mode: attempt.psm }, { mode: `${attempt.name}-fallback`, sourceRow: item.sourceRow });
             }
             candidate = textIntegrityCellCandidate(result?.data?.text || '', descriptor.field);
           } catch (_) {}
@@ -5569,7 +5756,7 @@
       }
     } finally {
       if (worker && typeof worker.terminate === 'function') {
-        try { await worker.terminate(); } catch (_) {}
+        try { await p109PerfWorkerTerminate(worker, 'text_integrity_ocr'); } catch (_) {}
       }
     }
 
@@ -5715,7 +5902,7 @@
         // Auswertung, Stimmen, Mindestkonsens und Sicherheitsregeln bleiben identisch.
         const regionResults = await Promise.allSettled(regions.map(async ([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          const second = await Tesseract.recognize(crop, 'eng');
+          const second = await p109PerfRecognizeOneShot('price_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `price-cell-${scale}x` });
           return priceCandidatesFromOcrResult(second);
         }));
 
@@ -5924,7 +6111,7 @@
       // weiterhin strikt in attempts-Reihenfolge; Crops, Stimmen und Konsens bleiben identisch.
       const attemptJobs = attempts.map(attempt => {
         const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-        return Tesseract.recognize(crop, 'eng', attempt.options)
+        return p109PerfRecognizeOneShot('early_time_batch_ocr', 'eng', crop, attempt.options, { mode: attempt.name })
           .then(second => ({ ok: true, attempt, second }))
           .catch(error => ({ ok: false, attempt, error }));
       });
@@ -6087,7 +6274,7 @@
         // Kandidaten, Versuchsliste und Stimmenlogik danach exakt wie zuvor ausgewertet werden.
         const regionResults = await Promise.all(regions.map(([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          return Tesseract.recognize(crop, 'eng');
+          return p109PerfRecognizeOneShot('missing_flight_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `flight-cell-${scale}x` });
         }));
         for (const second of regionResults) {
           const candidates = [...new Set(
@@ -7637,6 +7824,58 @@
     ].join('; ');
   }
 
+  function formatP109PerfDiagnostic(value) {
+    if (!value || !Array.isArray(value.records)) return '∅';
+    const ms = input => `${Math.round(Number(input || 0))}ms`;
+    const shortStatus = input => ({
+      'loading tesseract core': 'core',
+      'initializing tesseract': 'init',
+      'loading language traineddata': 'lang',
+      'initializing api': 'api',
+      'recognizing text': 'recognize'
+    }[cellText(input)] || cellText(input).replace(/\s+/g, '_'));
+    const eventText = events => (Array.isArray(events) ? events : []).map(item =>
+      `${shortStatus(item?.status) || '?'}@${ms(item?.atMs)}`
+    ).join(',') || '∅';
+    const phaseTotals = new Map();
+    value.records.forEach(record => {
+      const phase = cellText(record?.phase) || '?';
+      let total = Number(record?.totalMs || 0);
+      if (record?.kind === 'explicit') {
+        total = Number(record?.createMs || 0) + (Array.isArray(record?.operations)
+          ? record.operations.reduce((sum, op) => sum + Number(op?.totalMs || 0), 0)
+          : 0);
+      }
+      const entry = phaseTotals.get(phase) || { count: 0, ms: 0 };
+      entry.count += 1;
+      entry.ms += total;
+      phaseTotals.set(phase, entry);
+    });
+    const phaseText = [...phaseTotals.entries()].map(([phase, item]) =>
+      `${phase}:${item.count}/${ms(item.ms)}`
+    ).join(',');
+    const workers = value.records.map(record => {
+      const size = record?.detail?.width && record?.detail?.height ? `${record.detail.width}x${record.detail.height}` : '-';
+      const mode = cellText(record?.detail?.mode) || '-';
+      if (record?.kind === 'oneshot') {
+        return `${record.id}:${record.phase}/${record.language}/one mode=${mode} size=${size} total=${ms(record.totalMs)} pre=${ms(record.preRecognizeMs)} active=${ms(record.activeRecognizeMs)} ev=[${eventText(record.events)}]`;
+      }
+      const ops = (Array.isArray(record?.operations) ? record.operations : []).map(op => {
+        const opMode = cellText(op?.detail?.mode) || '-';
+        if (op?.type === 'recognize') {
+          const opSize = op?.detail?.width && op?.detail?.height ? `${op.detail.width}x${op.detail.height}` : '-';
+          return `rec(${opMode},reuse=${op?.reuse || 'NO'},${opSize},total=${ms(op?.totalMs)},pre=${ms(op?.preRecognizeMs)},active=${ms(op?.activeRecognizeMs)},ev=[${eventText(op?.events)}])`;
+        }
+        if (op?.type === 'setParameters') return `set(${opMode},${ms(op?.totalMs)})`;
+        if (op?.type === 'terminate') return `term(${ms(op?.totalMs)})`;
+        return `${cellText(op?.type) || '?'}(${ms(op?.totalMs)})`;
+      }).join(',');
+      return `${record.id}:${record.phase}/${record.language}/explicit mode=${mode} create=${ms(record.createMs)} createEv=[${eventText(record.createEvents)}] ops=[${ops || '∅'}]`;
+    }).join(' | ');
+    const elapsed = Math.max(0, performance.now() - Number(value.startedAt || performance.now()));
+    return `v=${cellText(value.version) || '?'}; elapsed=${ms(elapsed)}; workers=${value.records.length}; phases=[${phaseText || '∅'}]; detail=[${workers || '∅'}]`;
+  }
+
   function formatP75GFirstRowDiagnostic(diag) {
     if (!diag || typeof diag !== 'object') return '∅';
     const n = value => Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
@@ -7688,6 +7927,7 @@
     const list = value => Array.isArray(value) && value.length ? value.join(',') : '∅';
     const p62LongPrefix = (() => { try { return window.ATMSP62LongPrefixTiming || null; } catch (_) { return null; } })();
     const p63Primary = (() => { try { return window.ATMSP63PrimaryTiming || null; } catch (_) { return null; } })();
+    const p109Perf = (() => { try { return window.ATMSP109PerfDiagnostic || null; } catch (_) { return null; } })();
     return [
       `Status=${check.status}`,
       `Grund=${check.reason}`,
@@ -7715,6 +7955,7 @@
       `P54Perf=[${formatOcrPerformanceDiagnostic(check.performance)}]`,
       `P62LongPrefix=[${formatP62LongPrefixDiagnostic(p62LongPrefix)}]`,
       `P63Primary=[${formatP63PrimaryDiagnostic(p63Primary)}]`,
+      `P109Perf=[${formatP109PerfDiagnostic(p109Perf)}]`,
       `P75G=[${formatP75GFirstRowDiagnostic(check.p75gFirstRowDiagnostic)}]`,
       `P75H=[${formatP75HFirstPostHeaderRecovery(check.p75hFirstPostHeaderRecovery)}]`
     ].join(' · ');
@@ -7722,6 +7963,7 @@
 
   async function readImagePlan(file) {
     if (!window.Tesseract) throw new Error('Bildanalyse-Modul konnte nicht geladen werden. Bitte die App einmal mit Internet öffnen.');
+    p109PerfReset();
     const perfStartedAt = performance.now();
     const perfStages = [];
     try { window.ATMSP63PrimaryTiming = null; } catch (_) {}
@@ -7771,9 +8013,9 @@
         status.textContent = `Bildanalyse: ${message.status}`;
       }
     };
-    const result = await measureAsync('primary_ocr', () => Tesseract.recognize(canvas, 'eng', {
+    const result = await measureAsync('primary_ocr', () => p109PerfRecognizeOneShot('primary_ocr', 'eng', canvas, {
       logger: p63Logger
-    }));
+    }, { mode: 'full-image-primary' }));
     const p63PrimaryTotalMs = performance.now() - p63PrimaryStartedAt;
     const p63RecognizeEvent = p63Events.find(item => item.status === 'recognizing text') || null;
     try {
