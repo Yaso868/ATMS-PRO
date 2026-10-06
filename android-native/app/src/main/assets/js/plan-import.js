@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1094 · 06.10.2026: OCR IMAGE PIPELINE PERFORMANCE FIX – bypasses the Android-WebView HTMLCanvasElement.toBlob() stall proven by P109.3D2 by converting only the existing shared-worker Canvas inputs to lossless PNG data URLs immediately before Tesseract recognition. Crop geometry, pixel dimensions, scaling, languages, PSM behavior, OCR pass count, consensus/fail-closed rules, P108 time gate, P109.2 Avion/Schütz integrity logic, FLIGHT-008, import/persistence and PLAN/DISPO/LIVE behavior remain unchanged. P109PERF/P109D2 timing stays enabled for Run A/Run B acceptance proof.
 // CORE-007D8A1F1D8P1093 · 06.10.2026: OCR SHARED-WORKER SESSION PERFORMANCE FIX – reuses one ENG and one DEU Tesseract worker across the already-existing P109.2/P109.2D OCR phases instead of repeatedly creating one-shot workers. Calls are serialized per language to keep each crop/result isolated; existing crops, languages, one-shot option semantics, consensus/fail-closed rules, P108 time gate, P109 text-integrity decisions, FLIGHT-008, import/persistence and PLAN/DISPO/LIVE behavior remain unchanged. P109PERF stays enabled for real-device proof and now reports the reused worker operations.
 // CORE-007D8A1F1D8P1092D · 06.10.2026: P109PERF WORKER-LIFECYCLE DIAGNOSTIC ONLY – adds timing/worker-ID instrumentation around the existing P109.2 OCR calls (primary, early time, price, route, driver, text-integrity, missing-flight). It records one-shot Tesseract lifecycle status timestamps and explicit-worker create/setParameters/recognize/terminate timings. No crop, language, PSM option, consensus rule, import decision, flight verification, persistence, PLAN/DISPO/LIVE or user data is changed.
 // CORE-007D8A1F1D8P1092 · 05.10.2026: TEXT CELL INTEGRITY EDGE CONSENSUS – for pure removable edge-punctuation OCR conflicts, two unanimous local DEU cell reads from distinct modes plus >=2 matching current-plan peers may safely resolve a noisy/missing composite batch read, unless the batch supports the original or local reads compete. Same-plan text alone never corrects; unresolved conflicts stay fail-closed. P109.1 composite-batch performance and staged-JSON fixes are retained. No customer/place/row/file hardcodes.
@@ -167,7 +168,7 @@
   // P109.3D2 is DIAGNOSTIC-ONLY: recognition calls/images/languages, crop geometry,
   // shared-worker scheduling and consensus logic are unchanged. It only timestamps the
   // ACTUAL browser serialization methods invoked while worker.recognize(canvas) is active.
-  const P109PERF_VERSION = 'CORE-007D8A1F1D8P1093D2';
+  const P109PERF_VERSION = 'CORE-007D8A1F1D8P1094';
   function p109PerfReset() {
     try {
       window.ATMSP109PerfDiagnostic = {
@@ -566,6 +567,40 @@
       if (record) record._activeOperation = null;
     }
   }
+  // P109.4: P109.3D2 proved that the dominant Android WebView delay is not OCR,
+  // worker creation, Worker.postMessage or FileReader; it is the asynchronous
+  // HTMLCanvasElement.toBlob() conversion that Tesseract.js performs when a Canvas is
+  // passed directly. Preserve the exact raster and bypass only that browser transport
+  // path by encoding the already-created Canvas as lossless PNG data URL first.
+  // Tesseract.js v5 accepts base64 image strings, so recognition content is unchanged.
+  // If encoding is unavailable/fails, fail safely back to the previous Canvas path.
+  function p1094PrepareSharedWorkerImage(image, op = null) {
+    const CanvasCtor = window.HTMLCanvasElement;
+    if (!CanvasCtor || !(image instanceof CanvasCtor) || typeof image.toDataURL !== 'function') {
+      if (op?.detail) op.detail.imageTransport = 'original';
+      return image;
+    }
+    const startedAt = performance.now();
+    try {
+      const dataUrl = image.toDataURL('image/png');
+      const encodeMs = Math.max(0, performance.now() - startedAt);
+      if (!/^data:image\/png;base64,/i.test(String(dataUrl || ''))) throw new Error('png_data_url_unavailable');
+      if (op?.detail) {
+        op.detail.imageTransport = 'png-data-url';
+        op.detail.imageTransportEncodeMs = encodeMs;
+        op.detail.imageTransportChars = String(dataUrl).length;
+      }
+      return dataUrl;
+    } catch (error) {
+      if (op?.detail) {
+        op.detail.imageTransport = 'canvas-fallback';
+        op.detail.imageTransportEncodeMs = Math.max(0, performance.now() - startedAt);
+        op.detail.imageTransportError = cellText(error?.message) || String(error || 'png_data_url_failed');
+      }
+      return image;
+    }
+  }
+
   async function p109PerfWorkerRecognize(worker, phase, image, detail = {}, downstreamLogger = null) {
     if (!worker || typeof worker.recognize !== 'function') throw new Error('p109perf_worker_recognize_unavailable');
     const record = p109PerfWorkerRecord(worker);
@@ -585,7 +620,8 @@
     };
     if (record) { record.operations.push(op); record._activeOperation = op; }
     try {
-      const value = await worker.recognize(image);
+      const recognizeInput = p1094PrepareSharedWorkerImage(image, op);
+      const value = await worker.recognize(recognizeInput);
       op.ok = true;
       return value;
     } catch (error) {
@@ -8269,7 +8305,8 @@
         const opMode = cellText(op?.detail?.mode) || '-';
         if (op?.type === 'recognize') {
           const opSize = op?.detail?.width && op?.detail?.height ? `${op.detail.width}x${op.detail.height}` : '-';
-          return `rec(${opMode},reuse=${op?.reuse || 'NO'},${opSize},total=${ms(op?.totalMs)},pre=${ms(op?.preRecognizeMs)},active=${ms(op?.activeRecognizeMs)},ev=[${eventText(op?.events)}])`;
+          const transportMode = cellText(op?.detail?.imageTransport) || 'original';
+          return `rec(${opMode},reuse=${op?.reuse || 'NO'},${opSize},img=${transportMode},enc=${ms(op?.detail?.imageTransportEncodeMs)},total=${ms(op?.totalMs)},pre=${ms(op?.preRecognizeMs)},active=${ms(op?.activeRecognizeMs)},ev=[${eventText(op?.events)}])`;
         }
         if (op?.type === 'setParameters') return `set(${opMode},${ms(op?.totalMs)})`;
         if (op?.type === 'terminate') return `term(${ms(op?.totalMs)})`;
@@ -8319,7 +8356,7 @@
         ].join(':'));
       });
     });
-    return `v=CORE-007D8A1F1D8P1093D2; ops=${rows.length}; detail=[${rows.join(' | ') || '∅'}]`;
+    return `v=CORE-007D8A1F1D8P1094; ops=${rows.length}; detail=[${rows.join(' | ') || '∅'}]`;
   }
 
   function formatP75GFirstRowDiagnostic(diag) {
