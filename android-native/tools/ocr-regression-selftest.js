@@ -668,7 +668,8 @@ assert.strictEqual(p1139CompanyCase?.previousActual?.displayedCompany,'Get-','P1
 assert.strictEqual(p1139ZeroGateCase?.previousActual?.automaticImportOccurred,true,'P113.9 must retain proof that P113.8 auto-imported despite silent mismatches');
 assert.strictEqual(p113Manifest?.p1139?.baseHead,'476cb3a','P113.9 manifest must record the freshly user-verified P113.8 post-installer main HEAD');
 assert.strictEqual(p113Manifest?.p1139?.hardcodingAllowed,false,'P113.9 production hardcoding remains forbidden');
-assert.strictEqual(p113Manifest?.p1139?.realDeviceProofPending,true,'P113.9 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1139?.realDeviceProofPending,false,'P113.9 manifest must record that the real-device proof was executed');
+assert.strictEqual(p113Manifest?.p1139?.realDeviceResult,'FAIL_COMPANY_FALSE_CONFLICT_AND_SILENT_LOCATION_CLIP','P113.9 manifest must retain the confirmed real-device failure mode');
 assert(planImportSource.includes('sourceTruthFullCellTextOcr'),'P113.9 must collect the bounded full source cell as a separate evidence family');
 assert(planImportSource.includes('sourceTruthFullCellConsensus'),'P113.9 must require source-truth full-cell consensus');
 assert(planImportSource.includes('strictTextEdgeExtension'),'P113.9 must limit recovery to strict edge-only extension');
@@ -678,3 +679,24 @@ for(const fixtureLiteral of ['IMG-20261007-WA0014.jpg','GE-20261007-WA0014-R12-C
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.9 TEST/source identifier leaked into production: ${fixtureLiteral}`);
 }
 console.log('P113.9 source-truth full-cell edge integrity deterministic regression self-test: PASS');
+
+// P114.0: P113.9 safely preserved the hyphenated company primary but still
+// blocked on a clipped secondary candidate, while the single-token flight
+// location remained silently left-clipped. Two-mode source-truth evidence now
+// removes only those bounded edge-loss failures without relaxing semantic gates.
+const p1140CompanyCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1139');
+const p1140LocationCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R14-FLIGHTLOCATION-SILENT-LEFTCLIP-P1139');
+assert(p1140CompanyCase,'P114.0 manifest must retain the P113.9 company false-conflict case');
+assert(p1140LocationCase,'P114.0 manifest must retain the P113.9 silent flight-location clip case');
+assert.strictEqual(p113Manifest?.p1140?.baseHead,'d977e3e','P114.0 manifest must record the freshly user-verified P113.9 post-installer main HEAD');
+assert.strictEqual(p113Manifest?.p1140?.hardcodingAllowed,false,'P114.0 production hardcoding remains forbidden');
+assert.strictEqual(p113Manifest?.p1140?.realDeviceProofPending,true,'P114.0 must not pre-claim real-device success');
+assert(planImportSource.includes('sourceTruthExpandedEdgeTextOcr'),'P114.0 must collect bounded edge-expanded source-truth views');
+assert(planImportSource.includes('sourceTruthExpandedEdgeRecovery'),'P114.0 must require two-mode expanded-edge consensus');
+assert(planImportSource.includes('source_truth_primary_company_edge_veto'),'P114.0 company preservation must remain diagnosable');
+assert(planImportSource.includes('source_truth_expanded_cell_edge_consensus'),'P114.0 flight-location edge recovery must remain diagnosable');
+for(const fixtureLiteral of ['IMG-20261007-WA0014.jpg','GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1139','GE-20261007-WA0014-R14-FLIGHTLOCATION-SILENT-LEFTCLIP-P1139']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P114.0 TEST/source identifier leaked into production: ${fixtureLiteral}`);
+}
+console.log('P114.0 edge source-truth integrity deterministic regression self-test: PASS');
+

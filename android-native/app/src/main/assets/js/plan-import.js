@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1140 · 07.10.2026: EDGE SOURCE-TRUTH INTEGRITY – preserve a source-confirmed hyphenated company value against strict right-edge truncation without requiring a plan peer, and recover single-token flight-location left/right edge loss only from two agreeing bounded edge-expanded source-truth views; semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1139 · 07.10.2026: SOURCE-TRUTH EDGE INTEGRITY – add bounded full-cell source-truth consensus for silent edge loss in hyphenated company codes and single-token flight locations; two independent full-cell modes must agree and semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1138 · 07.10.2026: TEXT-EDGE INTEGRITY – preserve strong primary customer/company/route text against bounded edge-degraded secondary OCR and restore a clipped single-token flight location only from strong exact primary raw-cell evidence; fail closed on semantic conflict.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – after the P113.5 raw-line pass, pair recurring raw Preis/time words by physical Y rows so Android line fragmentation cannot erase the primary ride-time column; fail closed on weak/competing geometry.
@@ -6621,6 +6622,33 @@
     return { ...consensus, ...edge };
   }
 
+  // P114.0: a synthetic/schema boundary can sit a few pixels inside
+  // the printed cell on Android. A bounded edge-expanded source-truth crop may recover
+  // only an exact 1-2 glyph edge extension of the current single-token location.
+  // Any neighbor text, semantic rewrite, split vote or one-view result stays fail-closed.
+  function sourceTruthExpandedEdgeRecovery(currentValue, attempts) {
+    const current = cellText(currentValue).normalize('NFC').trim();
+    if (!current) return null;
+    const stats = new Map();
+    (Array.isArray(attempts) ? attempts : []).forEach(attempt => {
+      if (cellText(attempt?.scope) !== 'source_truth_edge_expanded') return;
+      const candidate = cellText(attempt?.candidate).normalize('NFC').trim();
+      const edge = strictTextEdgeExtension(current, candidate, 2);
+      if (!candidate || !edge) return;
+      const key = candidate.toLocaleLowerCase('de-DE');
+      const item = stats.get(key) || { candidate, votes: 0, modes: new Set(), edge: edge.edge, loss: edge.loss };
+      if (item.edge !== edge.edge || item.loss !== edge.loss) return;
+      item.votes += 1;
+      item.modes.add(cellText(attempt?.mode) || `expanded-${item.votes}`);
+      stats.set(key, item);
+    });
+    const ranked = [...stats.values()].sort((a,b) => b.votes-a.votes || b.modes.size-a.modes.size || a.candidate.localeCompare(b.candidate,'de-DE'));
+    const winner = ranked[0] || null, runner = ranked[1] || null;
+    if (!winner || winner.votes < 2 || winner.modes.size < 2) return null;
+    if (runner && runner.votes === winner.votes) return null;
+    return { candidate: winner.candidate, votes: winner.votes, modes: winner.modes.size, edge: winner.edge, loss: winner.loss, runnerVotes: Number(runner?.votes || 0) };
+  }
+
   // P113.8 local prototype: secondary OCR near a cell edge can repeatedly agree
   // on the same clipped/punctuation-corrupted value because its batch/local crops
   // share the same geometric boundary. A strong primary full-image word plus at
@@ -6840,6 +6868,42 @@
         candidate = textIntegrityCellCandidate(result?.data?.text || '', field);
       } catch (_) {}
       attempts.push({ scope: 'source_truth_full_cell', mode: variant.mode, candidate, sourceRow, field, viewRegion: 'full_cell', cropQuality: { ...cropQuality } });
+    }
+    return attempts;
+  }
+
+  async function sourceTruthExpandedEdgeTextOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker) {
+    if (field !== 'flightLocation' || !descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
+    const source = sourceTruthCanvas || processedCanvas;
+    const baseLeft = Number(descriptor.left), baseRight = Number(descriptor.right);
+    const baseTop = Number(rowMeta.y0), baseBottom = Number(rowMeta.y1);
+    if (![baseLeft,baseRight,baseTop,baseBottom].every(Number.isFinite) || baseRight<=baseLeft || baseBottom<=baseTop) return [];
+    const padX = Math.max(4, Math.min(28, Number(descriptor.cellWidth || (baseRight-baseLeft)) * 0.08));
+    const rowHeight = Math.max(8, baseBottom-baseTop);
+    const padY = Math.max(1, Math.min(8, rowHeight * 0.06));
+    const left = Math.max(0, baseLeft-padX), right = Math.min(Number(source.width||processedCanvas.width), baseRight+padX);
+    const top = Math.max(0, baseTop-padY), bottom = Math.min(Number(source.height||processedCanvas.height), baseBottom+padY);
+    if (right<=left || bottom<=top) return [];
+    const variants=[
+      {mode:'source-truth-edge-expanded-psm6',psm:'6'},
+      {mode:'source-truth-edge-expanded-psm7',psm:'7'}
+    ];
+    const attempts=[];
+    for (const variant of variants) {
+      let candidate='';
+      try {
+        const crop=cropCanvasRegion(source,left,top,right,bottom,1);
+        const params={tessedit_pageseg_mode:variant.psm};
+        let result;
+        if (worker && typeof worker.recognize==='function') {
+          if (typeof worker.setParameters==='function') await p109PerfWorkerSetParameters(worker,'text_integrity_ocr',params,{mode:variant.mode,sourceRow});
+          result=await p109PerfWorkerRecognize(worker,'text_integrity_ocr',crop,{mode:variant.mode,sourceRow});
+        } else {
+          result=await p109PerfRecognizeOneShot('text_integrity_ocr','deu',crop,params,{mode:`${variant.mode}-fallback`,sourceRow});
+        }
+        candidate=sourceTruthCellCandidate(result?.data?.text||'',field);
+      } catch (_) {}
+      attempts.push({scope:'source_truth_edge_expanded',mode:variant.mode,candidate,sourceRow,field,viewRegion:'edge_expanded_cell',cropQuality:{fullCellIncluded:true,leftEdgeClipped:false,rightEdgeClipped:false,neighborColumnIncluded:'bounded_possible',targetCellGeometryConfirmed:true,expansionPx:Number(padX.toFixed(2))}});
     }
     return attempts;
   }
@@ -7150,6 +7214,13 @@
           log.push(...sourceTruthViews);
           attemptLogByRow.set(item.sourceRow, log);
         }
+        if (descriptor.field === 'flightLocation' && isSingleTokenFlightLocationEdgeProbe(item.original)) {
+          const expandedViews = await sourceTruthExpandedEdgeTextOcr(sourceTruthCanvas || imageCanvas, imageCanvas, descriptor, rowMeta, item.sourceRow, descriptor.field, worker);
+          const attemptLogByRow = attemptLogByField.get(descriptor.field);
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          log.push(...expandedViews);
+          attemptLogByRow.set(item.sourceRow, log);
+        }
 
         // P113/P113.3: very short alphanumeric cells need bounded exact-cell review.
         // P113.3 no longer depends on one particular batch path and avoids unbounded OCR loops.
@@ -7274,11 +7345,13 @@
         if (edgeGlyphAdjudication?.candidate) candidate = textIntegrityCellCandidate(edgeGlyphAdjudication.candidate, descriptor.field);
         const sourceTruthConsensus = sourceTruthFullCellConsensus(attempts);
         const sourceTruthEdge = descriptor.field === 'flightLocation' ? sourceTruthEdgeRecovery(original, attempts) : null;
+        const sourceTruthExpandedEdge = descriptor.field === 'flightLocation' ? sourceTruthExpandedEdgeRecovery(original, attempts) : null;
         const sourceTruthEdgeHints = (Array.isArray(attempts) ? attempts : [])
           .filter(attempt => cellText(attempt?.scope) === 'source_truth_full_cell')
           .map(attempt => textIntegrityCellCandidate(attempt?.candidate || '', descriptor.field))
           .filter(value => value && strictTextEdgeExtension(original, value, 2));
         if (sourceTruthEdge?.candidate) candidate = textIntegrityCellCandidate(sourceTruthEdge.candidate, descriptor.field);
+        else if (sourceTruthExpandedEdge?.candidate) candidate = textIntegrityCellCandidate(sourceTruthExpandedEdge.candidate, descriptor.field);
         const edgeAlternative = candidate ? textIntegrityEdgeAlternative(original, candidate) : false;
         const peerCount = edgeAlternative ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, candidate) : 0;
         const edgePromotion = candidate
@@ -7292,6 +7365,26 @@
         const promotedExactCellConsensus = Boolean(exactCellConsensus?.candidate);
         const promotedEdgeGlyphAdjudication = Boolean(edgeGlyphAdjudication?.candidate);
         const primaryPeerCount = candidate ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, original) : 0;
+        const sourceTruthKeepsCompanyPrimary = Boolean(
+          descriptor.field === 'company' &&
+          candidate &&
+          isHyphenatedCompanyEdgeProbe(original) &&
+          strictTextEdgeExtension(candidate, original, 2) &&
+          sourceTruthConsensus?.candidate &&
+          cellText(sourceTruthConsensus.candidate).normalize('NFC').toLocaleLowerCase('de-DE') === original.normalize('NFC').toLocaleLowerCase('de-DE') &&
+          Number(sourceTruthConsensus.votes || 0) >= 2 &&
+          Number(sourceTruthConsensus.modes || 0) >= 2
+        );
+        if (sourceTruthKeepsCompanyPrimary) {
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseIgnored`] = true;
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseCandidate`] = candidate;
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseEvidence`] = { reason:'source_truth_primary_company_edge_veto', sourceTruthViews:Number(sourceTruthConsensus.votes||0), peerCount:Number(primaryPeerCount||0) };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.manualCheckRequired = false;
+            cellEvidence.verificationSource = 'source_truth_primary_company_edge_veto';
+          }
+          return;
+        }
         const degradedSecondary = candidate
           ? strongPrimarySecondaryEdgeDegradation(original, candidate, cellEvidence || null, primaryPeerCount, attempts)
           : null;
@@ -7338,7 +7431,7 @@
         // If only one full-cell mode sees a plausible longer flight-location edge
         // value, do not silently stay green. Keep the current value but block for
         // review until two independent modes agree.
-        if (descriptor.field === 'flightLocation' && !sourceTruthEdge?.candidate && sourceTruthEdgeHints.length) {
+        if (descriptor.field === 'flightLocation' && !sourceTruthEdge?.candidate && !sourceTruthExpandedEdge?.candidate && sourceTruthEdgeHints.length) {
           const uniqueHints = [...new Set(sourceTruthEdgeHints.map(value => cellText(value)))];
           ride[`${descriptor.field}OcrConflict`] = true;
           ride[`${descriptor.field}OcrConflictCandidate`] = uniqueHints[0] || '';
@@ -7355,10 +7448,26 @@
           return;
         }
 
+        const expandedHints = (Array.isArray(attempts) ? attempts : [])
+          .filter(attempt => cellText(attempt?.scope) === 'source_truth_edge_expanded')
+          .map(attempt => textIntegrityCellCandidate(attempt?.candidate || '', descriptor.field))
+          .filter(value => value && strictTextEdgeExtension(original, value, 2));
+        if (descriptor.field === 'flightLocation' && !sourceTruthEdge?.candidate && !sourceTruthExpandedEdge?.candidate && expandedHints.length) {
+          const uniqueHints = [...new Set(expandedHints.map(value => cellText(value)))];
+          ride[`${descriptor.field}OcrConflict`] = true;
+          ride[`${descriptor.field}OcrConflictCandidate`] = uniqueHints[0] || '';
+          ride[`${descriptor.field}OcrEvidence`] = { sourceTruthExpandedEdgeUnresolved:true, sourceTruthExpandedEdgeHints:uniqueHints };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.manualCheckRequired = true;
+            cellEvidence.verificationSource = 'source_truth_expanded_edge_unresolved_location';
+          }
+          return;
+        }
+
         const canCorrect = Boolean(
           candidate &&
           textIntegrityAlternativeIsSafe(original, candidate) &&
-          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict || promotedExactCellConsensus || promotedEdgeGlyphAdjudication || Boolean(sourceTruthEdge?.candidate))
+          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict || promotedExactCellConsensus || promotedEdgeGlyphAdjudication || Boolean(sourceTruthEdge?.candidate) || Boolean(sourceTruthExpandedEdge?.candidate))
         );
 
         if (canCorrect) {
@@ -7374,6 +7483,8 @@
           ride[`${descriptor.field}OcrAutoCorrected`] = true;
           ride[`${descriptor.field}OcrCorrectionSource`] = sourceTruthEdge?.candidate
             ? 'source_truth_full_cell_edge_consensus'
+            : sourceTruthExpandedEdge?.candidate
+              ? 'source_truth_expanded_cell_edge_consensus'
             : promotedEdgeGlyphAdjudication
               ? 'edge_glyph_adjudication'
             : promotedExactCellConsensus

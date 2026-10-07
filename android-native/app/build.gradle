@@ -89,6 +89,15 @@ tasks.register('textEdgeSourceTruthP1139', Exec) {
     commandLine 'node', 'tools/text-edge-source-truth-selftest-p1139.js'
 }
 
+// P114.0: bounded edge-expanded source-truth gate. It proves that company
+// primary preservation no longer depends on an unrelated plan peer when two
+// full-cell source views agree, while flight-location recovery requires two
+// agreeing bounded edge-expanded views and strict 1-2 glyph edge extension.
+tasks.register('edgeSourceTruthP1140', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/edge-source-truth-selftest-p1140.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -105,4 +114,5 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('mirrorSchemaIntegrityP1137')
     dependsOn tasks.named('textEdgeIntegrityP1138')
     dependsOn tasks.named('textEdgeSourceTruthP1139')
+    dependsOn tasks.named('edgeSourceTruthP1140')
 }

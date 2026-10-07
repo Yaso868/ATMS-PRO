@@ -1188,6 +1188,12 @@
         "ocrDataErrorsReported": 0,
         "automaticImportOccurred": true,
         "result": "FAIL_PERSISTED_SILENT"
+      },
+      "p1139RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "result": "FAIL_PERSISTED_SILENT"
       }
     },
     {
@@ -1309,7 +1315,15 @@
         "result": "FAIL_SILENT"
       },
       "note": "P113.8 real-device: the new edge guard still allowed a silent Get-E→Get- correction when the existing raw-cell evidence was itself clipped. P113.9 requires a separate two-mode full-cell source-truth consensus before preserving the longer delimiter-bearing company code.",
-      "reproducibility": "confirmed_real_device_P1138"
+      "reproducibility": "confirmed_real_device_P1138",
+      "p1139RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "displayedCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "PRIMARY_PRESERVED_BUT_FALSE_CONFLICT_PERSISTED"
+      }
     },
     {
       "id": "GE-20261007-WA0014-P1138-ZERO-SILENT-ERROR-GATE",
@@ -1345,12 +1359,66 @@
       },
       "note": "P113.8 displayed a clean 0-error result and automatically imported the list although two source-visible text values were still silently wrong. P113.9 adds source-truth full-cell evidence for these bounded edge-loss classes; unresolved evidence must stay fail-closed instead of silently green.",
       "reproducibility": "confirmed_real_device_P1138"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1139",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "source_truth_peer_gate",
+        "false_positive_conflict",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryEdgeTruncationMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL"
+      },
+      "note": "P113.9 real-device preserved the correct source company value but still blocked import because source-truth preservation additionally required a same-plan peer. P114.0 removes only that unrelated peer dependency when two independent full-cell source-truth modes agree on the longer hyphenated primary and the competing value is a strict 1-2 glyph edge truncation.",
+      "reproducibility": "confirmed_real_device_P1139"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-FLIGHTLOCATION-SILENT-LEFTCLIP-P1139",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "source_truth_crop_boundary",
+        "left_edge_clipping",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "flightLocation": "Amsterdam",
+        "rowStatus": "OK only when full source value is present",
+        "silentMismatchAllowed": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "result": "FAIL_SILENT"
+      },
+      "note": "P113.9 full-cell source-truth views were still bounded by a synthetic/schema edge that could sit inside the printed cell on Android. P114.0 adds a small bounded edge-expanded source-truth family and accepts only two-mode agreement on an exact 1-2 glyph edge extension; neighbor text and semantic alternatives remain fail-closed.",
+      "reproducibility": "confirmed_real_device_P1139"
     }
   ],
   "summary": {
-    "caseRecords": 44,
+    "caseRecords": 46,
     "legacyRows": 16,
-    "newErrorRecords": 36,
+    "newErrorRecords": 38,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -1526,6 +1594,46 @@
       "more than two missing edge glyphs",
       "internal or semantic substitution",
       "no same-plan peer for company preservation"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "FAIL_COMPANY_FALSE_CONFLICT_AND_SILENT_LOCATION_CLIP",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1139",
+    "realDeviceActual": {
+      "activeRides": 12,
+      "cancelledRowsExcluded": 1,
+      "reportedHints": 0,
+      "reportedErrors": 1,
+      "automaticCorrections": 22,
+      "companyDisplayed": "Get-E",
+      "companySecondaryTextOcr": "Get-",
+      "companyImportBlocked": true,
+      "flightLocationDisplayed": "msterdam",
+      "flightLocationRowStatus": "OK",
+      "automaticImportOccurred": false
+    }
+  },
+  "p1140": {
+    "baseHead": "d977e3e",
+    "parentUploadCommit": "ac962b6",
+    "method": "BOUNDED EDGE-EXPANDED SOURCE-TRUTH INTEGRITY",
+    "sourceCases": [
+      "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1139",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-SILENT-LEFTCLIP-P1139"
+    ],
+    "productionRules": [
+      "a hyphenated company primary may veto a shorter secondary candidate without plan-peer support only when two independent full-cell source-truth modes agree on the current primary and the secondary is a strict 1-2 glyph edge truncation",
+      "single-token flight-location recovery may use a small bounded horizontal/vertical edge-expanded source-truth crop when the normal full-cell family cannot prove the missing edge glyphs",
+      "two independent expanded source-truth OCR modes must agree on the same longer candidate",
+      "the candidate must be an exact left or right extension of only 1-2 glyphs; internal substitutions, neighbor text and unrelated words are rejected"
+    ],
+    "failClosed": [
+      "only one source-truth view supports the candidate",
+      "expanded views disagree or tie",
+      "candidate is not a strict 1-2 glyph edge extension",
+      "candidate includes adjacent time/neighbor-column content",
+      "company source-truth does not exactly support the longer current primary",
+      "semantic substitution rather than edge truncation"
     ],
     "hardcodingAllowed": false,
     "realDeviceProofPending": true

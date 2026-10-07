@@ -117,6 +117,8 @@ async function runTextIntegrityRuntimeSmoke() {
     sourceTruthFullCellTextOcr: async () => [],
     sourceTruthFullCellConsensus: () => null,
     sourceTruthEdgeRecovery: () => null,
+    sourceTruthExpandedEdgeTextOcr: async () => [],
+    sourceTruthExpandedEdgeRecovery: () => null,
     strictTextEdgeExtension: () => null,
     strongPrimarySecondaryEdgeDegradation: () => null,
     textIntegrityDecision: () => ({ status: 'ok', candidate: '', evidence: {} }),
