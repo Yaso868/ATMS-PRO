@@ -1413,12 +1413,124 @@
       },
       "note": "P113.9 full-cell source-truth views were still bounded by a synthetic/schema edge that could sit inside the printed cell on Android. P114.0 adds a small bounded edge-expanded source-truth family and accepts only two-mode agreement on an exact 1-2 glyph edge extension; neighbor text and semantic alternatives remain fail-closed.",
       "reproducibility": "confirmed_real_device_P1139"
+    },
+    {
+      "id": "GE-20261007-WA0014-R5-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 5,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "false_positive_conflict",
+        "table_edge_glyph",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "flightLocation": "Krakau",
+        "secondaryTableEdgeGlyphMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryFlightLocation": "Krakau",
+        "secondaryTextOcr": "Krakau |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.0 real-device kept the correct Krakau source value but blocked import because the independent text OCR appended an isolated table-rule glyph. P114.1 may ignore only that edge glyph when two independent source-truth views confirm the unchanged primary value.",
+      "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0014-R6-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 6,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "false_positive_conflict",
+        "table_edge_glyph",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "flightLocation": "Krakau",
+        "secondaryTableEdgeGlyphMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryFlightLocation": "Krakau",
+        "secondaryTextOcr": "Krakau |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "Second independent P114.0 real-device row proving the same table-rule suffix class on a separate ride. The production rule must remain generic and must not hardcode Krakau or row numbers.",
+      "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "hyphenated_short_code",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryEdgeTruncationMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.0 real-device already displayed the correct Get-E primary but still blocked against a strict right-edge-truncated secondary value. P114.1 adds a veto only when two independent source-truth views confirm the current primary.",
+      "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-FLIGHTLOCATION-FALSE-CONFLICT-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "false_positive_conflict",
+        "left_edge_clipping",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "flightLocation": "Amsterdam",
+        "secondaryEdgeTruncationMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryFlightLocation": "Amsterdam",
+        "secondaryTextOcr": "msterdam",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.0 successfully restored the full Amsterdam primary value but the independent secondary OCR still left-clipped it and blocked import. P114.1 may veto only the proven 1–2 glyph edge truncation when two source-truth views agree on the current primary.",
+      "reproducibility": "confirmed_real_device_P1140"
     }
   ],
   "summary": {
-    "caseRecords": 46,
+    "caseRecords": 50,
     "legacyRows": 16,
-    "newErrorRecords": 38,
+    "newErrorRecords": 42,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -1634,6 +1746,54 @@
       "candidate includes adjacent time/neighbor-column content",
       "company source-truth does not exactly support the longer current primary",
       "semantic substitution rather than edge truncation"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "VALUES_CORRECT_FALSE_POSITIVE_BLOCKING_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1140",
+    "realDeviceActual": {
+      "activeRides": 12,
+      "cancelledRowsExcluded": 1,
+      "reportedHints": 0,
+      "reportedErrors": 4,
+      "automaticCorrections": 20,
+      "correctPrimaryValues": [
+        "Krakau",
+        "Get-E",
+        "Amsterdam"
+      ],
+      "blockingSecondaryValues": [
+        "Krakau |",
+        "Get-",
+        "msterdam"
+      ],
+      "automaticImportOccurred": false
+    }
+  },
+  "p1141": {
+    "baseHead": "82cf700",
+    "parentUploadCommit": "aa32d28",
+    "method": "PRIMARY SOURCE-TRUTH EDGE VETO",
+    "sourceCases": [
+      "GE-20261007-WA0014-R5-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "GE-20261007-WA0014-R6-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1140",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-FALSE-CONFLICT-P1140"
+    ],
+    "productionRules": [
+      "the current primary value is never replaced by this gate; the gate can only suppress a weaker secondary edge conflict",
+      "require two independent source-truth cell modes to agree on the current primary value",
+      "for company fields allow only a strict 1-2 glyph edge truncation of a hyphenated primary code",
+      "for single-token flight locations allow only a strict 1-2 glyph edge truncation or an isolated extreme-edge table-rule glyph",
+      "semantic alternatives, internal substitutions, weak evidence and disagreeing source views remain conflicts"
+    ],
+    "failClosed": [
+      "fewer than two agreeing source-truth views",
+      "source-truth views disagree or tie",
+      "secondary value is not edge-only degradation",
+      "company primary is not a bounded hyphenated edge probe",
+      "flight-location candidate is a semantic alternative",
+      "no source-truth support for the current primary"
     ],
     "hardcodingAllowed": false,
     "realDeviceProofPending": true

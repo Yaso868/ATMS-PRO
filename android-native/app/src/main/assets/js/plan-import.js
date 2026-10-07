@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P1140 · 07.10.2026: EDGE SOURCE-TRUTH INTEGRITY – preserve a source-confirmed hyphenated company value against strict right-edge truncation without requiring a plan peer, and recover single-token flight-location left/right edge loss only from two agreeing bounded edge-expanded source-truth views; semantic conflicts remain fail-closed.
+// CORE-007D8A1F1D8P1141 · 07.10.2026: EDGE PRIMARY SOURCE-TRUTH VETO – when two independent bounded source-truth cell views confirm the current primary value, ignore only a strict 1–2 glyph secondary edge truncation or an isolated flight-location table-rule glyph; semantic alternatives and weak/disagreeing evidence remain fail-closed.
 // CORE-007D8A1F1D8P1139 · 07.10.2026: SOURCE-TRUTH EDGE INTEGRITY – add bounded full-cell source-truth consensus for silent edge loss in hyphenated company codes and single-token flight locations; two independent full-cell modes must agree and semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1138 · 07.10.2026: TEXT-EDGE INTEGRITY – preserve strong primary customer/company/route text against bounded edge-degraded secondary OCR and restore a clipped single-token flight location only from strong exact primary raw-cell evidence; fail closed on semantic conflict.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – after the P113.5 raw-line pass, pair recurring raw Preis/time words by physical Y rows so Android line fragmentation cannot erase the primary ride-time column; fail closed on weak/competing geometry.
@@ -6583,7 +6583,7 @@
     // Full-cell OCR may faithfully include the vertical table rule itself. For the
     // company column only, an isolated extreme-edge table glyph is geometry noise,
     // not company text. Strip only that glyph; never alter letters/digits/delimiters.
-    if (field === 'company') {
+    if (field === 'company' || field === 'flightLocation') {
       candidate = candidate
         .replace(/^[|¦│]+\s*/u, '')
         .replace(/\s*[|¦│]+$/u, '')
@@ -6612,6 +6612,55 @@
     if (!winner || winner.votes < 2 || winner.modes.size < 2) return null;
     if (runner && runner.votes === winner.votes) return null;
     return { candidate: winner.candidate, votes: winner.votes, modes: winner.modes.size, runnerVotes: Number(runner?.votes || 0) };
+  }
+
+  // P114.1 local prototype: bounded source-truth views may confirm the current
+  // primary value even when a secondary crop loses a glyph or adds a table-rule glyph.
+  // This is a veto only; it never invents a new semantic value.
+  function sourceTruthExpandedCellConsensus(attempts) {
+    const stats = new Map();
+    (Array.isArray(attempts) ? attempts : []).forEach(attempt => {
+      if (cellText(attempt?.scope) !== 'source_truth_edge_expanded') return;
+      const candidate = cellText(attempt?.candidate).normalize('NFC').trim();
+      if (!candidate) return;
+      const key = candidate.toLocaleLowerCase('de-DE');
+      const current = stats.get(key) || { candidate, votes: 0, modes: new Set() };
+      current.votes += 1;
+      current.modes.add(cellText(attempt?.mode) || `expanded-${current.votes}`);
+      stats.set(key, current);
+    });
+    const ranked = [...stats.values()].sort((a,b) => b.votes-a.votes || b.modes.size-a.modes.size || a.candidate.localeCompare(b.candidate,'de-DE'));
+    const winner = ranked[0] || null, runner = ranked[1] || null;
+    if (!winner || winner.votes < 2 || winner.modes.size < 2) return null;
+    if (runner && runner.votes === winner.votes) return null;
+    return { candidate:winner.candidate, votes:winner.votes, modes:winner.modes.size, runnerVotes:Number(runner?.votes||0) };
+  }
+
+  function edgeTableGlyphNoise(originalValue, candidateValue) {
+    const original = cellText(originalValue).normalize('NFC').trim();
+    const candidate = cellText(candidateValue).normalize('NFC').trim();
+    if (!original || !candidate || original === candidate) return false;
+    const stripped = candidate.replace(/^[|¦│]+\s*/u,'').replace(/\s*[|¦│]+$/u,'').trim();
+    return stripped === original;
+  }
+
+  function sourceTruthPrimaryEdgeVeto(originalValue, candidateValue, field, attempts) {
+    const original = cellText(originalValue).normalize('NFC').trim();
+    const candidate = cellText(candidateValue).normalize('NFC').trim();
+    if (!original || !candidate || original === candidate) return null;
+    const full = sourceTruthFullCellConsensus(attempts);
+    const expanded = sourceTruthExpandedCellConsensus(attempts);
+    const key = original.toLocaleLowerCase('de-DE');
+    const support = [full, expanded].find(item => item?.candidate && item.candidate.toLocaleLowerCase('de-DE') === key) || null;
+    if (!support) return null;
+    const trunc = strictTextEdgeExtension(candidate, original, 2);
+    const tableGlyph = edgeTableGlyphNoise(original, candidate);
+    if (field === 'company') {
+      if (!isHyphenatedCompanyEdgeProbe(original) || !trunc) return null;
+    } else if (field === 'flightLocation') {
+      if (!isSingleTokenFlightLocationEdgeProbe(original) || (!trunc && !tableGlyph)) return null;
+    } else return null;
+    return { reason: tableGlyph ? 'source_truth_primary_table_edge_veto' : 'source_truth_primary_edge_truncation_veto', source: support === full ? 'full_cell' : 'edge_expanded', votes:Number(support.votes||0), modes:Number(support.modes||0), edge:trunc?.edge||'', loss:Number(trunc?.loss||0) };
   }
 
   function sourceTruthEdgeRecovery(currentValue, attempts) {
@@ -6873,7 +6922,7 @@
   }
 
   async function sourceTruthExpandedEdgeTextOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker) {
-    if (field !== 'flightLocation' || !descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
+    if (!['company','flightLocation'].includes(field) || !descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
     const source = sourceTruthCanvas || processedCanvas;
     const baseLeft = Number(descriptor.left), baseRight = Number(descriptor.right);
     const baseTop = Number(rowMeta.y0), baseBottom = Number(rowMeta.y1);
@@ -7214,7 +7263,8 @@
           log.push(...sourceTruthViews);
           attemptLogByRow.set(item.sourceRow, log);
         }
-        if (descriptor.field === 'flightLocation' && isSingleTokenFlightLocationEdgeProbe(item.original)) {
+        if ((descriptor.field === 'flightLocation' && isSingleTokenFlightLocationEdgeProbe(item.original)) ||
+            (descriptor.field === 'company' && isHyphenatedCompanyEdgeProbe(item.original))) {
           const expandedViews = await sourceTruthExpandedEdgeTextOcr(sourceTruthCanvas || imageCanvas, imageCanvas, descriptor, rowMeta, item.sourceRow, descriptor.field, worker);
           const attemptLogByRow = attemptLogByField.get(descriptor.field);
           const log = attemptLogByRow.get(item.sourceRow) || [];
@@ -7365,6 +7415,19 @@
         const promotedExactCellConsensus = Boolean(exactCellConsensus?.candidate);
         const promotedEdgeGlyphAdjudication = Boolean(edgeGlyphAdjudication?.candidate);
         const primaryPeerCount = candidate ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, original) : 0;
+        const sourceTruthPrimaryVeto = candidate
+          ? sourceTruthPrimaryEdgeVeto(original, candidate, descriptor.field, attempts)
+          : null;
+        if (sourceTruthPrimaryVeto) {
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseIgnored`] = true;
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseCandidate`] = candidate;
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseEvidence`] = { ...sourceTruthPrimaryVeto };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.manualCheckRequired = false;
+            cellEvidence.verificationSource = sourceTruthPrimaryVeto.reason;
+          }
+          return;
+        }
         const sourceTruthKeepsCompanyPrimary = Boolean(
           descriptor.field === 'company' &&
           candidate &&

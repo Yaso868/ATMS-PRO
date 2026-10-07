@@ -690,7 +690,8 @@ assert(p1140CompanyCase,'P114.0 manifest must retain the P113.9 company false-co
 assert(p1140LocationCase,'P114.0 manifest must retain the P113.9 silent flight-location clip case');
 assert.strictEqual(p113Manifest?.p1140?.baseHead,'d977e3e','P114.0 manifest must record the freshly user-verified P113.9 post-installer main HEAD');
 assert.strictEqual(p113Manifest?.p1140?.hardcodingAllowed,false,'P114.0 production hardcoding remains forbidden');
-assert.strictEqual(p113Manifest?.p1140?.realDeviceProofPending,true,'P114.0 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1140?.realDeviceProofPending,false,'P114.0 manifest must record that the real-device proof was executed');
+assert.strictEqual(p113Manifest?.p1140?.realDeviceResult,'VALUES_CORRECT_FALSE_POSITIVE_BLOCKING_FAIL','P114.0 manifest must retain the confirmed false-positive blocking failure');
 assert(planImportSource.includes('sourceTruthExpandedEdgeTextOcr'),'P114.0 must collect bounded edge-expanded source-truth views');
 assert(planImportSource.includes('sourceTruthExpandedEdgeRecovery'),'P114.0 must require two-mode expanded-edge consensus');
 assert(planImportSource.includes('source_truth_primary_company_edge_veto'),'P114.0 company preservation must remain diagnosable');
@@ -699,4 +700,25 @@ for(const fixtureLiteral of ['IMG-20261007-WA0014.jpg','GE-20261007-WA0014-R12-C
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P114.0 TEST/source identifier leaked into production: ${fixtureLiteral}`);
 }
 console.log('P114.0 edge source-truth integrity deterministic regression self-test: PASS');
+
+// P114.1: P114.0 restored the correct primary values but still blocked four
+// rows on weaker secondary OCR edge artifacts. The new gate may only veto those
+// secondary conflicts when two independent source-truth views confirm the current
+// primary value; it never invents/replaces semantic content.
+const p1141Krakau5=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R5-FLIGHTLOCATION-TABLE-EDGE-P1140');
+const p1141Krakau6=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R6-FLIGHTLOCATION-TABLE-EDGE-P1140');
+const p1141Company=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1140');
+const p1141Location=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R14-FLIGHTLOCATION-FALSE-CONFLICT-P1140');
+assert(p1141Krakau5&&p1141Krakau6&&p1141Company&&p1141Location,'P114.1 manifest must retain all four confirmed P114.0 false-positive blocks');
+assert.strictEqual(p113Manifest?.p1141?.baseHead,'82cf700','P114.1 manifest must record the freshly user-verified P114.0 post-installer main HEAD');
+assert.strictEqual(p113Manifest?.p1141?.hardcodingAllowed,false,'P114.1 production hardcoding remains forbidden');
+assert.strictEqual(p113Manifest?.p1141?.realDeviceProofPending,true,'P114.1 must not pre-claim real-device success');
+assert(planImportSource.includes('sourceTruthPrimaryEdgeVeto'),'P114.1 must retain primary source-truth veto logic');
+assert(planImportSource.includes('sourceTruthExpandedCellConsensus'),'P114.1 must require expanded source-truth consensus');
+assert(planImportSource.includes('source_truth_primary_table_edge_veto'),'P114.1 table-edge veto must remain diagnosable');
+assert(planImportSource.includes('source_truth_primary_edge_truncation_veto'),'P114.1 truncation veto must remain diagnosable');
+for(const fixtureLiteral of ['GE-20261007-WA0014-R5-FLIGHTLOCATION-TABLE-EDGE-P1140','GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1140','GE-20261007-WA0014-R14-FLIGHTLOCATION-FALSE-CONFLICT-P1140']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P114.1 TEST/source identifier leaked into production: ${fixtureLiteral}`);
+}
+console.log('P114.1 primary source-truth edge veto deterministic regression self-test: PASS');
 
