@@ -383,3 +383,41 @@ for(const fixtureLiteral of ['Central Terminal West','ntral Terminal West','Hote
 for(const source of productionFiles.slice(0,2)) assert(!source.includes('Marriott Seestern DUS'), 'P113.1 route fixture must not be hardcoded into OCR/parser production logic');
 console.log('P113.1 Golden Error Follow-up deterministic regression self-test: PASS');
 
+// P113.2 CHATGPT-LIKE CELL EVIDENCE: a changed short code may be promoted only
+// when several views of the SAME confirmed cell converge with sufficient margin.
+const p1132CropQuality={fullCellIncluded:true,leftEdgeClipped:false,rightEdgeClipped:false,neighborColumnIncluded:false};
+const p1132Consensus=core.exactCellMultiViewConsensus('O7C',[
+  {scope:'batch',mode:'batch',candidate:'Q7C'},
+  {scope:'cell_view',mode:'original',candidate:'Q7C',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'threshold',candidate:'Q7C',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'processed',candidate:'O7C',cropQuality:p1132CropQuality}
+],p1132CropQuality);
+assert.deepStrictEqual(p1132Consensus,{candidate:'Q7C',exactViews:3,exactModes:3,batch:1,originalExact:1,runnerExact:1,strength:'strong'});
+assert.strictEqual(core.exactCellMultiViewConsensus('O7C',[
+  {scope:'batch',mode:'batch',candidate:'Q7C'},
+  {scope:'cell_view',mode:'original',candidate:'Q7C',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'threshold',candidate:'O7C',cropQuality:p1132CropQuality}
+],p1132CropQuality),null,'P113.2 must fail closed when exact-cell views do not win by a safe margin');
+assert.strictEqual(core.exactCellMultiViewConsensus('O7C',[
+  {scope:'batch',mode:'batch',candidate:'Q7C'},
+  {scope:'cell_view',mode:'original',candidate:'Q7C',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}},
+  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}},
+  {scope:'cell_view',mode:'threshold',candidate:'Q7C',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}}
+],{...p1132CropQuality,leftEdgeClipped:true}),null,'P113.2 clipped evidence must never auto-correct');
+assert(planImportSource.includes('__atmsSourceTruthCanvas'),'P113.2 must preserve a source-truth canvas in the same coordinate system');
+assert(planImportSource.includes('function imageCellEvidenceForRide('),'P113.2 must build per-field cell evidence');
+assert(planImportSource.includes("verificationSource: 'primary_full_image_cell_assignment'"),'P113.2 cell evidence must retain provenance');
+assert(planImportSource.includes('function exactCellMultiViewOcr('),'P113.2 must re-read only exact confirmed cells through bounded visual variants');
+assert(planImportSource.includes("scope: 'cell_view'"),'P113.2 exact-cell views must be separately identifiable from batch/local OCR');
+assert(planImportSource.includes('exactCellMultiViewConsensus'),'P113.2 must resolve exact-cell multi-view evidence generically');
+assert(planImportSource.includes("'exact_cell_multi_view_consensus'"),'P113.2 must preserve the correction source instead of hiding normalization provenance');
+assert(planImportSource.includes('manualCheckRequired'),'P113.2 unresolved cell evidence must stay fail-closed');
+const p1132R26=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-R26');
+assert.strictEqual(p1132R26?.p1131RealDeviceActual?.zeroSilentErrorGatePass,true,'P113.2 must retain the P113.1 fail-closed real-device proof');
+assert.strictEqual(p1132R26?.p1131RealDeviceActual?.exactValuePass,false,'P113.2 must retain the unresolved exact-value proof before patching');
+for(const fixtureLiteral of ['O7C','Q7C']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.2 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+console.log('P113.2 ChatGPT-like Cell Evidence deterministic regression self-test: PASS');

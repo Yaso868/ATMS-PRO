@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1132 · 07.10.2026: CHATGPT-LIKE CELL EVIDENCE – exact-cell multi-view consensus with crop-quality gating; CORRECT OR FAIL CLOSED. Historical fixture values remain test-only; no flight/driver/place hardcodes.
 // CORE-007D8A1F1D8P1131 · 07.10.2026: GOLDEN ERROR FOLLOW-UP – generic left-edge text degradation detection, short-code image consensus and safer one-digit flight correction. Historical fixture values remain test-only; no flight/driver/place hardcodes.
 // CORE-007D8A1F1D8P113 · 07.10.2026: FINAL PLANLISTEN STABILIZATION – pure helpers for strict boundary-clock cleanup and strong short-code consensus. Historical fixture values remain test-only; no flight/driver/place hardcodes.
 // ATMS PRO P110 – Golden Error Pack helpers: neighbor-cell cleanup after proven route-boundary recovery + suspicious mixed flight-prefix support; fail-closed retained.
@@ -263,6 +264,51 @@
     return null;
   }
 
+  function exactCellMultiViewConsensus(originalValue,attempts,cropQuality){
+    const original=text(originalValue).replace(/\s+/g,'').toUpperCase();
+    if(!/^[A-Z0-9]{2,6}$/.test(original))return null;
+    const quality=cropQuality&&typeof cropQuality==='object'?cropQuality:{};
+    if(quality.fullCellIncluded===false||quality.leftEdgeClipped===true||quality.rightEdgeClipped===true||quality.neighborColumnIncluded===true)return null;
+
+    const exactStats=new Map();
+    const batchStats=new Map();
+    for(const attempt of (Array.isArray(attempts)?attempts:[])){
+      const candidate=text(attempt?.candidate).replace(/\s+/g,'').toUpperCase();
+      if(!/^[A-Z0-9]{2,6}$/.test(candidate))continue;
+      const scope=text(attempt?.scope)||'unknown';
+      if(scope==='cell_view'){
+        const q=attempt?.cropQuality&&typeof attempt.cropQuality==='object'?attempt.cropQuality:{};
+        if(q.fullCellIncluded===false||q.leftEdgeClipped===true||q.rightEdgeClipped===true||q.neighborColumnIncluded===true)continue;
+        const current=exactStats.get(candidate)||{candidate,votes:0,modes:new Set()};
+        current.votes++;
+        current.modes.add(text(attempt?.mode)||`cell-view-${current.votes}`);
+        exactStats.set(candidate,current);
+      }else if(scope==='batch'){
+        batchStats.set(candidate,(batchStats.get(candidate)||0)+1);
+      }
+    }
+
+    const ranked=[...exactStats.values()].sort((a,b)=>b.votes-a.votes||b.modes.size-a.modes.size||a.candidate.localeCompare(b.candidate));
+    const winner=ranked[0]||null,runner=ranked[1]||null;
+    if(!winner||winner.candidate===original||textIntegrityEditDistance(original,winner.candidate)!==1)return null;
+    const winnerBatch=Number(batchStats.get(winner.candidate)||0);
+    const originalExact=Number(exactStats.get(original)?.votes||0);
+    const runnerVotes=Number(runner?.votes||0);
+    const exactMargin=winner.votes-Math.max(originalExact,runnerVotes);
+    const enoughExact=winner.votes>=3&&winner.modes.size>=3&&exactMargin>=2;
+    const batchBacked=winnerBatch>=1&&winner.votes>=2&&winner.modes.size>=2&&exactMargin>=2;
+    if(!enoughExact&&!batchBacked)return null;
+    return{
+      candidate:winner.candidate,
+      exactViews:winner.votes,
+      exactModes:winner.modes.size,
+      batch:winnerBatch,
+      originalExact,
+      runnerExact:runnerVotes,
+      strength:winner.votes>=3&&winnerBatch>=1?'strong':'supported'
+    };
+  }
+
   function oneNumericEditAutoCorrectionAllowed(initialValue,candidateValue,attempts,primaryConfidence,hasContextPeer){
     const initial=flight(initialValue),candidate=flight(candidateValue);
     if(!oneNumericEditFlightAlternative(initial,candidate))return false;
@@ -443,5 +489,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,exactCellMultiViewConsensus,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });

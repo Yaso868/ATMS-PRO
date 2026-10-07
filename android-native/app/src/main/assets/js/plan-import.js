@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1132 · 07.10.2026: CHATGPT-LIKE CELL EVIDENCE – geometry-first exact-cell provenance, bounded multi-view OCR consensus and crop-quality-aware fail-closed validation. No flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P1131 · 07.10.2026: GOLDEN ERROR FOLLOW-UP – left-edge route degradation handling, short-code exact-cell OCR, flight-column integrity consensus, and date-batch/error-count separation. CORRECT OR FAIL CLOSED; no flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P113 · 07.10.2026: FINAL PLANLISTEN STABILIZATION – structure-first schema evidence, exact-cell provenance/recovery, zero-silent-error gate, strict boundary-time cleanup and bounded driver recovery. CORRECT OR FAIL CLOSED; no flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P110 · 06.10.2026: GOLDEN ERROR PACK BUNDLE FIX – generischer Nach→Kunde-Grenztransfer nur nach wiederholtem hochkonfidentem geometrischem Routen-Randbeleg + aktuellem Kunden-Peer-Konsens; sichere Fahrzeug-Randzeichenbereinigung; kurze Firmen-Codes werden nur per eindeutiger Case-Konsensmehrheit vereinheitlicht; gemischter 3-Zeichen-Flugpräfix (Ziffer + 2 Buchstaben) wird wie andere auffällige Langpräfixe ausschließlich per lokaler Mehrfach-OCR fail-closed geprüft; P109.4 PNG-Transport wird auch in der Low-Confidence-Flugzellen-OCR genutzt. Keine Flugnummern-/Hotel-/Kunden-Hardcodes, keine Lockerung von FLIGHT-008, keine Änderung an PLAN/DISPO/LIVE oder Persistenz.
@@ -1941,11 +1942,14 @@
             text: `${label} „${current || '–'}“ widerspricht der unabhängigen Text-Nach-OCR${candidate ? ` („${candidate}“)` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
           });
         } else if (ride[`${field}OcrAutoCorrected`]) {
+          const correctionSource = cellText(ride[`${field}OcrCorrectionSource`]);
           issues.push({
             level: 'info',
             kind: 'ocr_recovery',
             row,
-            text: `${label} ${cellText(ride[`${field}OcrInitial`])} → ${cellText(ride[field])} durch unabhängige DEU-Spalten- + Zell-OCR sicher korrigiert`
+            text: correctionSource === 'exact_cell_multi_view_consensus'
+              ? `${label} ${cellText(ride[`${field}OcrInitial`])} → ${cellText(ride[field])} durch geometrisch bestätigte Zell-Mehrfachprüfung sicher korrigiert`
+              : `${label} ${cellText(ride[`${field}OcrInitial`])} → ${cellText(ride[field])} durch unabhängige DEU-Spalten- + Zell-OCR sicher korrigiert`
           });
         } else if (ride[`${field}OcrSuspicious`]) {
           issues.push({
@@ -2545,11 +2549,23 @@
     const img = await loadImage(file);
     const maxWidth = 3200;
     const scale = Math.min(3, Math.max(1.6, maxWidth / img.naturalWidth));
+    const width = Math.round(img.naturalWidth * scale);
+    const height = Math.round(img.naturalHeight * scale);
+
+    // P113.2: Keep one pixel-faithful scaled source canvas beside the OCR-preprocessed
+    // canvas. Both canvases use the exact same coordinate system, so every later
+    // recheck can return to the original cell pixels without widening into neighbors.
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = width;
+    sourceCanvas.height = height;
+    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    sourceCtx.drawImage(img, 0, 0, width, height);
+
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(img.naturalWidth * scale);
-    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(sourceCanvas, 0, 0);
     const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const d = image.data;
     for (let i = 0; i < d.length; i += 4) {
@@ -2559,6 +2575,14 @@
       d[i] = d[i + 1] = d[i + 2] = value;
     }
     ctx.putImageData(image, 0, 0);
+    try {
+      Object.defineProperty(canvas, '__atmsSourceTruthCanvas', {
+        configurable: true,
+        value: sourceCanvas
+      });
+    } catch (_) {
+      canvas.__atmsSourceTruthCanvas = sourceCanvas;
+    }
     return canvas;
   }
 
@@ -5329,7 +5353,7 @@
         // P113: Missing/invalid primary driver may be recovered by the already-running
         // full driver-column consensus only when the exact mapped driver cell contains
         // some raw OCR evidence. A truly blank driver cell stays blank and is not guessed.
-        const rawCell = cellText(ride?.imageCellEvidence?.driver || '');
+        const rawCell = cellEvidenceRawValue(ride?.imageCellEvidence || {}, 'driver');
         if (!rawCell) return;
         ride.driverRawOcr = rawOriginal;
         ride.driver = candidate;
@@ -6181,6 +6205,104 @@
     return false;
   }
 
+  function exactCellEvidenceTransform(sourceCanvas, mode) {
+    if (!sourceCanvas || mode === 'original') return sourceCanvas;
+    const out = document.createElement('canvas');
+    out.width = sourceCanvas.width;
+    out.height = sourceCanvas.height;
+    const ctx = out.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(sourceCanvas, 0, 0);
+    let image;
+    try { image = ctx.getImageData(0, 0, out.width, out.height); } catch (_) { return sourceCanvas; }
+    const data = image.data;
+    const histogram = new Uint32Array(256);
+    let luminanceSum = 0, samples = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = Math.max(0, Math.min(255, Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2])));
+      histogram[gray]++;
+      luminanceSum += gray;
+      samples++;
+    }
+    let threshold = samples ? luminanceSum / samples : 180;
+    if (mode === 'threshold') {
+      let total = 0, weighted = 0;
+      for (let i = 0; i < 256; i++) { total += histogram[i]; weighted += i * histogram[i]; }
+      let backgroundWeight = 0, backgroundSum = 0, maxVariance = -1;
+      for (let i = 0; i < 256; i++) {
+        backgroundWeight += histogram[i];
+        if (!backgroundWeight) continue;
+        const foregroundWeight = total - backgroundWeight;
+        if (!foregroundWeight) break;
+        backgroundSum += i * histogram[i];
+        const meanBack = backgroundSum / backgroundWeight;
+        const meanFore = (weighted - backgroundSum) / foregroundWeight;
+        const variance = backgroundWeight * foregroundWeight * Math.pow(meanBack - meanFore, 2);
+        if (variance > maxVariance) { maxVariance = variance; threshold = i; }
+      }
+      threshold = Math.max(105, Math.min(225, threshold));
+    }
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      let value = gray;
+      if (mode === 'grayscale') value = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 128));
+      if (mode === 'threshold') value = gray < threshold ? 0 : 255;
+      data[i] = data[i + 1] = data[i + 2] = Math.round(value);
+      data[i + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    return out;
+  }
+
+  async function exactCellMultiViewOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker) {
+    if (!descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
+    const source = sourceTruthCanvas || processedCanvas;
+    const left = Number(descriptor.left), right = Number(descriptor.right);
+    const top = Number(rowMeta.y0), bottom = Number(rowMeta.y1);
+    if (![left, right, top, bottom].every(Number.isFinite) || right <= left || bottom <= top) return [];
+    const cropQuality = {
+      fullCellIncluded: left >= 0 && right <= Number(source.width || processedCanvas.width) && top >= 0 && bottom <= Number(source.height || processedCanvas.height),
+      leftEdgeClipped: false,
+      rightEdgeClipped: false,
+      neighborColumnIncluded: false,
+      tableLineInterference: 'controlled_same_cell_views'
+    };
+    if (!cropQuality.fullCellIncluded) return [];
+
+    const variants = [
+      { mode: 'cell-view-original-psm7', source, transform: 'original', scale: 5, psm: '7' },
+      { mode: 'cell-view-grayscale-psm7', source, transform: 'grayscale', scale: 5, psm: '7' },
+      { mode: 'cell-view-threshold-psm7', source, transform: 'threshold', scale: 5, psm: '7' },
+      { mode: 'cell-view-processed-psm8', source: processedCanvas, transform: 'original', scale: 6, psm: '8' }
+    ];
+    const attempts = [];
+    for (const variant of variants) {
+      let candidate = '';
+      try {
+        const exactCrop = cropCanvasRegion(variant.source, left, top, right, bottom, variant.scale);
+        const view = exactCellEvidenceTransform(exactCrop, variant.transform);
+        const params = { tessedit_pageseg_mode: variant.psm, tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' };
+        let result;
+        if (worker && typeof worker.recognize === 'function') {
+          if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', params, { mode: variant.mode, sourceRow });
+          result = await p109PerfWorkerRecognize(worker, 'text_integrity_ocr', view, { mode: variant.mode, sourceRow });
+        } else {
+          result = await p109PerfRecognizeOneShot('text_integrity_ocr', 'deu', view, params, { mode: `${variant.mode}-fallback`, sourceRow });
+        }
+        candidate = textIntegrityCellCandidate(result?.data?.text || '', field);
+      } catch (_) {}
+      attempts.push({
+        scope: 'cell_view',
+        mode: variant.mode,
+        candidate,
+        sourceRow,
+        field,
+        cellBounds: { left, top, right, bottom },
+        cropQuality: { ...cropQuality }
+      });
+    }
+    return attempts;
+  }
+
   function textWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta, field) {
     const grouped = new Map();
     const words = Array.isArray(result?.data?.words) ? result.data.words : [];
@@ -6312,7 +6434,7 @@
     };
   }
 
-  async function recoverTextIntegrityTargeted(rides, imageCanvas, imageMeta, mapping) {
+  async function recoverTextIntegrityTargeted(rides, imageCanvas, imageMeta, mapping, sourceTruthCanvas = null) {
     if (!Array.isArray(rides) || !imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const boundaries = imageMeta.boundaries || [];
     const out = rides.map(ride => ({ ...ride }));
@@ -6469,7 +6591,38 @@
           .filter(attempt => attempt.scope === 'batch')
           .map(attempt => textIntegrityCellCandidate(attempt.candidate || '', descriptor.field))
           .find(candidate => candidate && candidate !== item.original && textIntegrityAlternativeIsSafe(item.original, candidate));
-        const shortCode = /^[A-Za-z0-9]{2,5}$/.test(item.original) && /^[A-Za-z0-9]{2,5}$/.test(batchAlternative || '');
+        const shortCode = /^[A-Za-z0-9]{2,6}$/.test(item.original) && /^[A-Za-z0-9]{2,6}$/.test(batchAlternative || '');
+
+        // P113.2 CELL EVIDENCE: when a short alphanumeric cell has a safe independent
+        // alternative, re-read the SAME confirmed geometric cell through several
+        // controlled visual views. No crop may widen into a neighbor column. These
+        // attempts are recorded separately and may promote a correction only through
+        // exactCellMultiViewConsensus(); otherwise the existing fail-closed conflict stays.
+        if (shortCode && ['company', 'flightLocation'].includes(descriptor.field)) {
+          const multiViewAttempts = await exactCellMultiViewOcr(
+            sourceTruthCanvas || imageCanvas,
+            imageCanvas,
+            descriptor,
+            rowMeta,
+            item.sourceRow,
+            descriptor.field,
+            worker
+          );
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          multiViewAttempts.forEach(attempt => log.push(attempt));
+          attemptLogByRow.set(item.sourceRow, log);
+          const cellEvidence = item.ride?.imageCellEvidence?.[descriptor.field];
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.verificationAttempts = multiViewAttempts.map(attempt => ({
+              scope: attempt.scope,
+              mode: attempt.mode,
+              candidate: attempt.candidate,
+              cropQuality: { ...(attempt.cropQuality || {}) }
+            }));
+            cellEvidence.verificationSource = 'exact_cell_multi_view_pending_consensus';
+          }
+        }
+
         if (shortCode && descriptor.field === 'flightLocation') {
           const rawWords = rawImageCellWords(imageMeta, rowMeta, descriptor.column);
           const originalKey = item.original.normalize('NFKC').toLocaleLowerCase('de-DE');
@@ -6527,8 +6680,21 @@
         const attempts = attemptLogByRow.get(sourceRow) || [];
         ride[`${descriptor.field}TargetedOcrAttempts`] = attempts;
         if (!original) return;
+        const cellEvidence = ride?.imageCellEvidence?.[descriptor.field];
+        if (cellEvidence && typeof cellEvidence === 'object') {
+          cellEvidence.verificationAttempts = attempts.map(attempt => ({
+            scope: cellText(attempt?.scope),
+            mode: cellText(attempt?.mode),
+            candidate: cellText(attempt?.candidate),
+            ...(attempt?.cropQuality ? { cropQuality: { ...attempt.cropQuality } } : {})
+          }));
+        }
         const decision = textIntegrityDecision(original, attempts);
-        const candidate = textIntegrityCellCandidate(decision?.candidate || '', descriptor.field);
+        let candidate = textIntegrityCellCandidate(decision?.candidate || '', descriptor.field);
+        const exactCellConsensus = ocrIntegrityCore?.exactCellMultiViewConsensus
+          ? ocrIntegrityCore.exactCellMultiViewConsensus(original, attempts, cellEvidence?.cropQuality || null)
+          : null;
+        if (exactCellConsensus?.candidate) candidate = textIntegrityCellCandidate(exactCellConsensus.candidate, descriptor.field);
         const edgeAlternative = candidate ? textIntegrityEdgeAlternative(original, candidate) : false;
         const peerCount = edgeAlternative ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, candidate) : 0;
         const edgePromotion = candidate
@@ -6539,10 +6705,11 @@
           ? ocrIntegrityCore.shortCodeImageConsensusPromotion(original, candidate, attempts)
           : null;
         const promotedShortCodeConflict = Boolean(shortCodePromotion?.candidate);
+        const promotedExactCellConsensus = Boolean(exactCellConsensus?.candidate);
         const canCorrect = Boolean(
           candidate &&
           textIntegrityAlternativeIsSafe(original, candidate) &&
-          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict)
+          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict || promotedExactCellConsensus)
         );
 
         if (canCorrect) {
@@ -6556,19 +6723,39 @@
           }
           ride[`${descriptor.field}OcrInitial`] = original;
           ride[`${descriptor.field}OcrAutoCorrected`] = true;
-          ride[`${descriptor.field}OcrCorrectionSource`] = promotedShortCodeConflict
-            ? 'alphanumeric_exact_cell_batch_plus_dual_local_consensus'
-            : edgeAlternative
-              ? (edgePromotion?.mode === 'dual_local_peers'
-                  ? 'deu_dual_local_cell_plus_same_plan_edge_consensus'
-                  : 'deu_composite_batch_plus_local_cell_plus_same_plan_consensus')
-              : 'deu_composite_batch_plus_local_cell_consensus';
+          ride[`${descriptor.field}OcrCorrectionSource`] = promotedExactCellConsensus
+            ? 'exact_cell_multi_view_consensus'
+            : promotedShortCodeConflict
+              ? 'alphanumeric_exact_cell_batch_plus_dual_local_consensus'
+              : edgeAlternative
+                ? (edgePromotion?.mode === 'dual_local_peers'
+                    ? 'deu_dual_local_cell_plus_same_plan_edge_consensus'
+                    : 'deu_composite_batch_plus_local_cell_plus_same_plan_consensus')
+                : 'deu_composite_batch_plus_local_cell_consensus';
           ride[`${descriptor.field}OcrEvidence`] = {
             ...(decision?.evidence || {}),
             ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {}),
             ...(promotedEdgeConflict ? { promotedFromConflict: true, edgePromotionMode: edgePromotion?.mode || '' } : {}),
-            ...(promotedShortCodeConflict ? { promotedFromShortCodeConflict: true, shortCodeBatch: Number(shortCodePromotion?.batch || 0), shortCodeLocal: Number(shortCodePromotion?.local || 0) } : {})
+            ...(promotedShortCodeConflict ? { promotedFromShortCodeConflict: true, shortCodeBatch: Number(shortCodePromotion?.batch || 0), shortCodeLocal: Number(shortCodePromotion?.local || 0) } : {}),
+            ...(promotedExactCellConsensus ? {
+              promotedFromExactCellMultiView: true,
+              exactCellViews: Number(exactCellConsensus?.exactViews || 0),
+              exactCellModes: Number(exactCellConsensus?.exactModes || 0),
+              exactCellBatch: Number(exactCellConsensus?.batch || 0),
+              exactCellStrength: cellText(exactCellConsensus?.strength)
+            } : {})
           };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.normalizedValue = candidate;
+            cellEvidence.verificationSource = promotedExactCellConsensus
+              ? 'exact_cell_multi_view_consensus'
+              : ride[`${descriptor.field}OcrCorrectionSource`];
+            cellEvidence.consensus = promotedExactCellConsensus ? { ...exactCellConsensus } : {
+              candidate,
+              strength: decision?.status === 'correct' ? 'strong' : 'supported'
+            };
+            cellEvidence.manualCheckRequired = false;
+          }
           if (descriptor.field === 'flightLocation') ride.flightLocation = normalizeFlightLocation(candidate);
           else ride[descriptor.field] = candidate;
           if (descriptor.field === 'customer' || descriptor.field === 'company') {
@@ -6583,6 +6770,11 @@
             ...(decision?.evidence || {}),
             ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {})
           };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.consensus = exactCellConsensus ? { ...exactCellConsensus } : null;
+            cellEvidence.manualCheckRequired = true;
+            cellEvidence.verificationSource = 'exact_cell_multi_view_unresolved_conflict';
+          }
           return;
         }
         // P113 zero-silent-error: one independent SAFE alternative is not enough
@@ -6595,6 +6787,10 @@
           ride[`${descriptor.field}OcrConflict`] = true;
           ride[`${descriptor.field}OcrConflictCandidate`] = unresolvedAlternative;
           ride[`${descriptor.field}OcrEvidence`] = { unresolvedIndependentAlternative: true };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.manualCheckRequired = true;
+            cellEvidence.verificationSource = 'exact_cell_multi_view_unresolved_alternative';
+          }
           return;
         }
         if (decision?.status === 'suspicious') {
@@ -8645,17 +8841,55 @@
     return found.size === 1 ? [...found][0] : '';
   }
 
+  function cellEvidenceRawValue(evidence, field) {
+    const record = evidence?.[field];
+    if (record && typeof record === 'object') return cellText(record.rawOcr || record.normalizedValue || '');
+    return cellText(record || '');
+  }
+
   function imageCellEvidenceForRide(ride, imageMeta, mapping) {
     const matrixIndex = Number(ride?.sourceRow || 0) - 1;
     const rowMeta = imageMeta?.rowMetaByMatrixIndex?.[matrixIndex];
     if (!rowMeta) return {};
     const fields = ['time','timeMirror','pickup','destination','customer','company','arrivalFlight','departureFlight','vehicle','persons','flightTime','flightLocation','driver'];
     const evidence = {};
+    const boundaries = imageMeta?.boundaries || [];
     fields.forEach(field => {
       const column = mapping?.[field];
       if (column === undefined || column === null) return;
-      const text = rawImageCellText(imageMeta, rowMeta, column);
-      if (text) evidence[field] = text;
+      const words = rawImageCellWords(imageMeta, rowMeta, column);
+      const text = words.map(word => cellText(word?.text)).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      const left = Number(boundaries[column]);
+      const right = Number(boundaries[Number(column) + 1]);
+      const top = Number(rowMeta.y0);
+      const bottom = Number(rowMeta.y1);
+      const confidences = words.map(word => Number(word?.confidence)).filter(Number.isFinite);
+      const confidence = confidences.length
+        ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length
+        : null;
+      const fullCellIncluded = [left, right, top, bottom].every(Number.isFinite) && right > left && bottom > top && left >= 0 && right <= Number(imageMeta?.width || right);
+      evidence[field] = {
+        field,
+        sourceRow: Number(ride?.sourceRow || 0),
+        sourceColumn: Number(column),
+        cellBounds: { left, top, right, bottom },
+        rawOcr: text,
+        normalizedValue: text,
+        confidence: Number.isFinite(confidence) ? Math.round(confidence * 10) / 10 : null,
+        verificationSource: 'primary_full_image_cell_assignment',
+        geometryConfidence: imageMeta?.safeHeaderDetected ? 'high' : 'medium',
+        wordCount: words.length,
+        cropQuality: {
+          fullCellIncluded,
+          leftEdgeClipped: false,
+          rightEdgeClipped: false,
+          neighborColumnIncluded: false,
+          tableLineInterference: 'unknown'
+        },
+        verificationAttempts: [],
+        consensus: null,
+        manualCheckRequired: false
+      };
     });
     return evidence;
   }
@@ -8666,8 +8900,8 @@
       const evidence = imageCellEvidenceForRide(ride, imageMeta, mapping);
       ride.imageCellEvidence = evidence;
 
-      const arrivalCandidates = flightCandidatesFromRow([evidence.arrivalFlight || '']);
-      const departureCandidates = flightCandidatesFromRow([evidence.departureFlight || '']);
+      const arrivalCandidates = flightCandidatesFromRow([cellEvidenceRawValue(evidence, 'arrivalFlight')]);
+      const departureCandidates = flightCandidatesFromRow([cellEvidenceRawValue(evidence, 'departureFlight')]);
       if (!cellText(ride.flightNumber)) {
         const candidates = [
           ...arrivalCandidates.map(value => ({ value, direction: 'arrival' })),
@@ -8685,31 +8919,31 @@
         }
       }
 
-      if (!cellText(ride.vehicle) && evidence.vehicle) {
-        const candidate = normalizeVehicleBoundaryOcrNoise(evidence.vehicle);
+      if (!cellText(ride.vehicle) && cellEvidenceRawValue(evidence, 'vehicle')) {
+        const candidate = normalizeVehicleBoundaryOcrNoise(cellEvidenceRawValue(evidence, 'vehicle'));
         if (candidate && /^(?:pkw|van|bus|sprinter|taxi)$/i.test(candidate)) {
           ride.vehicle = candidate;
           ride.vehicleRecoveredFromExactImageCell = true;
         }
       }
 
-      if (!(Number(ride.persons) > 0) && evidence.persons) {
-        const candidate = parseNumber(evidence.persons);
+      if (!(Number(ride.persons) > 0) && cellEvidenceRawValue(evidence, 'persons')) {
+        const candidate = parseNumber(cellEvidenceRawValue(evidence, 'persons'));
         if (Number.isInteger(candidate) && candidate >= 1 && candidate <= 99) {
           ride.persons = candidate;
           ride.personsRecoveredFromExactImageCell = true;
         }
       }
 
-      if (!cellText(ride.timeMirror) && evidence.timeMirror) {
-        const candidate = uniqueClockCandidateFromCell(evidence.timeMirror);
+      if (!cellText(ride.timeMirror) && cellEvidenceRawValue(evidence, 'timeMirror')) {
+        const candidate = uniqueClockCandidateFromCell(cellEvidenceRawValue(evidence, 'timeMirror'));
         if (candidate) {
           ride.timeMirror = candidate;
           ride.timeMirrorRecoveredFromExactImageCell = true;
         }
       }
 
-      const flightTimeEvidence = uniqueClockCandidateFromCell(evidence.flightTime || '');
+      const flightTimeEvidence = uniqueClockCandidateFromCell(cellEvidenceRawValue(evidence, 'flightTime'));
       if (flightTimeEvidence) {
         const current = normalizeTime(ride.flightTime);
         if (!current || timeToMinutes(current) === null) {
@@ -8723,16 +8957,16 @@
         }
       }
 
-      if (!cellText(ride.company) && evidence.company) {
-        const candidate = normalizeTextBoundaryOcrNoise(evidence.company).value;
+      if (!cellText(ride.company) && cellEvidenceRawValue(evidence, 'company')) {
+        const candidate = normalizeTextBoundaryOcrNoise(cellEvidenceRawValue(evidence, 'company')).value;
         if (candidate && /[A-Za-zÄÖÜäöüßÀ-ÿ]/u.test(candidate) && !looksLikeTime(candidate) && !looksLikeFlight(candidate)) {
           ride.company = candidate;
           ride.companyRecoveredFromExactImageCell = true;
         }
       }
 
-      if (!cellText(ride.driver) && evidence.driver) {
-        const candidate = normalizeDriverCandidate(evidence.driver);
+      if (!cellText(ride.driver) && cellEvidenceRawValue(evidence, 'driver')) {
+        const candidate = normalizeDriverCandidate(cellEvidenceRawValue(evidence, 'driver'));
         if (candidate) {
           ride.driver = candidate;
           ride.driverRecoveredFromExactImageCell = true;
@@ -8740,8 +8974,8 @@
         }
       }
 
-      if (!cellText(ride.flightLocation) && evidence.flightLocation) {
-        const raw = cellText(evidence.flightLocation);
+      if (!cellText(ride.flightLocation) && cellEvidenceRawValue(evidence, 'flightLocation')) {
+        const raw = cellEvidenceRawValue(evidence, 'flightLocation');
         if (raw && !looksLikeTime(raw) && !looksLikeFlight(raw) && !/^(?:pkw|van|bus|sprinter|taxi)$/i.test(raw)) {
           ride.flightLocation = normalizeFlightLocation(raw);
           ride.sourceFlightLocationRaw = ride.sourceFlightLocationRaw || raw;
@@ -8760,24 +8994,24 @@
       const conflicts = [];
       const add = (code, text) => { if (!conflicts.some(item => item.code === code)) conflicts.push({ code, text }); };
 
-      const cellFlights = [evidence.arrivalFlight, evidence.departureFlight]
+      const cellFlights = [cellEvidenceRawValue(evidence, 'arrivalFlight'), cellEvidenceRawValue(evidence, 'departureFlight')]
         .flatMap(value => flightCandidatesFromRow([value || '']));
       const uniqueFlights = [...new Set(cellFlights)];
       if (uniqueFlights.length === 1 && !cellText(ride.flightNumber)) {
         add('flight_lost', `Flugnummer ${uniqueFlights[0]} wurde in der geometrischen Flugzelle erkannt, ist im finalen Datensatz aber leer`);
       }
 
-      const vehicleEvidence = normalizeVehicleBoundaryOcrNoise(evidence.vehicle || '');
+      const vehicleEvidence = normalizeVehicleBoundaryOcrNoise(cellEvidenceRawValue(evidence, 'vehicle'));
       if (vehicleEvidence && /^(?:pkw|van|bus|sprinter|taxi)$/i.test(vehicleEvidence) && !cellText(ride.vehicle)) {
         add('vehicle_lost', `Fahrzeug ${vehicleEvidence} wurde in der Fahrzeugzelle erkannt, ist im finalen Datensatz aber leer`);
       }
 
-      const personsEvidence = parseNumber(evidence.persons || '');
+      const personsEvidence = parseNumber(cellEvidenceRawValue(evidence, 'persons'));
       if (Number.isInteger(personsEvidence) && personsEvidence >= 1 && personsEvidence <= 99 && !(Number(ride.persons) > 0)) {
         add('persons_lost', `Personenzahl ${personsEvidence} wurde in der Personenzelle erkannt, ist im finalen Datensatz aber 0/leer`);
       }
 
-      const flightTimeEvidence = uniqueClockCandidateFromCell(evidence.flightTime || '');
+      const flightTimeEvidence = uniqueClockCandidateFromCell(cellEvidenceRawValue(evidence, 'flightTime'));
       if (flightTimeEvidence) {
         const current = normalizeTime(ride.flightTime);
         if (!current || timeToMinutes(current) === null) {
@@ -8787,11 +9021,11 @@
         }
       }
 
-      if (evidence.company && !cellText(ride.company)) {
-        add('company_lost', `Firma „${cellText(evidence.company)}“ wurde in der Firmenzelle erkannt, ist im finalen Datensatz aber leer`);
+      if (cellEvidenceRawValue(evidence, 'company') && !cellText(ride.company)) {
+        add('company_lost', `Firma „${cellEvidenceRawValue(evidence, 'company')}“ wurde in der Firmenzelle erkannt, ist im finalen Datensatz aber leer`);
       }
-      if (evidence.company && cellText(ride.company) && cleanKey(ride.company) === cleanKey(ride.customer) && cleanKey(evidence.company) !== cleanKey(ride.company)) {
-        add('company_from_customer', `Firma wurde offenbar aus Kunde übernommen; Firmenzelle enthält „${cellText(evidence.company)}“`);
+      if (cellEvidenceRawValue(evidence, 'company') && cellText(ride.company) && cleanKey(ride.company) === cleanKey(ride.customer) && cleanKey(cellEvidenceRawValue(evidence, 'company')) !== cleanKey(ride.company)) {
+        add('company_from_customer', `Firma wurde offenbar aus Kunde übernommen; Firmenzelle enthält „${cellEvidenceRawValue(evidence, 'company')}“`);
       }
 
       const driver = cellText(ride.driver);
@@ -8802,6 +9036,15 @@
       if (ride.flightTimeCellConflict) {
         add('flight_time_cell_conflict', `Flugzeit „${cellText(ride.flightTime)}“ widerspricht der geometrischen Zell-Evidenz „${cellText(ride.flightTimeCellConflictCandidate)}“`);
       }
+
+      // P113.2: A cell-level evidence record may never be silently ignored. Usually the
+      // field-specific OCR conflict already blocks validation; this global guard covers
+      // future fields/recovery paths without inventing or duplicating a value.
+      Object.entries(evidence).forEach(([field, record]) => {
+        if (!record || typeof record !== 'object' || !record.manualCheckRequired) return;
+        if (ride[`${field}OcrConflict`]) return;
+        add(`cell_evidence_unresolved_${field}`, `${field}: exakte Zell-Evidenz blieb widersprüchlich und erfordert manuelle Prüfung`);
+      });
 
       ride.importIntegrityConflicts = conflicts;
       ride.importIntegrityStatus = conflicts.length ? 'blocked' : 'ok';
@@ -9476,6 +9719,7 @@
       sheetName: 'Bild / WhatsApp',
       imageOcr: true,
       imageCanvas: canvas,
+      imageSourceCanvas: canvas.__atmsSourceTruthCanvas || null,
       imageMeta: matrix._atmsImageMeta || null
     };
   }
@@ -10672,7 +10916,8 @@
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
-          mappingInfo.mapping
+          mappingInfo.mapping,
+          result.imageSourceCanvas || null
         ));
         preparedRides = await p54MeasureAsync('missing_flight_targeted_ocr', () => recoverMissingFlightNumbersTargeted(
           preparedRides,

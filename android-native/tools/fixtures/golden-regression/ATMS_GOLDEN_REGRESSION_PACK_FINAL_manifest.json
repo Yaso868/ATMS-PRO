@@ -420,7 +420,7 @@
         "pickup": "Novotel Köln",
         "flightLocation": "9MB"
       },
-      "note": "Targeted OCR sieht Köln/9MB teilweise korrekt, finale Felder übernehmen den sicheren Kandidaten nicht.",
+      "note": "Targeted OCR sieht Köln/9MB korrekt bzw. als starke Gegen-Evidenz; P113.1 blockiert sicher, übernimmt den exakten Zellkonsens für 9MB aber noch nicht. P113.2 muss dies allgemein über geometrisch identische Multi-View-Zellbeweise lösen oder weiter fail-closed bleiben.",
       "previousActual": {
         "pickup": "Novotel Kain",
         "flightLocation": "IMB"
@@ -432,7 +432,16 @@
         "rowStatus": "Fehler",
         "importBlocked": true
       },
-      "reproducibility": "confirmed_real_device_P113"
+      "reproducibility": "confirmed_real_device_P113_and_P1131",
+      "p1131RealDeviceActual": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "IMB",
+        "independentTextOcr": "9MB",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "zeroSilentErrorGatePass": true,
+        "exactValuePass": false
+      }
     },
     {
       "id": "GE-20261007-WA0001-R27",
