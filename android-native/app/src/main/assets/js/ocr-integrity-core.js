@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – second-stage raw-word price/time row pairing recovers a missing primary ride-time anchor without depending on OCR line grouping; fail closed on weak/competing evidence.
 // CORE-007D8A1F1D8P1135 · 07.10.2026: HEADER/TIME GEOMETRY RECOVERY – recover only a missing primary ride-time header from repeated raw OCR clock geometry between Preis and Von; fail closed on weak or competing evidence.
 // CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – exact independent batch candidate + invariant short-code core + bounded multi-view edge-state evidence; fail closed on competing evidence.
 // CORE-007D8A1F1D8P11331 · 07.10.2026: P113.3.1 RUNTIME GATE – OCR consensus semantics unchanged; paired with executable plan-import runtime smoke.
@@ -245,6 +246,185 @@
       seen,
       coverage:Number((winner.valid/seen).toFixed(3)),
       reason:'validated_raw_clock_geometry_between_price_and_pickup'
+    };
+  }
+
+  function inferRideTimeLeftGeometryFromRawWords(words,headerAnchors,imageWidth,options={}){
+    const anchors=(Array.isArray(headerAnchors)?headerAnchors:[])
+      .map(anchor=>({key:text(anchor?.key).toLowerCase(),x:Number(anchor?.x)}))
+      .filter(anchor=>anchor.key&&Number.isFinite(anchor.x))
+      .sort((a,b)=>a.x-b.x);
+    const pickup=anchors.find(anchor=>anchor.key==='von'||anchor.key==='from');
+    const priceHeader=anchors.find(anchor=>anchor.key==='preis'||anchor.key==='price');
+    const isTimeKey=key=>key==='uhrzeit'||key==='zeit'||key==='time';
+    const width=Number(imageWidth);
+    const reject=(reason,extra={})=>({
+      accepted:false,
+      reason,
+      priceHeaderPresent:Boolean(priceHeader),
+      pickupHeaderPresent:Boolean(pickup),
+      ...extra
+    });
+    if(!pickup||!(pickup.x>0))return reject('missing_pickup_header');
+    const primaryTimeHeaderPresent=anchors.some(anchor=>isTimeKey(anchor.key)&&anchor.x<pickup.x);
+    if(primaryTimeHeaderPresent&&!Boolean(options?.allowExistingPrimaryHeader))return reject('primary_time_header_present');
+
+    const normalized=(Array.isArray(words)?words:[]).map((word,index)=>{
+      const x0=Number(word?.x0 ?? word?.bbox?.x0),x1=Number(word?.x1 ?? word?.bbox?.x1);
+      const y0=Number(word?.y0 ?? word?.bbox?.y0),y1=Number(word?.y1 ?? word?.bbox?.y1);
+      const raw=text(word?.text);
+      if(!raw||![x0,x1,y0,y1].every(Number.isFinite)||x1<=x0||y1<=y0)return null;
+      return {index,raw,x0,x1,y0,y1,cx:(x0+x1)/2,cy:(y0+y1)/2,w:x1-x0,h:y1-y0};
+    }).filter(Boolean);
+    if(normalized.length<6)return reject('insufficient_raw_words',{rawWords:normalized.length});
+
+    const strictPrice=value=>{
+      const raw=text(value).replace(/[Oo]/g,'0').replace(/\s+/g,'').replace(/[€$£]/g,'');
+      const match=raw.match(/^[|¦│\[\]=~]*([+-]?\d{1,4}(?:[.,]\d{3})*[.,]\d{2})[|¦│\[\]=~]*$/u);
+      if(!match)return'';
+      const numeric=Number(match[1].replace(/\.(?=\d{3}(?:[.,]|$))/g,'').replace(',','.'));
+      return Number.isFinite(numeric)&&numeric>0&&numeric<10000?match[1]:'';
+    };
+    const priceWords=normalized.filter(word=>word.cx<pickup.x&&strictPrice(word.raw));
+    const timeWords=normalized.filter(word=>word.cx<pickup.x&&Boolean(parseClockTimeWithBoundaryNoise(word.raw).value||parseClockTime(word.raw)));
+    if(priceWords.length<3)return reject('insufficient_price_rows',{priceWords:priceWords.length,timeWords:timeWords.length});
+    if(timeWords.length<3)return reject('insufficient_time_rows',{priceWords:priceWords.length,timeWords:timeWords.length});
+
+    const median=list=>{
+      const values=(list||[]).map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+      if(!values.length)return 0;
+      const mid=Math.floor(values.length/2);
+      return values.length%2?values[mid]:(values[mid-1]+values[mid])/2;
+    };
+    const medianH=median([...priceWords,...timeWords].map(word=>word.h))||12;
+    const medianW=median([...priceWords,...timeWords].map(word=>word.w))||20;
+    const yTolerance=Math.max(6,Math.min(42,medianH*0.90));
+    const xTolerance=Math.max(8,Math.min(42,medianW*0.45,Number.isFinite(width)&&width>0?width*0.018:42));
+
+    const clusterByX=items=>{
+      const clusters=[];
+      for(const item of items.slice().sort((a,b)=>a.cx-b.cx)){
+        let winner=null,distance=Infinity;
+        for(const cluster of clusters){
+          const delta=Math.abs(item.cx-cluster.center);
+          if(delta<=xTolerance&&delta<distance){winner=cluster;distance=delta;}
+        }
+        if(!winner){winner={items:[],center:item.cx};clusters.push(winner);}
+        winner.items.push(item);
+        winner.center=median(winner.items.map(entry=>entry.cx));
+      }
+      return clusters;
+    };
+    const uniqueRows=items=>{
+      const rows=[];
+      for(const item of items.slice().sort((a,b)=>a.cy-b.cy)){
+        const previous=rows[rows.length-1];
+        if(previous&&Math.abs(item.cy-previous.cy)<=yTolerance){
+          previous.items.push(item);
+          previous.cy=median(previous.items.map(entry=>entry.cy));
+        }else rows.push({cy:item.cy,items:[item]});
+      }
+      return rows;
+    };
+    const pairRows=(leftItems,rightItems)=>{
+      const leftRows=uniqueRows(leftItems),rightRows=uniqueRows(rightItems),used=new Set();
+      let matched=0;
+      for(const left of leftRows){
+        let best=-1,bestDistance=Infinity;
+        for(let i=0;i<rightRows.length;i++){
+          if(used.has(i))continue;
+          const distance=Math.abs(left.cy-rightRows[i].cy);
+          if(distance<=yTolerance&&distance<bestDistance){best=i;bestDistance=distance;}
+        }
+        if(best>=0){used.add(best);matched++;}
+      }
+      return {matched,leftRows:leftRows.length,rightRows:rightRows.length};
+    };
+
+    const priceClusters=clusterByX(priceWords).map(cluster=>({...cluster,rowCount:uniqueRows(cluster.items).length}));
+    const timeClusters=clusterByX(timeWords).map(cluster=>({...cluster,rowCount:uniqueRows(cluster.items).length}));
+    const stablePrices=priceClusters.filter(cluster=>cluster.rowCount>=3);
+    const stableTimes=timeClusters.filter(cluster=>cluster.rowCount>=2);
+    if(!stablePrices.length)return reject('no_stable_price_cluster',{priceWords:priceWords.length,timeWords:timeWords.length});
+    if(!stableTimes.some(cluster=>cluster.rowCount>=3))return reject('no_stable_time_cluster',{priceWords:priceWords.length,timeWords:timeWords.length});
+
+    const pairCandidates=[];
+    for(const price of stablePrices){
+      if(priceHeader){
+        const span=Math.max(1,pickup.x-priceHeader.x);
+        const headerTolerance=Math.max(xTolerance*2,span*0.24);
+        if(Math.abs(price.center-priceHeader.x)>headerTolerance)continue;
+      }
+      for(const time of stableTimes.filter(cluster=>cluster.rowCount>=3)){
+        const minGap=Math.max(8,xTolerance*0.70);
+        if(!(time.center>price.center+minGap&&time.center<pickup.x-minGap))continue;
+        const paired=pairRows(price.items,time.items);
+        if(paired.matched<3)continue;
+        const priceCoverage=paired.leftRows?paired.matched/paired.leftRows:0;
+        const timeCoverage=paired.rightRows?paired.matched/paired.rightRows:0;
+        if(priceCoverage<0.60||timeCoverage<0.60)continue;
+        pairCandidates.push({price,time,...paired,priceCoverage,timeCoverage});
+      }
+    }
+    pairCandidates.sort((a,b)=>
+      b.matched-a.matched||
+      Math.min(b.priceCoverage,b.timeCoverage)-Math.min(a.priceCoverage,a.timeCoverage)||
+      a.time.center-b.time.center
+    );
+    const winner=pairCandidates[0];
+    if(!winner)return reject('no_row_aligned_price_time_pair',{
+      priceWords:priceWords.length,
+      timeWords:timeWords.length,
+      stablePriceClusters:stablePrices.length,
+      stableTimeClusters:stableTimes.filter(cluster=>cluster.rowCount>=3).length
+    });
+
+    // A second clock cluster with repeated rows in the same inferred Preis→Von
+    // corridor is unsafe. One-off OCR noise is tolerated, repeated competition is not.
+    const competingTimes=stableTimes.filter(cluster=>
+      cluster!==winner.time&&
+      cluster.rowCount>=2&&
+      cluster.center>winner.price.center&&
+      cluster.center<pickup.x
+    );
+    if(competingTimes.length)return reject('competing_time_cluster',{
+      matchedRows:winner.matched,
+      priceRows:winner.leftRows,
+      timeRows:winner.rightRows,
+      competingTimeClusters:competingTimes.length
+    });
+
+    // Without an observed Preis header, the recurring decimal column itself is the
+    // only reason to introduce a synthetic Preis anchor. Competing recurring decimal
+    // columns are therefore rejected rather than guessed away.
+    if(!priceHeader){
+      const competingPrices=stablePrices.filter(cluster=>
+        cluster!==winner.price&&cluster.rowCount>=2&&cluster.center<winner.time.center
+      );
+      if(competingPrices.length)return reject('competing_price_cluster',{
+        matchedRows:winner.matched,
+        priceRows:winner.leftRows,
+        timeRows:winner.rightRows,
+        competingPriceClusters:competingPrices.length
+      });
+    }
+
+    return{
+      accepted:true,
+      reason:'validated_row_aligned_price_time_geometry',
+      priceHeaderPresent:Boolean(priceHeader),
+      primaryTimeHeaderPresent,
+      recoverPriceHeader:!priceHeader,
+      priceX:winner.price.center,
+      timeX:winner.time.center,
+      pickupX:pickup.x,
+      matchedRows:winner.matched,
+      priceRows:winner.leftRows,
+      timeRows:winner.rightRows,
+      priceCoverage:Number(winner.priceCoverage.toFixed(3)),
+      timeCoverage:Number(winner.timeCoverage.toFixed(3)),
+      xTolerance:Number(xTolerance.toFixed(2)),
+      yTolerance:Number(yTolerance.toFixed(2))
     };
   }
 
@@ -667,5 +847,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,inferRideTimeAnchorFromRawLines,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,exactCellMultiViewConsensus,edgeGlyphAdjudication,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,inferRideTimeAnchorFromRawLines,inferRideTimeLeftGeometryFromRawWords,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,exactCellMultiViewConsensus,edgeGlyphAdjudication,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });

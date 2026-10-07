@@ -53,6 +53,15 @@ tasks.register('ocrIntegrityRegression', Exec) {
     commandLine 'node', 'tools/ocr-regression-selftest.js'
 }
 
+
+// P113.6: deterministic header/time integration gate. Executes the REAL
+// imageWordsToMatrix() + mapping path in a browser-like VM with synthetic OCR
+// geometry, including the missing Preis+ride-time and no-price control cases.
+tasks.register('headerTimeIntegrationP1136', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/header-time-integration-selftest-p1136.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -65,4 +74,5 @@ tasks.register('planImportRuntimeSmoke', Exec) {
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
+    dependsOn tasks.named('headerTimeIntegrationP1136')
 }

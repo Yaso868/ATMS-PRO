@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1136 · 07.10.2026: cache refresh for row-aligned time geometry recovery and time-only raw-word replay; fail-closed remains mandatory.
 // CORE-007D8A1F1D8P1135 · 07.10.2026: cache refresh for header/time geometry recovery; only strong repeated raw clock evidence between Preis and Von may restore a missing primary ride-time anchor.
 // CORE-007D8A1F1D8P1134 · 07.10.2026: cache refresh for bounded edge-glyph adjudication; exact-cell evidence remains fail-closed on competing batch/core evidence.
 // CORE-007D8A1F1D8P11331 · 07.10.2026: cache refresh for P113.3.1 runtime-scope repair and mandatory executable plan-import runtime gate; GPT-Vision OCR semantics unchanged.
@@ -26,8 +27,8 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=P1121",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P1135",
-  "./js/plan-import.js?v=P1135",
+  "./js/ocr-integrity-core.js?v=P1136",
+  "./js/plan-import.js?v=P1136",
   "./js/pwa.js?v=CORE-004C",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
@@ -79,7 +80,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1135");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1136");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}

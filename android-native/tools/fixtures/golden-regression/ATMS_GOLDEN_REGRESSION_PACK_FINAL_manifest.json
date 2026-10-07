@@ -828,6 +828,29 @@
         "minimumCoverage": 0.6,
         "rejectStableCompetingClockCluster": true,
         "noConcreteTimeHardcodes": true,
+        "realDeviceProofPending": false
+      },
+      "p1135RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1135",
+        "analysisCompleted": false,
+        "error": "Pflichtspalten nicht erkannt: time.",
+        "ridesParsed": 0,
+        "timeMappingPresent": false,
+        "result": "FAIL"
+      },
+      "p1136Target": {
+        "method": "ROW-ALIGNED RAW-WORD PRICE/TIME GEOMETRY + TIME-ONLY MATRIX REPLAY",
+        "baseHead": "920d5f7",
+        "trigger": "time-only mapping failure or missing primary ride-time anchor",
+        "minimumMatchedPhysicalRows": 3,
+        "minimumPriceCoverage": 0.6,
+        "minimumTimeCoverage": 0.6,
+        "rejectStableCompetingTimeCluster": true,
+        "rejectCompetingPriceClusterWhenHeaderMissing": true,
+        "protectNoPriceLayouts": true,
+        "secondOcrCallRequired": false,
+        "diagnosticBeforeRequiredColumnAbort": true,
+        "noConcreteTimeHardcodes": true,
         "realDeviceProofPending": true
       }
     }
@@ -894,6 +917,28 @@
       "no Preis/Von anchor pair",
       "ride-time header already present"
     ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1135",
+    "realDeviceError": "Pflichtspalten nicht erkannt: time."
+  },
+  "p1136": {
+    "baseHead": "920d5f7",
+    "method": "ROW-ALIGNED TIME GEOMETRY",
+    "sourceCase": "GE-20261007-WA0014-HEADER-TIME-P1135",
+    "rootCauseClass": "P113.5 raw-line evidence can be diluted by OCR line fragmentation and cannot recover when the Preis header itself is absent; downstream time-only failures also need one deterministic replay from existing raw words.",
+    "productionRule": "pair recurring decimal price words with clock words on physical Y rows; only on strong unique evidence synthesize the missing left-side Preis/time geometry, and on an actual time-only mapping failure allow one no-new-OCR forced matrix replay",
+    "failClosed": [
+      "fewer than 3 matched physical rows",
+      "price coverage below 60%",
+      "time coverage below 60%",
+      "stable competing clock cluster",
+      "competing recurring price cluster when Preis header is absent",
+      "no recurring decimal price evidence",
+      "pickup header unavailable"
+    ],
+    "noSecondOcrForReplay": true,
     "hardcodingAllowed": false,
     "realDeviceProofPending": true
   }

@@ -539,9 +539,8 @@ for(const fixtureLiteral of ['M4Q','N4Q','S4Q','P4Q','M5Q']){
 }
 console.log('P113.4 edge-glyph adjudication deterministic regression self-test: PASS');
 
-// P113.5 HEADER/TIME GEOMETRY RECOVERY: the confirmed WA0014 failure must remain
-// in the Golden pack and production must recover before matrix completion only
-// through the generic raw-geometry helper. Real-device proof stays pending.
+// P113.5 HEADER/TIME GEOMETRY RECOVERY: keep the historical attempt and the
+// confirmed real-device FAIL in the Golden pack. P113.6 is the follow-up gate.
 assert(planImportSource.includes('inferRideTimeAnchorFromRawLines(lines, header.index, header.anchors)'),'P113.5 plan import must inspect raw header/data geometry before matrix completion');
 assert(planImportSource.includes('rideTimeAnchorRecovery'),'P113.5 recovery evidence must remain diagnosable in image metadata');
 assert(planImportSource.includes('recoveredFromRawData: true'),'P113.5 recovered primary time header must be explicitly marked synthetic/raw-data-derived');
@@ -549,10 +548,67 @@ const p1135Case=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-HEAD
 assert(p1135Case,'P113.5 confirmed WA0014 header/time Golden Error case must exist');
 assert.strictEqual(p1135Case?.previousActual?.error,'Pflichtspalten nicht erkannt: time.','P113.5 must retain the exact confirmed pre-patch failure');
 assert.strictEqual(p1135Case?.expected?.activeRides,12,'P113.5 WA0014 target must keep 12 active rides after one Storno');
-assert.strictEqual(p1135Case?.p1135Target?.realDeviceProofPending,true,'P113.5 must not pre-claim Realgeraet success');
+assert.strictEqual(p1135Case?.p1135Target?.realDeviceProofPending,false,'P113.5 real-device proof is closed as confirmed FAIL');
+assert.strictEqual(p1135Case?.p1135RealDeviceActual?.result,'FAIL','P113.5 manifest must retain the confirmed real-device FAIL');
+assert.strictEqual(p1135Case?.p1135RealDeviceActual?.error,'Pflichtspalten nicht erkannt: time.','P113.5 real-device failure text must remain locked');
 assert.strictEqual(p113Manifest?.p1135?.baseHead,'e4f6933','P113.5 manifest must record the verified pre-patch main HEAD');
 for(const fixtureLiteral of ['15:35','16:10','16:55','18:05','18:20','18:45']){
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.5 TEST fixture leaked into production: ${fixtureLiteral}`);
 }
 console.log('P113.5 header/time geometry recovery deterministic regression self-test: PASS');
+
+
+// P113.6 ROW-ALIGNED TIME GEOMETRY: do not count arbitrary OCR line groups.
+// Pair recurring decimal-price words with clock words on the same physical Y rows.
+// The helper is pure/raw-word based, can recover a missing Preis header only with
+// recurring price evidence, and stays fail-closed on weak or competing geometry.
+function p1136Word(text,cx,cy,w=52,h=18){
+  return {text,bbox:{x0:cx-w/2,x1:cx+w/2,y0:cy-h/2,y1:cy+h/2}};
+}
+function p1136Rows(options={}){
+  const out=[];
+  const n=Number(options.n||8);
+  for(let i=0;i<n;i++){
+    const y=160+i*52;
+    if(!options.noPrice) out.push(p1136Word(`${40+i},50`,100+((i%3)-1)*Number(options.priceJitter||0),y,52));
+    if(!Array.isArray(options.dropTimes)||!options.dropTimes.includes(i)) {
+      out.push(p1136Word(`${String(8+i).padStart(2,'0')}:15`,250+((i%3)-1)*Number(options.timeJitter||0),y+(i%2?4:-3),58));
+    }
+    if(options.competingTime&&i<3) out.push(p1136Word(`${String(12+i).padStart(2,'0')}:45`,360,y,58));
+    out.push(p1136Word('Pickup',560,y,72));
+  }
+  return out;
+}
+const p1136BaseAnchors=[
+  {key:'preis',x:92},{key:'von',x:560},{key:'nach',x:950},{key:'name',x:1320},{key:'firma',x:1550},
+  {key:'uhrzeit',x:1720},{key:'flugang',x:1900},{key:'flugausg',x:2110},{key:'wg',x:2280},{key:'pers',x:2410},
+  {key:'uhrzeit',x:2550},{key:'ort',x:2820},{key:'wg',x:3090}
+];
+const p1136Recovered=core.inferRideTimeLeftGeometryFromRawWords(p1136Rows(),p1136BaseAnchors,3200);
+assert.strictEqual(p1136Recovered?.accepted,true,'P113.6 must recover a missing primary ride-time anchor from row-aligned price/time evidence');
+assert.strictEqual(p1136Recovered?.matchedRows,8,'P113.6 must count physical matched rows, not generic OCR line groups');
+assert.strictEqual(p1136Recovered?.recoverPriceHeader,false,'P113.6 must preserve an existing Preis header');
+const p1136MissingPrice=core.inferRideTimeLeftGeometryFromRawWords(p1136Rows(),p1136BaseAnchors.filter(anchor=>anchor.key!=='preis'),3200);
+assert.strictEqual(p1136MissingPrice?.accepted,true,'P113.6 may recover the Preis anchor only from recurring row-aligned price evidence');
+assert.strictEqual(p1136MissingPrice?.recoverPriceHeader,true,'P113.6 must mark a data-derived Preis header explicitly');
+const p1136PrimaryPresent=core.inferRideTimeLeftGeometryFromRawWords(p1136Rows(),[...p1136BaseAnchors,{key:'uhrzeit',x:250}],3200);
+assert.strictEqual(p1136PrimaryPresent?.reason,'primary_time_header_present','P113.6 normal pre-matrix path must stay inactive when the primary header is already present');
+const p1136ForcedReplay=core.inferRideTimeLeftGeometryFromRawWords(p1136Rows(),[...p1136BaseAnchors,{key:'uhrzeit',x:250}],3200,{allowExistingPrimaryHeader:true});
+assert.strictEqual(p1136ForcedReplay?.accepted,true,'P113.6 time-only replay may override an observed primary header after downstream mapping proved time is missing');
+assert.strictEqual(core.inferRideTimeLeftGeometryFromRawWords(p1136Rows({dropTimes:[0,1,2,3,4,5]}),p1136BaseAnchors,3200)?.accepted,false,'P113.6 fewer than three matched time rows must fail closed');
+assert.strictEqual(core.inferRideTimeLeftGeometryFromRawWords(p1136Rows({noPrice:true}),p1136BaseAnchors.filter(anchor=>anchor.key!=='preis'),3200)?.accepted,false,'P113.6 no-price layouts must not manufacture a Preis/time pair');
+assert.strictEqual(core.inferRideTimeLeftGeometryFromRawWords(p1136Rows({competingTime:true}),p1136BaseAnchors,3200)?.reason,'competing_time_cluster','P113.6 repeated competing time geometry must fail closed');
+assert.strictEqual(core.inferRideTimeLeftGeometryFromRawWords(p1136Rows({timeJitter:12,priceJitter:7}),p1136BaseAnchors,3200)?.accepted,true,'P113.6 must tolerate bounded OCR X jitter across physical rows');
+assert(planImportSource.includes("p1136_time_only_matrix_replay"),'P113.6 must include a no-new-OCR matrix replay for an actual time-only mapping failure');
+assert(planImportSource.includes("forceRowAlignedRideTime: true"),'P113.6 replay must explicitly force row-aligned recovery after the time-only failure is proven');
+assert(planImportSource.includes("rideTimeRowGeometryDiagnostic"),'P113.6 row-geometry evidence must remain diagnosable');
+assert(planImportSource.includes("P113.6 Diagnose"),'P113.6 must expose a compact reason before a repeated required-time abort');
+assert.strictEqual(p1135Case?.p1136Target?.baseHead,'920d5f7','P113.6 Golden target must record the user-verified P113.5 final main HEAD');
+assert.strictEqual(p1135Case?.p1136Target?.realDeviceProofPending,true,'P113.6 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1136?.baseHead,'920d5f7','P113.6 manifest must record the verified patch base HEAD');
+assert.strictEqual(p113Manifest?.p1136?.noSecondOcrForReplay,true,'P113.6 time-only replay must reuse existing raw OCR words');
+for(const fixtureLiteral of ['15:35','16:10','16:55','18:05','18:20','18:45']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.6 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+console.log('P113.6 row-aligned time geometry deterministic regression self-test: PASS');
 

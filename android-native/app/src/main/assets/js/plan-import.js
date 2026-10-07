@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – after the P113.5 raw-line pass, pair recurring raw Preis/time words by physical Y rows so Android line fragmentation cannot erase the primary ride-time column; fail closed on weak/competing geometry.
 // CORE-007D8A1F1D8P1135 · 07.10.2026: HEADER/TIME GEOMETRY RECOVERY – missing primary ride-time header may be reconstructed only from repeated raw OCR clock geometry between Preis and Von before matrix completion; no fixture/time hardcodes.
 // CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – bounded short-code edge resolution from exact independent batch evidence plus invariant-core multi-view cell evidence; no code-value hardcodes.
 // CORE-007D8A1F1D8P11331 · 07.10.2026: P113.3.1 RUNTIME FIX – reviewItems function-scope repair plus mandatory executable runtime smoke gate; GPT-Vision cell replay semantics unchanged.
@@ -3588,7 +3589,8 @@
     return augmented;
   }
 
-  function imageWordsToMatrix(words, width) {
+  function imageWordsToMatrix(words, width, options = {}) {
+    const forceRowAlignedRideTime = Boolean(options?.forceRowAlignedRideTime);
     const lines = groupOcrLines(words);
     const header = detectImageHeaderLine(lines);
     const hasSafeHeader = Boolean(header && header.score >= 6 && header.anchors.length >= 6);
@@ -3609,25 +3611,62 @@
       throw new Error(`Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden und der Ausschnitt ohne Kopfzeile war geometrisch nicht eindeutig genug. ${formatHeaderlessOcrDiagnostic(headerlessDiagnostic)} Bitte vollständige Kopfzeile mit hochladen.`);
     }
 
-    // P113.5: if the primary ride-time header itself vanished, P107.2 is too late:
-    // by then the table matrix may already have collapsed Preis directly onto Von.
-    // Recover at most ONE missing ride-time anchor from repeated raw clock geometry
-    // in the Preis→Von corridor, before schema selection and matrix completion.
-    const rideTimeAnchorRecovery = hasSafeHeader && ocrIntegrityCore?.inferRideTimeAnchorFromRawLines
+    // P113.5 remains the first bounded recovery: repeated clock geometry inside
+    // the already observed Preis→Von corridor. P113.6 adds a second, independent
+    // raw-WORD row-alignment pass only when P113.5 cannot recover. It pairs recurring
+    // decimal price words with clock words on the same physical Y rows, so Android
+    // OCR line fragmentation cannot dilute evidence by doubling line groups. If the
+    // Preis header itself vanished, a synthetic Preis anchor is introduced only when
+    // the recurring price/time pair is strong and unique.
+    const p1135RideTimeAnchorRecovery = hasSafeHeader && !forceRowAlignedRideTime && ocrIntegrityCore?.inferRideTimeAnchorFromRawLines
       ? ocrIntegrityCore.inferRideTimeAnchorFromRawLines(lines, header.index, header.anchors)
       : null;
-    const layoutHeader = rideTimeAnchorRecovery
+    const rideTimeRowGeometryDiagnostic = hasSafeHeader && (!p1135RideTimeAnchorRecovery || forceRowAlignedRideTime) && ocrIntegrityCore?.inferRideTimeLeftGeometryFromRawWords
+      ? ocrIntegrityCore.inferRideTimeLeftGeometryFromRawWords(words, header.anchors, width, { allowExistingPrimaryHeader: forceRowAlignedRideTime })
+      : null;
+    const p1136RideTimeAnchorRecovery = rideTimeRowGeometryDiagnostic?.accepted
+      ? { ...rideTimeRowGeometryDiagnostic }
+      : null;
+    const rideTimeAnchorRecovery = p1135RideTimeAnchorRecovery
+      ? { ...p1135RideTimeAnchorRecovery, strategy: 'p1135_raw_line_corridor' }
+      : (p1136RideTimeAnchorRecovery
+          ? { ...p1136RideTimeAnchorRecovery, x: Number(p1136RideTimeAnchorRecovery.timeX), strategy: 'p1136_row_aligned_raw_words' }
+          : null);
+
+    const recoveryAnchors = [];
+    if (p1136RideTimeAnchorRecovery?.recoverPriceHeader) {
+      recoveryAnchors.push({
+        label: 'Preis',
+        key: 'preis',
+        x: Number(p1136RideTimeAnchorRecovery.priceX),
+        synthetic: true,
+        recoveredFromRowGeometry: true
+      });
+    }
+    if (rideTimeAnchorRecovery) {
+      recoveryAnchors.push({
+        label: 'Uhrzeit',
+        key: 'uhrzeit',
+        x: Number(rideTimeAnchorRecovery.x),
+        synthetic: true,
+        recoveredFromRawData: true,
+        recoveredFromRowGeometry: Boolean(p1136RideTimeAnchorRecovery)
+      });
+    }
+    const baseHeaderAnchors = forceRowAlignedRideTime && p1136RideTimeAnchorRecovery
+      ? (header?.anchors || []).filter(anchor => {
+          const key = cleanKey(anchor?.key || anchor?.label);
+          const pickupAnchor = (header?.anchors || []).find(item => cleanKey(item?.key || item?.label) === 'von');
+          const pickupX = Number(pickupAnchor?.x);
+          return !(key === 'uhrzeit' && Number.isFinite(pickupX) && Number(anchor?.x) < pickupX);
+        })
+      : (header?.anchors || []);
+    const layoutHeader = recoveryAnchors.length
       ? {
           ...header,
           anchors: [
-            ...(header?.anchors || []),
-            {
-              label: 'Uhrzeit',
-              key: 'uhrzeit',
-              x: Number(rideTimeAnchorRecovery.x),
-              synthetic: true,
-              recoveredFromRawData: true
-            }
+            ...baseHeaderAnchors,
+            ...recoveryAnchors
           ].sort((a,b)=>Number(a.x)-Number(b.x))
         }
       : header;
@@ -3889,6 +3928,9 @@
       forcedMirrorFromData: Boolean(forceMirrorFromData),
       forcedMirrorSchemaColumns: forcedMirrorSchema ? forcedMirrorSchema.length : 0,
       rideTimeAnchorRecovery: rideTimeAnchorRecovery ? { ...rideTimeAnchorRecovery } : null,
+      rideTimeRowGeometryDiagnostic: rideTimeRowGeometryDiagnostic ? { ...rideTimeRowGeometryDiagnostic } : null,
+      p1136ForcedRowAlignedReplay: Boolean(forceRowAlignedRideTime),
+      observedHeaderAnchors: hasSafeHeader ? (header?.anchors || []).map(anchor => ({ label: anchor.label, key: anchor.key, x: Number(anchor.x) })) : [],
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
@@ -3908,6 +3950,29 @@
       }))
     };
     return rows;
+  }
+
+  function p1136TimeOnlyMappingProbe(matrix) {
+    if (!Array.isArray(matrix) || !matrix.length) {
+      return { timeOnly: false, missing: ['time','pickup','destination'], reason: 'empty_matrix' };
+    }
+    const headerDetection = detectHeader(matrix);
+    if (headerDetection.score < 3) {
+      return { timeOnly: false, missing: ['time','pickup','destination'], reason: 'header_score_low', headerScore: headerDetection.score };
+    }
+    const headers = uniqueHeaders(matrix[headerDetection.index]);
+    let mappingInfo = detectAtmsMapping(headers);
+    if (mappingInfo.confidence < 0.75) mappingInfo = genericMapping(headers);
+    const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
+    return {
+      timeOnly: missing.length === 1 && missing[0] === 'time',
+      missing,
+      reason: missing.length ? `missing_${missing.join('_')}` : 'complete',
+      headerScore: headerDetection.score,
+      headerIndex: headerDetection.index,
+      mapping: { ...mappingInfo.mapping },
+      ambiguities: Array.isArray(mappingInfo.ambiguities) ? mappingInfo.ambiguities.slice() : []
+    };
   }
 
   // CORE-004G · 05.09.2026: zweite, rein lokale OCR nur für die konkrete
@@ -9727,6 +9792,44 @@
     words = await measureAsync('headerless_price_anchor_check', () => recoverHeaderlessPriceAnchorsTargeted(words, canvas, canvas.width));
     let matrix = measureSync('image_words_to_matrix', () => imageWordsToMatrix(words, canvas.width));
 
+    // P113.6 LOCAL-FIRST SAFETY NET: only when the first production matrix reaches
+    // the exact confirmed failure class (pickup+destination present, only time missing)
+    // do we run ONE deterministic matrix replay from the already available raw OCR
+    // words. No second OCR call is made. The replay may override an observed primary
+    // time header because the failure proves that the first mapping lost it downstream.
+    // It is accepted only when row-aligned recurring price/time geometry is strong and
+    // the rebuilt matrix resolves all three required route/time fields.
+    const p1136InitialProbe = p1136TimeOnlyMappingProbe(matrix);
+    if (p1136InitialProbe.timeOnly && matrix?._atmsImageMeta?.safeHeaderDetected && !matrix?._atmsImageMeta?.headerlessAtms) {
+      const originalMatrix = matrix;
+      const replay = measureSync('p1136_time_only_matrix_replay', () => imageWordsToMatrix(words, canvas.width, { forceRowAlignedRideTime: true }));
+      const replayProbe = p1136TimeOnlyMappingProbe(replay);
+      const replayDiag = replay?._atmsImageMeta?.rideTimeRowGeometryDiagnostic || null;
+      const replayAccepted = Boolean(
+        replayDiag?.accepted &&
+        !replayProbe.missing.length &&
+        !(Array.isArray(replayProbe.ambiguities) && replayProbe.ambiguities.length) &&
+        replayProbe.mapping?.time !== undefined &&
+        replayProbe.mapping?.pickup !== undefined &&
+        replayProbe.mapping?.destination !== undefined
+      );
+      const replayAudit = {
+        attempted: true,
+        accepted: replayAccepted,
+        trigger: 'time_only_mapping_failure',
+        before: p1136InitialProbe,
+        after: replayProbe,
+        diagnostic: replayDiag ? { ...replayDiag } : null
+      };
+      if (replayAccepted) {
+        matrix = replay;
+        if (matrix._atmsImageMeta) matrix._atmsImageMeta.p1136TimeOnlyReplay = replayAudit;
+      } else if (originalMatrix?._atmsImageMeta) {
+        originalMatrix._atmsImageMeta.p1136TimeOnlyReplay = replayAudit;
+        matrix = originalMatrix;
+      }
+    }
+
     // P75G: Reiner Geometrie-Beweistest auch dann, wenn der normale OCR-Pfad bereits
     // mehrere Fahrten geliefert hat (genau der P75F-Realtestfall). Das vorhandene
     // Farbbild wird nur gelesen; matrix/rows/rowMeta und Importlogik bleiben unberuehrt.
@@ -10911,7 +11014,22 @@
       }
 
       const missing = ['time','pickup','destination'].filter(field => mappingInfo.mapping[field] === undefined);
-      if (missing.length) throw new Error(`Pflichtspalten nicht erkannt: ${missing.join(', ')}.`);
+      if (missing.length) {
+        let diagnosticSuffix = '';
+        if (result.imageOcr && missing.length === 1 && missing[0] === 'time') {
+          const diag = matrix?._atmsImageMeta?.p1136TimeOnlyReplay?.diagnostic || matrix?._atmsImageMeta?.rideTimeRowGeometryDiagnostic;
+          if (diag && typeof diag === 'object') {
+            const parts = [
+              `Grund=${cellText(diag.reason) || 'unknown'}`,
+              `Paare=${Number(diag.matchedRows || 0)}`,
+              `Preiszeilen=${Number(diag.priceRows || diag.priceWords || 0)}`,
+              `Zeitzeilen=${Number(diag.timeRows || diag.timeWords || 0)}`
+            ];
+            diagnosticSuffix = ` P113.6 Diagnose: ${parts.join(' · ')}`;
+          }
+        }
+        throw new Error(`Pflichtspalten nicht erkannt: ${missing.join(', ')}.${diagnosticSuffix}`);
+      }
       if (Array.isArray(mappingInfo.ambiguities) && mappingInfo.ambiguities.length) {
         throw new Error(`Spaltenzuordnung nicht eindeutig: ${mappingInfo.ambiguities.join(' · ')}. Bitte Planliste prüfen; ATMS rät nicht.`);
       }
