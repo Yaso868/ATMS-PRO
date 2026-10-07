@@ -498,7 +498,11 @@ assert(planImportSource.includes("ocrIntegrityCore?.edgeGlyphAdjudication"),'P11
 assert(planImportSource.includes("'edge_glyph_adjudication'"),'P113.4 correction source must be auditable');
 assert(planImportSource.includes('promotedFromEdgeGlyphAdjudication'),'P113.4 evidence details must be persisted for diagnosis');
 const p1134Case=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-R26');
-assert.strictEqual(p1134Case?.p1134Target?.realDeviceProofPending,true,'P113.4 must not pre-claim the Realgeraet result');
+assert.strictEqual(p1134Case?.p1134Target?.realDeviceProofPending,false,'P113.4 Realgeraet proof must be closed after confirmed device PASS');
+assert.strictEqual(p1134Case?.p1134RealDeviceActual?.flightLocation,'9MB','P113.4 Realgeraet result must lock the confirmed edge-glyph value');
+assert.strictEqual(p1134Case?.p1134RealDeviceActual?.errors,0,'P113.4 Realgeraet result must retain 0 OCR/data errors');
+assert.strictEqual(p1134Case?.p1134RealDeviceActual?.importBlockedByOcr,false,'P113.4 Realgeraet result must confirm the OCR blockade is removed');
+assert.strictEqual(p1134Case?.p1134RealDeviceActual?.dateConfirmationPending,true,'P113.4 must keep the separate date confirmation gate explicit');
 assert.strictEqual(p1134Case?.p1134Target?.requires?.rejectCompetingBatchOrCoreEvidence,true,'P113.4 Golden target must retain fail-closed competition gate');
 for(const fixtureLiteral of ['M4Q','N4Q','S4Q','P4Q','M5Q']){
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.4 TEST fixture leaked into production: ${fixtureLiteral}`);

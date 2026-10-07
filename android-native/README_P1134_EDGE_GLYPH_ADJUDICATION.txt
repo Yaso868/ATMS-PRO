@@ -35,11 +35,22 @@ ERGEBNISLOGIK
 - Bei irgendeiner Konkurrenz oder zu wenig Evidenz: unverändert CORRECT OR FAIL CLOSED.
 
 REGRESSION
-Der Golden-Fall GE-20261007-WA0001-R26 enthält nur die erwartete P113.4-Zielregel; realDeviceProofPending bleibt true bis zum Realgerät-Test.
+Der Golden-Fall GE-20261007-WA0001-R26 ist auf dem Realgerät bestätigt; realDeviceProofPending=false. Bestätigt: 33/33 Fahrten, 83 automatisch korrigiert, 3 Hinweise, 0 Fehler; Zeile 26 korrekt 9MB; keine OCR-/Datenblockade, nur die separate Datumsbestätigung blieb offen; nichts übernommen.
 
 RELEASE-GATE
 - JavaScript-Syntaxprüfung
 - deterministic OCR regression self-test
 - P113.3.1 runtime smoke bleibt verpflichtend über preBuild
 - GitHub validate-install-build muss grün sein
-- danach Realgerät mit derselben Original-Planliste; noch keine produktive Übernahme
+- Realgerät mit derselben Original-Planliste: PASS; weiterhin keine produktive Übernahme im Beweistest
+
+REALGERAET-ABSCHLUSS P113.4
+- Datei: IMG-20261007-WA0001.jpg
+- 33/33 Fahrten OCR-geprüft
+- 83 automatisch korrigiert
+- 3 Hinweise · 0 Fehler
+- Zeile 26: 9MB korrekt statt früher IMB
+- Zeilenstatus nur Hinweis wegen fehlender Flugnummer
+- OCR-/Datenblockade aufgehoben
+- Datumsbestätigung separat weiterhin offen
+- Keine Fahrten übernommen

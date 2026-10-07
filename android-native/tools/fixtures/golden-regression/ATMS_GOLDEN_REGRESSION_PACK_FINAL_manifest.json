@@ -432,7 +432,7 @@
         "flightTime": "07:15",
         "driver": "Nimet"
       },
-      "note": "P113.2 bleibt sicher fail-closed, löst den exakten Kurzcode aber noch nicht. P113.3 prüft die bestätigte Ort-Zelle am Originalbild mit nativer OCR-Skalierung plus enger Zeichenregion innerhalb derselben Zellgrenzen; keine 9MB/IMB-Produktionsregel.",
+      "note": "P113.2 bleibt sicher fail-closed, löst den exakten Kurzcode aber noch nicht. P113.3 prüft die bestätigte Ort-Zelle am Originalbild mit nativer OCR-Skalierung plus enger Zeichenregion innerhalb derselben Zellgrenzen; keine 9MB/IMB-Produktionsregel. P113.4 Realgerät bestätigt die generische Edge-Glyph-Adjudication: 9MB korrekt, 0 OCR-/Datenfehler; keine produktive Übernahme.",
       "previousActual": {
         "pickup": "Novotel Kain",
         "flightLocation": "IMB"
@@ -444,7 +444,7 @@
         "rowStatus": "Fehler",
         "importBlocked": true
       },
-      "reproducibility": "confirmed_real_device_P113_and_P1131",
+      "reproducibility": "confirmed_real_device_P113_P1131_P1132_and_P1134",
       "p1131RealDeviceActual": {
         "pickup": "Novotel Köln",
         "flightLocation": "IMB",
@@ -477,7 +477,19 @@
           "requiresExactIndependentBatchCandidate": true,
           "rejectCompetingBatchOrCoreEvidence": true
         },
-        "realDeviceProofPending": true
+        "realDeviceProofPending": false
+      },
+      "p1134RealDeviceActual": {
+        "flightLocation": "9MB",
+        "rowStatus": "Hinweis",
+        "importBlockedByOcr": false,
+        "dateConfirmationPending": true,
+        "rides": 33,
+        "automaticCorrections": 83,
+        "warnings": 3,
+        "errors": 0,
+        "exactValuePass": true,
+        "summary": "33/33; 83 automatisch korrigiert; 3 Hinweise; 0 Fehler; Zeile 26 korrekt 9MB; keine OCR-/Datenblockade, nur Datumsbestätigung offen; nichts übernommen"
       }
     },
     {
