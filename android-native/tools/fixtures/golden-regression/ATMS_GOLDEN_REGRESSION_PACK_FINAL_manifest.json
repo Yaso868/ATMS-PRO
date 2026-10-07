@@ -46,6 +46,11 @@
       "file": "IMG-20261007-WA0001.jpg",
       "sha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
       "bytes": 463566
+    },
+    {
+      "file": "IMG-20261007-WA0014.jpg",
+      "sha256": "2de840c03b08ed9f97c4e020e17d90877f6d08413267f62e938aa34ebf0ed3b0",
+      "bytes": 184962
     }
   ],
   "cases": [
@@ -785,18 +790,59 @@
         "buildHadBeenGreen": true
       },
       "reproducibility": "confirmed_real_device_P1133"
+    },
+    {
+      "id": "GE-20261007-WA0014-HEADER-TIME-P1135",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "header_mapping",
+        "required_time_missing",
+        "matrix_geometry",
+        "fail_closed"
+      ],
+      "expected": {
+        "visibleRows": 13,
+        "cancelledRows": 1,
+        "activeRides": 12,
+        "timeColumn": "first Uhrzeit between Preis and Von",
+        "flightTimeColumn": "last Uhrzeit before Ort",
+        "timeMappingPresent": true,
+        "analysisReachesRideParsing": true
+      },
+      "note": "P113.4 real-device: visible first Uhrzeit column exists, but analysis aborts before ride parsing with Pflichtspalten nicht erkannt: time. No Technik/Diagnose UI is built because failure occurs before the normal ride diagnostics path.",
+      "previousActual": {
+        "error": "Pflichtspalten nicht erkannt: time.",
+        "ridesParsed": 0,
+        "diagnosticUiAvailable": false,
+        "timeMappingPresent": false
+      },
+      "reproducibility": "confirmed_real_device_P1134",
+      "p1135Target": {
+        "method": "RAW OCR HEADER/TIME GEOMETRY RECOVERY",
+        "recoverBeforeMatrixCompletion": true,
+        "requiresPriceAndPickupAnchors": true,
+        "requiresRepeatedClockRows": 3,
+        "minimumCoverage": 0.6,
+        "rejectStableCompetingClockCluster": true,
+        "noConcreteTimeHardcodes": true,
+        "realDeviceProofPending": true
+      }
     }
   ],
   "summary": {
-    "caseRecords": 28,
+    "caseRecords": 29,
     "legacyRows": 16,
-    "newErrorRecords": 20,
+    "newErrorRecords": 21,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
       "L14_ARR_DEP_SPLIT_LONG",
       "L14_NO_DEP_COLUMN",
       "L14_NO_DEP_COLUMN_LONG",
+      "L14_PRICE_THREE_TIME_HEADERS",
       "L15_FULL_2026-10-06",
       "L15_SHORT_TWO_ROW"
     ]
@@ -835,5 +881,20 @@
     "buildGate": "app preBuild depends on planImportRuntimeSmoke",
     "ocrSemanticsChanged": false,
     "hardcodingAllowed": false
+  },
+  "p1135": {
+    "baseHead": "e4f6933",
+    "method": "HEADER/TIME RAW-GEOMETRY RECOVERY",
+    "sourceCase": "GE-20261007-WA0014-HEADER-TIME-P1135",
+    "productionRule": "only restore a missing primary ride-time header from repeated stable raw clock geometry inside the Preis→Von corridor before schema/matrix completion",
+    "failClosed": [
+      "less than 3 supporting rows",
+      "coverage below 60%",
+      "stable competing clock cluster",
+      "no Preis/Von anchor pair",
+      "ride-time header already present"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": true
   }
 }

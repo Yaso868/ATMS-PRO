@@ -50,6 +50,36 @@ const timeMatrix=[
 assert.deepStrictEqual(core.inferRideTimeColumnFromMatrix(timeMatrix,0,{pickup:2,destination:3}),{index:1,valid:3,seen:4,reason:'validated_time_column_left_of_pickup'});
 assert.strictEqual(core.inferRideTimeColumnFromMatrix([['Spalte 1','Von','Nach'],['x','foo','bar'],['y','baz','qux']],0,{pickup:1,destination:2}),null);
 
+// P113.5: when the primary ride-time HEADER itself is missing, the matrix-level
+// P107.2 fallback is too late. A raw OCR clock cluster between Preis and Von may
+// restore exactly one header anchor only with repeated, stable, non-competing evidence.
+const p1135HeaderAnchors=[
+  {key:'preis',x:50},
+  {key:'von',x:200},
+  {key:'nach',x:320},
+  {key:'uhrzeit',x:500},
+  {key:'ort',x:580}
+];
+const p1135RawLines=[
+  {words:[{text:'Preis',x0:30,x1:70},{text:'Von',x0:180,x1:220}]},
+  {words:[{text:'47,60',x0:28,x1:72},{text:'15:35',x0:92,x1:128},{text:'Hotel',x0:170,x1:196}]},
+  {words:[{text:'47,60',x0:28,x1:72},{text:'16:10',x0:93,x1:129},{text:'Airport',x0:168,x1:197}]},
+  {words:[{text:'35,00',x0:28,x1:72},{text:'16:55',x0:91,x1:130},{text:'Hotel',x0:169,x1:197}]},
+  {words:[{text:'35,00',x0:28,x1:72},{text:'not-a-time',x0:92,x1:130},{text:'Airport',x0:168,x1:197}]}
+];
+assert.deepStrictEqual(core.inferRideTimeAnchorFromRawLines(p1135RawLines,0,p1135HeaderAnchors),{
+  x:110.5,valid:3,seen:4,coverage:0.75,reason:'validated_raw_clock_geometry_between_price_and_pickup'
+});
+assert.strictEqual(core.inferRideTimeAnchorFromRawLines(p1135RawLines.slice(0,3),0,p1135HeaderAnchors),null,'P113.5 fewer than three supporting rows must fail closed');
+assert.strictEqual(core.inferRideTimeAnchorFromRawLines(p1135RawLines,0,[...p1135HeaderAnchors,{key:'uhrzeit',x:112}]),null,'P113.5 must not duplicate an already present ride-time header');
+const p1135Competing=[
+  p1135RawLines[0],
+  {words:[{text:'15:35',x0:92,x1:128},{text:'18:05',x0:145,x1:177}]},
+  {words:[{text:'16:10',x0:93,x1:129},{text:'18:20',x0:146,x1:178}]},
+  {words:[{text:'16:55',x0:91,x1:130},{text:'18:45',x0:145,x1:177}]}
+];
+assert.strictEqual(core.inferRideTimeAnchorFromRawLines(p1135Competing,0,p1135HeaderAnchors),null,'P113.5 stable competing clock geometry must fail closed');
+
 // P107.4: same-time one-digit peers are only comparable inside the same flight
 // context. Different known flight locations must never trigger each other.
 assert.strictEqual(core.standardFlightPeerContextMatch(
@@ -508,4 +538,21 @@ for(const fixtureLiteral of ['M4Q','N4Q','S4Q','P4Q','M5Q']){
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.4 TEST fixture leaked into production: ${fixtureLiteral}`);
 }
 console.log('P113.4 edge-glyph adjudication deterministic regression self-test: PASS');
+
+// P113.5 HEADER/TIME GEOMETRY RECOVERY: the confirmed WA0014 failure must remain
+// in the Golden pack and production must recover before matrix completion only
+// through the generic raw-geometry helper. Real-device proof stays pending.
+assert(planImportSource.includes('inferRideTimeAnchorFromRawLines(lines, header.index, header.anchors)'),'P113.5 plan import must inspect raw header/data geometry before matrix completion');
+assert(planImportSource.includes('rideTimeAnchorRecovery'),'P113.5 recovery evidence must remain diagnosable in image metadata');
+assert(planImportSource.includes('recoveredFromRawData: true'),'P113.5 recovered primary time header must be explicitly marked synthetic/raw-data-derived');
+const p1135Case=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-HEADER-TIME-P1135');
+assert(p1135Case,'P113.5 confirmed WA0014 header/time Golden Error case must exist');
+assert.strictEqual(p1135Case?.previousActual?.error,'Pflichtspalten nicht erkannt: time.','P113.5 must retain the exact confirmed pre-patch failure');
+assert.strictEqual(p1135Case?.expected?.activeRides,12,'P113.5 WA0014 target must keep 12 active rides after one Storno');
+assert.strictEqual(p1135Case?.p1135Target?.realDeviceProofPending,true,'P113.5 must not pre-claim Realgeraet success');
+assert.strictEqual(p113Manifest?.p1135?.baseHead,'e4f6933','P113.5 manifest must record the verified pre-patch main HEAD');
+for(const fixtureLiteral of ['15:35','16:10','16:55','18:05','18:20','18:45']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.5 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+console.log('P113.5 header/time geometry recovery deterministic regression self-test: PASS');
 

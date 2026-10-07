@@ -1,3 +1,5 @@
+// CORE-007D8A1F1D8P1135 · 07.10.2026: cache refresh for header/time geometry recovery; only strong repeated raw clock evidence between Preis and Von may restore a missing primary ride-time anchor.
+// CORE-007D8A1F1D8P1134 · 07.10.2026: cache refresh for bounded edge-glyph adjudication; exact-cell evidence remains fail-closed on competing batch/core evidence.
 // CORE-007D8A1F1D8P11331 · 07.10.2026: cache refresh for P113.3.1 runtime-scope repair and mandatory executable plan-import runtime gate; GPT-Vision OCR semantics unchanged.
 // CORE-007D8A1F1D8P1133 · 07.10.2026: cache refresh for GPT-Vision exact-cell/content-region replay and bounded consensus diagnostics; OCR integrity assets only.
 // CORE-007D8A1F1D8P1132 · 07.10.2026: cache refresh for ChatGPT-like exact-cell evidence/multi-view consensus; OCR integrity assets only.
@@ -7,7 +9,7 @@
 // CORE-007D8A1F1D8P111 · 06.10.2026: cache refresh for production Live-Cockpit target promotion; OCR/flight/import semantics unchanged.
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
-const CACHE_NAME = "atms-pro-pwa-2026-10-07-p11331-runtime-gate";
+const CACHE_NAME = "atms-pro-pwa-2026-10-07-p1135-header-time-geometry";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -24,8 +26,8 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=P1121",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P11331",
-  "./js/plan-import.js?v=P11331",
+  "./js/ocr-integrity-core.js?v=P1135",
+  "./js/plan-import.js?v=P1135",
   "./js/pwa.js?v=CORE-004C",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
@@ -77,7 +79,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P11331");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1135");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}

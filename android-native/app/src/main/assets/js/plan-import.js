@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1135 · 07.10.2026: HEADER/TIME GEOMETRY RECOVERY – missing primary ride-time header may be reconstructed only from repeated raw OCR clock geometry between Preis and Von before matrix completion; no fixture/time hardcodes.
 // CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – bounded short-code edge resolution from exact independent batch evidence plus invariant-core multi-view cell evidence; no code-value hardcodes.
 // CORE-007D8A1F1D8P11331 · 07.10.2026: P113.3.1 RUNTIME FIX – reviewItems function-scope repair plus mandatory executable runtime smoke gate; GPT-Vision cell replay semantics unchanged.
 // CORE-007D8A1F1D8P1133 · 07.10.2026: GPT-VISION CELL REPLAY – exact-cell content-region evidence, low-confidence short-code review, bounded multi-view OCR diversity and zero-silent-error diagnostics. No flight/driver/place/file hardcodes.
@@ -3608,14 +3609,37 @@
       throw new Error(`Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden und der Ausschnitt ohne Kopfzeile war geometrisch nicht eindeutig genug. ${formatHeaderlessOcrDiagnostic(headerlessDiagnostic)} Bitte vollständige Kopfzeile mit hochladen.`);
     }
 
-    const forceMirrorFromData = hasSafeHeader ? hasMirrorDataEvidence(lines, header) : false;
-    const headerHasPrice = Boolean(hasSafeHeader && (header?.anchors || []).some(anchor => anchor.key === 'preis' || anchor.key === 'price'));
+    // P113.5: if the primary ride-time header itself vanished, P107.2 is too late:
+    // by then the table matrix may already have collapsed Preis directly onto Von.
+    // Recover at most ONE missing ride-time anchor from repeated raw clock geometry
+    // in the Preis→Von corridor, before schema selection and matrix completion.
+    const rideTimeAnchorRecovery = hasSafeHeader && ocrIntegrityCore?.inferRideTimeAnchorFromRawLines
+      ? ocrIntegrityCore.inferRideTimeAnchorFromRawLines(lines, header.index, header.anchors)
+      : null;
+    const layoutHeader = rideTimeAnchorRecovery
+      ? {
+          ...header,
+          anchors: [
+            ...(header?.anchors || []),
+            {
+              label: 'Uhrzeit',
+              key: 'uhrzeit',
+              x: Number(rideTimeAnchorRecovery.x),
+              synthetic: true,
+              recoveredFromRawData: true
+            }
+          ].sort((a,b)=>Number(a.x)-Number(b.x))
+        }
+      : header;
+
+    const forceMirrorFromData = hasSafeHeader ? hasMirrorDataEvidence(lines, layoutHeader) : false;
+    const headerHasPrice = Boolean(hasSafeHeader && (layoutHeader?.anchors || []).some(anchor => anchor.key === 'preis' || anchor.key === 'price'));
     const forcedMirrorSchema = forceMirrorFromData
       ? (headerHasPrice ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_MIRROR)
       : null;
     const completed = hasSafeHeader
       ? completeAtmsImageAnchors(
-          header.anchors,
+          layoutHeader.anchors,
           width,
           forcedMirrorSchema
         )
@@ -3864,6 +3888,7 @@
       schemaColumns: anchors.length,
       forcedMirrorFromData: Boolean(forceMirrorFromData),
       forcedMirrorSchemaColumns: forcedMirrorSchema ? forcedMirrorSchema.length : 0,
+      rideTimeAnchorRecovery: rideTimeAnchorRecovery ? { ...rideTimeAnchorRecovery } : null,
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
