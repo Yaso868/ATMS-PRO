@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P113 · 07.10.2026: FINAL PLANLISTEN STABILIZATION – structure-first schema evidence, exact-cell provenance/recovery, zero-silent-error gate, strict boundary-time cleanup and bounded driver recovery. CORRECT OR FAIL CLOSED; no flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P110 · 06.10.2026: GOLDEN ERROR PACK BUNDLE FIX – generischer Nach→Kunde-Grenztransfer nur nach wiederholtem hochkonfidentem geometrischem Routen-Randbeleg + aktuellem Kunden-Peer-Konsens; sichere Fahrzeug-Randzeichenbereinigung; kurze Firmen-Codes werden nur per eindeutiger Case-Konsensmehrheit vereinheitlicht; gemischter 3-Zeichen-Flugpräfix (Ziffer + 2 Buchstaben) wird wie andere auffällige Langpräfixe ausschließlich per lokaler Mehrfach-OCR fail-closed geprüft; P109.4 PNG-Transport wird auch in der Low-Confidence-Flugzellen-OCR genutzt. Keine Flugnummern-/Hotel-/Kunden-Hardcodes, keine Lockerung von FLIGHT-008, keine Änderung an PLAN/DISPO/LIVE oder Persistenz.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: OCR IMAGE PIPELINE PERFORMANCE FIX – bypasses the Android-WebView HTMLCanvasElement.toBlob() stall proven by P109.3D2 by converting only the existing shared-worker Canvas inputs to lossless PNG data URLs immediately before Tesseract recognition. Crop geometry, pixel dimensions, scaling, languages, PSM behavior, OCR pass count, consensus/fail-closed rules, P108 time gate, P109.2 Avion/Schütz integrity logic, FLIGHT-008, import/persistence and PLAN/DISPO/LIVE behavior remain unchanged. P109PERF/P109D2 timing stays enabled for Run A/Run B acceptance proof.
 // CORE-007D8A1F1D8P1093 · 06.10.2026: OCR SHARED-WORKER SESSION PERFORMANCE FIX – reuses one ENG and one DEU Tesseract worker across the already-existing P109.2/P109.2D OCR phases instead of repeatedly creating one-shot workers. Calls are serialized per language to keep each crop/result isolated; existing crops, languages, one-shot option semantics, consensus/fail-closed rules, P108 time gate, P109 text-integrity decisions, FLIGHT-008, import/persistence and PLAN/DISPO/LIVE behavior remain unchanged. P109PERF stays enabled for real-device proof and now reports the reused worker operations.
@@ -1052,6 +1053,27 @@
     });
   }
 
+  function clockBoundaryNoiseInfo(value) {
+    if (ocrIntegrityCore?.parseClockTimeWithBoundaryNoise) {
+      return ocrIntegrityCore.parseClockTimeWithBoundaryNoise(value);
+    }
+    const raw = cellText(value);
+    if (!raw) return { value: '', changed: false, raw: '' };
+    const match = raw.match(/^\s*[|¦│\[\]=~]+\s*([0-2]?\d[:.]\d{2}|\d{3,4})\s*[|¦│\[\]=~]*\s*$/u);
+    if (!match) return { value: '', changed: false, raw };
+    const token = match[1];
+    const timeMatch = token.match(/^([0-2]?\d)[:.](\d{2})$/);
+    if (timeMatch) {
+      const hh = Number(timeMatch[1]), mm = Number(timeMatch[2]);
+      if (hh <= 23 && mm <= 59) return { value: `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`, changed: true, raw };
+    }
+    if (/^\d{3,4}$/.test(token)) {
+      const padded = token.padStart(4,'0'), hh = Number(padded.slice(0,2)), mm = Number(padded.slice(2));
+      if (hh <= 23 && mm <= 59) return { value: `${padded.slice(0,2)}:${padded.slice(2)}`, changed: true, raw };
+    }
+    return { value: '', changed: false, raw };
+  }
+
   function normalizeTime(value) {
     if (value === null || value === undefined || value === '') return '';
     if (typeof value === 'number') {
@@ -1066,11 +1088,10 @@
         } catch (_) {}
       }
     }
-    const original=cellText(value);
-    // P96/S1: OCR darf die Tabellenkante | / ¦ / │ VOR einer eindeutigen
-    // reinen 3-/4-stelligen Uhrzeit verwerfen, keine anderen Zeichen raten.
-    const text=/^\s*(?:[|¦│]\s*)+\d{3,4}\s*$/.test(original)
-      ? original.replace(/^\s*(?:[|¦│]\s*)+/, '').trim() : original;
+    const original = cellText(value);
+    const boundary = clockBoundaryNoiseInfo(original);
+    if (boundary.changed && boundary.value) return boundary.value;
+    const text = original;
     const canonical=(h,m)=>Number(h)<=23&&Number(m)<=59
       ? `${String(Number(h)).padStart(2,'0')}:${m}` : '';
     const match=text.match(/(?:^|\s)(\d{1,2})[:.](\d{2})(?!\d)/);
@@ -1539,7 +1560,9 @@
         }
       }
     }
-    const company = companyCell || customer || 'WT';
+    // P113: Image OCR must never invent Firma from Kunde or from a default.
+    // Structured legacy imports keep their historical fallback behavior.
+    const company = options.imageOcr ? companyCell : (companyCell || customer || 'WT');
 
     let recoveredFlight = '';
     let flightRecoveryAmbiguous = false;
@@ -1575,11 +1598,16 @@
     // CORE-006J: Verbindliche Zeitsemantik der aktuellen ATMS-Bildlisten.
     const rawPrimaryTime=cellText(valueAt(row,mapping,'time'));
     const primaryDispoTime = normalizeTime(valueAt(row, mapping, 'time'));
-    const timeBorderAutoCorrected=Boolean(options.imageOcr&&/^\s*(?:[|¦│]\s*)+\d{3,4}\s*$/.test(rawPrimaryTime)&&/^\d{2}:\d{2}$/.test(primaryDispoTime));
-    const mappedMirrorTime = normalizeTime(valueAt(row, mapping, 'timeMirror'));
+    const primaryBoundaryInfo = clockBoundaryNoiseInfo(rawPrimaryTime);
+    const timeBorderAutoCorrected=Boolean(options.imageOcr && primaryBoundaryInfo.changed && primaryBoundaryInfo.value === primaryDispoTime);
+    const rawMirrorTime = cellText(valueAt(row, mapping, 'timeMirror'));
+    const mappedMirrorTime = normalizeTime(rawMirrorTime);
     const mirroredDispoTime = mappedMirrorTime || companyEmbeddedTime;
     const dispoTime = primaryDispoTime || mirroredDispoTime;
-    const listedFlightTime = normalizeTime(valueAt(row, mapping, 'flightTime'));
+    const rawListedFlightTime = cellText(valueAt(row, mapping, 'flightTime'));
+    const listedFlightTime = normalizeTime(rawListedFlightTime);
+    const flightBoundaryInfo = clockBoundaryNoiseInfo(rawListedFlightTime);
+    const flightTimeBorderAutoCorrected = Boolean(options.imageOcr && flightBoundaryInfo.changed && flightBoundaryInfo.value === listedFlightTime);
     const rawVehicleCell = cellText(valueAt(row, mapping, 'vehicle')).trim();
     const vehicle = getVehicleValue(row, mapping, options);
     const vehicleBoundaryCleaned = Boolean(options.imageOcr && rawVehicleCell && vehicle && rawVehicleCell !== vehicle);
@@ -1640,6 +1668,8 @@
       sourceImageOcr: Boolean(options.imageOcr),
       timeBorderAutoCorrected,
       timeBorderOriginal:timeBorderAutoCorrected?rawPrimaryTime:'',
+      flightTimeBorderAutoCorrected,
+      flightTimeBorderOriginal:flightTimeBorderAutoCorrected?rawListedFlightTime:'',
       currency: 'EUR',
       driver: getDriverValue(row, mapping),
       notes: importNotes,
@@ -1651,7 +1681,10 @@
 
   function detectImageRightTailSchemaShift(rides) {
     const list = (Array.isArray(rides) ? rides : []).filter(Boolean);
-    if (list.length < 3) return { detected: false, driverCompositeCount: 0, displacedFlightCount: 0, total: list.length };
+    // P113: two-row plans are exactly where a missing duplicate header can shift the
+    // whole right tail. Two mutually reinforcing structural symptoms across BOTH rows
+    // are sufficient to fail closed before any expensive targeted OCR starts.
+    if (list.length < 2) return { detected: false, driverCompositeCount: 0, displacedFlightCount: 0, total: list.length };
 
     const driverCompositeCount = list.filter(ride => {
       const driver = cellText(ride?.driver);
@@ -1665,7 +1698,7 @@
       return /(?:^|[^A-Z0-9])[A-Z]{1,3}\s*\d{2,4}[A-Z]?(?:[^A-Z0-9]|$)/.test(rawLocation);
     }).length;
 
-    const threshold = Math.max(2, Math.ceil(list.length * 0.5));
+    const threshold = list.length === 2 ? 2 : Math.max(2, Math.ceil(list.length * 0.5));
     return {
       detected: driverCompositeCount >= threshold && displacedFlightCount >= threshold,
       driverCompositeCount,
@@ -1726,7 +1759,24 @@
         issues.push({level:'error',row,text:`Ungueltige DISPO-Zeit „${cellText(ride.dispoTime)}“`});
       if(ride.flightTime&&timeToMinutes(ride.flightTime)===null)
         issues.push({level:'error',row,text:`Ungueltige Flugzeit „${cellText(ride.flightTime)}“`});
+      if (ride.flightTimeOcrConflict) {
+        issues.push({
+          level: 'error',
+          kind: 'time_ocr',
+          row,
+          text: `Flugzeitzelle lieferte widersprüchliche lokale OCR-Kandidaten (${(ride.flightTimeOcrConflictCandidates || []).join(' / ') || 'uneindeutig'}) – Import bis zur Klärung blockiert`
+        });
+      }
       if(ride.timeBorderAutoCorrected)issues.push({level:'info',kind:'ocr_recovery',row,text:`OCR-Tabellenkante aus Uhrzeit „${cellText(ride.timeBorderOriginal)}“ entfernt; eindeutig ${cellText(ride.time)} erkannt`});
+      if(ride.flightTimeBorderAutoCorrected)issues.push({level:'info',kind:'ocr_recovery',row,text:`OCR-Tabellenkante aus Flugzeit „${cellText(ride.flightTimeBorderOriginal)}“ entfernt; eindeutig ${cellText(ride.flightTime)} erkannt`});
+      if(ride.flightTimeRecoveredFromExactImageCell)issues.push({level:'info',kind:'ocr_recovery',row,text:`Flugzeit ${cellText(ride.flightTime)} aus exakt zugeordneter geometrischer Flugzeitzelle wiederhergestellt`});
+      const integrityConflicts = Array.isArray(ride.importIntegrityConflicts) ? ride.importIntegrityConflicts : [];
+      integrityConflicts.forEach(conflict => issues.push({
+        level: 'error',
+        kind: 'import_integrity',
+        row,
+        text: `Struktur-/Integritätsprüfung fehlgeschlagen: ${cellText(conflict?.text || conflict?.code || 'unbekannter Widerspruch')} – Import blockiert`
+      }));
       // CORE-007A: Eine per eindeutigem Mehrfach-Konsens korrigierte Zeit ist bereits
       // gelöst. timeOcrInitial/timeRecoveredFromTargetedOcr bleiben als interne Diagnose
       // am Ride erhalten, werden aber nicht mehr als offener OCR-Hinweis ausgegeben.
@@ -1886,6 +1936,16 @@
           text: `Flugnummer ${ride.flightTrailingSuffixOcrInitial} → ${ride.flightNumber} durch eindeutigen lokalen Flugzellen-Konsens automatisch korrigiert`
         });
       }
+      ['pickup','destination'].forEach(field => {
+        if (!ride[`${field}OcrConflict`]) return;
+        const label = field === 'pickup' ? 'Abholort' : 'Ziel';
+        issues.push({
+          level: 'error',
+          kind: 'route_ocr',
+          row,
+          text: `${label} „${cellText(ride[field])}“ widerspricht der unabhängigen Routen-Nach-OCR „${cellText(ride[`${field}OcrConflictCandidate`])}“ – Import bis zur Klärung blockiert`
+        });
+      });
       const routeReview = ride.routeTextConsistencyNeedsReview && typeof ride.routeTextConsistencyNeedsReview === 'object'
         ? ride.routeTextConsistencyNeedsReview
         : {};
@@ -2721,10 +2781,9 @@
     return mirrorGap ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_PRICE;
   }
 
-  function hasNoPriceMirrorDataEvidence(lines, header) {
+  function hasMirrorDataEvidence(lines, header) {
     const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
     if (!anchors.length) return false;
-    if (anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) return false;
 
     const firma = anchors.find(anchor => anchor.key === 'firma');
     const firstFlight = anchors.find(anchor => anchor.key === 'flugang' || anchor.key === 'flugausg');
@@ -2735,12 +2794,14 @@
     if (!Number.isFinite(left) || !Number.isFinite(right) || right - left < 8) return false;
 
     let evidenceRows = 0;
+    let usableRows = 0;
     for (const line of (lines || []).slice((header.index || 0) + 1)) {
       const regionWords = (line.words || []).filter(word => {
         const cx = (Number(word.x0 || 0) + Number(word.x1 || 0)) / 2;
         return cx > left && cx < right;
       });
       if (!regionWords.length) continue;
+      usableRows++;
 
       const joined = regionWords
         .map(word => cellText(word.text))
@@ -2759,9 +2820,17 @@
       });
 
       if (plausible) evidenceRows++;
+      // P113: require repeated data evidence. This works for the proven two-row plan
+      // while a single-row crop still cannot manufacture a missing duplicate header.
       if (evidenceRows >= 2) return true;
     }
-    return false;
+    return usableRows >= 2 && evidenceRows === usableRows && evidenceRows >= 2;
+  }
+
+  function hasNoPriceMirrorDataEvidence(lines, header) {
+    const anchors = (header?.anchors || []).slice().sort((a,b)=>a.x-b.x);
+    if (anchors.some(anchor => anchor.key === 'preis' || anchor.key === 'price')) return false;
+    return hasMirrorDataEvidence(lines, header);
   }
 
   function completeAtmsImageAnchors(observed, width, forcedSchema = null) {
@@ -3467,12 +3536,16 @@
       throw new Error(`Die Spaltenüberschriften im Bild konnten nicht sicher erkannt werden und der Ausschnitt ohne Kopfzeile war geometrisch nicht eindeutig genug. ${formatHeaderlessOcrDiagnostic(headerlessDiagnostic)} Bitte vollständige Kopfzeile mit hochladen.`);
     }
 
-    const forceNoPriceMirror = hasSafeHeader ? hasNoPriceMirrorDataEvidence(lines, header) : false;
+    const forceMirrorFromData = hasSafeHeader ? hasMirrorDataEvidence(lines, header) : false;
+    const headerHasPrice = Boolean(hasSafeHeader && (header?.anchors || []).some(anchor => anchor.key === 'preis' || anchor.key === 'price'));
+    const forcedMirrorSchema = forceMirrorFromData
+      ? (headerHasPrice ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_MIRROR)
+      : null;
     const completed = hasSafeHeader
       ? completeAtmsImageAnchors(
           header.anchors,
           width,
-          forceNoPriceMirror ? ATMS_IMAGE_SCHEMA_13_MIRROR : null
+          forcedMirrorSchema
         )
       : {
           anchors: headerlessLayout.anchors,
@@ -3717,7 +3790,8 @@
       completedStandard: Boolean(completed?.standard),
       completedAnchorCount: Array.isArray(completed?.anchors) ? completed.anchors.length : 0,
       schemaColumns: anchors.length,
-      forcedNoPriceMirror: Boolean(forceNoPriceMirror),
+      forcedMirrorFromData: Boolean(forceMirrorFromData),
+      forcedMirrorSchemaColumns: forcedMirrorSchema ? forcedMirrorSchema.length : 0,
       syntheticAnchorCount: completed.syntheticCount,
       headerlessAtms: Boolean(headerlessLayout?.headerlessAtms),
       headerlessNeedsCellRecovery: Boolean(headerlessLayout?.needsCellRecovery),
@@ -4945,9 +5019,6 @@
 
       ride.driverRawOcr = originalDriver;
 
-      // P107.1: Ein vom Disponenten gesetztes finales ?/! ist semantische Unsicherheit,
-      // kein OCR-Randmuell. Es bleibt sichtbar am Fahrer und erzwingt Review statt
-      // stiller Normalisierung zu einer vermeintlich sicheren Fahrerzuordnung.
       const uncertainty = ocrIntegrityCore?.driverUncertaintyMarker?.(originalDriver) || null;
       if (uncertainty?.marker) {
         ride.driver = uncertainty.display || originalDriver;
@@ -4957,9 +5028,6 @@
         continue;
       }
 
-      // CORE-006H: Wenn ausschließlich offensichtliche Randzeichen den ansonsten
-      // vollständig gültigen Namen verunreinigen, ist keine semantische Korrektur
-      // nötig. Beispielklasse: "‘Name", ": Name |", "Name |".
       const boundaryNormalized = normalizeDriverBoundaryNoise(originalDriver);
       if (boundaryNormalized) {
         ride.driver = boundaryNormalized;
@@ -4973,48 +5041,61 @@
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
       if (!rowMeta) continue;
 
+      // P113 performance guard: if the exact geometrically mapped driver cell contains
+      // no primary OCR word and the driver is empty, treat the cell as genuinely empty.
+      // Do not spend tens of seconds on 9 near-identical one-shot OCR retries.
+      const exactRawWords = rawImageCellWords(imageMeta, rowMeta, driverCol);
+      if (!originalDriver && exactRawWords.length === 0) {
+        ride.driverBlankCellConfirmed = true;
+        ride.driverNeedsManualCheck = true;
+        ride.driverTargetedOcrAttempts = [];
+        continue;
+      }
+
       const y0 = Number(rowMeta.y0 || 0);
       const y1 = Number(rowMeta.y1 || 0);
       const rowHeight = Math.max(18, y1 - y0);
       const cellWidth = Math.max(8, right - left);
-      const padY = Math.max(2, rowHeight * 0.18);
-      const padX = Math.max(1, cellWidth * 0.04);
-
+      const padY = Math.max(2, rowHeight * 0.14);
+      const padX = Math.max(1, cellWidth * 0.035);
       const regions = [
-        [left + padX, y0 - padY, right - padX, y1 + padY, 1],
         [left + padX, y0 - padY, right - padX, y1 + padY, 2],
-        [left, y0 - Math.max(2, rowHeight * 0.12), right, y1 + Math.max(2, rowHeight * 0.12), 3]
+        [left + padX * 0.5, y0 - padY * 0.5, right - padX * 0.5, y1 + padY * 0.5, 3]
       ];
       const ocrModes = [
-        { name: 'default', options: {} },
-        { name: 'single-line', options: { tessedit_pageseg_mode: '7' } },
-        { name: 'single-word', options: { tessedit_pageseg_mode: '8' } }
+        { name: 'single-line', psm: '7' },
+        { name: 'single-word', psm: '8' }
       ];
 
-      if (status) status.textContent = `Fahrerzelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
+      if (status) status.textContent = `Fahrerzelle Zeile ${ride.sourceRow} wird lokal begrenzt nachgelesen …`;
 
       const votes = new Map();
       const displayByKey = new Map();
       const attempts = [];
 
       try {
-        for (const [x0, cy0, x1, cy1, scale] of regions) {
-          const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          for (const mode of ocrModes) {
-            const second = await Tesseract.recognize(crop, 'eng', mode.options);
-            const candidates = driverCandidatesFromOcrResult(second);
-            attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
-            if (candidates.length !== 1) continue;
-
-            const candidate = candidates[0];
-            const key = cleanKey(candidate);
-            if (!key) continue;
-            displayByKey.set(key, displayByKey.get(key) || candidate);
-            votes.set(key, (votes.get(key) || 0) + 1);
+        await p109SharedOcrWithWorker('deu', async worker => {
+          for (const [x0, cy0, x1, cy1, scale] of regions) {
+            const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
+            for (const mode of ocrModes) {
+              if (typeof worker?.setParameters === 'function') {
+                await p109PerfWorkerSetParameters(worker, 'missing_driver_targeted_ocr', { tessedit_pageseg_mode: mode.psm }, { sourceRow: Number(ride.sourceRow || 0), mode: `driver-${mode.name}` });
+              }
+              const second = await p109PerfWorkerRecognize(worker, 'missing_driver_targeted_ocr', crop, { sourceRow: Number(ride.sourceRow || 0), mode: `driver-${mode.name}-${scale}x` });
+              const candidates = driverCandidatesFromOcrResult(second);
+              attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+              if (candidates.length !== 1) continue;
+              const candidate = candidates[0];
+              const key = cleanKey(candidate);
+              if (!key) continue;
+              displayByKey.set(key, displayByKey.get(key) || candidate);
+              votes.set(key, (votes.get(key) || 0) + 1);
+            }
           }
-        }
+        });
       } catch (_) {
         ride.driverTargetedOcrAttempts = attempts;
+        if (originalDriver) ride.driverNeedsManualCheck = true;
         continue;
       }
 
@@ -5022,14 +5103,7 @@
       const ranked = [...votes.entries()].sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       const winner = ranked[0] || null;
       const runner = ranked[1] || null;
-
-      // Sicherheitsregel: kein Einzel-Treffer. Mindestens zwei getrennte enge
-      // OCR-Versuche müssen denselben Namen lesen, und der Kandidat muss eindeutig gewinnen.
-      if (!winner || winner[1] < 2) {
-        if (originalDriver) ride.driverNeedsManualCheck = true;
-        continue;
-      }
-      if (runner && winner[1] === runner[1]) {
+      if (!winner || winner[1] < 2 || (runner && winner[1] === runner[1])) {
         if (originalDriver) ride.driverNeedsManualCheck = true;
         continue;
       }
@@ -5043,12 +5117,10 @@
       ride.driver = recovered;
       ride.driverRecoveredFromTargetedOcr = true;
       ride.driverNeedsManualCheck = false;
-      ride.driverRecoverySource = 'targeted_driver_cell_consensus';
+      ride.driverRecoverySource = 'bounded_shared_driver_cell_consensus';
     }
-
     return out;
   }
-
 
   function driverEditDistance(leftValue, rightValue) {
     const left = cleanKey(leftValue);
@@ -5195,9 +5267,9 @@
 
     out.forEach(ride => {
       const sourceRow = Number(ride.sourceRow);
-      const original = normalizeDriverCandidate(ride.driver);
+      const rawOriginal = cellText(ride.driver);
+      const original = normalizeDriverCandidate(rawOriginal);
       ride.driverGermanColumnOcrAttempts = attemptLogByRow.get(sourceRow) || [];
-      if (!original) return;
 
       const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
         .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
@@ -5207,14 +5279,29 @@
       if (runner && winner[1] === runner[1]) return;
 
       const candidate = normalizeDriverCandidate(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
-      if (!candidate || !driverConsensusCandidateIsSafe(original, candidate)) return;
+      if (!candidate) return;
+
+      if (!original) {
+        // P113: Missing/invalid primary driver may be recovered by the already-running
+        // full driver-column consensus only when the exact mapped driver cell contains
+        // some raw OCR evidence. A truly blank driver cell stays blank and is not guessed.
+        const rawCell = cellText(ride?.imageCellEvidence?.driver || '');
+        if (!rawCell) return;
+        ride.driverRawOcr = rawOriginal;
+        ride.driver = candidate;
+        ride.driverRecoveredFromGermanColumnOcr = true;
+        ride.driverNeedsManualCheck = false;
+        ride.driverRecoverySource = 'driver_german_column_consensus_missing_primary';
+        return;
+      }
+
+      if (candidate === original) return;
+      if (!driverConsensusCandidateIsSafe(original, candidate)) return;
 
       ride.driverRawOcr = ride.driverRawOcr || original;
       ride.driver = candidate;
       ride.driverRecoverySource = 'driver_german_column_consensus';
 
-      // Reine Diakritikverbesserungen brauchen keinen zusätzlichen Warnhinweis.
-      // Inhaltliche Ergänzungen/Ein-Zeichen-Korrekturen bleiben sichtbar prüfbar.
       if (cleanKey(original) !== cleanKey(candidate)) {
         ride.driverRecoveredFromTargetedOcr = true;
       } else {
@@ -5850,34 +5937,85 @@
         // niemals blockieren. Der sichere Primärwert bleibt dann unverändert.
       }
 
-      out.forEach(ride => {
+      for (const ride of out) {
         const sourceRow = Number(ride.sourceRow);
         const original = routeOcrText(ride[descriptor.field]);
         ride[`${descriptor.field}TargetedOcrAttempts`] = attemptLogByRow.get(sourceRow) || [];
-        if (!original) return;
+        if (!original) continue;
 
         const ranked = [...(votesByRow.get(sourceRow) || new Map()).entries()]
           .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0], 'de'));
         const winner = ranked[0] || null;
         const runner = ranked[1] || null;
-        if (!winner || winner[1] < 2) return;
-        if (runner && winner[1] === runner[1]) return;
+        if (!winner || winner[1] < 2) continue;
+        if (runner && winner[1] === runner[1]) continue;
 
         const candidate = routeOcrText(displayByRowKey.get(`${sourceRow}|${winner[0]}`) || '');
+        if (!candidate || candidate === original) continue;
         let recoverySource = 'targeted_route_diacritic_consensus';
         let primaryConfidence = null;
         let safe = routeChangedDiacriticTokenIsSafe(original, candidate);
         if (!safe && winner[1] >= 2 && routeChangedDiacriticTokenIsSafe(original, candidate, 2)) {
           const rowMeta = rowsWithMeta.find(item => item.sourceRow === sourceRow)?.meta || null;
           primaryConfidence = routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMeta, left, right);
-          // P98: Distanz 2 ist nur bei zwei identischen deutschen Nachscans UND
-          // nachweislich sehr schwachem Primärwort erlaubt. So kann eine fehlerhafte
-          // Diakritik-/Buchstabenkombination sicher korrigiert werden, ohne ein
-          // Wörterbuch oder Orts-Hardcodes einzuführen.
           safe = Number.isFinite(primaryConfidence) && primaryConfidence <= 35;
           if (safe) recoverySource = 'targeted_route_diacritic_consensus_low_primary_confidence';
         }
-        if (!safe) return;
+
+        // P113: If the two independent full-column DEU passes agree on a nearby
+        // candidate but the old confidence rule is still inconclusive, do NOT silently
+        // discard that evidence. Re-read only this exact cell in two tight modes.
+        // Four agreeing image reads (2 column + 2 local) may resolve an edit-distance
+        // <=2 alternative; otherwise the row becomes fail-closed.
+        if (!safe) {
+          const originalCompact = routeOcrBase(original).replace(/[^a-z0-9]/g, '');
+          const candidateCompact = routeOcrBase(candidate).replace(/[^a-z0-9]/g, '');
+          const nearby = originalCompact.length >= 4 && candidateCompact.length >= 4 &&
+            routeOcrDistance(originalCompact, candidateCompact) <= 2;
+          const rowMeta = rowsWithMeta.find(item => item.sourceRow === sourceRow)?.meta || null;
+          if (nearby && rowMeta) {
+            const rowHeight = Math.max(8, rowMeta.y1 - rowMeta.y0);
+            const localSpecs = [
+              { name: 'deu-route-cell-psm7', psm: '7', scale: 3, padX: Math.max(1, cellWidth * 0.02), padY: Math.max(1, rowHeight * 0.08) },
+              { name: 'deu-route-cell-psm6', psm: '6', scale: 4, padX: Math.max(1, cellWidth * 0.035), padY: Math.max(1, rowHeight * 0.04) }
+            ];
+            const localCandidates = [];
+            try {
+              await p109SharedOcrWithWorker('deu', async worker => {
+                for (const spec of localSpecs) {
+                  if (typeof worker?.setParameters === 'function') {
+                    await p109PerfWorkerSetParameters(worker, 'route_deu_column_ocr', { tessedit_pageseg_mode: spec.psm }, { field: descriptor.field, sourceRow, mode: spec.name });
+                  }
+                  const crop = cropCanvasRegion(
+                    imageCanvas,
+                    left + spec.padX,
+                    rowMeta.y0 - spec.padY,
+                    right - spec.padX,
+                    rowMeta.y1 + spec.padY,
+                    spec.scale
+                  );
+                  const result = await p109PerfWorkerRecognize(worker, 'route_deu_column_ocr', crop, { field: descriptor.field, sourceRow, mode: spec.name });
+                  const localCandidate = routeOcrText(result?.data?.text || '');
+                  localCandidates.push(localCandidate);
+                  ride[`${descriptor.field}TargetedOcrAttempts`].push({ mode: spec.name, candidate: localCandidate });
+                }
+              });
+            } catch (_) {}
+            const targetKey = routeOcrBase(candidate);
+            const localConfirmed = localCandidates.length === 2 && localCandidates.every(value => routeOcrBase(value) === targetKey);
+            if (localConfirmed) {
+              safe = true;
+              recoverySource = 'targeted_route_dual_column_plus_dual_local_consensus';
+            }
+          }
+        }
+
+        if (!safe) {
+          ride[`${descriptor.field}OcrConflict`] = true;
+          ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
+          ride[`${descriptor.field}OcrConflictEvidence`] = { columnVotes: winner[1] };
+          continue;
+        }
 
         ride[`${descriptor.field}RawOcr`] = original;
         ride[descriptor.field] = candidate;
@@ -5886,7 +6024,7 @@
         if (Number.isFinite(primaryConfidence)) {
           ride[`${descriptor.field}PrimaryOcrConfidence`] = primaryConfidence;
         }
-      });
+      }
     };
 
     await Promise.all(fields.map(processDescriptor));
@@ -6257,6 +6395,56 @@
           log.push({ scope: 'local', mode: attempt.name, candidate });
           attemptLogByRow.set(item.sourceRow, log);
         }
+
+        // P113: very short alphanumeric cells (codes) are difficult for a wide-cell
+        // PSM6/7 crop. If the independent composite batch saw one SAFE near alternative,
+        // re-read only the primary word bounds twice. Correction still needs batch +
+        // two local confirmations; otherwise decideTextIntegrity() remains fail-closed.
+        const attemptLogByRow = attemptLogByField.get(descriptor.field);
+        const currentLog = attemptLogByRow.get(item.sourceRow) || [];
+        const batchAlternative = currentLog
+          .filter(attempt => attempt.scope === 'batch')
+          .map(attempt => textIntegrityCellCandidate(attempt.candidate || '', descriptor.field))
+          .find(candidate => candidate && candidate !== item.original && textIntegrityAlternativeIsSafe(item.original, candidate));
+        const shortCode = /^[A-Za-z0-9]{2,5}$/.test(item.original) && /^[A-Za-z0-9]{2,5}$/.test(batchAlternative || '');
+        if (shortCode && descriptor.field === 'flightLocation') {
+          const rawWords = rawImageCellWords(imageMeta, rowMeta, descriptor.column);
+          const originalKey = item.original.normalize('NFKC').toLocaleLowerCase('de-DE');
+          const rawWord = rawWords.find(word => cellText(word?.text).normalize('NFKC').toLocaleLowerCase('de-DE') === originalKey) || rawWords[0] || null;
+          if (rawWord) {
+            const x0 = Number(rawWord.x0 || 0), x1 = Number(rawWord.x1 || 0);
+            const wy0 = Number(rawWord.y0 || 0), wy1 = Number(rawWord.y1 || 0);
+            const ww = Math.max(6, x1 - x0), wh = Math.max(5, wy1 - wy0);
+            const wordAttempts = [
+              { name: 'text-deu-word-psm8', psm: '8', scale: 5, xPad: 0.24, yPad: 0.42 },
+              { name: 'text-deu-word-psm7', psm: '7', scale: 6, xPad: 0.36, yPad: 0.56 }
+            ];
+            for (const attempt of wordAttempts) {
+              let candidate = '';
+              try {
+                const crop = cropCanvasRegion(
+                  imageCanvas,
+                  Math.max(descriptor.left + 1, x0 - ww * attempt.xPad),
+                  wy0 - wh * attempt.yPad,
+                  Math.min(descriptor.right - 1, x1 + ww * attempt.xPad),
+                  wy1 + wh * attempt.yPad,
+                  attempt.scale
+                );
+                let result;
+                if (worker && typeof worker.recognize === 'function') {
+                  if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', { tessedit_pageseg_mode: attempt.psm }, { mode: attempt.name, sourceRow: item.sourceRow });
+                  result = await p109PerfWorkerRecognize(worker, 'text_integrity_ocr', crop, { mode: attempt.name, sourceRow: item.sourceRow });
+                } else {
+                  result = await p109PerfRecognizeOneShot('text_integrity_ocr', 'deu', crop, { tessedit_pageseg_mode: attempt.psm }, { mode: `${attempt.name}-fallback`, sourceRow: item.sourceRow });
+                }
+                candidate = textIntegrityCellCandidate(result?.data?.text || '', descriptor.field);
+              } catch (_) {}
+              const log = attemptLogByRow.get(item.sourceRow) || [];
+              log.push({ scope: 'local', mode: attempt.name, candidate });
+              attemptLogByRow.set(item.sourceRow, log);
+            }
+          }
+        }
       }
     } finally {
       // P109.3: The DEU worker belongs to the import-scoped shared session and is
@@ -6321,6 +6509,18 @@
             ...(decision?.evidence || {}),
             ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {})
           };
+          return;
+        }
+        // P113 zero-silent-error: one independent SAFE alternative is not enough
+        // to auto-correct, but it is enough to prevent a silent green/OK result.
+        // The value stays unchanged and the import is blocked for manual review.
+        const unresolvedAlternative = attempts
+          .map(attempt => textIntegrityCellCandidate(attempt?.candidate || '', descriptor.field))
+          .find(value => value && value !== original && textIntegrityAlternativeIsSafe(original, value));
+        if (decision?.status === 'ok' && unresolvedAlternative) {
+          ride[`${descriptor.field}OcrConflict`] = true;
+          ride[`${descriptor.field}OcrConflictCandidate`] = unresolvedAlternative;
+          ride[`${descriptor.field}OcrEvidence`] = { unresolvedIndependentAlternative: true };
           return;
         }
         if (decision?.status === 'suspicious') {
@@ -6501,6 +6701,80 @@
       ride.time = recovered;
       ride.planTime = recovered;
       ride.timeRecoveredFromTargetedOcr = true;
+    }
+    return out;
+  }
+
+
+  async function recoverMissingFlightTimesTargeted(rides, imageCanvas, imageMeta, mapping) {
+    if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
+    const flightTimeCol = mapping?.flightTime;
+    if (flightTimeCol === undefined) return rides;
+    const boundaries = imageMeta.boundaries || [];
+    const left = Number(boundaries[flightTimeCol]);
+    const right = Number(boundaries[Number(flightTimeCol) + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left) return rides;
+
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    const status = $('importStatus');
+    for (const ride of out) {
+      const current = normalizeTime(ride.flightTime);
+      if (current && timeToMinutes(current) !== null) continue;
+      const matrixIndex = Number(ride.sourceRow || 0) - 1;
+      const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
+      if (!rowMeta) continue;
+      const y0 = Number(rowMeta.y0 || 0), y1 = Number(rowMeta.y1 || 0);
+      if (!Number.isFinite(y0) || !Number.isFinite(y1) || y1 <= y0) continue;
+
+      const rowHeight = Math.max(8, y1 - y0);
+      const cellWidth = Math.max(8, right - left);
+      const specs = [
+        { name: 'flight-time-cell-psm7', psm: '7', scale: 4, xPad: Math.max(1, cellWidth * 0.05), yPad: Math.max(1, rowHeight * 0.04) },
+        { name: 'flight-time-cell-psm6', psm: '6', scale: 5, xPad: Math.max(1, cellWidth * 0.025), yPad: Math.max(1, rowHeight * 0.02) }
+      ];
+      const attempts = [];
+      if (status) status.textContent = `Flugzeitzelle Zeile ${ride.sourceRow} wird gezielt nachgelesen …`;
+      try {
+        await p109SharedOcrWithWorker('eng', async worker => {
+          for (const spec of specs) {
+            if (typeof worker?.setParameters === 'function') {
+              await p109PerfWorkerSetParameters(worker, 'missing_flight_time_targeted_ocr', {
+                tessedit_pageseg_mode: spec.psm,
+                tessedit_char_whitelist: '0123456789:.'
+              }, { sourceRow: Number(ride.sourceRow || 0), mode: spec.name });
+            }
+            const crop = cropCanvasRegion(
+              imageCanvas,
+              left + spec.xPad,
+              y0 - spec.yPad,
+              right - spec.xPad,
+              y1 + spec.yPad,
+              spec.scale
+            );
+            const result = await p109PerfWorkerRecognize(worker, 'missing_flight_time_targeted_ocr', crop, { sourceRow: Number(ride.sourceRow || 0), mode: spec.name });
+            const candidates = rideTimeCandidatesFromOcrResult(result).map(normalizeTime).filter(value => timeToMinutes(value) !== null);
+            attempts.push({ mode: spec.name, candidates: [...new Set(candidates)] });
+          }
+        });
+      } catch (_) {
+        ride.flightTimeTargetedOcrAttempts = attempts;
+        continue;
+      }
+      ride.flightTimeTargetedOcrAttempts = attempts;
+      if (attempts.length !== 2) continue;
+      if (attempts.some(attempt => attempt.candidates.length !== 1)) continue;
+      const first = attempts[0].candidates[0], second = attempts[1].candidates[0];
+      if (!first || first !== second) {
+        if (first || second) {
+          ride.flightTimeOcrConflict = true;
+          ride.flightTimeOcrConflictCandidates = [...new Set([first, second].filter(Boolean))];
+        }
+        continue;
+      }
+      ride.flightTimeOcrInitial = cellText(ride.flightTime);
+      ride.flightTime = first;
+      ride.flightTimeRecoveredFromTargetedOcr = true;
+      ride.flightTimeRecoverySource = 'dual_tight_cell_consensus';
     }
     return out;
   }
@@ -7975,6 +8249,31 @@
       });
     });
 
+    // P113: Short company codes may suffer a single inserted/deleted OCR glyph
+    // (for example a 2-3 letter code becoming 3-4 letters). Auto-correction is allowed
+    // only against a UNIQUE current-plan peer form repeated at least three times.
+    // No company dictionary or hardcoded code is used.
+    if (ocrIntegrityCore?.suggestShortCodeConsensus) {
+      out.forEach((ride, index) => {
+        const original = cellText(ride?.company);
+        if (!original) return;
+        const peers = out.filter((_, peerIndex) => peerIndex !== index).map(peer => cellText(peer?.company)).filter(Boolean);
+        const suggestion = ocrIntegrityCore.suggestShortCodeConsensus(original, peers);
+        if (!suggestion?.candidate || suggestion.candidate === original) return;
+        ride.company = suggestion.candidate;
+        ride.repeatedTextConsistency = {
+          ...(ride.repeatedTextConsistency || {}),
+          company: {
+            from: original,
+            to: suggestion.candidate,
+            evidenceCount: Number(suggestion.evidenceCount || 0),
+            source: 'short_company_code_near_consensus'
+          }
+        };
+        ride.partner = cellText(ride.customer) || cellText(ride.company);
+      });
+    }
+
     // P75I: Routenfelder werden NICHT unscharf normalisiert. Automatische Korrektur
     // ist ausschließlich erlaubt, wenn exakt ein längeres 3+-Token-Routenlabel in
     // demselben Feld mindestens zweimal identisch vorkommt und die Einzelabweichung
@@ -8042,6 +8341,210 @@
     // Normale zweistellige alphanumerische Designatoren (z. B. A1/1A) bleiben unberuehrt.
     const mixedMatch = flight.match(/^([0-9][A-Z]{2})(\d{1,4}[A-Z]?)$/);
     return mixedMatch ? mixedMatch[1].length : 0;
+  }
+
+  function rawImageCellWords(imageMeta, rowMeta, columnIndex) {
+    const boundaries = imageMeta?.boundaries || [];
+    const rawWords = imageMeta?.rawOcrWords || [];
+    const left = Number(boundaries[columnIndex]);
+    const right = Number(boundaries[Number(columnIndex) + 1]);
+    if (!Number.isFinite(left) || !Number.isFinite(right) || right <= left || !rowMeta) return [];
+    const y0 = Number(rowMeta.y0 || 0), y1 = Number(rowMeta.y1 || 0);
+    const rowHeight = Math.max(8, y1 - y0);
+    return rawWords.filter(word => {
+      const x0 = Number(word?.x0 || 0), x1 = Number(word?.x1 || 0);
+      const wy0 = Number(word?.y0 || 0), wy1 = Number(word?.y1 || 0);
+      if (![x0, x1, wy0, wy1].every(Number.isFinite) || x1 <= x0 || wy1 <= wy0) return false;
+      const cx = (x0 + x1) / 2, cy = (wy0 + wy1) / 2;
+      return cx >= left && cx < right && cy >= y0 - rowHeight * 0.20 && cy <= y1 + rowHeight * 0.20;
+    }).sort((a,b) => Number(a.x0 || 0) - Number(b.x0 || 0));
+  }
+
+  function rawImageCellText(imageMeta, rowMeta, columnIndex) {
+    return rawImageCellWords(imageMeta, rowMeta, columnIndex)
+      .map(word => cellText(word?.text))
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function uniqueClockCandidateFromCell(value) {
+    const raw = cellText(value);
+    if (!raw) return '';
+    const direct = normalizeTime(raw);
+    if (timeToMinutes(direct) !== null) return direct;
+    const found = new Set();
+    const matches = raw.match(/[|¦│\[\]=~]*\s*[0-2]?\d[:.]\d{2}\s*[|¦│\[\]=~]*/gu) || [];
+    matches.forEach(token => {
+      const normalized = normalizeTime(token);
+      if (timeToMinutes(normalized) !== null) found.add(normalized);
+    });
+    return found.size === 1 ? [...found][0] : '';
+  }
+
+  function imageCellEvidenceForRide(ride, imageMeta, mapping) {
+    const matrixIndex = Number(ride?.sourceRow || 0) - 1;
+    const rowMeta = imageMeta?.rowMetaByMatrixIndex?.[matrixIndex];
+    if (!rowMeta) return {};
+    const fields = ['time','timeMirror','pickup','destination','customer','company','arrivalFlight','departureFlight','vehicle','persons','flightTime','flightLocation','driver'];
+    const evidence = {};
+    fields.forEach(field => {
+      const column = mapping?.[field];
+      if (column === undefined || column === null) return;
+      const text = rawImageCellText(imageMeta, rowMeta, column);
+      if (text) evidence[field] = text;
+    });
+    return evidence;
+  }
+
+  function recoverCriticalFieldsFromImageCells(rides, imageMeta, mapping) {
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    out.forEach(ride => {
+      const evidence = imageCellEvidenceForRide(ride, imageMeta, mapping);
+      ride.imageCellEvidence = evidence;
+
+      const arrivalCandidates = flightCandidatesFromRow([evidence.arrivalFlight || '']);
+      const departureCandidates = flightCandidatesFromRow([evidence.departureFlight || '']);
+      if (!cellText(ride.flightNumber)) {
+        const candidates = [
+          ...arrivalCandidates.map(value => ({ value, direction: 'arrival' })),
+          ...departureCandidates.map(value => ({ value, direction: 'departure' }))
+        ];
+        const unique = [...new Map(candidates.map(item => [`${item.direction}|${item.value}`, item])).values()];
+        if (unique.length === 1) {
+          const hit = unique[0];
+          ride.flightNumber = hit.value;
+          ride.flightDirection = hit.direction;
+          ride.arrivalFlight = hit.direction === 'arrival' ? hit.value : '';
+          ride.departureFlight = hit.direction === 'departure' ? hit.value : '';
+          ride.flightRecoveredFromExactImageCell = true;
+          ride.flightRecoverySource = 'exact_geometric_cell_raw_evidence';
+        }
+      }
+
+      if (!cellText(ride.vehicle) && evidence.vehicle) {
+        const candidate = normalizeVehicleBoundaryOcrNoise(evidence.vehicle);
+        if (candidate && /^(?:pkw|van|bus|sprinter|taxi)$/i.test(candidate)) {
+          ride.vehicle = candidate;
+          ride.vehicleRecoveredFromExactImageCell = true;
+        }
+      }
+
+      if (!(Number(ride.persons) > 0) && evidence.persons) {
+        const candidate = parseNumber(evidence.persons);
+        if (Number.isInteger(candidate) && candidate >= 1 && candidate <= 99) {
+          ride.persons = candidate;
+          ride.personsRecoveredFromExactImageCell = true;
+        }
+      }
+
+      if (!cellText(ride.timeMirror) && evidence.timeMirror) {
+        const candidate = uniqueClockCandidateFromCell(evidence.timeMirror);
+        if (candidate) {
+          ride.timeMirror = candidate;
+          ride.timeMirrorRecoveredFromExactImageCell = true;
+        }
+      }
+
+      const flightTimeEvidence = uniqueClockCandidateFromCell(evidence.flightTime || '');
+      if (flightTimeEvidence) {
+        const current = normalizeTime(ride.flightTime);
+        if (!current || timeToMinutes(current) === null) {
+          ride.flightTimeOcrInitial = cellText(ride.flightTime);
+          ride.flightTime = flightTimeEvidence;
+          ride.flightTimeRecoveredFromExactImageCell = true;
+          ride.flightTimeRecoverySource = 'exact_geometric_cell_raw_evidence';
+        } else if (current !== flightTimeEvidence) {
+          ride.flightTimeCellConflict = true;
+          ride.flightTimeCellConflictCandidate = flightTimeEvidence;
+        }
+      }
+
+      if (!cellText(ride.company) && evidence.company) {
+        const candidate = normalizeTextBoundaryOcrNoise(evidence.company).value;
+        if (candidate && /[A-Za-zÄÖÜäöüßÀ-ÿ]/u.test(candidate) && !looksLikeTime(candidate) && !looksLikeFlight(candidate)) {
+          ride.company = candidate;
+          ride.companyRecoveredFromExactImageCell = true;
+        }
+      }
+
+      if (!cellText(ride.driver) && evidence.driver) {
+        const candidate = normalizeDriverCandidate(evidence.driver);
+        if (candidate) {
+          ride.driver = candidate;
+          ride.driverRecoveredFromExactImageCell = true;
+          ride.driverRecoverySource = 'exact_geometric_cell_raw_evidence';
+        }
+      }
+
+      if (!cellText(ride.flightLocation) && evidence.flightLocation) {
+        const raw = cellText(evidence.flightLocation);
+        if (raw && !looksLikeTime(raw) && !looksLikeFlight(raw) && !/^(?:pkw|van|bus|sprinter|taxi)$/i.test(raw)) {
+          ride.flightLocation = normalizeFlightLocation(raw);
+          ride.sourceFlightLocationRaw = ride.sourceFlightLocationRaw || raw;
+          ride.flightLocationRecoveredFromExactImageCell = true;
+        }
+      }
+    });
+    return out;
+  }
+
+  function markZeroSilentErrorIntegrity(rides) {
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    out.forEach(ride => {
+      if (!ride?.sourceImageOcr) return;
+      const evidence = ride.imageCellEvidence || {};
+      const conflicts = [];
+      const add = (code, text) => { if (!conflicts.some(item => item.code === code)) conflicts.push({ code, text }); };
+
+      const cellFlights = [evidence.arrivalFlight, evidence.departureFlight]
+        .flatMap(value => flightCandidatesFromRow([value || '']));
+      const uniqueFlights = [...new Set(cellFlights)];
+      if (uniqueFlights.length === 1 && !cellText(ride.flightNumber)) {
+        add('flight_lost', `Flugnummer ${uniqueFlights[0]} wurde in der geometrischen Flugzelle erkannt, ist im finalen Datensatz aber leer`);
+      }
+
+      const vehicleEvidence = normalizeVehicleBoundaryOcrNoise(evidence.vehicle || '');
+      if (vehicleEvidence && /^(?:pkw|van|bus|sprinter|taxi)$/i.test(vehicleEvidence) && !cellText(ride.vehicle)) {
+        add('vehicle_lost', `Fahrzeug ${vehicleEvidence} wurde in der Fahrzeugzelle erkannt, ist im finalen Datensatz aber leer`);
+      }
+
+      const personsEvidence = parseNumber(evidence.persons || '');
+      if (Number.isInteger(personsEvidence) && personsEvidence >= 1 && personsEvidence <= 99 && !(Number(ride.persons) > 0)) {
+        add('persons_lost', `Personenzahl ${personsEvidence} wurde in der Personenzelle erkannt, ist im finalen Datensatz aber 0/leer`);
+      }
+
+      const flightTimeEvidence = uniqueClockCandidateFromCell(evidence.flightTime || '');
+      if (flightTimeEvidence) {
+        const current = normalizeTime(ride.flightTime);
+        if (!current || timeToMinutes(current) === null) {
+          add('flight_time_lost', `Flugzeit ${flightTimeEvidence} wurde in der Flugzeitzelle erkannt, ist im finalen Datensatz aber leer/ungültig`);
+        } else if (current !== flightTimeEvidence) {
+          add('flight_time_conflict', `Finale Flugzeit ${current} widerspricht der geometrischen Flugzeitzelle ${flightTimeEvidence}`);
+        }
+      }
+
+      if (evidence.company && !cellText(ride.company)) {
+        add('company_lost', `Firma „${cellText(evidence.company)}“ wurde in der Firmenzelle erkannt, ist im finalen Datensatz aber leer`);
+      }
+      if (evidence.company && cellText(ride.company) && cleanKey(ride.company) === cleanKey(ride.customer) && cleanKey(evidence.company) !== cleanKey(ride.company)) {
+        add('company_from_customer', `Firma wurde offenbar aus Kunde übernommen; Firmenzelle enthält „${cellText(evidence.company)}“`);
+      }
+
+      const driver = cellText(ride.driver);
+      if (driver && (/(?:^|\s)(?:van|pkw|bus|sprinter)(?:\s|$)/i.test(driver) || /\b\d{1,2}[:.]\d{2}\b/.test(driver) || /(?:^|\s)\d{1,2}(?:\s|$)/.test(driver))) {
+        add('driver_composite', `Fahrerwert „${driver}“ enthält typische Inhalte benachbarter Spalten`);
+      }
+
+      if (ride.flightTimeCellConflict) {
+        add('flight_time_cell_conflict', `Flugzeit „${cellText(ride.flightTime)}“ widerspricht der geometrischen Zell-Evidenz „${cellText(ride.flightTimeCellConflictCandidate)}“`);
+      }
+
+      ride.importIntegrityConflicts = conflicts;
+      ride.importIntegrityStatus = conflicts.length ? 'blocked' : 'ok';
+    });
+    return out;
   }
 
   function formatRawDiagnosticWords(words) {
@@ -9823,6 +10326,13 @@
           throw new Error(`Die rechte Tabellenhälfte wurde strukturell verschoben erkannt (${rightTailShift.driverCompositeCount}/${rightTailShift.total} Fahrerzellen zusammengerutscht, ${rightTailShift.displacedFlightCount}/${rightTailShift.total} Flugnummern in der Ort-Spalte). ATMS bricht vor der langsamen Zell-Nach-OCR sicher ab. Bitte vollständige Kopfzeile bzw. Bild prüfen.`);
         }
       }
+      if (result.imageOcr && result.imageMeta) {
+        preparedRides = p54MeasureSync('exact_cell_provenance_recovery', () => recoverCriticalFieldsFromImageCells(
+          preparedRides,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+      }
       if (result.imageOcr && result.imageCanvas && result.imageMeta) {
         preparedRides = await p54MeasureAsync('recover_missing_times', () => recoverMissingRideTimesTargeted(
           preparedRides,
@@ -9831,6 +10341,12 @@
           mappingInfo.mapping
         ));
         preparedRides = await p54MeasureAsync('early_time_batch_ocr', () => recoverSuspiciousRideTimesTargeted(
+          preparedRides,
+          result.imageCanvas,
+          result.imageMeta,
+          mappingInfo.mapping
+        ));
+        preparedRides = await p54MeasureAsync('missing_flight_time_targeted_ocr', () => recoverMissingFlightTimesTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
@@ -9860,13 +10376,15 @@
           result.imageMeta,
           mappingInfo.mapping
         ));
-        preparedRides = await p54MeasureAsync('missing_driver_targeted_ocr', () => recoverMissingDriversTargeted(
+        // P113: inexpensive shared driver-column consensus runs before any per-row
+        // fallback. Truly blank cells are then recognized as blank without 9 one-shot OCRs.
+        preparedRides = await p54MeasureAsync('driver_deu_column_ocr', () => recoverDriverColumnConsensusTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
           mappingInfo.mapping
         ));
-        preparedRides = await p54MeasureAsync('driver_deu_column_ocr', () => recoverDriverColumnConsensusTargeted(
+        preparedRides = await p54MeasureAsync('missing_driver_targeted_ocr', () => recoverMissingDriversTargeted(
           preparedRides,
           result.imageCanvas,
           result.imageMeta,
@@ -9911,6 +10429,7 @@
           mappingInfo.mapping
         ));
         preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
+        preparedRides = p54MeasureSync('zero_silent_error_gate', () => markZeroSilentErrorIntegrity(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));
         state.ocrCellDiagnostics = p54MeasureSync('build_raw_diagnostics', () => buildOcrCellRawDiagnostics(

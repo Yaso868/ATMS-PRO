@@ -1,0 +1,558 @@
+{
+  "format": "ATMS_GOLDEN_REGRESSION_PACK",
+  "version": 2,
+  "status": "PREPATCH_FROZEN",
+  "createdFor": "FINAL_PLANLISTEN_STABILISIERUNG",
+  "baseHead": "cc73597a9b146fb1d477aa22cdac3ee9ca3c9b19",
+  "policy": {
+    "correctOrFailClosed": true,
+    "pixelPolicy": "Source images copied byte-identical; no retouching, rewriting, sharpening or geometry edits.",
+    "noHardcoding": true,
+    "noCaseDisappearsUntilPass": true,
+    "productionMutationAllowed": false
+  },
+  "sourceImages": [
+    {
+      "file": "ATMS_GOLDEN_ERROR_PACK_2026-10-06.png",
+      "sha256": "d46a0026bb06ac8e09436123588f04c1b4ff0b70ede57ecc5e936303df166c26",
+      "bytes": 918234
+    },
+    {
+      "file": "IMG-20261006-WA0020.jpg",
+      "sha256": "37984f626d7a4b737e4ee1f7b4a94aa765843c4643563b0cfd127789aaed41f4",
+      "bytes": 43987
+    },
+    {
+      "file": "IMG-20261006-WA0022.jpg",
+      "sha256": "e5b4dc81da2052c5908e280f51ea4d8532d379634303fe1237e57142cd00c9fa",
+      "bytes": 88133
+    },
+    {
+      "file": "IMG-20261006-WA0023.jpg",
+      "sha256": "e949717304d1243138fe23c3d25856060333e82cb55b34387a798ecc032b7d2c",
+      "bytes": 12991
+    },
+    {
+      "file": "IMG-20261006-WA0024.jpg",
+      "sha256": "3f3209618b1781f468c5d41ed152926fcec719aa708fa6ef98c025effabb28f7",
+      "bytes": 233480
+    },
+    {
+      "file": "IMG-20261007-WA0000.jpg",
+      "sha256": "f9a26d902c2de88dc06ee7c4ab42e89f176e7023271f35f44c34d759e58673fa",
+      "bytes": 440605
+    },
+    {
+      "file": "IMG-20261007-WA0001.jpg",
+      "sha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+      "bytes": 463566
+    }
+  ],
+  "cases": [
+    {
+      "id": "LEGACY-P110",
+      "type": "LEGACY_PACK",
+      "source": "ATMS_GOLDEN_ERROR_PACK_2026-10-06.png",
+      "sourceRow": null,
+      "layoutClass": "L15_FULL_2026-10-06",
+      "errorClasses": [
+        "legacy_p110_bundle"
+      ],
+      "expected": {
+        "legacyManifest": "../ATMS_GOLDEN_ERROR_PACK_2026-10-06_manifest.json",
+        "rows": 16
+      },
+      "note": "Bestehender P110 Golden Error Pack bleibt vollständig verpflichtend; kein Fall darf verschwinden."
+    },
+    {
+      "id": "GE-20261006-WA0020-R2",
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0020.jpg",
+      "sourceRow": 2,
+      "layoutClass": "L15_SHORT_TWO_ROW",
+      "errorClasses": [
+        "header_mapping",
+        "column_mapping",
+        "cross_field_integrity",
+        "recovery_fallback",
+        "fail_closed",
+        "performance"
+      ],
+      "expected": {
+        "price": 47.6,
+        "time": "21:15",
+        "pickup": "DUS Airport",
+        "destination": "NH Nord-Holiday Inn",
+        "customer": "Eurowings",
+        "company": "WT",
+        "timeMirror": "21:15",
+        "arrivalFlight": "EW9735",
+        "departureFlight": "",
+        "flightNumber": "EW9735",
+        "vehicle": "Van",
+        "persons": 4,
+        "flightTime": "20:56",
+        "flightLocation": "Warschau",
+        "driver": "Lana"
+      },
+      "note": "Kurze 2-Zeilen-Liste: rechte Spalten umgelegt; Fahrer-Recovery-Crop umfasst Nachbarspalten.",
+      "previousActual": {
+        "timeMirror": "",
+        "flightTime": "21:15",
+        "flightNumber": "",
+        "flightLocation": "EW9735 -",
+        "vehicle": "",
+        "persons": 0,
+        "driver": "Van 4 20:56 Warschau Lana",
+        "importGate": "Bereit zur Übernahme"
+      },
+      "performanceEvidence": {
+        "totalMs": 61250,
+        "phase": "missing_driver_targeted_ocr",
+        "phaseMs": 59485
+      }
+    },
+    {
+      "id": "GE-20261006-WA0020-R3",
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0020.jpg",
+      "sourceRow": 3,
+      "layoutClass": "L15_SHORT_TWO_ROW",
+      "errorClasses": [
+        "header_mapping",
+        "column_mapping",
+        "cross_field_integrity",
+        "recovery_fallback",
+        "fail_closed",
+        "performance"
+      ],
+      "expected": {
+        "price": 35.0,
+        "time": "21:30",
+        "pickup": "DUS Airport",
+        "destination": "Marriott Seestern DUS",
+        "customer": "Avion",
+        "company": "Get-E",
+        "timeMirror": "21:30",
+        "arrivalFlight": "EW9765",
+        "departureFlight": "",
+        "flightNumber": "EW9765",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightTime": "",
+        "flightLocation": "Zurich",
+        "driver": "Büni"
+      },
+      "note": "Gleiche Strukturstörung in zweiter Zeile; leere echte Flugzeit darf nicht mit Hauptzeit gefüllt werden.",
+      "previousActual": {
+        "timeMirror": "",
+        "flightTime": "21:30",
+        "flightNumber": "",
+        "flightLocation": "EW9765 -",
+        "vehicle": "",
+        "persons": 0,
+        "driver": "Van 6 Zurich Bini",
+        "importGate": "Bereit zur Übernahme"
+      },
+      "performanceEvidence": {
+        "totalMs": 61250,
+        "phase": "missing_driver_targeted_ocr",
+        "phaseMs": 59485
+      }
+    },
+    {
+      "id": "GC-20261006-WA0022-R2",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0022.jpg",
+      "sourceRow": 2,
+      "layoutClass": "L14_NO_DEP_COLUMN",
+      "errorClasses": [
+        "control_short_layout"
+      ],
+      "expected": {
+        "time": "21:15",
+        "timeMirror": "21:15",
+        "flightTime": "20:56",
+        "flightNumber": "EW9735",
+        "vehicle": "Van",
+        "persons": 4,
+        "flightLocation": "Warschau",
+        "driver": "Lana"
+      },
+      "note": "Nahe Kontrollzeile: gleiche Daten funktionieren bei stabiler Header-/Geometrieerkennung.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261006-WA0022-R3",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0022.jpg",
+      "sourceRow": 3,
+      "layoutClass": "L14_NO_DEP_COLUMN",
+      "errorClasses": [
+        "control_short_layout",
+        "control_umlaut_driver"
+      ],
+      "expected": {
+        "time": "21:30",
+        "timeMirror": "21:30",
+        "flightTime": "21:40",
+        "flightNumber": "EW9765",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightLocation": "Zurich",
+        "driver": "Büni"
+      },
+      "note": "Kontrolle für Büni/Van/6 und rechte Spalten.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261006-WA0023-HEADERLESS",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0023.jpg",
+      "sourceRow": 1,
+      "layoutClass": "HEADERLESS_SINGLE_ROW",
+      "errorClasses": [
+        "control_fail_closed_headerless"
+      ],
+      "expected": {
+        "importBlocked": true,
+        "reasonClass": "header_or_geometry_insufficient"
+      },
+      "note": "Headerloser Einzelzeilen-Ausschnitt muss fail-closed bleiben; keine aggressive Rekonstruktion.",
+      "previousActual": {
+        "importBlocked": true
+      }
+    },
+    {
+      "id": "GE-20261006-WA0024-R15",
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0024.jpg",
+      "sourceRow": 15,
+      "layoutClass": "L14_NO_DEP_COLUMN_LONG",
+      "errorClasses": [
+        "performance",
+        "recovery_fallback",
+        "empty_cell_semantics"
+      ],
+      "expected": {
+        "time": "22:25",
+        "flightNumber": "EW9571",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightTime": "",
+        "flightLocation": "Jerez",
+        "driver": "",
+        "driverNeedsManualCheck": true
+      },
+      "note": "Inhaltlich leerer Fahrer ist zulässig; Recovery darf nicht eskalieren.",
+      "previousActual": {
+        "driver": "",
+        "driverNeedsManualCheck": true
+      },
+      "performanceEvidence": {
+        "totalMs": 40932,
+        "phase": "missing_driver_targeted_ocr",
+        "phaseMs": 33413
+      }
+    },
+    {
+      "id": "GC-20261006-WA0024-R16",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0024.jpg",
+      "sourceRow": 16,
+      "layoutClass": "L14_NO_DEP_COLUMN_LONG",
+      "errorClasses": [
+        "control_driver_present",
+        "control_cgn"
+      ],
+      "expected": {
+        "time": "22:20",
+        "pickup": "CGN Vorfeld",
+        "destination": "Adagio-Asahi DUS",
+        "customer": "Corendon",
+        "company": "TakeOff",
+        "flightNumber": "XR414",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightTime": "22:00",
+        "flightLocation": "Heraklion",
+        "driver": "Selim"
+      },
+      "note": "Kontrolle direkt neben leerem Fahrerfall.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GE-20261007-WA0000-R15",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0000.jpg",
+      "sourceRow": 15,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "05:15"
+      },
+      "note": "Reines Tabellen-/Boundary-Zeichen vor gültiger Flugzeit.",
+      "previousActual": {
+        "flightTime": "[05:15"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0000-R19",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0000.jpg",
+      "sourceRow": 19,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "05:35"
+      },
+      "note": "Reines Tabellen-/Boundary-Zeichen vor gültiger Flugzeit.",
+      "previousActual": {
+        "flightTime": "|05:35"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0000-R30",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0000.jpg",
+      "sourceRow": 30,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "flight_cell",
+        "fail_closed",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "time": "09:20",
+        "arrivalFlight": "OS161",
+        "flightNumber": "OS161",
+        "vehicle": "Pkw",
+        "persons": 1,
+        "flightTime": "09:20",
+        "driver": "Nimet"
+      },
+      "note": "Sichtbare OS161 ging verloren, Zeile wurde dennoch als OK freigegeben.",
+      "previousActual": {
+        "flightNumber": "",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R11",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 11,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "primary_ocr",
+        "field_normalization",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "company": "WT",
+        "flightTime": "05:05"
+      },
+      "note": "Firma und sichtbare Flugzeit fehlerhaft/verloren, trotzdem OK.",
+      "previousActual": {
+        "company": "OWT",
+        "flightTime": "",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R15",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 15,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "05:15"
+      },
+      "note": "Wiederholbarer Boundary-Zeitfehler.",
+      "previousActual": {
+        "flightTime": "[05:15"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R23",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 23,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "field_loss",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "flightTime": "05:45"
+      },
+      "note": "Sichtbare Flugzeit 05:45 geht still verloren.",
+      "previousActual": {
+        "flightTime": "",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R26",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 26,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "primary_ocr",
+        "recovery_fallback",
+        "field_normalization",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "9MB"
+      },
+      "note": "Targeted OCR sieht Köln/9MB teilweise korrekt, finale Felder übernehmen den sicheren Kandidaten nicht.",
+      "previousActual": {
+        "pickup": "Novotel Kain",
+        "flightLocation": "IMB"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R27",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 27,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "cross_field_integrity",
+        "field_normalization",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "company": "WT"
+      },
+      "note": "Kunde Eurowings wurde fälschlich in Firma übernommen.",
+      "previousActual": {
+        "company": "Eurowings",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R32",
+      "type": "ERROR_CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 32,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "flight_ocr_O_vs_0_prefix",
+        "control_flight_recovery"
+      ],
+      "expected": {
+        "arrivalFlight": "OS161",
+        "flightNumber": "OS161",
+        "flightTime": "09:20",
+        "driver": "Yannik"
+      },
+      "note": "OS161-Recovery ist hier positiv; gleichzeitig Boundary-Zeitfehler.",
+      "previousActual": {
+        "arrivalFlight": "OS161",
+        "flightNumberRawOcr": "0S161",
+        "flightTime": "|09:20"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R33",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 33,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "09:30"
+      },
+      "note": "Boundary-Zeitfehler unmittelbar neben sauberer Kontrollzeile.",
+      "previousActual": {
+        "flightTime": "|09:30"
+      }
+    },
+    {
+      "id": "GC-20261007-WA0001-R14",
+      "type": "CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "control_time_0515"
+      ],
+      "expected": {
+        "flightTime": "05:15",
+        "flightNumber": "EW9538",
+        "driver": "Nimet"
+      },
+      "note": "Gleiche Zeit 05:15 ohne Boundary-Artefakt.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261007-WA0001-R19",
+      "type": "CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 19,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "control_time_0535"
+      ],
+      "expected": {
+        "flightTime": "05:35",
+        "flightNumber": "EW9750",
+        "driver": "Schimmi"
+      },
+      "note": "Gleiche Zeitklasse 05:35 korrekt.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261007-WA0001-R34",
+      "type": "CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 34,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "control_time_0930"
+      ],
+      "expected": {
+        "flightTime": "09:30",
+        "flightNumber": "EW9612",
+        "driver": "Nimet"
+      },
+      "note": "Direkt benachbarte 09:30-Zeile ohne Boundary-Artefakt.",
+      "previousActual": "correct"
+    }
+  ],
+  "summary": {
+    "caseRecords": 21,
+    "legacyRows": 16,
+    "newErrorRecords": 13,
+    "newControlRecords": 7,
+    "layoutClasses": [
+      "HEADERLESS_SINGLE_ROW",
+      "L14_ARR_DEP_SPLIT_LONG",
+      "L14_NO_DEP_COLUMN",
+      "L14_NO_DEP_COLUMN_LONG",
+      "L15_FULL_2026-10-06",
+      "L15_SHORT_TWO_ROW"
+    ]
+  }
+}

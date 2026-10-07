@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P113 · 07.10.2026: FINAL PLANLISTEN STABILIZATION – pure helpers for strict boundary-clock cleanup and strong short-code consensus. Historical fixture values remain test-only; no flight/driver/place hardcodes.
 // ATMS PRO P110 – Golden Error Pack helpers: neighbor-cell cleanup after proven route-boundary recovery + suspicious mixed flight-prefix support; fail-closed retained.
 // ATMS PRO P109.2 – browser/node shared OCR-integrity helpers (generic edge-consensus promotion added; fail-closed retained).
 // Production logic is generic. Historical concrete values belong only in regression fixtures.
@@ -118,6 +119,18 @@
     if(/^\d{3,4}$/.test(raw)){const d=raw.padStart(4,'0'),hh=Number(d.slice(0,2)),mm=Number(d.slice(2));if(hh<=23&&mm<=59)return `${d.slice(0,2)}:${d.slice(2)}`;}
     return'';
   }
+  function parseClockTimeWithBoundaryNoise(value){
+    const raw=text(value);
+    if(!raw)return{value:'',changed:false,raw:''};
+    const direct=parseClockTime(raw);
+    if(direct)return{value:direct,changed:false,raw};
+    // P113: Only isolated table/border glyphs may be removed. The remaining cell
+    // must be one complete clock token; no embedded text, prefix or suffix is guessed.
+    const m=raw.match(/^\s*[|¦│\[\]=~]+\s*([0-2]?\d[:.]\d{2}|\d{3,4})\s*[|¦│\[\]=~]*\s*$/u);
+    if(!m)return{value:'',changed:false,raw};
+    const parsed=parseClockTime(m[1]);
+    return parsed?{value:parsed,changed:true,raw}:{value:'',changed:false,raw};
+  }
   function inferRideTimeColumnFromMatrix(matrix,headerIndex,mapping){
     const rows=Array.isArray(matrix)?matrix:[];
     const pickup=Number(mapping?.pickup);
@@ -152,6 +165,22 @@
   function repeatedTextSignature(value){
     const t=text(value).normalize('NFC').toLocaleLowerCase('de-DE');
     return t.replace(/[\s·._~\-–—/:\\|]+/g,'');
+  }
+  function suggestShortCodeConsensus(originalValue,peerValues){
+    const original=text(originalValue).replace(/\s+/g,'');
+    if(!/^[A-Za-z]{2,4}$/.test(original))return null;
+    const peers=(Array.isArray(peerValues)?peerValues:[])
+      .map(value=>text(value).replace(/\s+/g,''))
+      .filter(value=>/^[A-Za-z]{2,4}$/.test(value));
+    const counts=new Map();
+    for(const value of peers)counts.set(value,(counts.get(value)||0)+1);
+    const candidates=[...counts.entries()]
+      .filter(([candidate,count])=>candidate!==original&&count>=3&&textIntegrityEditDistance(original,candidate)===1)
+      .filter(([candidate])=>Math.abs(candidate.length-original.length)<=1)
+      .sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0],'de-DE'));
+    if(!candidates.length)return null;
+    if(candidates[1]&&candidates[1][1]===candidates[0][1])return null;
+    return{candidate:candidates[0][0],evidenceCount:candidates[0][1]};
   }
   function driverUncertaintyMarker(value){
     const raw=text(value).replace(/\s+/g,' ');if(!raw)return null;
@@ -356,5 +385,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });

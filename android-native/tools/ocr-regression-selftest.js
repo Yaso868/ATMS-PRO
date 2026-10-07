@@ -264,3 +264,54 @@ for(const fixtureLiteral of ['0OS165','OS165','Inn Eurowings','DUS Avion','US Av
 }
 console.log('P110 Golden Error Pack deterministic regression self-test: PASS');
 
+
+// P113 FINAL PLANLISTEN STABILIZATION: structure first, zero-silent-error,
+// boundary-noise normalization and bounded recovery. Test values are generic and
+// deliberately unrelated to productive plan-list examples.
+const p113ManifestPath=path.join(__dirname,'fixtures','golden-regression','ATMS_GOLDEN_REGRESSION_PACK_FINAL_manifest.json');
+assert(fs.existsSync(p113ManifestPath),'P113 frozen Golden Regression manifest must exist');
+const p113Manifest=JSON.parse(fs.readFileSync(p113ManifestPath,'utf8'));
+assert.strictEqual(p113Manifest.baseHead,'cc73597a9b146fb1d477aa22cdac3ee9ca3c9b19');
+assert(Number(p113Manifest.summary?.newErrorRecords||0)>=13,'P113 manifest must retain all newly confirmed error cases');
+assert(Number(p113Manifest.summary?.newControlRecords||0)>=7,'P113 manifest must retain positive controls');
+const crypto=require('crypto');
+const p113SourceDir=path.join(__dirname,'fixtures','golden-regression','source-images');
+for(const sourceImage of (p113Manifest.sourceImages||[])){
+  const sourcePath=path.join(p113SourceDir,sourceImage.file);
+  assert(fs.existsSync(sourcePath),`P113 source image missing: ${sourceImage.file}`);
+  const bytes=fs.readFileSync(sourcePath);
+  assert.strictEqual(bytes.length,Number(sourceImage.bytes),`P113 source image byte-size changed: ${sourceImage.file}`);
+  assert.strictEqual(crypto.createHash('sha256').update(bytes).digest('hex'),sourceImage.sha256,`P113 source image pixels/bytes changed: ${sourceImage.file}`);
+}
+
+assert.deepStrictEqual(core.parseClockTimeWithBoundaryNoise('[05:15'),{value:'05:15',changed:true,raw:'[05:15'});
+assert.deepStrictEqual(core.parseClockTimeWithBoundaryNoise('|09:20'),{value:'09:20',changed:true,raw:'|09:20'});
+assert.deepStrictEqual(core.parseClockTimeWithBoundaryNoise('|09:30'),{value:'09:30',changed:true,raw:'|09:30'});
+assert.deepStrictEqual(core.parseClockTimeWithBoundaryNoise('09:30'),{value:'09:30',changed:false,raw:'09:30'});
+assert.strictEqual(core.parseClockTimeWithBoundaryNoise('note09:20').value,'');
+assert.strictEqual(core.parseClockTimeWithBoundaryNoise('09:20note').value,'');
+
+assert.deepStrictEqual(core.suggestShortCodeConsensus('ABX',['AB','AB','AB','CD']),{candidate:'AB',evidenceCount:3});
+assert.strictEqual(core.suggestShortCodeConsensus('ABC',['AB','AB','AB','ABD','ABD','ABD']),null,'P113 short-code correction must fail closed on a tie');
+assert.strictEqual(core.suggestShortCodeConsensus('ALPHA',['ALPH','ALPH','ALPH']),null,'P113 short-code correction must stay narrowly scoped to short codes');
+
+assert(planImportSource.includes('function hasMirrorDataEvidence('),'P113 must use repeated data geometry to recover a missing duplicate mirror-time header');
+assert(planImportSource.includes('forceMirrorFromData'),'P113 must feed mirror-time data evidence into schema selection');
+assert(planImportSource.includes('if (list.length < 2)'),'P113 right-tail shift detection must include two-row plans');
+assert(planImportSource.includes("company = options.imageOcr ? companyCell"),'P113 image OCR must not synthesize company from customer/default values');
+assert(!planImportSource.includes("options.imageOcr ? (companyCell || customer"),'P113 must not reintroduce customer-as-company image fallback');
+assert(planImportSource.includes("p54MeasureSync('exact_cell_provenance_recovery'"),'P113 must collect exact-cell provenance before fallback OCR');
+assert(planImportSource.includes("p54MeasureSync('zero_silent_error_gate'"),'P113 must run a global zero-silent-error gate before import release');
+assert(planImportSource.includes("p54MeasureAsync('missing_flight_time_targeted_ocr'"),'P113 must recover missing flight-time only from its exact mapped cell');
+assert(planImportSource.includes('driverBlankCellConfirmed'),'P113 must distinguish a truly blank driver cell from OCR uncertainty');
+assert(planImportSource.includes("p109SharedOcrWithWorker('deu'"),'P113 bounded driver/text recovery must reuse the shared OCR worker');
+assert(planImportSource.includes('importIntegrityConflicts'),'P113 validate must surface structural/cross-field integrity conflicts');
+assert(planImportSource.includes('flightTimeOcrConflict'),'P113 ambiguous flight-time recovery must fail closed');
+assert(planImportSource.includes('OcrConflictCandidate'),'P113 discarded conflicting secondary OCR evidence must remain visible to validation');
+
+// New stabilization implementation must remain structural/generic. These synthetic
+// sentinel values would indicate a test-specific branch if they ever appeared in production.
+for(const fixtureLiteral of ['ABX','note09:20','P113_SENTINEL_DRIVER','P113_SENTINEL_ROUTE']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+console.log('P113 Final Planlisten Stabilization regression self-test: PASS');
