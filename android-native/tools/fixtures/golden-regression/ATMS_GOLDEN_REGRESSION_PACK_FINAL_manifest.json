@@ -463,6 +463,21 @@
         "zeroSilentErrorGatePass": true,
         "exactValuePass": false,
         "summary": "33/33; 3 Hinweise; 1 Fehler; P113.2 blieb bei IMB↔9MB fail-closed ohne Regression der bereits korrigierten Kontrollfälle"
+      },
+      "p1134Target": {
+        "flightLocation": "9MB",
+        "mode": "edge_glyph_adjudication",
+        "requires": {
+          "singleEdgeGlyphDifference": true,
+          "invariantRemainingCore": true,
+          "minCompatibleExactCellViews": 3,
+          "minEvidenceFamilies": 2,
+          "minEdgeStates": 2,
+          "requiresMissingEdgeView": true,
+          "requiresExactIndependentBatchCandidate": true,
+          "rejectCompetingBatchOrCoreEvidence": true
+        },
+        "realDeviceProofPending": true
       }
     },
     {
