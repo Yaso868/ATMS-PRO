@@ -475,3 +475,33 @@ const p11331RuntimeCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0
 assert.strictEqual(p11331RuntimeCase?.previousActual?.error,'reviewItems is not defined','P113.3.1 must retain the confirmed real-device runtime regression');
 assert.strictEqual(p11331RuntimeCase?.expected?.apkBuildBlockedWhenRuntimeSmokeFails,true,'P113.3.1 runtime failure must block APK packaging');
 console.log('P113.3.1 runtime-scope/build-gate deterministic regression self-test: PASS');
+// P113.4 EDGE-GLYPH ADJUDICATION: a unique independent batch answer may resolve
+// one unstable edge glyph only when every non-empty exact-cell view preserves
+// the same remaining core, the evidence spans multiple view families/states,
+// and at least one view loses the edge glyph completely.
+const p1134Quality={fullCellIncluded:true,leftEdgeClipped:false,rightEdgeClipped:false,neighborColumnIncluded:false,targetCellGeometryConfirmed:true};
+const p1134Attempts=[
+  {scope:'batch',mode:'batch',candidate:'N4Q'},
+  {scope:'cell_view',mode:'full-original',candidate:'M4Q',viewRegion:'full_cell',transform:'original',cropQuality:p1134Quality},
+  {scope:'cell_view',mode:'content-original-7',candidate:'4Q',viewRegion:'content_inside_cell',transform:'original',cropQuality:p1134Quality},
+  {scope:'cell_view',mode:'content-original-10',candidate:'4Q',viewRegion:'content_inside_cell',transform:'original',cropQuality:p1134Quality},
+  {scope:'cell_view',mode:'processed-8',candidate:'S4Q',viewRegion:'full_cell',transform:'original',cropQuality:p1134Quality}
+];
+assert.deepStrictEqual(core.edgeGlyphAdjudication('M4Q',p1134Attempts,p1134Quality),{
+  candidate:'N4Q',edge:'left',core:'4Q',compatibleViews:4,evidenceFamilies:3,edgeStates:3,missingEdgeViews:2,batch:1,strength:'edge_glyph_adjudicated'
+});
+assert.strictEqual(core.edgeGlyphAdjudication('M4Q',p1134Attempts.concat([{scope:'batch',mode:'batch2',candidate:'P4Q'}]),p1134Quality),null,'P113.4 competing batch candidates must fail closed');
+assert.strictEqual(core.edgeGlyphAdjudication('M4Q',p1134Attempts.map(x=>x.candidate==='4Q'?{...x,candidate:'M4Q'}:x),p1134Quality),null,'P113.4 requires at least one missing-edge exact-cell view');
+assert.strictEqual(core.edgeGlyphAdjudication('M4Q',p1134Attempts.concat([{scope:'cell_view',mode:'competing-core',candidate:'M5Q',viewRegion:'full_cell',transform:'grayscale',cropQuality:p1134Quality}]),p1134Quality),null,'P113.4 competing exact-cell core evidence must fail closed');
+assert.strictEqual(core.edgeGlyphAdjudication('M4Q',p1134Attempts.slice(0,3),p1134Quality),null,'P113.4 fewer than three compatible exact-cell views must fail closed');
+assert(planImportSource.includes("ocrIntegrityCore?.edgeGlyphAdjudication"),'P113.4 plan import must consume the bounded core adjudicator');
+assert(planImportSource.includes("'edge_glyph_adjudication'"),'P113.4 correction source must be auditable');
+assert(planImportSource.includes('promotedFromEdgeGlyphAdjudication'),'P113.4 evidence details must be persisted for diagnosis');
+const p1134Case=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-R26');
+assert.strictEqual(p1134Case?.p1134Target?.realDeviceProofPending,true,'P113.4 must not pre-claim the Realgeraet result');
+assert.strictEqual(p1134Case?.p1134Target?.requires?.rejectCompetingBatchOrCoreEvidence,true,'P113.4 Golden target must retain fail-closed competition gate');
+for(const fixtureLiteral of ['M4Q','N4Q','S4Q','P4Q','M5Q']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.4 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+console.log('P113.4 edge-glyph adjudication deterministic regression self-test: PASS');
+
