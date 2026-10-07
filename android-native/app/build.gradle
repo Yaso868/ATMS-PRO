@@ -72,6 +72,15 @@ tasks.register('mirrorSchemaIntegrityP1137', Exec) {
     commandLine 'node', 'tools/mirror-schema-integrity-selftest-p1137.js'
 }
 
+
+// P113.8: bounded text-edge integrity gate. Exercises the real helper logic for
+// primary-vs-secondary terminal punctuation, hyphenated short-code edge loss,
+// strong raw route preservation, and single-token flight-location edge recovery.
+tasks.register('textEdgeIntegrityP1138', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/text-edge-integrity-selftest-p1138.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -86,4 +95,5 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('planImportRuntimeSmoke')
     dependsOn tasks.named('headerTimeIntegrationP1136')
     dependsOn tasks.named('mirrorSchemaIntegrityP1137')
+    dependsOn tasks.named('textEdgeIntegrityP1138')
 }

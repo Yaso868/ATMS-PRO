@@ -623,7 +623,8 @@ assert(p1137SchemaCase,'P113.7 manifest must retain the confirmed mirror-schema 
 assert.strictEqual(p1137SchemaCase?.expected?.physicalColumns,14,'P113.7 Golden case must lock the 14-column source schema');
 assert.strictEqual(p1137SchemaCase?.expected?.timeMirror,6,'P113.7 Golden case must lock middle timeMirror at column 6');
 assert.strictEqual(p113Manifest?.p1137?.hardcodingAllowed,false,'P113.7 production hardcoding remains forbidden');
-assert.strictEqual(p113Manifest?.p1137?.realDeviceProofPending,true,'P113.7 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1137?.realDeviceProofPending,false,'P113.7 manifest must record that the real-device proof was executed');
+assert.strictEqual(p113Manifest?.p1137?.realDeviceResult,'STRUCTURAL_PASS_INTEGRITY_FAIL','P113.7 manifest must retain the confirmed structural-pass/integrity-fail result');
 assert(planImportSource.includes('inferMirrorTimeEvidenceFromRawWords'),'P113.7 must derive mirror-schema evidence from raw-word geometry');
 assert(planImportSource.includes('mirrorTimeRowGeometryDiagnostic'),'P113.7 mirror geometry evidence must remain diagnosable');
 assert(planImportSource.includes('normalizeCompanyBoundaryOcrNoise'),'P113.7 must retain bounded company table-edge normalization');
@@ -632,5 +633,22 @@ assert(planImportSource.includes('routeSecondaryEdgeDecision'),'P113.7 must reta
 assert(planImportSource.includes('cancellationRowColorSignal'),'P113.7 must retain independent row-color cancellation corroboration');
 assert.strictEqual(Number(p113Manifest.summary?.caseRecords||0)>=40,true,'P113.7 manifest must retain all newly confirmed WA0014 Golden cases');
 console.log('P113.7 mirror/schema Golden manifest deterministic regression self-test: PASS');
+
+
+// P113.8: after P113.7 structural success, real-device evidence exposed bounded
+// text-edge integrity failures. The new release gate must preserve these Golden
+// cases and require the dedicated helper self-test before APK packaging.
+const p1138CustomerCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-P1137-CUSTOMER-TERMINAL-PUNCT');
+const p1138CompanyCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R7-COMPANY-EDGE-TRUNCATION-P1137');
+assert(p1138CustomerCase,'P113.8 manifest must retain repeated customer terminal-punctuation false conflicts');
+assert(p1138CompanyCase,'P113.8 manifest must retain the hyphenated company edge-truncation overcorrection');
+assert.strictEqual(p113Manifest?.p1138?.baseHead,'9430b5a','P113.8 manifest must record the freshly user-verified P113.7 post-installer main HEAD');
+assert.strictEqual(p113Manifest?.p1138?.hardcodingAllowed,false,'P113.8 production hardcoding remains forbidden');
+assert.strictEqual(p113Manifest?.p1138?.realDeviceProofPending,true,'P113.8 must not pre-claim real-device success');
+assert(planImportSource.includes('strongPrimarySecondaryEdgeDegradation'),'P113.8 must retain bounded customer/company secondary edge adjudication');
+assert(planImportSource.includes('strongPrimaryRouteSecondaryEdgeDegradation'),'P113.8 must retain strong-primary multi-token route edge preservation');
+assert(planImportSource.includes('primarySingleTokenRawEdgeRecovery'),'P113.8 must retain bounded single-token raw edge recovery');
+assert.strictEqual(Number(p113Manifest.summary?.caseRecords||0)>=42,true,'P113.8 manifest must retain all newly confirmed Golden cases');
+console.log('P113.8 text-edge Golden manifest deterministic regression self-test: PASS');
 
 

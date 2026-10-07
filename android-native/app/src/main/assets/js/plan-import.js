@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P1137 · 07.10.2026: MIRROR-SCHEMA INTEGRITY – recover the missing middle mirror-time schema from row-aligned raw geometry after P113.6, keep exact primary route text against weaker edge-degraded secondary OCR, and allow exact Storno+row-color exclusion; fail closed otherwise.
+// CORE-007D8A1F1D8P1138 · 07.10.2026: TEXT-EDGE INTEGRITY – preserve strong primary customer/company/route text against bounded edge-degraded secondary OCR and restore a clipped single-token flight location only from strong exact primary raw-cell evidence; fail closed on semantic conflict.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – after the P113.5 raw-line pass, pair recurring raw Preis/time words by physical Y rows so Android line fragmentation cannot erase the primary ride-time column; fail closed on weak/competing geometry.
 // CORE-007D8A1F1D8P1135 · 07.10.2026: HEADER/TIME GEOMETRY RECOVERY – missing primary ride-time header may be reconstructed only from repeated raw OCR clock geometry between Preis and Von before matrix completion; no fixture/time hardcodes.
 // CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – bounded short-code edge resolution from exact independent batch evidence plus invariant-core multi-view cell evidence; no code-value hardcodes.
@@ -6019,6 +6019,45 @@
     return { candidate: raw, edge: decision.edge, confidence, wordCount, evidence: decision.evidence };
   }
 
+  function primarySingleTokenRawEdgeRecovery(currentValue, rawCellValue, evidence = {}) {
+    const current = cellText(currentValue).normalize('NFC').trim();
+    const raw = cellText(rawCellValue).normalize('NFC').trim();
+    if (!current || !raw || current === raw || raw.length <= current.length) return null;
+    if (/\s/u.test(current) || /\s/u.test(raw)) return null;
+    if (!/^[A-Za-zÄÖÜäöüßÀ-ÿ][A-Za-zÄÖÜäöüßÀ-ÿ'’.-]{5,}$/u.test(raw)) return null;
+    const confidence = Number(evidence?.confidence);
+    const wordCount = Number(evidence?.wordCount || 0);
+    if (!Number.isFinite(confidence) || confidence < 80 || wordCount !== 1) return null;
+    const loss = raw.length - current.length;
+    if (loss < 1 || loss > 2) return null;
+    if (raw.endsWith(current)) return { candidate: raw, edge: 'left', confidence, wordCount };
+    if (raw.startsWith(current)) return { candidate: raw, edge: 'right', confidence, wordCount };
+    return null;
+  }
+
+  function strongPrimaryRouteSecondaryEdgeDegradation(originalValue, candidateValue, cellEvidence) {
+    const original = routeOcrText(originalValue);
+    const candidate = routeOcrText(candidateValue);
+    const rawPrimary = routeOcrText(cellEvidenceRawValue({ route: cellEvidence }, 'route'));
+    const confidence = Number(cellEvidence?.confidence);
+    if (!original || !candidate || !rawPrimary || routeOcrBase(rawPrimary) !== routeOcrBase(original)) return null;
+    if (!Number.isFinite(confidence) || confidence < 80) return null;
+    const left = ocrIntegrityCore?.leftEdgeTextDegradation
+      ? ocrIntegrityCore.leftEdgeTextDegradation(original, candidate)
+      : null;
+    const right = ocrIntegrityCore?.rightEdgeTextDegradation
+      ? ocrIntegrityCore.rightEdgeTextDegradation(original, candidate)
+      : null;
+    const evidence = left || right;
+    if (!evidence) return null;
+    return {
+      reason: left ? 'secondary_left_edge_degradation_against_strong_primary_raw' : 'secondary_right_edge_degradation_against_strong_primary_raw',
+      primaryConfidence: confidence,
+      commonLength: Number(evidence.commonLength || 0),
+      coverage: Number(evidence.coverage || 0)
+    };
+  }
+
   function routeSecondaryEdgeDecision(originalValue, candidateValue, localCandidates, primaryConfidence, samePlanPrimaryPeers) {
     const original = routeOcrText(originalValue);
     const candidate = routeOcrText(candidateValue);
@@ -6300,6 +6339,14 @@
         let primaryConfidence = null;
         let localCandidates = [];
         const rowMetaForRoute = rowsWithMeta.find(item => item.sourceRow === sourceRow)?.meta || null;
+        const primaryCellEvidence = ride?.imageCellEvidence?.[descriptor.field] || null;
+        const primaryRawEdgeNoise = strongPrimaryRouteSecondaryEdgeDegradation(original, candidate, primaryCellEvidence);
+        if (primaryRawEdgeNoise) {
+          ride[`${descriptor.field}OcrSecondaryRawEdgeNoiseIgnored`] = true;
+          ride[`${descriptor.field}OcrSecondaryRawEdgeNoiseCandidate`] = candidate;
+          ride[`${descriptor.field}OcrSecondaryRawEdgeNoiseEvidence`] = { ...primaryRawEdgeNoise };
+          continue;
+        }
         let safe = routeChangedDiacriticTokenIsSafe(original, candidate);
         if (!safe && winner[1] >= 2 && routeChangedDiacriticTokenIsSafe(original, candidate, 2)) {
           primaryConfidence = routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMetaForRoute, left, right);
@@ -6502,6 +6549,52 @@
   function textIntegrityEdgeAlternative(original, candidate) {
     if (ocrIntegrityCore?.textIntegrityEdgePunctuationAlternative) return ocrIntegrityCore.textIntegrityEdgePunctuationAlternative(original, candidate);
     return false;
+  }
+
+  // P113.8 local prototype: secondary OCR near a cell edge can repeatedly agree
+  // on the same clipped/punctuation-corrupted value because its batch/local crops
+  // share the same geometric boundary. A strong primary full-image word plus at
+  // least one same-plan primary peer may therefore veto ONLY narrowly-defined
+  // edge degradation. Semantic substitutions remain fail-closed.
+  function strongPrimarySecondaryEdgeDegradation(originalValue, candidateValue, cellEvidence, peerCount, attempts = []) {
+    const original = cellText(originalValue).normalize('NFC').trim();
+    const candidate = cellText(candidateValue).normalize('NFC').trim();
+    if (!original || !candidate || original === candidate) return null;
+    const rawPrimary = cellText(cellEvidence?.rawOcr || cellEvidence?.normalizedValue || '').normalize('NFC').trim();
+    const confidence = Number(cellEvidence?.confidence);
+    if (!rawPrimary || rawPrimary.toLocaleLowerCase('de-DE') !== original.toLocaleLowerCase('de-DE')) return null;
+    if (!Number.isFinite(confidence) || confidence < 80 || Number(peerCount || 0) < 1) return null;
+
+    const exactCandidateViews = (Array.isArray(attempts) ? attempts : []).filter(attempt =>
+      cellText(attempt?.scope) === 'cell_view' &&
+      cellText(attempt?.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === candidate.toLocaleLowerCase('de-DE')
+    ).length;
+    if (exactCandidateViews >= 2) return null;
+
+    const a = original.toLocaleLowerCase('de-DE');
+    const b = candidate.toLocaleLowerCase('de-DE');
+    if (a.length === b.length && a.length >= 6) {
+      const diffs = [];
+      for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) diffs.push(i);
+      if (diffs.length === 1 && (diffs[0] === 0 || diffs[0] === a.length - 1)) {
+        const i = diffs[0];
+        const originalGlyph = a[i], candidateGlyph = b[i];
+        const candidateIsPunctuation = /[:;,.!?|¦│'"`´~]/u.test(candidateGlyph);
+        if (/[a-z0-9äöüßà-ÿ]/iu.test(originalGlyph) && candidateIsPunctuation && ((a.length - 1) / a.length) >= 0.80) {
+          return { reason: 'secondary_terminal_punctuation_substitution', confidence, peerCount: Number(peerCount || 0) };
+        }
+      }
+    }
+
+    const compactOriginal = a.replace(/\s+/g, '');
+    const compactCandidate = b.replace(/\s+/g, '');
+    const loss = compactOriginal.length - compactCandidate.length;
+    if (compactOriginal.length >= 4 && compactOriginal.length <= 12 && loss >= 1 && loss <= 2 &&
+        /^[a-z0-9]+(?:[-_/][a-z0-9]+)+$/iu.test(compactOriginal) &&
+        (compactOriginal.startsWith(compactCandidate) || compactOriginal.endsWith(compactCandidate))) {
+      return { reason: 'secondary_short_code_edge_truncation', confidence, peerCount: Number(peerCount || 0) };
+    }
+    return null;
   }
 
   function exactCellEvidenceTransform(sourceCanvas, mode) {
@@ -7064,6 +7157,21 @@
         const promotedShortCodeConflict = Boolean(shortCodePromotion?.candidate);
         const promotedExactCellConsensus = Boolean(exactCellConsensus?.candidate);
         const promotedEdgeGlyphAdjudication = Boolean(edgeGlyphAdjudication?.candidate);
+        const primaryPeerCount = candidate ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, original) : 0;
+        const degradedSecondary = candidate
+          ? strongPrimarySecondaryEdgeDegradation(original, candidate, cellEvidence || null, primaryPeerCount, attempts)
+          : null;
+        if (degradedSecondary) {
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseIgnored`] = true;
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseCandidate`] = candidate;
+          ride[`${descriptor.field}OcrSecondaryEdgeNoiseEvidence`] = { ...degradedSecondary };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.manualCheckRequired = false;
+            cellEvidence.verificationSource = degradedSecondary.reason;
+          }
+          return;
+        }
+
         const canCorrect = Boolean(
           candidate &&
           textIntegrityAlternativeIsSafe(original, candidate) &&
@@ -9371,8 +9479,19 @@
         }
       }
 
-      if (!cellText(ride.flightLocation) && cellEvidenceRawValue(evidence, 'flightLocation')) {
-        const raw = cellEvidenceRawValue(evidence, 'flightLocation');
+      const flightLocationRaw = cellEvidenceRawValue(evidence, 'flightLocation');
+      if (cellText(ride.flightLocation) && flightLocationRaw) {
+        const edgeRecovery = primarySingleTokenRawEdgeRecovery(ride.flightLocation, flightLocationRaw, evidence?.flightLocation || {});
+        if (edgeRecovery?.candidate && !looksLikeTime(edgeRecovery.candidate) && !looksLikeFlight(edgeRecovery.candidate) && !/^(?:pkw|van|bus|sprinter|taxi)$/i.test(edgeRecovery.candidate)) {
+          ride.flightLocationOcrInitial = cellText(ride.flightLocation);
+          ride.flightLocation = normalizeFlightLocation(edgeRecovery.candidate);
+          ride.sourceFlightLocationRaw = ride.sourceFlightLocationRaw || edgeRecovery.candidate;
+          ride.flightLocationRecoveredFromExactRawEdge = true;
+          ride.flightLocationExactRawEdgeEvidence = { edge: edgeRecovery.edge, confidence: edgeRecovery.confidence, wordCount: edgeRecovery.wordCount };
+        }
+      }
+      if (!cellText(ride.flightLocation) && flightLocationRaw) {
+        const raw = flightLocationRaw;
         if (raw && !looksLikeTime(raw) && !looksLikeFlight(raw) && !/^(?:pkw|van|bus|sprinter|taxi)$/i.test(raw)) {
           ride.flightLocation = normalizeFlightLocation(raw);
           ride.sourceFlightLocationRaw = ride.sourceFlightLocationRaw || raw;

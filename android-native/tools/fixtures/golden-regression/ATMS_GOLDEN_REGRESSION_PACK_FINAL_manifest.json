@@ -880,8 +880,20 @@
         "rejectCompetingStableMirrorCluster": true,
         "protectTrue13ColumnNoMirrorLayouts": true,
         "protectExistingTimeMapping": true,
-        "realDeviceProofPending": true,
+        "realDeviceProofPending": false,
         "hardcodingAllowed": false
+      },
+      "p1137RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1137",
+        "analysisCompleted": true,
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "timeMappingPresent": true,
+        "timeMirrorMappingPresent": true,
+        "flightTimeMappingPresent": true,
+        "flightNumbersNoLongerMirrorPrefixed": true,
+        "ocrDataErrors": 8,
+        "result": "STRUCTURAL_PASS_INTEGRITY_FAIL"
       }
     },
     {
@@ -934,7 +946,15 @@
           "05KL1803"
         ]
       },
-      "reproducibility": "confirmed_real_device_P1136"
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1137",
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "timeMirrorPresent": true,
+        "flightNumbersNoLongerMirrorPrefixed": true,
+        "result": "PASS"
+      }
     },
     {
       "id": "GE-20261007-WA0014-R2-TIME-REOCR-CONFLICT-P1136",
@@ -1079,7 +1099,12 @@
         "pickup": "arriott Seestern DUS",
         "rowStatus": "OK"
       },
-      "reproducibility": "confirmed_real_device_P1136"
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "pickup": "arriott Seestern DUS",
+        "rowStatus": "OK",
+        "result": "FAIL_PERSISTED"
+      }
     },
     {
       "id": "GE-20261007-WA0014-R14-COMPANY-BOUNDARY-P1136",
@@ -1150,7 +1175,12 @@
         "flightLocation": "msterdam",
         "rowStatus": "Fehler"
       },
-      "reproducibility": "confirmed_real_device_P1136"
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "result": "FAIL_PERSISTED"
+      }
     },
     {
       "id": "GE-20261007-WA0014-R4-STORNO-EXCLUSION-P1136",
@@ -1176,13 +1206,77 @@
         "cancelledRowsExcluded": 0,
         "stornoRowIncluded": true
       },
-      "reproducibility": "confirmed_real_device_P1136"
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "result": "PASS"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0014-P1137-CUSTOMER-TERMINAL-PUNCT",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRows": [
+        2,
+        3,
+        6,
+        8,
+        9,
+        10,
+        11,
+        13
+      ],
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "customer_text_integrity",
+        "secondary_ocr_terminal_punctuation",
+        "false_positive_conflict",
+        "repeated_secondary_crop_bias"
+      ],
+      "expected": {
+        "customer": "Eurowings",
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "primaryCustomer": "Eurowings",
+        "secondaryTextOcr": "Eurowing:",
+        "blockedRows": 8,
+        "result": "FAIL"
+      },
+      "note": "P113.7 real-device: strong primary full-image customer text was repeatedly blocked by an edge-corrupted secondary OCR variant ending in punctuation. P113.8 may suppress only a single extreme-edge punctuation substitution with strong exact primary evidence and same-plan peer support; semantic substitutions remain fail-closed.",
+      "reproducibility": "confirmed_real_device_P1137"
+    },
+    {
+      "id": "GE-20261007-WA0014-R7-COMPANY-EDGE-TRUNCATION-P1137",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "secondary_ocr_edge_truncation",
+        "false_auto_correction",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "automaticCorrectionToTruncatedValue": false
+      },
+      "previousActual": {
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "displayedCompany": "Get-",
+        "result": "FAIL"
+      },
+      "note": "P113.7 real-device: after mirror-schema repair, secondary text OCR incorrectly shortened a strong primary hyphenated company code at the cell edge. P113.8 suppresses only strict 1-2 character edge truncation of a delimiter-bearing short code with strong primary raw evidence and peer support.",
+      "reproducibility": "confirmed_real_device_P1137"
     }
   ],
   "summary": {
-    "caseRecords": 40,
+    "caseRecords": 42,
     "legacyRows": 16,
-    "newErrorRecords": 32,
+    "newErrorRecords": 34,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -1288,6 +1382,34 @@
       "semantic route conflict",
       "cancellation text without second signal",
       "row color without exact cancellation marker"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "STRUCTURAL_PASS_INTEGRITY_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1137"
+  },
+  "p1138": {
+    "baseHead": "9430b5a",
+    "parentUploadCommit": "4b87fde",
+    "method": "BOUNDED TEXT-EDGE INTEGRITY AFTER MIRROR-SCHEMA RECOVERY",
+    "sourceCases": [
+      "GE-20261007-WA0014-P1137-CUSTOMER-TERMINAL-PUNCT",
+      "GE-20261007-WA0014-R7-COMPANY-EDGE-TRUNCATION-P1137",
+      "GE-20261007-WA0014-R12-PICKUP-LEFTCLIP-P1136",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-LEFTCLIP-P1136"
+    ],
+    "productionRules": [
+      "strong primary exact customer/company text may veto only one extreme-edge punctuation substitution or strict delimiter-bearing short-code edge truncation when same-plan peer evidence exists",
+      "strong exact primary multi-token route evidence may veto only bounded secondary left/right edge degradation; semantic route changes remain conflicts",
+      "a clipped single-token flight location may be restored only from a longer strong exact raw primary token differing by at most two edge characters"
+    ],
+    "failClosed": [
+      "weak primary confidence",
+      "no same-plan primary peer for customer/company veto",
+      "two exact-cell views independently confirm the competing customer/company candidate",
+      "semantic substitution instead of edge degradation",
+      "raw single-token location differs internally instead of only at an edge",
+      "raw single-token location spans multiple OCR words"
     ],
     "hardcodingAllowed": false,
     "realDeviceProofPending": true
