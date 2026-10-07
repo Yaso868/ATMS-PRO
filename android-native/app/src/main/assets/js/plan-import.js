@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11331 · 07.10.2026: P113.3.1 RUNTIME FIX – reviewItems function-scope repair plus mandatory executable runtime smoke gate; GPT-Vision cell replay semantics unchanged.
 // CORE-007D8A1F1D8P1133 · 07.10.2026: GPT-VISION CELL REPLAY – exact-cell content-region evidence, low-confidence short-code review, bounded multi-view OCR diversity and zero-silent-error diagnostics. No flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P1132 · 07.10.2026: CHATGPT-LIKE CELL EVIDENCE – geometry-first exact-cell provenance, bounded multi-view OCR consensus and crop-quality-aware fail-closed validation. No flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P1131 · 07.10.2026: GOLDEN ERROR FOLLOW-UP – left-edge route degradation handling, short-code exact-cell OCR, flight-column integrity consensus, and date-batch/error-count separation. CORRECT OR FAIL CLOSED; no flight/driver/place/file hardcodes.
@@ -6518,6 +6519,11 @@
 
     const attemptLogByField = new Map(activeDescriptors.map(item => [item.field, new Map()]));
     const batchCandidatesByField = new Map(activeDescriptors.map(item => [item.field, new Map()]));
+    // P113.3.1: this collection is consumed both during the OCR try-block and
+    // afterwards while final evidence is attached. Keep it in function scope;
+    // block-scoping it inside try caused the real-device ReferenceError
+    // `reviewItems is not defined` after P113.3 finished OCR successfully.
+    const reviewItems = [];
     let worker = null;
     let shortCodeWorker = null;
 
@@ -6574,7 +6580,6 @@
         }
       }
 
-      const reviewItems = [];
       activeDescriptors.forEach(descriptor => {
         const attemptLogByRow = attemptLogByField.get(descriptor.field);
         const batchCandidatesByRow = batchCandidatesByField.get(descriptor.field);

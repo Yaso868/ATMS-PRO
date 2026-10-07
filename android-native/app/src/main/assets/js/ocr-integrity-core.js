@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11331 · 07.10.2026: P113.3.1 RUNTIME GATE – OCR consensus semantics unchanged; paired with executable plan-import runtime smoke.
 // CORE-007D8A1F1D8P1133 · 07.10.2026: GPT-VISION CELL REPLAY – exact-cell/content-region consensus with bounded evidence diversity and crop-quality gating; CORRECT OR FAIL CLOSED.
 // CORE-007D8A1F1D8P1132 · 07.10.2026: CHATGPT-LIKE CELL EVIDENCE – exact-cell multi-view consensus with crop-quality gating; CORRECT OR FAIL CLOSED. Historical fixture values remain test-only; no flight/driver/place hardcodes.
 // CORE-007D8A1F1D8P1131 · 07.10.2026: GOLDEN ERROR FOLLOW-UP – generic left-edge text degradation detection, short-code image consensus and safer one-digit flight correction. Historical fixture values remain test-only; no flight/driver/place hardcodes.

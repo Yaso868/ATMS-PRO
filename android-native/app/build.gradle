@@ -52,6 +52,17 @@ tasks.register('ocrIntegrityRegression', Exec) {
     workingDir rootProject.projectDir
     commandLine 'node', 'tools/ocr-regression-selftest.js'
 }
+
+// P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
+// the real-device block-scope ReferenceError in P113.3. This task executes the
+// real recoverTextIntegrityTargeted() body and a complete analyze() control path
+// before any APK may be packaged.
+tasks.register('planImportRuntimeSmoke', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/plan-import-runtime-smoke-p11331.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
+    dependsOn tasks.named('planImportRuntimeSmoke')
 }

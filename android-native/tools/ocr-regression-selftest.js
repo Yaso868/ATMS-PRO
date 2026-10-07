@@ -451,3 +451,27 @@ for(const fixtureLiteral of ['A7D','B7D']){
 }
 console.log('P113.3 GPT-Vision Cell Replay deterministic regression self-test: PASS');
 
+
+
+// P113.3.1 RUNTIME FIX: the real-device ReferenceError escaped syntax/source
+// checks because reviewItems was block-scoped inside try but consumed after
+// finally. The declaration must live in recoverTextIntegrityTargeted() function
+// scope and an executable runtime gate must be wired into preBuild.
+const p11331RecoveryStart=planImportSource.indexOf('async function recoverTextIntegrityTargeted(');
+const p11331RecoveryEnd=planImportSource.indexOf('// CORE-005R:',p11331RecoveryStart);
+assert(p11331RecoveryStart>=0 && p11331RecoveryEnd>p11331RecoveryStart,'P113.3.1 text-integrity function must be present');
+const p11331RecoverySource=planImportSource.slice(p11331RecoveryStart,p11331RecoveryEnd);
+const p11331ReviewDecl=p11331RecoverySource.indexOf('const reviewItems = [];');
+const p11331Try=p11331RecoverySource.indexOf('try {');
+assert(p11331ReviewDecl>=0,'P113.3.1 reviewItems collection must be declared');
+assert(p11331Try>=0 && p11331ReviewDecl<p11331Try,'P113.3.1 reviewItems must be function-scoped before the OCR try-block');
+assert.strictEqual((p11331RecoverySource.match(/const reviewItems = \[\];/g)||[]).length,1,'P113.3.1 reviewItems must have exactly one declaration');
+const p11331RuntimeSmoke=path.join(__dirname,'plan-import-runtime-smoke-p11331.js');
+assert(fs.existsSync(p11331RuntimeSmoke),'P113.3.1 executable plan-import runtime smoke must ship');
+const p11331BuildGradle=fs.readFileSync(path.join(__dirname,'../app/build.gradle'),'utf8');
+assert(p11331BuildGradle.includes("tasks.register('planImportRuntimeSmoke', Exec)"),'P113.3.1 Gradle must register runtime smoke gate');
+assert(p11331BuildGradle.includes("dependsOn tasks.named('planImportRuntimeSmoke')"),'P113.3.1 APK preBuild must depend on runtime smoke gate');
+const p11331RuntimeCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-RUNTIME-P1133-REVIEWITEMS');
+assert.strictEqual(p11331RuntimeCase?.previousActual?.error,'reviewItems is not defined','P113.3.1 must retain the confirmed real-device runtime regression');
+assert.strictEqual(p11331RuntimeCase?.expected?.apkBuildBlockedWhenRuntimeSmokeFails,true,'P113.3.1 runtime failure must block APK packaging');
+console.log('P113.3.1 runtime-scope/build-gate deterministic regression self-test: PASS');

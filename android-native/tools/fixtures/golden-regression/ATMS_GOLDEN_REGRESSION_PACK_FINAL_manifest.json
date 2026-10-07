@@ -731,12 +731,39 @@
         "dateBatchRideCount": 22
       },
       "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-RUNTIME-P1133-REVIEWITEMS",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "runtime",
+        "reference_error",
+        "scope",
+        "release_gate"
+      ],
+      "expected": {
+        "analysisCompletesWithoutRuntimeException": true,
+        "textIntegrityStageCompletes": true,
+        "reviewItemsScope": "function_scope",
+        "apkBuildBlockedWhenRuntimeSmokeFails": true
+      },
+      "note": "P113.3 Realgeraet: Analyse brach unmittelbar mit `reviewItems is not defined` ab. Ursache war block-scoped reviewItems im try-Block bei spaeterer Nutzung nach finally. P113.3.1 muss den realen Funktionspfad ausfuehren und eine APK bei Runtime-Fehlern vor dem Packaging blockieren.",
+      "previousActual": {
+        "analysisCompleted": false,
+        "error": "reviewItems is not defined",
+        "stage": "text_integrity_ocr",
+        "buildHadBeenGreen": true
+      },
+      "reproducibility": "confirmed_real_device_P1133"
     }
   ],
   "summary": {
-    "caseRecords": 27,
+    "caseRecords": 28,
     "legacyRows": 16,
-    "newErrorRecords": 19,
+    "newErrorRecords": 20,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -770,5 +797,16 @@
       "status": "PASS_local_reference_engine",
       "note": "Test-only developer replay derives Ort column from the real image header/grid and row from the ride-time column; runtime release still requires the Android/Tesseract.js real-device replay."
     }
+  },
+  "p11331": {
+    "baseHead": "dc705ee8656dedb1f7ecde5570ffc19dedb43217",
+    "method": "RUNTIME FIX + EXECUTABLE SMOKE GATE",
+    "realDeviceFailure": "reviewItems is not defined",
+    "rootCause": "reviewItems declared in try block but consumed after finally",
+    "productionFix": "move reviewItems declaration to recoverTextIntegrityTargeted function scope",
+    "runtimeSmokeTool": "plan-import-runtime-smoke-p11331.js",
+    "buildGate": "app preBuild depends on planImportRuntimeSmoke",
+    "ocrSemanticsChanged": false,
+    "hardcodingAllowed": false
   }
 }
