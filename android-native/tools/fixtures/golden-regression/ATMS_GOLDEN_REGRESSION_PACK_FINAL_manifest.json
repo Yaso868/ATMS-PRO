@@ -851,14 +851,338 @@
         "secondOcrCallRequired": false,
         "diagnosticBeforeRequiredColumnAbort": true,
         "noConcreteTimeHardcodes": true,
-        "realDeviceProofPending": true
+        "realDeviceProofPending": false
+      },
+      "p1136RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1136",
+        "analysisCompleted": true,
+        "ridesOcrChecked": 13,
+        "timeMappingPresent": true,
+        "requiredTimeErrorPresent": false,
+        "ocrDataErrors": 7,
+        "mapping": {
+          "time": 1,
+          "pickup": 2,
+          "destination": 3,
+          "arrivalFlight": 6,
+          "departureFlight": 7,
+          "flightTime": 10,
+          "driver": 12
+        },
+        "boundaryCount": 14,
+        "result": "PARTIAL_PASS_OVERALL_FAIL"
+      },
+      "p1137Target": {
+        "method": "RAW-WORD MIRROR-TIME SCHEMA INTEGRITY + BOUNDED EDGE ADJUDICATION",
+        "trigger": "14-column price layout degraded to 13 columns or bounded corroborated OCR edge noise",
+        "mirrorEvidenceMinimumRows": 3,
+        "mirrorEvidenceMinimumCoverage": 0.6,
+        "rejectCompetingStableMirrorCluster": true,
+        "protectTrue13ColumnNoMirrorLayouts": true,
+        "protectExistingTimeMapping": true,
+        "realDeviceProofPending": true,
+        "hardcodingAllowed": false
       }
+    },
+    {
+      "id": "GE-20261007-WA0014-P1136-MIRROR-SCHEMA-COMPRESSION",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "matrix_geometry",
+        "time_mirror_missing",
+        "column_shift",
+        "flight_cell_contamination",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "physicalColumns": 14,
+        "time": 1,
+        "pickup": 2,
+        "destination": 3,
+        "timeMirror": 6,
+        "arrivalFlight": 7,
+        "departureFlight": 8,
+        "vehicle": 9,
+        "persons": 10,
+        "flightTime": 11,
+        "flightLocation": 12,
+        "driver": 13,
+        "arrivalFlightHasTimePrefix": false
+      },
+      "note": "P113.6 real-device reached ride parsing but reported boundaries=14 (13 data columns) and no timeMirror. All semantics after Firma shifted left; mirror-time tails were prepended to arrival-flight values.",
+      "previousActual": {
+        "boundaryCount": 14,
+        "dataColumns": 13,
+        "mapping": {
+          "time": 1,
+          "pickup": 2,
+          "destination": 3,
+          "arrivalFlight": 6,
+          "departureFlight": 7,
+          "flightTime": 10,
+          "driver": 12
+        },
+        "examples": [
+          "10EW9733",
+          "45EW9577",
+          "35EW9989",
+          "40EW9775",
+          "50EW9775",
+          "05KL1803"
+        ]
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R2-TIME-REOCR-CONFLICT-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 2,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "time_ocr",
+        "secondary_ocr_conflict",
+        "mirror_time_missing",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "time": "15:35",
+        "timeMirror": "15:35",
+        "importBlockedByTimeConflict": false
+      },
+      "note": "P113.6 real-device retained primary 15:35 but hard-blocked against repeated post-OCR 16:35 because the structurally missing timeMirror could not independently confirm the primary value.",
+      "previousActual": {
+        "time": "15:35",
+        "secondaryTimeOcr": "16:35",
+        "timeMirror": null,
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R6-ROUTE-EDGEGLYPH-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 6,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "NH Nord-Holiday Inn",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 real-device primary destination was complete but independent route OCR ended with Inr and caused a hard block.",
+      "previousActual": {
+        "destination": "NH Nord-Holiday Inn",
+        "secondaryRouteOcr": "NH Nord-Holiday Inr",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R7-COMPANY-BOUNDARY-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "table_boundary_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "timeMirror": "15:45",
+        "importBlockedByTextConflict": false
+      },
+      "note": "P113.6 real-device carried a terminal table-edge glyph into company as Get-E | while independent text OCR read Get-E.",
+      "previousActual": {
+        "company": "Get-E |",
+        "secondaryTextOcr": "Get-E",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R7-ROUTE-RIGHTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_clipping",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 real-device complete primary destination was blocked by independent route OCR clipped to Marriott Seestern DU.",
+      "previousActual": {
+        "destination": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "Marriott Seestern DU",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R9-ROUTE-EDGEGLYPH-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 9,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "NH Nord-Holiday Inn",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 real-device repeated the terminal Inr secondary-OCR conflict on a second same-plan occurrence.",
+      "previousActual": {
+        "destination": "NH Nord-Holiday Inn",
+        "secondaryRouteOcr": "NH Nord-Holiday Inr",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-PICKUP-LEFTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "primary_ocr_left_edge_clipping",
+        "route_text_integrity",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS"
+      },
+      "note": "P113.6 result table silently displayed arriott Seestern DUS although raw-word diagnostics contained the full leading Marriott token at strong confidence.",
+      "previousActual": {
+        "pickup": "arriott Seestern DUS",
+        "rowStatus": "OK"
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-COMPANY-BOUNDARY-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "table_boundary_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "timeMirror": "18:05",
+        "importBlockedByTextConflict": false
+      },
+      "note": "P113.6 repeated the company/table-edge conflict on the final source row.",
+      "previousActual": {
+        "company": "Get-E |",
+        "secondaryTextOcr": "Get-E",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-ROUTE-RIGHTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_clipping",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 repeated the clipped DU secondary route OCR conflict on the final source row.",
+      "previousActual": {
+        "destination": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "Marriott Seestern DU",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-FLIGHTLOCATION-LEFTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "column_shift",
+        "left_edge_clipping",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "flightLocation": "Amsterdam"
+      },
+      "note": "P113.6 result table displayed msterdam. The source image visibly contains Amsterdam; correct 14-column reconstruction must keep the full location cell.",
+      "previousActual": {
+        "flightLocation": "msterdam",
+        "rowStatus": "Fehler"
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R4-STORNO-EXCLUSION-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 4,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "cancellation_detection",
+        "row_color_corroboration",
+        "active_ride_count"
+      ],
+      "expected": {
+        "driverMarker": "Storno",
+        "rowColorSignal": "warm_red",
+        "cancelled": true,
+        "includedAsActiveRide": false,
+        "activeRidesAfterExclusion": 12
+      },
+      "note": "P113.6 parsed all 13 visible rows as rides although one source row is visibly red and carries an exact Storno driver marker. Text marker alone remains insufficient; row color provides the independent second signal.",
+      "previousActual": {
+        "ridesParsed": 13,
+        "cancelledRowsExcluded": 0,
+        "stornoRowIncluded": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
     }
   ],
   "summary": {
-    "caseRecords": 29,
+    "caseRecords": 40,
     "legacyRows": 16,
-    "newErrorRecords": 21,
+    "newErrorRecords": 32,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -939,6 +1263,32 @@
       "pickup header unavailable"
     ],
     "noSecondOcrForReplay": true,
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": true
+  },
+  "p1137": {
+    "baseSource": "P1136 validated source tree from installer workflow #199; current post-installer main HEAD must be freshly verified before production upload",
+    "method": "MIRROR SCHEMA INTEGRITY + BOUNDED OCR EDGE ADJUDICATION + ROW-COLOR CANCELLATION CORROBORATION",
+    "sourceCase": "GE-20261007-WA0014-P1136-MIRROR-SCHEMA-COMPRESSION",
+    "productionRules": [
+      "reconstruct middle timeMirror only from strong recurring row-aligned raw-word clock geometry",
+      "keep true 13-column no-mirror layouts unchanged",
+      "remove one terminal company table-edge glyph only with image-OCR plus a valid separately mapped timeMirror",
+      "restore clipped multi-word route edge only from strong exact primary raw-cell evidence",
+      "ignore bounded secondary route edge degradation only with strong primary confidence, same-plan peer support, and no unanimous exact-cell alternative",
+      "allow cancellation by exact driver marker plus independently sampled warm-red row color; color alone never cancels"
+    ],
+    "failClosed": [
+      "fewer than 3 mirror rows",
+      "mirror coverage below 60%",
+      "competing stable mirror-time cluster",
+      "weak primary route confidence",
+      "single-word route raw-edge promotion",
+      "two exact-cell views confirm secondary route alternative",
+      "semantic route conflict",
+      "cancellation text without second signal",
+      "row color without exact cancellation marker"
+    ],
     "hardcodingAllowed": false,
     "realDeviceProofPending": true
   }

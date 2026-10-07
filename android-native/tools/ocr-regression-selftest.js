@@ -604,11 +604,33 @@ assert(planImportSource.includes("forceRowAlignedRideTime: true"),'P113.6 replay
 assert(planImportSource.includes("rideTimeRowGeometryDiagnostic"),'P113.6 row-geometry evidence must remain diagnosable');
 assert(planImportSource.includes("P113.6 Diagnose"),'P113.6 must expose a compact reason before a repeated required-time abort');
 assert.strictEqual(p1135Case?.p1136Target?.baseHead,'920d5f7','P113.6 Golden target must record the user-verified P113.5 final main HEAD');
-assert.strictEqual(p1135Case?.p1136Target?.realDeviceProofPending,true,'P113.6 must not pre-claim real-device success');
+assert.strictEqual(p1135Case?.p1136Target?.realDeviceProofPending,false,'P113.6 Golden target must record that the real-device proof was executed');
+assert.strictEqual(p1135Case?.p1136RealDeviceActual?.result,'PARTIAL_PASS_OVERALL_FAIL','P113.6 Golden case must retain the confirmed partial-pass/overall-fail real-device result');
+assert.strictEqual(p1135Case?.p1136RealDeviceActual?.timeMappingPresent,true,'P113.6 real device must retain proof that the original time-only blocker was solved');
 assert.strictEqual(p113Manifest?.p1136?.baseHead,'920d5f7','P113.6 manifest must record the verified patch base HEAD');
 assert.strictEqual(p113Manifest?.p1136?.noSecondOcrForReplay,true,'P113.6 time-only replay must reuse existing raw OCR words');
 for(const fixtureLiteral of ['15:35','16:10','16:55','18:05','18:20','18:45']){
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.6 TEST fixture leaked into production: ${fixtureLiteral}`);
 }
 console.log('P113.6 row-aligned time geometry deterministic regression self-test: PASS');
+
+// P113.7: P113.6 real-device diagnostics proved a second structural class: a
+// 14-column price layout can collapse to 13 when the middle timeMirror header
+// is degraded. The production candidate must carry the new deterministic gate
+// and Golden records without hardcoding concrete source values.
+const p1137SchemaCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-P1136-MIRROR-SCHEMA-COMPRESSION');
+assert(p1137SchemaCase,'P113.7 manifest must retain the confirmed mirror-schema compression case');
+assert.strictEqual(p1137SchemaCase?.expected?.physicalColumns,14,'P113.7 Golden case must lock the 14-column source schema');
+assert.strictEqual(p1137SchemaCase?.expected?.timeMirror,6,'P113.7 Golden case must lock middle timeMirror at column 6');
+assert.strictEqual(p113Manifest?.p1137?.hardcodingAllowed,false,'P113.7 production hardcoding remains forbidden');
+assert.strictEqual(p113Manifest?.p1137?.realDeviceProofPending,true,'P113.7 must not pre-claim real-device success');
+assert(planImportSource.includes('inferMirrorTimeEvidenceFromRawWords'),'P113.7 must derive mirror-schema evidence from raw-word geometry');
+assert(planImportSource.includes('mirrorTimeRowGeometryDiagnostic'),'P113.7 mirror geometry evidence must remain diagnosable');
+assert(planImportSource.includes('normalizeCompanyBoundaryOcrNoise'),'P113.7 must retain bounded company table-edge normalization');
+assert(planImportSource.includes('primaryRouteRawEdgeRecovery'),'P113.7 must retain strong-primary route edge recovery');
+assert(planImportSource.includes('routeSecondaryEdgeDecision'),'P113.7 must retain bounded secondary route edge adjudication');
+assert(planImportSource.includes('cancellationRowColorSignal'),'P113.7 must retain independent row-color cancellation corroboration');
+assert.strictEqual(Number(p113Manifest.summary?.caseRecords||0)>=40,true,'P113.7 manifest must retain all newly confirmed WA0014 Golden cases');
+console.log('P113.7 mirror/schema Golden manifest deterministic regression self-test: PASS');
+
 

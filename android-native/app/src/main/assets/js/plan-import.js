@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1137 · 07.10.2026: MIRROR-SCHEMA INTEGRITY – recover the missing middle mirror-time schema from row-aligned raw geometry after P113.6, keep exact primary route text against weaker edge-degraded secondary OCR, and allow exact Storno+row-color exclusion; fail closed otherwise.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – after the P113.5 raw-line pass, pair recurring raw Preis/time words by physical Y rows so Android line fragmentation cannot erase the primary ride-time column; fail closed on weak/competing geometry.
 // CORE-007D8A1F1D8P1135 · 07.10.2026: HEADER/TIME GEOMETRY RECOVERY – missing primary ride-time header may be reconstructed only from repeated raw OCR clock geometry between Preis and Von before matrix completion; no fixture/time hardcodes.
 // CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – bounded short-code edge resolution from exact independent batch evidence plus invariant-core multi-view cell evidence; no code-value hardcodes.
@@ -1539,6 +1540,19 @@
     return { value: cleaned, changed: true, raw };
   }
 
+  function normalizeCompanyBoundaryOcrNoise(value, mirrorValue, imageOcr = false) {
+    const raw = cellText(value);
+    if (!raw || !imageOcr) return { value: raw, changed: false, raw };
+    const mirror = normalizeTime(mirrorValue);
+    if (timeToMinutes(mirror) === null) return { value: raw, changed: false, raw };
+    // A single isolated vertical table glyph at the END of Firma is removable only
+    // when a separately mapped mirror-time cell on the same row is formally valid.
+    // This couples the cleanup to table geometry instead of to any company name.
+    const cleaned = raw.replace(/\s+[|¦│]\s*$/u, '').trim();
+    if (!cleaned || cleaned === raw) return { value: raw, changed: false, raw };
+    return { value: cleaned, changed: true, raw };
+  }
+
   function makeRide(row, rowNumber, mapping, fileName, options = {}) {
     const arrivalFlightRawOcr = cellText(valueAt(row, mapping, 'arrivalFlight'));
     const departureFlightRawOcr = cellText(valueAt(row, mapping, 'departureFlight'));
@@ -1554,6 +1568,7 @@
     // beim Bildimport wird deshalb eine formal gültige, am ZELLENENDE stehende Uhrzeit
     // generisch abgetrennt. Firmenname und Uhrzeit werden weder geraten noch hart codiert.
     const rawCompanyCell = cellText(valueAt(row, mapping, 'company'));
+    const rawMirrorForCompany = cellText(valueAt(row, mapping, 'timeMirror'));
     let companyEmbeddedTime = '';
     let companyCell = rawCompanyCell;
     if (options.imageOcr && rawCompanyCell) {
@@ -1567,6 +1582,10 @@
         }
       }
     }
+    const companyBoundaryNoise = !companyEmbeddedTime
+      ? normalizeCompanyBoundaryOcrNoise(companyCell, rawMirrorForCompany, Boolean(options.imageOcr))
+      : { value: companyCell, changed: false, raw: companyCell };
+    companyCell = companyBoundaryNoise.value;
     // P113: Image OCR must never invent Firma from Kunde or from a default.
     // Structured legacy imports keep their historical fallback behavior.
     const company = options.imageOcr ? companyCell : (companyCell || customer || 'WT');
@@ -1640,8 +1659,10 @@
       customerRawOcr: options.imageOcr ? (customerNoise.raw || customer) : (customerNoise.changed ? customerNoise.raw : ''),
       customerRecoveredFromBoundaryNoise: Boolean(customerNoise.changed),
       company,
-      companyRawOcr: companyEmbeddedTime ? rawCompanyCell : '',
+      companyRawOcr: (companyEmbeddedTime || companyBoundaryNoise.changed) ? rawCompanyCell : '',
       companyTimeRecoveredFromCollapsedCell: Boolean(companyEmbeddedTime),
+      companyRecoveredFromBoundaryNoise: Boolean(companyBoundaryNoise.changed),
+      companyBoundaryOriginal: companyBoundaryNoise.changed ? rawCompanyCell : '',
       partner: customer || company,
       arrivalFlight,
       departureFlight,
@@ -1719,12 +1740,22 @@
     return ['storno', 'storniert', 'cancelled', 'canceled'].includes(key) ? key : '';
   }
 
-  function detectCancelledPlanRow(row, mapping) {
-    // CORE-007D8: Ein einzelnes Wort "Storno" darf niemals genügen, weil es
-    // theoretisch auch als Name/Freitext vorkommen könnte. Für den automatischen
-    // Ausschluss verlangen wir zwei unabhängige, exakt gemappte Signale derselben
-    // Zeile: Fahrer = Storno/Cancelled UND mindestens ein zweites Signal in einem
-    // Status-nahen Feld (zweite Uhrzeit/Flugzeit, Ort oder Notiz).
+  function cancellationRowColorSignal(hex) {
+    const rgb = planColorRgb(hex);
+    if (!rgb) return null;
+    const { r, g, b } = rgb;
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    // Generic warm-red/pale-red signal. It is NEVER sufficient by itself; the
+    // driver cell must independently contain an exact cancellation marker.
+    const warmRed = r >= 160 && (r - g) >= 24 && (r - b) >= 24 && Math.abs(g - b) <= 52 && chroma >= 28;
+    return warmRed ? { hex: cellText(hex), r, g, b, reason: 'warm_red_plan_row' } : null;
+  }
+
+  function detectCancelledPlanRow(row, mapping, context = {}) {
+    // A cancellation still needs two independent signals. Historical text-only
+    // behavior remains valid. P113.7 additionally accepts the already sampled
+    // source-row color as the second signal when DRIVER is an exact cancellation
+    // marker and the row is generically warm-red. Color alone never cancels a row.
     const fields = ['driver', 'flightTime', 'timeMirror', 'flightLocation', 'notes'];
     const hits = [];
     fields.forEach(field => {
@@ -1736,11 +1767,19 @@
     });
     const driverHit = hits.find(hit => hit.field === 'driver');
     const secondaryHits = hits.filter(hit => hit.field !== 'driver');
-    if (!driverHit || secondaryHits.length < 1) return null;
+    if (!driverHit) return null;
+
+    const sourceRow = Number(context?.sourceRow || 0);
+    const matrixIndex = Number.isInteger(sourceRow) && sourceRow > 0 ? sourceRow - 1 : null;
+    const colorRecord = matrixIndex === null ? null : context?.imageMeta?.rowColorByMatrixIndex?.[matrixIndex];
+    const colorSignal = cancellationRowColorSignal(colorRecord?.hex || '');
+    if (secondaryHits.length < 1 && !colorSignal) return null;
+
     return {
       marker: driverHit.marker,
-      fields: hits.map(hit => hit.field),
-      values: hits.map(hit => hit.raw)
+      fields: [...hits.map(hit => hit.field), ...(colorSignal ? ['rowColor'] : [])],
+      values: [...hits.map(hit => hit.raw), ...(colorSignal ? [colorSignal.hex] : [])],
+      colorSignal
     };
   }
 
@@ -1927,6 +1966,9 @@
       if (ride.customerRecoveredFromBoundaryNoise && ride.customerRawOcr && ride.customer && !ride.customerRecoveredFromRouteBoundaryTransfer) {
         issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Name ${ride.customerRawOcr} → ${ride.customer} durch generische OCR-Randzeichen-Bereinigung` });
       }
+      if (ride.companyRecoveredFromBoundaryNoise && ride.companyBoundaryOriginal && ride.company) {
+        issues.push({ level: 'info', kind: 'ocr_recovery', row, text: `Firma ${ride.companyBoundaryOriginal} → ${ride.company} durch geometrisch bestätigte Tabellenkanten-Bereinigung` });
+      }
       const repeatedText = ride.repeatedTextConsistency && typeof ride.repeatedTextConsistency === 'object' ? ride.repeatedTextConsistency : {};
       Object.entries(repeatedText).forEach(([field, data]) => {
         const label = field === 'company' ? 'Firma' : field === 'customer' ? 'Name/Kunde' : field;
@@ -1984,12 +2026,36 @@
       }
       ['pickup','destination'].forEach(field => {
         const label = field === 'pickup' ? 'Abholort' : 'Ziel';
+        if (ride[`${field}RecoveredFromExactRawEdge`]) {
+          issues.push({
+            level: 'info',
+            kind: 'ocr_recovery',
+            row,
+            text: `${label}: abgeschnittener Primärwert „${cellText(ride[`${field}ExactRawEdgeInitial`])}“ durch hochkonfidente Rohwörter derselben geometrischen Zelle zu „${cellText(ride[field])}“ ergänzt`
+          });
+        }
         if (ride[`${field}OcrSecondaryLeftEdgeNoiseIgnored`]) {
           issues.push({
             level: 'info',
             kind: 'ocr_recovery',
             row,
             text: `${label}: am linken Zellrand abgeschnittene unabhängige Nach-OCR wurde als schwächere Evidenz verworfen; vollständiger Primärwert blieb erhalten`
+          });
+        }
+        if (ride[`${field}OcrSecondaryRightEdgeNoiseIgnored`]) {
+          issues.push({
+            level: 'info',
+            kind: 'ocr_recovery',
+            row,
+            text: `${label}: am rechten Zellrand abgeschnittene unabhängige Nach-OCR wurde durch Primär-Rohwort + Listenbeleg + exakte Zellprüfung als schwächere Evidenz verworfen`
+          });
+        }
+        if (ride[`${field}OcrSecondaryEdgeGlyphNoiseIgnored`]) {
+          issues.push({
+            level: 'info',
+            kind: 'ocr_recovery',
+            row,
+            text: `${label}: einzelnes Randzeichen der unabhängigen Nach-OCR wurde durch Primär-Rohwort + Listenbeleg + exakte Zellprüfung als schwächere Evidenz verworfen`
           });
         }
         if (!ride[`${field}OcrConflict`]) return;
@@ -2907,6 +2973,66 @@
     return hasMirrorDataEvidence(lines, header);
   }
 
+  // P113.7: real-device P113.6 evidence showed a 14-column list compressed to 13 when
+  // P113.6 had to reconstruct Preis + primary ride-time while Android also lost
+  // Firma/Flug/time-mirror header tokens, the old mirror detector has no corridor
+  // and silently selects the 13-column price schema. Detect a recurring mirror-time
+  // column directly from raw clock words between pickup and the first observed vehicle
+  // header. Pair it to recurring price rows by physical Y; reject weak/competing data.
+  function inferMirrorTimeEvidenceFromRawWords(words, headerAnchors, imageWidth) {
+    const anchors = (headerAnchors || []).slice().sort((a,b)=>Number(a.x)-Number(b.x));
+    const pickup = anchors.find(anchor => anchor.key === 'von' || anchor.key === 'from');
+    const firstWg = anchors.find(anchor => (anchor.key === 'wg' || anchor.key === 'wagen') && pickup && Number(anchor.x) > Number(pickup.x));
+    const reject = (reason, extra={}) => ({ accepted:false, reason, ...extra });
+    if (!pickup || !firstWg || !(Number(firstWg.x) > Number(pickup.x))) return reject('missing_pickup_or_vehicle_header');
+
+    const normalized = (Array.isArray(words) ? words : []).map((word,index) => {
+      const x0=Number(word?.x0 ?? word?.bbox?.x0), x1=Number(word?.x1 ?? word?.bbox?.x1);
+      const y0=Number(word?.y0 ?? word?.bbox?.y0), y1=Number(word?.y1 ?? word?.bbox?.y1);
+      const raw=cellText(word?.text);
+      if (!raw || ![x0,x1,y0,y1].every(Number.isFinite) || x1<=x0 || y1<=y0) return null;
+      return {index,raw,x0,x1,y0,y1,cx:(x0+x1)/2,cy:(y0+y1)/2,w:x1-x0,h:y1-y0};
+    }).filter(Boolean);
+    if (normalized.length < 6) return reject('insufficient_raw_words');
+
+    const strictPrice = value => {
+      const raw=cellText(value).replace(/[Oo]/g,'0').replace(/\s+/g,'').replace(/[€$£]/g,'');
+      const match=raw.match(/^[|¦│\[\]=~]*([+-]?\d{1,4}(?:[.,]\d{3})*[.,]\d{2})[|¦│\[\]=~]*$/u);
+      if (!match) return false;
+      const numeric=Number(match[1].replace(/\.(?=\d{3}(?:[.,]|$))/g,'').replace(',','.'));
+      return Number.isFinite(numeric)&&numeric>0&&numeric<10000;
+    };
+    const clock = value => {
+      const raw=cellText(value).replace(/[Oo]/g,'0').replace(/[Il]/g,'1').trim().replace(/^[|¦│\[\]=~]+|[|¦│\[\]=~]+$/gu,'');
+      const m=raw.match(/^(\d{1,2})[:.](\d{2})$/);
+      if (!m) return false;
+      const hh=Number(m[1]), mm=Number(m[2]);
+      return hh>=0&&hh<=23&&mm>=0&&mm<=59;
+    };
+    const width=Number(imageWidth)||3200;
+    const priceWords=normalized.filter(word => word.cx < Number(pickup.x) && strictPrice(word.raw));
+    const timeWords=normalized.filter(word => word.cx > Number(pickup.x) && word.cx < Number(firstWg.x) && clock(word.raw));
+    if (priceWords.length < 3) return reject('insufficient_price_rows',{priceWords:priceWords.length,timeWords:timeWords.length});
+    if (timeWords.length < 3) return reject('insufficient_mirror_time_rows',{priceWords:priceWords.length,timeWords:timeWords.length});
+
+    const median = values => { const v=values.map(Number).filter(Number.isFinite).sort((a,b)=>a-b); if(!v.length)return 0; const m=Math.floor(v.length/2); return v.length%2?v[m]:(v[m-1]+v[m])/2; };
+    const medianH=median([...priceWords,...timeWords].map(word=>word.h))||12;
+    const medianW=median(timeWords.map(word=>word.w))||20;
+    const yTol=Math.max(6,Math.min(42,medianH*0.90));
+    const xTol=Math.max(8,Math.min(42,medianW*0.45,width*0.018));
+    const clusterByX=items=>{ const clusters=[]; for(const item of items.slice().sort((a,b)=>a.cx-b.cx)){ let win=null,dist=Infinity; for(const c of clusters){const d=Math.abs(item.cx-c.center);if(d<=xTol&&d<dist){win=c;dist=d;}} if(!win){win={items:[],center:item.cx};clusters.push(win);} win.items.push(item); win.center=median(win.items.map(x=>x.cx)); } return clusters; };
+    const uniqueRows=items=>{ const rows=[]; for(const item of items.slice().sort((a,b)=>a.cy-b.cy)){ const prev=rows[rows.length-1]; if(prev&&Math.abs(item.cy-prev.cy)<=yTol){prev.items.push(item);prev.cy=median(prev.items.map(x=>x.cy));}else rows.push({cy:item.cy,items:[item]}); } return rows; };
+    const priceRows=uniqueRows(priceWords);
+    const stable=clusterByX(timeWords).map(c=>({...c,rowCount:uniqueRows(c.items).length})).filter(c=>c.rowCount>=3);
+    if(!stable.length) return reject('no_stable_mirror_time_cluster',{priceRows:priceRows.length,timeWords:timeWords.length});
+    const scored=stable.map(cluster=>{ const rows=uniqueRows(cluster.items); let matched=0; const used=new Set(); for(const pr of priceRows){let bi=-1,bd=Infinity; for(let i=0;i<rows.length;i++){if(used.has(i))continue;const d=Math.abs(pr.cy-rows[i].cy);if(d<=yTol&&d<bd){bi=i;bd=d;}} if(bi>=0){used.add(bi);matched++;}} return {cluster,matched,coverage:priceRows.length?matched/priceRows.length:0}; }).sort((a,b)=>b.matched-a.matched||b.coverage-a.coverage);
+    const winner=scored[0];
+    if(!winner || winner.matched<3 || winner.coverage<0.60) return reject('insufficient_row_alignment',{matchedRows:winner?.matched||0,priceRows:priceRows.length});
+    const competing=scored.filter((entry,index)=>index>0&&entry.cluster.rowCount>=2&&entry.matched>=2&&entry.coverage>=0.35);
+    if(competing.length) return reject('competing_mirror_time_cluster',{matchedRows:winner.matched,competing:competing.length});
+    return {accepted:true,reason:'validated_raw_mirror_time_geometry',timeX:winner.cluster.center,matchedRows:winner.matched,priceRows:priceRows.length,timeRows:winner.cluster.rowCount,coverage:Number(winner.coverage.toFixed(3))};
+  }
+
   function completeAtmsImageAnchors(observed, width, forcedSchema = null) {
     const input = (observed || []).slice().sort((a,b)=>a.x-b.x);
     const hasPrice = input.some(anchor => anchor.key === 'preis' || anchor.key === 'price');
@@ -3671,7 +3797,11 @@
         }
       : header;
 
-    const forceMirrorFromData = hasSafeHeader ? hasMirrorDataEvidence(lines, layoutHeader) : false;
+    const legacyMirrorFromData = hasSafeHeader ? hasMirrorDataEvidence(lines, layoutHeader) : false;
+    const p1137MirrorGeometry = hasSafeHeader && p1136RideTimeAnchorRecovery
+      ? inferMirrorTimeEvidenceFromRawWords(words, layoutHeader?.anchors || [], width)
+      : null;
+    const forceMirrorFromData = Boolean(legacyMirrorFromData || p1137MirrorGeometry?.accepted);
     const headerHasPrice = Boolean(hasSafeHeader && (layoutHeader?.anchors || []).some(anchor => anchor.key === 'preis' || anchor.key === 'price'));
     const forcedMirrorSchema = forceMirrorFromData
       ? (headerHasPrice ? ATMS_IMAGE_SCHEMA_14_PRICE : ATMS_IMAGE_SCHEMA_13_MIRROR)
@@ -3929,6 +4059,7 @@
       forcedMirrorSchemaColumns: forcedMirrorSchema ? forcedMirrorSchema.length : 0,
       rideTimeAnchorRecovery: rideTimeAnchorRecovery ? { ...rideTimeAnchorRecovery } : null,
       rideTimeRowGeometryDiagnostic: rideTimeRowGeometryDiagnostic ? { ...rideTimeRowGeometryDiagnostic } : null,
+      mirrorTimeRowGeometryDiagnostic: p1137MirrorGeometry ? { ...p1137MirrorGeometry } : null,
       p1136ForcedRowAlignedReplay: Boolean(forceRowAlignedRideTime),
       observedHeaderAnchors: hasSafeHeader ? (header?.anchors || []).map(anchor => ({ label: anchor.label, key: anchor.key, x: Number(anchor.x) })) : [],
       syntheticAnchorCount: completed.syntheticCount,
@@ -5870,6 +6001,57 @@
     return Math.max(...matches);
   }
 
+  function primaryRouteRawEdgeRecovery(currentValue, rawCellValue, evidence = {}) {
+    const current = routeOcrText(currentValue);
+    const raw = routeOcrText(rawCellValue);
+    if (!current || !raw || current === raw || raw.length <= current.length) return null;
+    const confidence = Number(evidence?.confidence);
+    const wordCount = Number(evidence?.wordCount || 0);
+    if (!Number.isFinite(confidence) || confidence < 80 || wordCount < 2) return null;
+    const left = ocrIntegrityCore?.leftEdgeTextDegradation
+      ? ocrIntegrityCore.leftEdgeTextDegradation(raw, current)
+      : null;
+    const right = ocrIntegrityCore?.rightEdgeTextDegradation
+      ? ocrIntegrityCore.rightEdgeTextDegradation(raw, current)
+      : null;
+    const decision = left ? { edge: 'left', evidence: left } : right ? { edge: 'right', evidence: right } : null;
+    if (!decision) return null;
+    return { candidate: raw, edge: decision.edge, confidence, wordCount, evidence: decision.evidence };
+  }
+
+  function routeSecondaryEdgeDecision(originalValue, candidateValue, localCandidates, primaryConfidence, samePlanPrimaryPeers) {
+    const original = routeOcrText(originalValue);
+    const candidate = routeOcrText(candidateValue);
+    if (!original || !candidate || original === candidate) return null;
+    const right = ocrIntegrityCore?.rightEdgeTextDegradation
+      ? ocrIntegrityCore.rightEdgeTextDegradation(original, candidate)
+      : null;
+    const glyph = ocrIntegrityCore?.edgeGlyphTextDegradation
+      ? ocrIntegrityCore.edgeGlyphTextDegradation(original, candidate)
+      : null;
+    if (!right && !glyph) return null;
+    const attempts = Array.isArray(localCandidates) ? localCandidates.map(value => routeOcrText(value)) : [];
+    if (attempts.length < 2) return null;
+    const candidateKey = routeOcrBase(candidate);
+    const exactCandidateVotes = attempts.filter(value => value && routeOcrBase(value) === candidateKey).length;
+    // If both exact-cell reads confirm the secondary candidate, it is strong evidence
+    // and this guard MUST NOT suppress it. The guard applies only to weaker column OCR
+    // contradicted by strong primary raw evidence + same-plan primary repetition.
+    if (exactCandidateVotes >= 2) return null;
+    const conf = Number(primaryConfidence);
+    const peers = Number(samePlanPrimaryPeers || 0);
+    if (!Number.isFinite(conf) || conf < 80 || peers < 1) return null;
+    return {
+      keepPrimary: true,
+      reason: right ? 'secondary_right_edge_degradation' : 'secondary_edge_glyph_degradation',
+      primaryConfidence: conf,
+      samePlanPrimaryPeers: peers,
+      exactCandidateVotes,
+      localAttempts: attempts.length,
+      evidence: right || glyph
+    };
+  }
+
   function routeWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta) {
     const grouped = new Map();
     const words = Array.isArray(result?.data?.words) ? result.data.words : [];
@@ -6116,10 +6298,11 @@
         if (!candidate || candidate === original) continue;
         let recoverySource = 'targeted_route_diacritic_consensus';
         let primaryConfidence = null;
+        let localCandidates = [];
+        const rowMetaForRoute = rowsWithMeta.find(item => item.sourceRow === sourceRow)?.meta || null;
         let safe = routeChangedDiacriticTokenIsSafe(original, candidate);
         if (!safe && winner[1] >= 2 && routeChangedDiacriticTokenIsSafe(original, candidate, 2)) {
-          const rowMeta = rowsWithMeta.find(item => item.sourceRow === sourceRow)?.meta || null;
-          primaryConfidence = routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMeta, left, right);
+          primaryConfidence = routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMetaForRoute, left, right);
           safe = Number.isFinite(primaryConfidence) && primaryConfidence <= 35;
           if (safe) recoverySource = 'targeted_route_diacritic_consensus_low_primary_confidence';
         }
@@ -6134,14 +6317,13 @@
           const candidateCompact = routeOcrBase(candidate).replace(/[^a-z0-9]/g, '');
           const nearby = originalCompact.length >= 4 && candidateCompact.length >= 4 &&
             routeOcrDistance(originalCompact, candidateCompact) <= 2;
-          const rowMeta = rowsWithMeta.find(item => item.sourceRow === sourceRow)?.meta || null;
-          if (nearby && rowMeta) {
-            const rowHeight = Math.max(8, rowMeta.y1 - rowMeta.y0);
+          if (nearby && rowMetaForRoute) {
+            const rowHeight = Math.max(8, rowMetaForRoute.y1 - rowMetaForRoute.y0);
             const localSpecs = [
               { name: 'deu-route-cell-psm7', psm: '7', scale: 3, padX: Math.max(1, cellWidth * 0.02), padY: Math.max(1, rowHeight * 0.08) },
               { name: 'deu-route-cell-psm6', psm: '6', scale: 4, padX: Math.max(1, cellWidth * 0.035), padY: Math.max(1, rowHeight * 0.04) }
             ];
-            const localCandidates = [];
+            localCandidates = [];
             try {
               await p109SharedOcrWithWorker('deu', async worker => {
                 for (const spec of localSpecs) {
@@ -6151,9 +6333,9 @@
                   const crop = cropCanvasRegion(
                     imageCanvas,
                     left + spec.padX,
-                    rowMeta.y0 - spec.padY,
+                    rowMetaForRoute.y0 - spec.padY,
                     right - spec.padX,
-                    rowMeta.y1 + spec.padY,
+                    rowMetaForRoute.y1 + spec.padY,
                     spec.scale
                   );
                   const result = await p109PerfWorkerRecognize(worker, 'route_deu_column_ocr', crop, { field: descriptor.field, sourceRow, mode: spec.name });
@@ -6191,6 +6373,29 @@
             };
             continue;
           }
+
+          if (!Number.isFinite(primaryConfidence)) {
+            primaryConfidence = routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMetaForRoute, left, right);
+          }
+          const samePlanPrimaryPeers = out.filter(other => other !== ride && routeOcrBase(other?.[descriptor.field]) === routeOcrBase(original)).length;
+          const edgeDecision = routeSecondaryEdgeDecision(
+            original,
+            candidate,
+            localCandidates,
+            primaryConfidence,
+            samePlanPrimaryPeers
+          );
+          if (edgeDecision?.keepPrimary) {
+            const isRight = edgeDecision.reason === 'secondary_right_edge_degradation';
+            ride[`${descriptor.field}${isRight ? 'OcrSecondaryRightEdgeNoiseIgnored' : 'OcrSecondaryEdgeGlyphNoiseIgnored'}`] = true;
+            ride[`${descriptor.field}OcrSecondaryEdgeNoiseCandidate`] = candidate;
+            ride[`${descriptor.field}OcrSecondaryEdgeNoiseEvidence`] = {
+              ...edgeDecision,
+              columnVotes: winner[1]
+            };
+            continue;
+          }
+
           ride[`${descriptor.field}OcrConflict`] = true;
           ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
           ride[`${descriptor.field}OcrConflictEvidence`] = { columnVotes: winner[1] };
@@ -9073,6 +9278,25 @@
       const evidence = imageCellEvidenceForRide(ride, imageMeta, mapping);
       ride.imageCellEvidence = evidence;
 
+      ['pickup', 'destination'].forEach(field => {
+        const decision = primaryRouteRawEdgeRecovery(
+          ride?.[field],
+          cellEvidenceRawValue(evidence, field),
+          evidence?.[field] || {}
+        );
+        if (!decision?.candidate) return;
+        const initial = routeOcrText(ride?.[field]);
+        ride[field] = decision.candidate;
+        ride[`${field}RecoveredFromExactRawEdge`] = true;
+        ride[`${field}ExactRawEdgeInitial`] = initial;
+        ride[`${field}ExactRawEdgeEvidence`] = {
+          edge: decision.edge,
+          confidence: decision.confidence,
+          wordCount: decision.wordCount
+        };
+        ride.rideType = classifyRide(ride.pickup, ride.destination, ride.arrivalFlight, ride.departureFlight);
+      });
+
       const arrivalCandidates = flightCandidatesFromRow([cellEvidenceRawValue(evidence, 'arrivalFlight')]);
       const departureCandidates = flightCandidatesFromRow([cellEvidenceRawValue(evidence, 'departureFlight')]);
       if (!cellText(ride.flightNumber)) {
@@ -11044,7 +11268,7 @@
         // CORE-007D8 gilt bewusst nur für Bild-/OCR-Planlisten. Eine Zeile wird
         // nur bei doppeltem, semantisch passendem Storno-Signal ausgeschlossen.
         if (result.imageOcr) {
-          const cancelled = detectCancelledPlanRow(row, mappingInfo.mapping);
+          const cancelled = detectCancelledPlanRow(row, mappingInfo.mapping, { imageMeta: result.imageMeta, sourceRow });
           if (cancelled) {
             const preview = makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: true });
             cancelledRows.push({

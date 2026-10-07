@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1137 · 07.10.2026: MIRROR-SCHEMA + EDGE EVIDENCE INTEGRITY – recover a missing middle mirror-time schema from repeated row-aligned raw clocks; add symmetric secondary edge-degradation guards while keeping fail-closed evidence requirements.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – second-stage raw-word price/time row pairing recovers a missing primary ride-time anchor without depending on OCR line grouping; fail closed on weak/competing evidence.
 // CORE-007D8A1F1D8P1135 · 07.10.2026: HEADER/TIME GEOMETRY RECOVERY – recover only a missing primary ride-time header from repeated raw OCR clock geometry between Preis and Von; fail closed on weak or competing evidence.
 // CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – exact independent batch candidate + invariant short-code core + bounded multi-view edge-state evidence; fail closed on competing evidence.
@@ -517,6 +518,43 @@
     return{referencePrefix,candidatePrefix,commonSuffix:suffix,commonLength:common,coverage:common/candidate.length};
   }
 
+  function rightEdgeTextDegradation(referenceValue,candidateValue){
+    const reference=textIntegrityNormalize(referenceValue).normalize('NFKC').toLocaleLowerCase('de-DE');
+    const candidate=textIntegrityNormalize(candidateValue).normalize('NFKC').toLocaleLowerCase('de-DE');
+    if(!reference||!candidate||reference===candidate)return null;
+    const lengthLoss=reference.length-candidate.length;
+    if(lengthLoss<1||lengthLoss>5||Math.min(reference.length,candidate.length)<8)return null;
+    let common=0;
+    while(common<reference.length&&common<candidate.length&&reference[common]===candidate[common])common++;
+    if(common<8||common/Math.max(1,candidate.length)<0.78)return null;
+    const referenceSuffix=reference.slice(common);
+    const candidateSuffix=candidate.slice(common);
+    if(!referenceSuffix||referenceSuffix.length>5||candidateSuffix.length>2)return null;
+    const prefix=reference.slice(0,common);
+    if(!/\s/.test(prefix))return null;
+    return{referenceSuffix,candidateSuffix,commonPrefix:prefix,commonLength:common,coverage:common/candidate.length};
+  }
+
+  function edgeGlyphTextDegradation(referenceValue,candidateValue){
+    const reference=textIntegrityNormalize(referenceValue).normalize('NFKC').toLocaleLowerCase('de-DE');
+    const candidate=textIntegrityNormalize(candidateValue).normalize('NFKC').toLocaleLowerCase('de-DE');
+    if(!reference||!candidate||reference===candidate||reference.length!==candidate.length||reference.length<8)return null;
+    if(!/\s/.test(reference)||!/\s/.test(candidate))return null;
+    let diff=-1;
+    for(let i=0;i<reference.length;i++){
+      if(reference[i]===candidate[i])continue;
+      if(diff!==-1)return null;
+      diff=i;
+    }
+    if(diff<0)return null;
+    const edge=diff<=1?'left':(diff>=reference.length-2?'right':'');
+    if(!edge)return null;
+    const commonLength=reference.length-1;
+    const coverage=commonLength/reference.length;
+    if(commonLength<8||coverage<0.90)return null;
+    return{edge,index:diff,referenceGlyph:reference[diff],candidateGlyph:candidate[diff],commonLength,coverage};
+  }
+
   function shortCodeImageConsensusPromotion(originalValue,candidateValue,attempts){
     const original=text(originalValue).replace(/\s+/g,'').toUpperCase();
     const candidate=text(candidateValue).replace(/\s+/g,'').toUpperCase();
@@ -847,5 +885,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,inferRideTimeAnchorFromRawLines,inferRideTimeLeftGeometryFromRawWords,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,exactCellMultiViewConsensus,edgeGlyphAdjudication,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,inferRideTimeAnchorFromRawLines,inferRideTimeLeftGeometryFromRawWords,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,rightEdgeTextDegradation,edgeGlyphTextDegradation,shortCodeImageConsensusPromotion,exactCellMultiViewConsensus,edgeGlyphAdjudication,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });

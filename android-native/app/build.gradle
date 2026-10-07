@@ -62,6 +62,16 @@ tasks.register('headerTimeIntegrationP1136', Exec) {
     commandLine 'node', 'tools/header-time-integration-selftest-p1136.js'
 }
 
+
+// P113.7: deterministic mirror-schema / degraded-header integration gate.
+// Executes the REAL imageWordsToMatrix() + mapping path and the bounded
+// company/route/cancellation evidence helpers. It includes positive recovery
+// and fail-closed negative controls before any APK may be packaged.
+tasks.register('mirrorSchemaIntegrityP1137', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/mirror-schema-integrity-selftest-p1137.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -75,4 +85,5 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
     dependsOn tasks.named('headerTimeIntegrationP1136')
+    dependsOn tasks.named('mirrorSchemaIntegrityP1137')
 }
