@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – exact independent batch candidate + invariant short-code core + bounded multi-view edge-state evidence; fail closed on competing evidence.
 // CORE-007D8A1F1D8P11331 · 07.10.2026: P113.3.1 RUNTIME GATE – OCR consensus semantics unchanged; paired with executable plan-import runtime smoke.
 // CORE-007D8A1F1D8P1133 · 07.10.2026: GPT-VISION CELL REPLAY – exact-cell/content-region consensus with bounded evidence diversity and crop-quality gating; CORRECT OR FAIL CLOSED.
 // CORE-007D8A1F1D8P1132 · 07.10.2026: CHATGPT-LIKE CELL EVIDENCE – exact-cell multi-view consensus with crop-quality gating; CORRECT OR FAIL CLOSED. Historical fixture values remain test-only; no flight/driver/place hardcodes.
@@ -314,6 +315,86 @@
     };
   }
 
+  function edgeGlyphAdjudication(originalValue,attempts,cropQuality){
+    const original=text(originalValue).replace(/\s+/g,'').toUpperCase();
+    if(!/^[A-Z0-9]{3,6}$/.test(original))return null;
+    const quality=cropQuality&&typeof cropQuality==='object'?cropQuality:{};
+    if(quality.fullCellIncluded===false||quality.leftEdgeClipped===true||quality.rightEdgeClipped===true||quality.neighborColumnIncluded===true)return null;
+
+    const batchValues=[];
+    const cellAttempts=[];
+    for(const attempt of (Array.isArray(attempts)?attempts:[])){
+      const candidate=text(attempt?.candidate).replace(/\s+/g,'').toUpperCase();
+      if(!candidate)continue;
+      const scope=text(attempt?.scope)||'unknown';
+      if(scope==='batch'&&/^[A-Z0-9]{2,6}$/.test(candidate))batchValues.push(candidate);
+      if(scope==='cell_view'&&/^[A-Z0-9]{2,6}$/.test(candidate)){
+        const q=attempt?.cropQuality&&typeof attempt.cropQuality==='object'?attempt.cropQuality:{};
+        if(q.fullCellIncluded===false||q.leftEdgeClipped===true||q.rightEdgeClipped===true||q.neighborColumnIncluded===true)continue;
+        cellAttempts.push({
+          candidate,
+          mode:text(attempt?.mode)||'',
+          viewRegion:text(attempt?.viewRegion)||'full_cell',
+          transform:text(attempt?.transform)||'original'
+        });
+      }
+    }
+
+    const uniqueBatch=[...new Set(batchValues)];
+    // P113.4 deliberately requires one exact independent batch answer. Any
+    // competing non-empty batch value keeps the case fail-closed.
+    if(uniqueBatch.length!==1)return null;
+    const candidate=uniqueBatch[0];
+    if(!/^[A-Z0-9]{3,6}$/.test(candidate)||candidate===original||candidate.length!==original.length)return null;
+
+    let edge='';
+    let core='';
+    if(original.slice(1)===candidate.slice(1)&&original[0]!==candidate[0]){
+      edge='left';core=candidate.slice(1);
+    }else if(original.slice(0,-1)===candidate.slice(0,-1)&&original.at(-1)!==candidate.at(-1)){
+      edge='right';core=candidate.slice(0,-1);
+    }else return null;
+    if(core.length<2)return null;
+
+    const compatible=[];
+    const edgeStates=new Set();
+    const families=new Set();
+    let missingEdge=0;
+    for(const item of cellAttempts){
+      const value=item.candidate;
+      let state='';
+      let ok=false;
+      if(value===core){
+        ok=true;state='∅';missingEdge++;
+      }else if(value.length===candidate.length){
+        const sameCore=edge==='left'?value.slice(1)===core:value.slice(0,-1)===core;
+        if(sameCore){
+          ok=true;state=edge==='left'?value[0]:value.at(-1);
+        }
+      }
+      // A non-empty exact-cell view with a different core is competing image
+      // evidence. Do not adjudicate through it.
+      if(!ok)return null;
+      compatible.push(item);
+      edgeStates.add(state);
+      const sourceFamily=/processed/i.test(item.mode)?'processed':item.transform;
+      families.add(`${item.viewRegion}|${sourceFamily}`);
+    }
+
+    if(compatible.length<3||families.size<2||edgeStates.size<2||missingEdge<1)return null;
+    return{
+      candidate,
+      edge,
+      core,
+      compatibleViews:compatible.length,
+      evidenceFamilies:families.size,
+      edgeStates:edgeStates.size,
+      missingEdgeViews:missingEdge,
+      batch:batchValues.filter(value=>value===candidate).length,
+      strength:'edge_glyph_adjudicated'
+    };
+  }
+
   function oneNumericEditAutoCorrectionAllowed(initialValue,candidateValue,attempts,primaryConfidence,hasContextPeer){
     const initial=flight(initialValue),candidate=flight(candidateValue);
     if(!oneNumericEditFlightAlternative(initial,candidate))return false;
@@ -494,5 +575,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,exactCellMultiViewConsensus,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,exactCellMultiViewConsensus,edgeGlyphAdjudication,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });

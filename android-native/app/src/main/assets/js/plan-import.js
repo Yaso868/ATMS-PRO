@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1134 · 07.10.2026: EDGE-GLYPH ADJUDICATION – bounded short-code edge resolution from exact independent batch evidence plus invariant-core multi-view cell evidence; no code-value hardcodes.
 // CORE-007D8A1F1D8P11331 · 07.10.2026: P113.3.1 RUNTIME FIX – reviewItems function-scope repair plus mandatory executable runtime smoke gate; GPT-Vision cell replay semantics unchanged.
 // CORE-007D8A1F1D8P1133 · 07.10.2026: GPT-VISION CELL REPLAY – exact-cell content-region evidence, low-confidence short-code review, bounded multi-view OCR diversity and zero-silent-error diagnostics. No flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P1132 · 07.10.2026: CHATGPT-LIKE CELL EVIDENCE – geometry-first exact-cell provenance, bounded multi-view OCR consensus and crop-quality-aware fail-closed validation. No flight/driver/place/file hardcodes.
@@ -6752,6 +6753,10 @@
           ? ocrIntegrityCore.exactCellMultiViewConsensus(original, attempts, cellEvidence?.cropQuality || null)
           : null;
         if (exactCellConsensus?.candidate) candidate = textIntegrityCellCandidate(exactCellConsensus.candidate, descriptor.field);
+        const edgeGlyphAdjudication = descriptor.field === 'flightLocation' && ocrIntegrityCore?.edgeGlyphAdjudication
+          ? ocrIntegrityCore.edgeGlyphAdjudication(original, attempts, cellEvidence?.cropQuality || null)
+          : null;
+        if (edgeGlyphAdjudication?.candidate) candidate = textIntegrityCellCandidate(edgeGlyphAdjudication.candidate, descriptor.field);
         const edgeAlternative = candidate ? textIntegrityEdgeAlternative(original, candidate) : false;
         const peerCount = edgeAlternative ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, candidate) : 0;
         const edgePromotion = candidate
@@ -6763,10 +6768,11 @@
           : null;
         const promotedShortCodeConflict = Boolean(shortCodePromotion?.candidate);
         const promotedExactCellConsensus = Boolean(exactCellConsensus?.candidate);
+        const promotedEdgeGlyphAdjudication = Boolean(edgeGlyphAdjudication?.candidate);
         const canCorrect = Boolean(
           candidate &&
           textIntegrityAlternativeIsSafe(original, candidate) &&
-          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict || promotedExactCellConsensus)
+          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict || promotedExactCellConsensus || promotedEdgeGlyphAdjudication)
         );
 
         if (canCorrect) {
@@ -6780,9 +6786,11 @@
           }
           ride[`${descriptor.field}OcrInitial`] = original;
           ride[`${descriptor.field}OcrAutoCorrected`] = true;
-          ride[`${descriptor.field}OcrCorrectionSource`] = promotedExactCellConsensus
-            ? 'exact_cell_multi_view_consensus'
-            : promotedShortCodeConflict
+          ride[`${descriptor.field}OcrCorrectionSource`] = promotedEdgeGlyphAdjudication
+            ? 'edge_glyph_adjudication'
+            : promotedExactCellConsensus
+              ? 'exact_cell_multi_view_consensus'
+              : promotedShortCodeConflict
               ? 'alphanumeric_exact_cell_batch_plus_dual_local_consensus'
               : edgeAlternative
                 ? (edgePromotion?.mode === 'dual_local_peers'
@@ -6800,17 +6808,31 @@
               exactCellModes: Number(exactCellConsensus?.exactModes || 0),
               exactCellBatch: Number(exactCellConsensus?.batch || 0),
               exactCellStrength: cellText(exactCellConsensus?.strength)
+            } : {}),
+            ...(promotedEdgeGlyphAdjudication ? {
+              promotedFromEdgeGlyphAdjudication: true,
+              edgeGlyphEdge: cellText(edgeGlyphAdjudication?.edge),
+              edgeGlyphCore: cellText(edgeGlyphAdjudication?.core),
+              edgeGlyphCompatibleViews: Number(edgeGlyphAdjudication?.compatibleViews || 0),
+              edgeGlyphEvidenceFamilies: Number(edgeGlyphAdjudication?.evidenceFamilies || 0),
+              edgeGlyphStates: Number(edgeGlyphAdjudication?.edgeStates || 0),
+              edgeGlyphMissingViews: Number(edgeGlyphAdjudication?.missingEdgeViews || 0),
+              edgeGlyphBatch: Number(edgeGlyphAdjudication?.batch || 0)
             } : {})
           };
           if (cellEvidence && typeof cellEvidence === 'object') {
             cellEvidence.normalizedValue = candidate;
-            cellEvidence.verificationSource = promotedExactCellConsensus
-              ? 'exact_cell_multi_view_consensus'
-              : ride[`${descriptor.field}OcrCorrectionSource`];
-            cellEvidence.consensus = promotedExactCellConsensus ? { ...exactCellConsensus } : {
-              candidate,
-              strength: decision?.status === 'correct' ? 'strong' : 'supported'
-            };
+            cellEvidence.verificationSource = promotedEdgeGlyphAdjudication
+              ? 'edge_glyph_adjudication'
+              : promotedExactCellConsensus
+                ? 'exact_cell_multi_view_consensus'
+                : ride[`${descriptor.field}OcrCorrectionSource`];
+            cellEvidence.consensus = promotedEdgeGlyphAdjudication
+              ? { ...edgeGlyphAdjudication }
+              : promotedExactCellConsensus ? { ...exactCellConsensus } : {
+                candidate,
+                strength: decision?.status === 'correct' ? 'strong' : 'supported'
+              };
             cellEvidence.manualCheckRequired = false;
           }
           if (descriptor.field === 'flightLocation') ride.flightLocation = normalizeFlightLocation(candidate);
