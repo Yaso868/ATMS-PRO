@@ -81,6 +81,14 @@ tasks.register('textEdgeIntegrityP1138', Exec) {
     commandLine 'node', 'tools/text-edge-integrity-selftest-p1138.js'
 }
 
+// P113.9: source-truth full-cell edge-integrity gate. Two independent full-cell
+// modes must agree before a bounded 1-2 glyph edge extension can preserve/recover
+// a value; semantic substitutions and one-view evidence remain fail-closed.
+tasks.register('textEdgeSourceTruthP1139', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/text-edge-source-truth-selftest-p1139.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -96,4 +104,5 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('headerTimeIntegrationP1136')
     dependsOn tasks.named('mirrorSchemaIntegrityP1137')
     dependsOn tasks.named('textEdgeIntegrityP1138')
+    dependsOn tasks.named('textEdgeSourceTruthP1139')
 }

@@ -1180,6 +1180,14 @@
         "flightLocation": "msterdam",
         "rowStatus": "OK",
         "result": "FAIL_PERSISTED"
+      },
+      "p1138RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1138",
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "ocrDataErrorsReported": 0,
+        "automaticImportOccurred": true,
+        "result": "FAIL_PERSISTED_SILENT"
       }
     },
     {
@@ -1271,12 +1279,78 @@
       },
       "note": "P113.7 real-device: after mirror-schema repair, secondary text OCR incorrectly shortened a strong primary hyphenated company code at the cell edge. P113.8 suppresses only strict 1-2 character edge truncation of a delimiter-bearing short code with strong primary raw evidence and peer support.",
       "reproducibility": "confirmed_real_device_P1137"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-COMPANY-SILENT-TRUNCATION-P1138",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "silent_auto_correction",
+        "hyphenated_short_code",
+        "source_truth_edge_loss",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "automaticCorrectionToTruncatedValue": false,
+        "rowStatus": "OK only when source value is preserved"
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1138",
+        "primaryDisplayedBeforeCorrection": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "displayedCompany": "Get-",
+        "autoCorrectionMessage": "Firma Get-E → Get- durch unabhängige DEU-Spalten- + Zell-OCR sicher korrigiert",
+        "ocrDataErrorsReported": 0,
+        "automaticImportOccurred": true,
+        "result": "FAIL_SILENT"
+      },
+      "note": "P113.8 real-device: the new edge guard still allowed a silent Get-E→Get- correction when the existing raw-cell evidence was itself clipped. P113.9 requires a separate two-mode full-cell source-truth consensus before preserving the longer delimiter-bearing company code.",
+      "reproducibility": "confirmed_real_device_P1138"
+    },
+    {
+      "id": "GE-20261007-WA0014-P1138-ZERO-SILENT-ERROR-GATE",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "zero_silent_error",
+        "automatic_import_gate",
+        "silent_data_mutation",
+        "text_edge_integrity"
+      ],
+      "expected": {
+        "activeRides": 12,
+        "cancelledRows": 1,
+        "reportedOcrDataErrors": 0,
+        "silentTextErrors": 0,
+        "automaticImportAllowedOnlyWhenSilentErrorsAreZero": true
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1138",
+        "ridesOcrChecked": 12,
+        "automaticCorrections": 23,
+        "reportedHints": 0,
+        "reportedErrors": 0,
+        "silentMismatches": [
+          "company Get-E→Get-",
+          "flightLocation Amsterdam→msterdam"
+        ],
+        "automaticImportOccurred": true,
+        "result": "FAIL"
+      },
+      "note": "P113.8 displayed a clean 0-error result and automatically imported the list although two source-visible text values were still silently wrong. P113.9 adds source-truth full-cell evidence for these bounded edge-loss classes; unresolved evidence must stay fail-closed instead of silently green.",
+      "reproducibility": "confirmed_real_device_P1138"
     }
   ],
   "summary": {
-    "caseRecords": 42,
+    "caseRecords": 44,
     "legacyRows": 16,
-    "newErrorRecords": 34,
+    "newErrorRecords": 36,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -1410,6 +1484,48 @@
       "semantic substitution instead of edge degradation",
       "raw single-token location differs internally instead of only at an edge",
       "raw single-token location spans multiple OCR words"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "STRUCTURAL_PASS_SILENT_INTEGRITY_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1138",
+    "realDeviceActual": {
+      "activeRides": 12,
+      "cancelledRowsExcluded": 1,
+      "timeMirrorPresent": true,
+      "reportedHints": 0,
+      "reportedErrors": 0,
+      "automaticCorrections": 23,
+      "silentCompanyTruncation": "Get-E→Get-",
+      "silentFlightLocationClip": "Amsterdam→msterdam",
+      "automaticImportOccurred": true
+    }
+  },
+  "p1139": {
+    "baseHead": "476cb3a",
+    "parentUploadCommit": "2c4234a",
+    "method": "SOURCE-TRUTH FULL-CELL EDGE CONSENSUS",
+    "sourceCases": [
+      "GE-20261007-WA0014-R12-COMPANY-SILENT-TRUNCATION-P1138",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-LEFTCLIP-P1136",
+      "GE-20261007-WA0014-P1138-ZERO-SILENT-ERROR-GATE"
+    ],
+    "productionRules": [
+      "only probe source-truth full-cell OCR for bounded hyphenated company codes or single-token flight-location edge cases",
+      "require two independent full-cell OCR modes to agree on the same candidate",
+      "require full target-cell geometry with no neighboring column and no clipped cell edge",
+      "allow only a strict 1-2 glyph extension at the left or right edge; internal substitutions remain conflicts",
+      "company primary preservation still requires same-plan peer support",
+      "flight-location recovery may replace only a clipped current token with the agreed longer full-cell token"
+    ],
+    "failClosed": [
+      "fewer than two agreeing source-truth modes",
+      "tied competing source-truth candidates",
+      "neighbor column included",
+      "source-truth crop itself clipped",
+      "more than two missing edge glyphs",
+      "internal or semantic substitution",
+      "no same-plan peer for company preservation"
     ],
     "hardcodingAllowed": false,
     "realDeviceProofPending": true

@@ -644,11 +644,37 @@ assert(p1138CustomerCase,'P113.8 manifest must retain repeated customer terminal
 assert(p1138CompanyCase,'P113.8 manifest must retain the hyphenated company edge-truncation overcorrection');
 assert.strictEqual(p113Manifest?.p1138?.baseHead,'9430b5a','P113.8 manifest must record the freshly user-verified P113.7 post-installer main HEAD');
 assert.strictEqual(p113Manifest?.p1138?.hardcodingAllowed,false,'P113.8 production hardcoding remains forbidden');
-assert.strictEqual(p113Manifest?.p1138?.realDeviceProofPending,true,'P113.8 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1138?.realDeviceProofPending,false,'P113.8 manifest must record that the real-device proof was executed');
+assert.strictEqual(p113Manifest?.p1138?.realDeviceResult,'STRUCTURAL_PASS_SILENT_INTEGRITY_FAIL','P113.8 manifest must retain the confirmed silent-integrity failure');
 assert(planImportSource.includes('strongPrimarySecondaryEdgeDegradation'),'P113.8 must retain bounded customer/company secondary edge adjudication');
 assert(planImportSource.includes('strongPrimaryRouteSecondaryEdgeDegradation'),'P113.8 must retain strong-primary multi-token route edge preservation');
 assert(planImportSource.includes('primarySingleTokenRawEdgeRecovery'),'P113.8 must retain bounded single-token raw edge recovery');
-assert.strictEqual(Number(p113Manifest.summary?.caseRecords||0)>=42,true,'P113.8 manifest must retain all newly confirmed Golden cases');
+assert.strictEqual(Number(p113Manifest.summary?.caseRecords||0)>=44,true,'P113.8/P113.9 manifest must retain all newly confirmed Golden cases');
 console.log('P113.8 text-edge Golden manifest deterministic regression self-test: PASS');
 
 
+
+
+// P113.9: P113.8 reached a clean 0-error UI but still silently shortened a
+// hyphenated company code and left-clipped a single-token flight location before
+// automatic import. A separate source-truth full-cell family must now prove a
+// bounded 1-2 glyph edge extension with two agreeing OCR modes.
+const p1139CompanyCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-R12-COMPANY-SILENT-TRUNCATION-P1138');
+const p1139ZeroGateCase=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-P1138-ZERO-SILENT-ERROR-GATE');
+assert(p1139CompanyCase,'P113.9 manifest must retain the P113.8 silent company truncation case');
+assert(p1139ZeroGateCase,'P113.9 manifest must retain the P113.8 zero-silent-error gate failure');
+assert.strictEqual(p1139CompanyCase?.expected?.company,'Get-E','P113.9 Golden target must preserve the full source company code');
+assert.strictEqual(p1139CompanyCase?.previousActual?.displayedCompany,'Get-','P113.9 Golden case must retain the confirmed P113.8 silent truncation');
+assert.strictEqual(p1139ZeroGateCase?.previousActual?.automaticImportOccurred,true,'P113.9 must retain proof that P113.8 auto-imported despite silent mismatches');
+assert.strictEqual(p113Manifest?.p1139?.baseHead,'476cb3a','P113.9 manifest must record the freshly user-verified P113.8 post-installer main HEAD');
+assert.strictEqual(p113Manifest?.p1139?.hardcodingAllowed,false,'P113.9 production hardcoding remains forbidden');
+assert.strictEqual(p113Manifest?.p1139?.realDeviceProofPending,true,'P113.9 must not pre-claim real-device success');
+assert(planImportSource.includes('sourceTruthFullCellTextOcr'),'P113.9 must collect the bounded full source cell as a separate evidence family');
+assert(planImportSource.includes('sourceTruthFullCellConsensus'),'P113.9 must require source-truth full-cell consensus');
+assert(planImportSource.includes('strictTextEdgeExtension'),'P113.9 must limit recovery to strict edge-only extension');
+assert(planImportSource.includes('source_truth_full_cell_edge_consensus'),'P113.9 flight-location correction source must stay diagnosable');
+assert(planImportSource.includes('sourceTruthCellCandidate'),'P113.9 full-cell source truth must normalize only table-edge geometry noise before consensus');
+for(const fixtureLiteral of ['IMG-20261007-WA0014.jpg','GE-20261007-WA0014-R12-COMPANY-SILENT-TRUNCATION-P1138']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.9 TEST/source identifier leaked into production: ${fixtureLiteral}`);
+}
+console.log('P113.9 source-truth full-cell edge integrity deterministic regression self-test: PASS');

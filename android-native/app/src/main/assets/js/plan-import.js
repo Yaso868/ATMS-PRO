@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1139 · 07.10.2026: SOURCE-TRUTH EDGE INTEGRITY – add bounded full-cell source-truth consensus for silent edge loss in hyphenated company codes and single-token flight locations; two independent full-cell modes must agree and semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1138 · 07.10.2026: TEXT-EDGE INTEGRITY – preserve strong primary customer/company/route text against bounded edge-degraded secondary OCR and restore a clipped single-token flight location only from strong exact primary raw-cell evidence; fail closed on semantic conflict.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – after the P113.5 raw-line pass, pair recurring raw Preis/time words by physical Y rows so Android line fragmentation cannot erase the primary ride-time column; fail closed on weak/competing geometry.
 // CORE-007D8A1F1D8P1135 · 07.10.2026: HEADER/TIME GEOMETRY RECOVERY – missing primary ride-time header may be reconstructed only from repeated raw OCR clock geometry between Preis and Von before matrix completion; no fixture/time hardcodes.
@@ -6551,6 +6552,75 @@
     return false;
   }
 
+  function isHyphenatedCompanyEdgeProbe(value) {
+    return /^[A-Za-z0-9]{2,8}(?:[-_/][A-Za-z0-9]{1,8})+$/u.test(cellText(value).replace(/\s+/g, ''));
+  }
+
+  function isSingleTokenFlightLocationEdgeProbe(value) {
+    const current = cellText(value);
+    return /^[A-Za-zÄÖÜäöüßÀ-ÿ][A-Za-zÄÖÜäöüßÀ-ÿ'’.-]{4,23}$/u.test(current) && !/\s/u.test(current);
+  }
+
+  // P113.9 local lab: source-truth full-cell consensus is a separate evidence family.
+  // It is used only for narrow edge-loss cases and never for arbitrary semantic rewrites.
+  function strictTextEdgeExtension(shorterValue, longerValue, maxLoss = 2) {
+    const shorter = cellText(shorterValue).normalize('NFC').trim();
+    const longer = cellText(longerValue).normalize('NFC').trim();
+    if (!shorter || !longer || longer.length <= shorter.length) return null;
+    const a = shorter.toLocaleLowerCase('de-DE');
+    const b = longer.toLocaleLowerCase('de-DE');
+    const loss = b.length - a.length;
+    if (loss < 1 || loss > Number(maxLoss || 2)) return null;
+    if (b.endsWith(a)) return { edge: 'left', loss };
+    if (b.startsWith(a)) return { edge: 'right', loss };
+    return null;
+  }
+
+  function sourceTruthCellCandidate(value, field) {
+    let candidate = textIntegrityCellCandidate(value, field);
+    if (!candidate) return '';
+    // Full-cell OCR may faithfully include the vertical table rule itself. For the
+    // company column only, an isolated extreme-edge table glyph is geometry noise,
+    // not company text. Strip only that glyph; never alter letters/digits/delimiters.
+    if (field === 'company') {
+      candidate = candidate
+        .replace(/^[|¦│]+\s*/u, '')
+        .replace(/\s*[|¦│]+$/u, '')
+        .trim();
+    }
+    return candidate;
+  }
+
+  function sourceTruthFullCellConsensus(attempts) {
+    const stats = new Map();
+    (Array.isArray(attempts) ? attempts : []).forEach(attempt => {
+      if (cellText(attempt?.scope) !== 'source_truth_full_cell') return;
+      const candidate = cellText(attempt?.candidate).normalize('NFC').trim();
+      if (!candidate) return;
+      const q = attempt?.cropQuality && typeof attempt.cropQuality === 'object' ? attempt.cropQuality : {};
+      if (q.fullCellIncluded === false || q.neighborColumnIncluded === true || q.leftEdgeClipped === true || q.rightEdgeClipped === true) return;
+      const key = candidate.toLocaleLowerCase('de-DE');
+      const current = stats.get(key) || { candidate, votes: 0, modes: new Set() };
+      current.votes += 1;
+      current.modes.add(cellText(attempt?.mode) || `source-truth-${current.votes}`);
+      stats.set(key, current);
+    });
+    const ranked = [...stats.values()].sort((a,b) => b.votes - a.votes || b.modes.size - a.modes.size || a.candidate.localeCompare(b.candidate, 'de-DE'));
+    const winner = ranked[0] || null;
+    const runner = ranked[1] || null;
+    if (!winner || winner.votes < 2 || winner.modes.size < 2) return null;
+    if (runner && runner.votes === winner.votes) return null;
+    return { candidate: winner.candidate, votes: winner.votes, modes: winner.modes.size, runnerVotes: Number(runner?.votes || 0) };
+  }
+
+  function sourceTruthEdgeRecovery(currentValue, attempts) {
+    const consensus = sourceTruthFullCellConsensus(attempts);
+    if (!consensus?.candidate) return null;
+    const edge = strictTextEdgeExtension(currentValue, consensus.candidate, 2);
+    if (!edge) return null;
+    return { ...consensus, ...edge };
+  }
+
   // P113.8 local prototype: secondary OCR near a cell edge can repeatedly agree
   // on the same clipped/punctuation-corrupted value because its batch/local crops
   // share the same geometric boundary. A strong primary full-image word plus at
@@ -6562,8 +6632,11 @@
     if (!original || !candidate || original === candidate) return null;
     const rawPrimary = cellText(cellEvidence?.rawOcr || cellEvidence?.normalizedValue || '').normalize('NFC').trim();
     const confidence = Number(cellEvidence?.confidence);
-    if (!rawPrimary || rawPrimary.toLocaleLowerCase('de-DE') !== original.toLocaleLowerCase('de-DE')) return null;
-    if (!Number.isFinite(confidence) || confidence < 80 || Number(peerCount || 0) < 1) return null;
+    const sourceTruth = sourceTruthFullCellConsensus(attempts);
+    const primaryKey = original.toLocaleLowerCase('de-DE');
+    const rawSupportsPrimary = Boolean(rawPrimary && rawPrimary.toLocaleLowerCase('de-DE') === primaryKey && Number.isFinite(confidence) && confidence >= 80);
+    const sourceTruthSupportsPrimary = Boolean(sourceTruth?.candidate && sourceTruth.candidate.toLocaleLowerCase('de-DE') === primaryKey);
+    if ((!rawSupportsPrimary && !sourceTruthSupportsPrimary) || Number(peerCount || 0) < 1) return null;
 
     const exactCandidateViews = (Array.isArray(attempts) ? attempts : []).filter(attempt =>
       cellText(attempt?.scope) === 'cell_view' &&
@@ -6581,7 +6654,7 @@
         const originalGlyph = a[i], candidateGlyph = b[i];
         const candidateIsPunctuation = /[:;,.!?|¦│'"`´~]/u.test(candidateGlyph);
         if (/[a-z0-9äöüßà-ÿ]/iu.test(originalGlyph) && candidateIsPunctuation && ((a.length - 1) / a.length) >= 0.80) {
-          return { reason: 'secondary_terminal_punctuation_substitution', confidence, peerCount: Number(peerCount || 0) };
+          return { reason: 'secondary_terminal_punctuation_substitution', confidence: Number.isFinite(confidence) ? confidence : null, peerCount: Number(peerCount || 0), sourceTruthViews: Number(sourceTruth?.votes || 0) };
         }
       }
     }
@@ -6592,7 +6665,7 @@
     if (compactOriginal.length >= 4 && compactOriginal.length <= 12 && loss >= 1 && loss <= 2 &&
         /^[a-z0-9]+(?:[-_/][a-z0-9]+)+$/iu.test(compactOriginal) &&
         (compactOriginal.startsWith(compactCandidate) || compactOriginal.endsWith(compactCandidate))) {
-      return { reason: 'secondary_short_code_edge_truncation', confidence, peerCount: Number(peerCount || 0) };
+      return { reason: 'secondary_short_code_edge_truncation', confidence: Number.isFinite(confidence) ? confidence : null, peerCount: Number(peerCount || 0), sourceTruthViews: Number(sourceTruth?.votes || 0) };
     }
     return null;
   }
@@ -6714,7 +6787,7 @@
         } else {
           result = await p109PerfRecognizeOneShot('text_integrity_ocr', 'eng', view, params, { mode: `${variant.mode}-fallback`, sourceRow });
         }
-        candidate = textIntegrityCellCandidate(result?.data?.text || '', field);
+        candidate = sourceTruthCellCandidate(result?.data?.text || '', field);
       } catch (_) {}
       attempts.push({
         scope: 'cell_view',
@@ -6728,6 +6801,45 @@
         ...(region ? { contentBounds: { left: region.left, top: region.top, right: region.right, bottom: region.bottom } } : {}),
         cropQuality: { ...cropQuality, contentRegionInsideConfirmedCell: variant.viewRegion === 'content_inside_cell' }
       });
+    }
+    return attempts;
+  }
+
+  async function sourceTruthFullCellTextOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker) {
+    if (!descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
+    const source = sourceTruthCanvas || processedCanvas;
+    const left = Number(descriptor.left), right = Number(descriptor.right);
+    const top = Number(rowMeta.y0), bottom = Number(rowMeta.y1);
+    if (![left, right, top, bottom].every(Number.isFinite) || right <= left || bottom <= top) return [];
+    const cropQuality = {
+      fullCellIncluded: left >= 0 && right <= Number(source.width || processedCanvas.width) && top >= 0 && bottom <= Number(source.height || processedCanvas.height),
+      leftEdgeClipped: false,
+      rightEdgeClipped: false,
+      neighborColumnIncluded: false,
+      targetCellGeometryConfirmed: true,
+      tableLineInterference: 'full_source_cell'
+    };
+    if (!cropQuality.fullCellIncluded) return [];
+    const variants = [
+      { mode: 'source-truth-full-cell-psm6', psm: '6' },
+      { mode: 'source-truth-full-cell-psm7', psm: '7' }
+    ];
+    const attempts = [];
+    for (const variant of variants) {
+      let candidate = '';
+      try {
+        const crop = cropCanvasRegion(source, left, top, right, bottom, 1);
+        let result;
+        const params = { tessedit_pageseg_mode: variant.psm };
+        if (worker && typeof worker.recognize === 'function') {
+          if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', params, { mode: variant.mode, sourceRow });
+          result = await p109PerfWorkerRecognize(worker, 'text_integrity_ocr', crop, { mode: variant.mode, sourceRow });
+        } else {
+          result = await p109PerfRecognizeOneShot('text_integrity_ocr', 'deu', crop, params, { mode: `${variant.mode}-fallback`, sourceRow });
+        }
+        candidate = textIntegrityCellCandidate(result?.data?.text || '', field);
+      } catch (_) {}
+      attempts.push({ scope: 'source_truth_full_cell', mode: variant.mode, candidate, sourceRow, field, viewRegion: 'full_cell', cropQuality: { ...cropQuality } });
     }
     return attempts;
   }
@@ -6983,8 +7095,11 @@
           const primaryConfidence = Number(ride?.imageCellEvidence?.[descriptor.field]?.confidence);
           const shortAlphaNumeric = /^[A-Za-z0-9]{2,6}$/.test(original.replace(/\s+/g, ''));
           const lowConfidenceShortCode = descriptor.field === 'flightLocation' && shortAlphaNumeric && Number.isFinite(primaryConfidence) && primaryConfidence < 65;
-          if (hasNearAlternative || lowConfidenceShortCode || textIntegritySuspiciousEdge(original) || textIntegrityPotentialGlyphSplit(original)) {
-            reviewItems.push({ descriptor, ride, sourceRow, original, reviewTrigger: hasNearAlternative ? 'independent_near_alternative' : (lowConfidenceShortCode ? 'low_confidence_short_code' : 'text_shape') });
+          const hyphenatedCompanyCode = descriptor.field === 'company' && isHyphenatedCompanyEdgeProbe(original);
+          const singleTokenFlightLocation = descriptor.field === 'flightLocation' && isSingleTokenFlightLocationEdgeProbe(original);
+          const sourceTruthEdgeProbe = hyphenatedCompanyCode || singleTokenFlightLocation;
+          if (hasNearAlternative || lowConfidenceShortCode || textIntegritySuspiciousEdge(original) || textIntegrityPotentialGlyphSplit(original) || sourceTruthEdgeProbe) {
+            reviewItems.push({ descriptor, ride, sourceRow, original, reviewTrigger: hasNearAlternative ? 'independent_near_alternative' : (lowConfidenceShortCode ? 'low_confidence_short_code' : (sourceTruthEdgeProbe ? 'source_truth_edge_probe' : 'text_shape')) });
           }
         });
       });
@@ -7021,6 +7136,18 @@
           const attemptLogByRow = attemptLogByField.get(descriptor.field);
           const log = attemptLogByRow.get(item.sourceRow) || [];
           log.push({ scope: 'local', mode: attempt.name, candidate });
+          attemptLogByRow.set(item.sourceRow, log);
+        }
+
+        const sourceTruthProbe = (
+          (descriptor.field === 'company' && isHyphenatedCompanyEdgeProbe(item.original)) ||
+          (descriptor.field === 'flightLocation' && isSingleTokenFlightLocationEdgeProbe(item.original))
+        );
+        if (sourceTruthProbe) {
+          const sourceTruthViews = await sourceTruthFullCellTextOcr(sourceTruthCanvas || imageCanvas, imageCanvas, descriptor, rowMeta, item.sourceRow, descriptor.field, worker);
+          const attemptLogByRow = attemptLogByField.get(descriptor.field);
+          const log = attemptLogByRow.get(item.sourceRow) || [];
+          log.push(...sourceTruthViews);
           attemptLogByRow.set(item.sourceRow, log);
         }
 
@@ -7145,6 +7272,13 @@
           ? ocrIntegrityCore.edgeGlyphAdjudication(original, attempts, cellEvidence?.cropQuality || null)
           : null;
         if (edgeGlyphAdjudication?.candidate) candidate = textIntegrityCellCandidate(edgeGlyphAdjudication.candidate, descriptor.field);
+        const sourceTruthConsensus = sourceTruthFullCellConsensus(attempts);
+        const sourceTruthEdge = descriptor.field === 'flightLocation' ? sourceTruthEdgeRecovery(original, attempts) : null;
+        const sourceTruthEdgeHints = (Array.isArray(attempts) ? attempts : [])
+          .filter(attempt => cellText(attempt?.scope) === 'source_truth_full_cell')
+          .map(attempt => textIntegrityCellCandidate(attempt?.candidate || '', descriptor.field))
+          .filter(value => value && strictTextEdgeExtension(original, value, 2));
+        if (sourceTruthEdge?.candidate) candidate = textIntegrityCellCandidate(sourceTruthEdge.candidate, descriptor.field);
         const edgeAlternative = candidate ? textIntegrityEdgeAlternative(original, candidate) : false;
         const peerCount = edgeAlternative ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, candidate) : 0;
         const edgePromotion = candidate
@@ -7172,10 +7306,59 @@
           return;
         }
 
+        // P113.9 zero-silent-error gate for delimiter-bearing company codes:
+        // if a later candidate shortens the current value only at an edge, it may
+        // not overwrite the source value unless the independent full-cell family
+        // itself agrees with that shorter candidate. If source truth instead
+        // supports the current value, the keep-primary path above handles it.
+        const companyEdgeShortening = descriptor.field === 'company' && candidate
+          ? strictTextEdgeExtension(candidate, original, 2)
+          : null;
+        if (companyEdgeShortening) {
+          const sourceTruthKey = cellText(sourceTruthConsensus?.candidate).normalize('NFC').toLocaleLowerCase('de-DE');
+          const candidateKey = cellText(candidate).normalize('NFC').toLocaleLowerCase('de-DE');
+          if (!sourceTruthKey || sourceTruthKey !== candidateKey) {
+            ride[`${descriptor.field}OcrConflict`] = true;
+            ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
+            ride[`${descriptor.field}OcrEvidence`] = {
+              sourceTruthEdgeUnresolved: true,
+              sourceTruthCandidate: cellText(sourceTruthConsensus?.candidate),
+              sourceTruthVotes: Number(sourceTruthConsensus?.votes || 0),
+              edge: companyEdgeShortening.edge,
+              loss: companyEdgeShortening.loss
+            };
+            if (cellEvidence && typeof cellEvidence === 'object') {
+              cellEvidence.manualCheckRequired = true;
+              cellEvidence.verificationSource = 'source_truth_full_cell_unresolved_company_edge';
+            }
+            return;
+          }
+        }
+
+        // If only one full-cell mode sees a plausible longer flight-location edge
+        // value, do not silently stay green. Keep the current value but block for
+        // review until two independent modes agree.
+        if (descriptor.field === 'flightLocation' && !sourceTruthEdge?.candidate && sourceTruthEdgeHints.length) {
+          const uniqueHints = [...new Set(sourceTruthEdgeHints.map(value => cellText(value)))];
+          ride[`${descriptor.field}OcrConflict`] = true;
+          ride[`${descriptor.field}OcrConflictCandidate`] = uniqueHints[0] || '';
+          ride[`${descriptor.field}OcrEvidence`] = {
+            sourceTruthEdgeUnresolved: true,
+            sourceTruthEdgeHints: uniqueHints,
+            sourceTruthCandidate: cellText(sourceTruthConsensus?.candidate),
+            sourceTruthVotes: Number(sourceTruthConsensus?.votes || 0)
+          };
+          if (cellEvidence && typeof cellEvidence === 'object') {
+            cellEvidence.manualCheckRequired = true;
+            cellEvidence.verificationSource = 'source_truth_full_cell_unresolved_location_edge';
+          }
+          return;
+        }
+
         const canCorrect = Boolean(
           candidate &&
           textIntegrityAlternativeIsSafe(original, candidate) &&
-          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict || promotedExactCellConsensus || promotedEdgeGlyphAdjudication)
+          (decision?.status === 'correct' || promotedEdgeConflict || promotedShortCodeConflict || promotedExactCellConsensus || promotedEdgeGlyphAdjudication || Boolean(sourceTruthEdge?.candidate))
         );
 
         if (canCorrect) {
@@ -7189,8 +7372,10 @@
           }
           ride[`${descriptor.field}OcrInitial`] = original;
           ride[`${descriptor.field}OcrAutoCorrected`] = true;
-          ride[`${descriptor.field}OcrCorrectionSource`] = promotedEdgeGlyphAdjudication
-            ? 'edge_glyph_adjudication'
+          ride[`${descriptor.field}OcrCorrectionSource`] = sourceTruthEdge?.candidate
+            ? 'source_truth_full_cell_edge_consensus'
+            : promotedEdgeGlyphAdjudication
+              ? 'edge_glyph_adjudication'
             : promotedExactCellConsensus
               ? 'exact_cell_multi_view_consensus'
               : promotedShortCodeConflict

@@ -108,6 +108,17 @@ async function runTextIntegrityRuntimeSmoke() {
     exactCellContentRegion: () => null,
     exactCellMultiViewOcr: async () => [],
     rawImageCellWords: () => [],
+    // P113.9 adds a bounded source-truth full-cell evidence family. The runtime
+    // smoke isolates recoverTextIntegrityTargeted(), so provide neutral stubs for
+    // its surrounding lexical helpers; the dedicated P113.9 self-test executes
+    // those real helper bodies separately.
+    isHyphenatedCompanyEdgeProbe: () => false,
+    isSingleTokenFlightLocationEdgeProbe: () => false,
+    sourceTruthFullCellTextOcr: async () => [],
+    sourceTruthFullCellConsensus: () => null,
+    sourceTruthEdgeRecovery: () => null,
+    strictTextEdgeExtension: () => null,
+    strongPrimarySecondaryEdgeDegradation: () => null,
     textIntegrityDecision: () => ({ status: 'ok', candidate: '', evidence: {} }),
     textIntegrityEdgeAlternative: () => false,
     textIntegritySamePlanPeerCount: () => 0,

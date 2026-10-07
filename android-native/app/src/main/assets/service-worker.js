@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1139 · 07.10.2026: cache refresh for source-truth full-cell edge consensus; silent company/location edge loss requires two agreeing full-cell modes and remains fail-closed on semantic conflict.
 // CORE-007D8A1F1D8P1138 · 07.10.2026: cache refresh for bounded text-edge integrity adjudication after P113.7 mirror-schema recovery; strong primary evidence may veto only narrowly proven edge degradation and semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1137 · 07.10.2026: cache refresh for mirror-schema integrity, row-aligned middle-time geometry, bounded OCR edge adjudication, and cancellation row-color corroboration; fail-closed remains mandatory.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: cache refresh for row-aligned time geometry recovery and time-only raw-word replay; fail-closed remains mandatory.
@@ -12,7 +13,7 @@
 // CORE-007D8A1F1D8P111 · 06.10.2026: cache refresh for production Live-Cockpit target promotion; OCR/flight/import semantics unchanged.
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
-const CACHE_NAME = "atms-pro-pwa-2026-10-07-p1138-text-edge-integrity";
+const CACHE_NAME = "atms-pro-pwa-2026-10-07-p1139-source-truth-edge-integrity";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -29,8 +30,8 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=P1121",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P1138",
-  "./js/plan-import.js?v=P1138",
+  "./js/ocr-integrity-core.js?v=P1139",
+  "./js/plan-import.js?v=P1139",
   "./js/pwa.js?v=CORE-004C",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
@@ -82,7 +83,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1138");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1139");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}
