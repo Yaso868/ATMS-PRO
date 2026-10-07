@@ -1,9 +1,10 @@
+// CORE-007D8A1F1D8P1131 · 07.10.2026: cache refresh for Golden-Error follow-up; OCR integrity assets only.
 // CORE-007D8A1F1D8P1121 · 06.10.2026: cache refresh for P112 Realgerät-Render-Fix; no data or LIVE semantics changed.
 // CORE-007D8A1F1D8P112 · 06.10.2026: cache refresh for Driver-Cockpit extension; existing fail-closed LIVE/ETA semantics unchanged.
 // CORE-007D8A1F1D8P111 · 06.10.2026: cache refresh for production Live-Cockpit target promotion; OCR/flight/import semantics unchanged.
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
-const CACHE_NAME = "atms-pro-pwa-2026-10-06-p1121-render-gate-fix";
+const CACHE_NAME = "atms-pro-pwa-2026-10-07-p1131-golden-error-fix";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -20,8 +21,8 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=P1121",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P110",
-  "./js/plan-import.js?v=P110",
+  "./js/ocr-integrity-core.js?v=P1131",
+  "./js/plan-import.js?v=P1131",
   "./js/pwa.js?v=CORE-004C",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
@@ -73,7 +74,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P110");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1131");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}

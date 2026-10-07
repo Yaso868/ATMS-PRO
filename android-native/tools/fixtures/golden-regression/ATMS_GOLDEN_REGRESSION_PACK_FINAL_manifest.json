@@ -424,7 +424,15 @@
       "previousActual": {
         "pickup": "Novotel Kain",
         "flightLocation": "IMB"
-      }
+      },
+      "p113RealDeviceActual": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "IMB",
+        "independentTextOcr": "9MB",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113"
     },
     {
       "id": "GE-20261007-WA0001-R27",
@@ -539,12 +547,165 @@
       },
       "note": "Direkt benachbarte 09:30-Zeile ohne Boundary-Artefakt.",
       "previousActual": "correct"
+    },
+    {
+      "id": "GE-20261007-WA0001-R7-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: vollständiger Primärwert wurde durch links abgeschnittene unabhängige Routen-OCR irriott Seestern DUS fälschlich hart blockiert.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R12-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: vollständiger Primärwert wurde durch links abgeschnittene unabhängige Routen-OCR irriott Seestern DUS fälschlich hart blockiert.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R13-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 13,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "flight_numeric_mutation",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "departureFlight": "EW9420",
+        "flightNumber": "EW9420",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: Route wurde wegen irriott... falsch blockiert und sichtbares EW9420 endete als formal gültiges, aber falsches EW8420.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "departureFlight": "EW8420",
+        "flightNumber": "EW8420",
+        "rowStatus": "Fehler"
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R17-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: vollständiger Primärwert wurde durch links abgeschnittene unabhängige Routen-OCR irriott Seestern DUS fälschlich hart blockiert.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R29-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 29,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "primary_ocr_left_edge_clipping",
+        "repeated_text_consistency",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "departureFlight": "EW9574",
+        "flightNumber": "EW9574",
+        "rowStatus": "OK"
+      },
+      "note": "P113 real-device: sichtbarer Abholort verlor linken Präfix und wurde als rriott Seestern DUS mit Status OK freigegeben.",
+      "previousActual": {
+        "pickup": "rriott Seestern DUS",
+        "departureFlight": "EW9574",
+        "flightNumber": "EW9574",
+        "rowStatus": "OK"
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-SUMMARY-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "summary_consistency",
+        "date_confirmation_separation",
+        "ui_integrity"
+      ],
+      "expected": {
+        "ocrErrorCountMatchesVisibleOcrErrors": true,
+        "dateBatchCountedAsOcrError": false,
+        "dateConfirmationStillBlocksImport": true,
+        "dateBatchRideCount": 22
+      },
+      "note": "P113 real-device: Kopf zeigte 6 Fehler, obwohl fünf sichtbare harte OCR-/Datenfehler in Liste/Tabelle standen; die offene Datumsbestätigung wurde intern als error mitgezählt. Sie muss separat sichtbar und weiterhin blockierend bleiben.",
+      "previousActual": {
+        "headlineErrorCount": 6,
+        "visibleHardOcrErrors": 5,
+        "dateBatchPending": true,
+        "dateBatchRideCount": 22
+      },
+      "reproducibility": "confirmed_real_device_P113"
     }
   ],
   "summary": {
-    "caseRecords": 21,
+    "caseRecords": 27,
     "legacyRows": 16,
-    "newErrorRecords": 13,
+    "newErrorRecords": 19,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",

@@ -315,3 +315,71 @@ for(const fixtureLiteral of ['ABX','note09:20','P113_SENTINEL_DRIVER','P113_SENT
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113 TEST fixture leaked into production: ${fixtureLiteral}`);
 }
 console.log('P113 Final Planlisten Stabilization regression self-test: PASS');
+// P113.1 GOLDEN ERROR FOLLOW-UP: real-device failures from 07.10.2026 are
+// locked as fixture evidence, while the production behavior is exercised with
+// unrelated synthetic strings/codes so no customer/route/flight hardcode leaks.
+assert(Number(p113Manifest.summary?.caseRecords||0)>=27,'P113.1 manifest must retain the extended Golden Error cases');
+assert(Number(p113Manifest.summary?.newErrorRecords||0)>=19,'P113.1 manifest must retain all confirmed error records');
+for(const requiredId of [
+  'GE-20261007-WA0001-R7-P1131',
+  'GE-20261007-WA0001-R12-P1131',
+  'GE-20261007-WA0001-R13-P1131',
+  'GE-20261007-WA0001-R17-P1131',
+  'GE-20261007-WA0001-R29-P1131',
+  'GE-20261007-WA0001-SUMMARY-P1131'
+]) assert(p113Manifest.cases.some(item=>item.id===requiredId),`P113.1 missing Golden Error case: ${requiredId}`);
+const p1131R26=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-R26');
+assert.strictEqual(p1131R26?.expected?.flightLocation,'9MB','P113.1 must preserve the confirmed short location-code expectation');
+assert.strictEqual(p1131R26?.p113RealDeviceActual?.flightLocation,'IMB','P113.1 must retain the real-device failed value as evidence');
+const p1131R13=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-R13-P1131');
+assert.strictEqual(p1131R13?.expected?.flightNumber,'EW9420','P113.1 must lock the confirmed source-row 13 flight value');
+const p1131R29=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-R29-P1131');
+assert.strictEqual(p1131R29?.expected?.pickup,'Marriott Seestern DUS','P113.1 must lock the confirmed full source-row 29 pickup');
+const p1131Summary=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0001-SUMMARY-P1131');
+assert.strictEqual(p1131Summary?.expected?.dateBatchCountedAsOcrError,false,'P113.1 date confirmation must be separate from OCR/data error count');
+assert.strictEqual(p1131Summary?.expected?.dateConfirmationStillBlocksImport,true,'P113.1 date confirmation must remain blocking');
+
+const clippedRoute=core.leftEdgeTextDegradation('Central Terminal West','ntral Terminal West');
+assert(clippedRoute&&clippedRoute.commonLength>=8,'P113.1 must recognize a shorter high-overlap left-edge clipping');
+assert.strictEqual(core.leftEdgeTextDegradation('Central Terminal West','Xentral Terminal West'),null,'P113.1 must not dismiss same-length first-token conflicts');
+assert.strictEqual(core.leftEdgeTextDegradation('Hotel Alpha Center','Motel Alpha Center'),null,'P113.1 must keep genuinely different labels as conflicts');
+
+const shortCodeConsensus=core.shortCodeImageConsensusPromotion('A1C','81C',[
+  {candidate:'81C',scope:'batch',mode:'batch'},
+  {candidate:'81C',scope:'local',mode:'psm7'},
+  {candidate:'81C',scope:'local',mode:'psm8'}
+]);
+assert.deepStrictEqual(shortCodeConsensus,{candidate:'81C',batch:1,local:2,localModes:2});
+assert.strictEqual(core.shortCodeImageConsensusPromotion('A1C','81C',[
+  {candidate:'81C',scope:'batch',mode:'batch'},
+  {candidate:'81C',scope:'local',mode:'psm7'},
+  {candidate:'A1C',scope:'local',mode:'psm8'}
+]),null,'P113.1 short-code promotion must fail closed when local evidence disagrees');
+
+const strongPrimaryAlternative=[
+  {crop:1,mode:'single-line',candidates:['ZX4821']},
+  {crop:1,mode:'single-word',candidates:['ZX4821']},
+  {crop:2,mode:'single-line',candidates:['ZX4821']},
+  {crop:2,mode:'single-word',candidates:['ZX4821']}
+];
+assert.strictEqual(core.oneNumericEditAutoCorrectionAllowed('ZX4827','ZX4821',strongPrimaryAlternative,80,false),true,'P113.1 four unanimous targeted votes may overturn a strong one-digit primary');
+assert.strictEqual(core.oneNumericEditAutoCorrectionAllowed('ZX4827','ZX4821',[
+  {crop:1,mode:'single-line',candidates:['ZX4821']},
+  {crop:2,mode:'single-line',candidates:['ZX4821']}
+],80,false),false,'P113.1 two targeted votes alone must not mutate a strong valid flight number');
+
+assert(planImportSource.includes('leftEdgeTextDegradation'),'P113.1 must guard secondary route OCR against left-edge clipping');
+assert(planImportSource.includes("p54MeasureAsync('flight_column_integrity_ocr'"),'P113.1 must cross-check standard flight cells with independent column evidence');
+assert(planImportSource.includes('shortCodeImageConsensusPromotion'),'P113.1 must require image consensus before replacing short alphanumeric codes');
+assert(planImportSource.includes('oneNumericEditAutoCorrectionAllowed'),'P113.1 must protect strong valid flight primaries from weak one-digit mutation');
+assert(planImportSource.includes('ocrSummaryActionableIssues'),'P113.1 must separate OCR/data summary issues from date confirmation');
+assert(planImportSource.includes('dateBatchPending'),'P113.1 must keep the date confirmation blocking without counting it as an OCR/data error');
+
+for(const fixtureLiteral of ['Central Terminal West','ntral Terminal West','Hotel Alpha Center','Motel Alpha Center','A1C','81C','ZX4827','ZX4821','EW9420','9MB','irriott Seestern DUS']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.1 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+// The app already contains a historical display canonicalization for this hotel, so the
+// no-hardcode check is scoped to the OCR/parser modules modified by P113.1.
+for(const source of productionFiles.slice(0,2)) assert(!source.includes('Marriott Seestern DUS'), 'P113.1 route fixture must not be hardcoded into OCR/parser production logic');
+console.log('P113.1 Golden Error Follow-up deterministic regression self-test: PASS');
+

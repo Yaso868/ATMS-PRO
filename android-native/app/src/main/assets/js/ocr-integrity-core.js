@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1131 · 07.10.2026: GOLDEN ERROR FOLLOW-UP – generic left-edge text degradation detection, short-code image consensus and safer one-digit flight correction. Historical fixture values remain test-only; no flight/driver/place hardcodes.
 // CORE-007D8A1F1D8P113 · 07.10.2026: FINAL PLANLISTEN STABILIZATION – pure helpers for strict boundary-clock cleanup and strong short-code consensus. Historical fixture values remain test-only; no flight/driver/place hardcodes.
 // ATMS PRO P110 – Golden Error Pack helpers: neighbor-cell cleanup after proven route-boundary recovery + suspicious mixed flight-prefix support; fail-closed retained.
 // ATMS PRO P109.2 – browser/node shared OCR-integrity helpers (generic edge-consensus promotion added; fail-closed retained).
@@ -219,6 +220,63 @@
     return count;
   }
 
+
+  function leftEdgeTextDegradation(referenceValue,candidateValue){
+    const reference=textIntegrityNormalize(referenceValue).normalize('NFKC').toLocaleLowerCase('de-DE');
+    const candidate=textIntegrityNormalize(candidateValue).normalize('NFKC').toLocaleLowerCase('de-DE');
+    if(!reference||!candidate||reference===candidate)return null;
+    // This guard is specifically for a shorter secondary reading caused by a
+    // clipped left cell edge. Same-length first-token differences remain real
+    // conflicts (for example two genuinely different place names).
+    const lengthLoss=reference.length-candidate.length;
+    if(lengthLoss<1||lengthLoss>5||Math.min(reference.length,candidate.length)<8)return null;
+    let common=0;
+    while(common<reference.length&&common<candidate.length&&reference[reference.length-1-common]===candidate[candidate.length-1-common])common++;
+    if(common<8||common/Math.max(1,candidate.length)<0.78)return null;
+    const referencePrefix=reference.slice(0,reference.length-common);
+    const candidatePrefix=candidate.slice(0,candidate.length-common);
+    if(!referencePrefix||referencePrefix.length>5||candidatePrefix.length>2)return null;
+    const suffix=reference.slice(reference.length-common);
+    if(!/\s/.test(suffix))return null;
+    return{referencePrefix,candidatePrefix,commonSuffix:suffix,commonLength:common,coverage:common/candidate.length};
+  }
+
+  function shortCodeImageConsensusPromotion(originalValue,candidateValue,attempts){
+    const original=text(originalValue).replace(/\s+/g,'').toUpperCase();
+    const candidate=text(candidateValue).replace(/\s+/g,'').toUpperCase();
+    if(!/^[A-Z0-9]{2,5}$/.test(original)||!/^[A-Z0-9]{2,5}$/.test(candidate)||original===candidate)return null;
+    if(textIntegrityEditDistance(original,candidate)!==1)return null;
+    let batch=0,local=0,localOther=0;
+    const localModes=new Set();
+    for(const attempt of (Array.isArray(attempts)?attempts:[])){
+      const value=text(attempt?.candidate).replace(/\s+/g,'').toUpperCase();
+      if(!value)continue;
+      const scope=text(attempt?.scope)||'unknown';
+      if(value===candidate){
+        if(scope==='batch')batch++;
+        if(scope==='local'){local++;localModes.add(text(attempt?.mode)||`local-${local}`);}
+      }else if(scope==='local'&&/^[A-Z0-9]{2,5}$/.test(value)){
+        localOther++;
+      }
+    }
+    if(batch>=1&&local>=2&&localModes.size>=2&&localOther===0)return{candidate,batch,local,localModes:localModes.size};
+    return null;
+  }
+
+  function oneNumericEditAutoCorrectionAllowed(initialValue,candidateValue,attempts,primaryConfidence,hasContextPeer){
+    const initial=flight(initialValue),candidate=flight(candidateValue);
+    if(!oneNumericEditFlightAlternative(initial,candidate))return false;
+    const suggestion=suggestOneNumericEditCorrection(initial,attempts);
+    if(!suggestion||suggestion.candidate!==candidate||!suggestion.changed)return false;
+    if(Boolean(hasContextPeer))return true;
+    const confidence=Number(primaryConfidence);
+    if(!Number.isFinite(confidence))return true;
+    if(confidence<=35)return true;
+    // A moderate/high-confidence primary word must not be overwritten by a two-crop
+    // alternative alone. Four unanimous targeted votes across two crops are required.
+    return suggestion.votes>=4&&suggestion.crops>=2;
+  }
+
   function textIntegrityNormalize(value){
     return text(value).normalize('NFC').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim();
   }
@@ -385,5 +443,5 @@
     return {status:textIntegritySuspiciousEdgePunctuation(original)?'suspicious':'ok',candidate:original,evidence:null};
   }
 
-  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
+  return Object.freeze({flight,singleDeletionPrefixMatch,boundaryGlyphShift,safeLongPrefixFlightAlternative,oneNumericEditFlightAlternative,oneNumericEditConflictEvidence,suggestOneNumericEditCorrection,suggestLongPrefixCorrection,parseClockTime,parseClockTimeWithBoundaryNoise,inferRideTimeColumnFromMatrix,parseEuropeanNumber,pricePlausibility,repeatedTextSignature,suggestShortCodeConsensus,driverUncertaintyMarker,standardFlightPeerContextMatch,oneNumericEditContextPeerIndices,listConsensusPeerCount,leftEdgeTextDegradation,shortCodeImageConsensusPromotion,oneNumericEditAutoCorrectionAllowed,textIntegrityNormalize,textIntegrityEditDistance,suggestNeighborCustomerAfterRouteBoundaryRecovery,textIntegrityHasDiacritic,textIntegritySuspiciousEdgePunctuation,textIntegrityPotentialGlyphSplit,textIntegrityEdgePunctuationAlternative,safeTextIntegrityAlternative,textIntegrityEdgeConflictPromotion,decideTextIntegrity});
 });
