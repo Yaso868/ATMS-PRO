@@ -418,9 +418,21 @@
       ],
       "expected": {
         "pickup": "Novotel Köln",
-        "flightLocation": "9MB"
+        "flightLocation": "9MB",
+        "time": "07:15",
+        "price": 108.0,
+        "destination": "DUS Airport",
+        "customer": "Eurowings",
+        "company": "KoelnBus",
+        "arrivalFlight": "",
+        "departureFlight": "",
+        "flightNumber": "",
+        "vehicle": "Pkw",
+        "persons": 1,
+        "flightTime": "07:15",
+        "driver": "Nimet"
       },
-      "note": "Targeted OCR sieht Köln/9MB korrekt bzw. als starke Gegen-Evidenz; P113.1 blockiert sicher, übernimmt den exakten Zellkonsens für 9MB aber noch nicht. P113.2 muss dies allgemein über geometrisch identische Multi-View-Zellbeweise lösen oder weiter fail-closed bleiben.",
+      "note": "P113.2 bleibt sicher fail-closed, löst den exakten Kurzcode aber noch nicht. P113.3 prüft die bestätigte Ort-Zelle am Originalbild mit nativer OCR-Skalierung plus enger Zeichenregion innerhalb derselben Zellgrenzen; keine 9MB/IMB-Produktionsregel.",
       "previousActual": {
         "pickup": "Novotel Kain",
         "flightLocation": "IMB"
@@ -441,6 +453,16 @@
         "importBlocked": true,
         "zeroSilentErrorGatePass": true,
         "exactValuePass": false
+      },
+      "p1132RealDeviceActual": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "IMB",
+        "independentTextOcr": "9MB",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "zeroSilentErrorGatePass": true,
+        "exactValuePass": false,
+        "summary": "33/33; 3 Hinweise; 1 Fehler; P113.2 blieb bei IMB↔9MB fail-closed ohne Regression der bereits korrigierten Kontrollfälle"
       }
     },
     {
@@ -724,5 +746,29 @@
       "L15_FULL_2026-10-06",
       "L15_SHORT_TWO_ROW"
     ]
+  },
+  "p1133": {
+    "baseHead": "f4d326b50d1f4e13992e3fb6c78f98c2d5001588",
+    "method": "GPT-VISION CELL REPLAY",
+    "sourceTruth": "original_image",
+    "shortCodeReviewTrigger": [
+      "independent_near_alternative",
+      "low_primary_cell_confidence"
+    ],
+    "cellViews": [
+      "full_cell_original",
+      "full_cell_psm10",
+      "content_inside_cell_original",
+      "content_inside_cell_grayscale",
+      "processed_cell"
+    ],
+    "consensusRule": "diverse_exact_cell_families_or_fail_closed",
+    "hardcodingAllowed": false,
+    "realSourceReplay": {
+      "tool": "golden-image-replay-p1133.py",
+      "case": "GE-20261007-WA0001-R26",
+      "status": "PASS_local_reference_engine",
+      "note": "Test-only developer replay derives Ort column from the real image header/grid and row from the ride-time column; runtime release still requires the Android/Tesseract.js real-device replay."
+    }
   }
 }

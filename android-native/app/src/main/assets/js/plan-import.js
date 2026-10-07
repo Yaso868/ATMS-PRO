@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1133 · 07.10.2026: GPT-VISION CELL REPLAY – exact-cell content-region evidence, low-confidence short-code review, bounded multi-view OCR diversity and zero-silent-error diagnostics. No flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P1132 · 07.10.2026: CHATGPT-LIKE CELL EVIDENCE – geometry-first exact-cell provenance, bounded multi-view OCR consensus and crop-quality-aware fail-closed validation. No flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P1131 · 07.10.2026: GOLDEN ERROR FOLLOW-UP – left-edge route degradation handling, short-code exact-cell OCR, flight-column integrity consensus, and date-batch/error-count separation. CORRECT OR FAIL CLOSED; no flight/driver/place/file hardcodes.
 // CORE-007D8A1F1D8P113 · 07.10.2026: FINAL PLANLISTEN STABILIZATION – structure-first schema evidence, exact-cell provenance/recovery, zero-silent-error gate, strict boundary-time cleanup and bounded driver recovery. CORRECT OR FAIL CLOSED; no flight/driver/place/file hardcodes.
@@ -1935,11 +1936,12 @@
         if (ride[`${field}OcrConflict`]) {
           const current = cellText(field === 'flightLocation' ? (ride.sourceFlightLocationRaw || ride.flightLocation) : ride[field]);
           const candidate = cellText(ride[`${field}OcrConflictCandidate`]);
+          const exactViews = cellText(ride[`${field}OcrEvidence`]?.exactCellViews);
           issues.push({
             level: 'error',
             kind: 'text_ocr',
             row,
-            text: `${label} „${current || '–'}“ widerspricht der unabhängigen Text-Nach-OCR${candidate ? ` („${candidate}“)` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
+            text: `${label} „${current || '–'}“ widerspricht der unabhängigen Text-Nach-OCR${candidate ? ` („${candidate}“)` : ''}${exactViews ? ` · Zellprüfung: ${exactViews}` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
           });
         } else if (ride[`${field}OcrAutoCorrected`]) {
           const correctionSource = cellText(ride[`${field}OcrCorrectionSource`]);
@@ -6253,7 +6255,28 @@
     return out;
   }
 
-  async function exactCellMultiViewOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker) {
+  function exactCellContentRegion(imageMeta, rowMeta, descriptor, originalValue) {
+    const column = Number(descriptor?.column);
+    if (!Number.isInteger(column) || !rowMeta) return null;
+    const words = rawImageCellWords(imageMeta, rowMeta, column);
+    if (!words.length) return null;
+    const key = cellText(originalValue).replace(/\s+/g, '').normalize('NFKC').toUpperCase();
+    const eligible = words.filter(word => /^[A-Za-z0-9]{1,8}$/.test(cellText(word?.text).replace(/\s+/g, '')));
+    const matched = eligible.find(word => cellText(word?.text).replace(/\s+/g, '').normalize('NFKC').toUpperCase() === key);
+    const word = matched || (eligible.length === 1 ? eligible[0] : null);
+    if (!word) return null;
+    const x0 = Number(word.x0), x1 = Number(word.x1), y0 = Number(word.y0), y1 = Number(word.y1);
+    if (![x0, x1, y0, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) return null;
+    const width = Math.max(4, x1 - x0), height = Math.max(4, y1 - y0);
+    const left = Math.max(Number(descriptor.left) + 1, x0 - Math.max(2, width * 0.18));
+    const right = Math.min(Number(descriptor.right) - 1, x1 + Math.max(2, width * 0.18));
+    const top = Math.max(Number(rowMeta.y0) + 1, y0 - Math.max(2, height * 0.30));
+    const bottom = Math.min(Number(rowMeta.y1) - 1, y1 + Math.max(2, height * 0.30));
+    if (![left, right, top, bottom].every(Number.isFinite) || right - left < 6 || bottom - top < 5) return null;
+    return { left, right, top, bottom, source: matched ? 'primary_word_bbox' : 'single_short_word_bbox' };
+  }
+
+  async function exactCellMultiViewOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker, contentRegion = null) {
     if (!descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
     const source = sourceTruthCanvas || processedCanvas;
     const left = Number(descriptor.left), right = Number(descriptor.right);
@@ -6264,21 +6287,34 @@
       leftEdgeClipped: false,
       rightEdgeClipped: false,
       neighborColumnIncluded: false,
-      tableLineInterference: 'controlled_same_cell_views'
+      tableLineInterference: 'controlled_same_cell_views',
+      targetCellGeometryConfirmed: true
     };
     if (!cropQuality.fullCellIncluded) return [];
 
+    // P113.3: preprocessImage() already scales the source-truth canvas to OCR size.
+    // Re-enlarging an entire short-code cell by 5x/6x was proven on the real source
+    // image to destroy useful glyph detail. Keep full-cell views at native OCR scale,
+    // then add a tighter CHARACTER REGION that remains strictly inside the SAME cell.
+    const region = contentRegion && [contentRegion.left, contentRegion.right, contentRegion.top, contentRegion.bottom].every(Number.isFinite)
+      ? contentRegion
+      : null;
     const variants = [
-      { mode: 'cell-view-original-psm7', source, transform: 'original', scale: 5, psm: '7' },
-      { mode: 'cell-view-grayscale-psm7', source, transform: 'grayscale', scale: 5, psm: '7' },
-      { mode: 'cell-view-threshold-psm7', source, transform: 'threshold', scale: 5, psm: '7' },
-      { mode: 'cell-view-processed-psm8', source: processedCanvas, transform: 'original', scale: 6, psm: '8' }
+      { mode: 'cell-view-full-original-psm7', source, transform: 'original', scale: 1, psm: '7', region: { left, right, top, bottom }, viewRegion: 'full_cell' },
+      { mode: 'cell-view-full-original-psm10', source, transform: 'original', scale: 1, psm: '10', region: { left, right, top, bottom }, viewRegion: 'full_cell' },
+      ...(region ? [
+        { mode: 'cell-view-content-original-psm7', source, transform: 'original', scale: 1, psm: '7', region, viewRegion: 'content_inside_cell' },
+        { mode: 'cell-view-content-original-psm10', source, transform: 'original', scale: 1, psm: '10', region, viewRegion: 'content_inside_cell' },
+        { mode: 'cell-view-content-grayscale-psm10', source, transform: 'grayscale', scale: 1, psm: '10', region, viewRegion: 'content_inside_cell' }
+      ] : []),
+      { mode: 'cell-view-processed-psm8', source: processedCanvas, transform: 'original', scale: 1, psm: '8', region: { left, right, top, bottom }, viewRegion: 'full_cell' }
     ];
     const attempts = [];
     for (const variant of variants) {
       let candidate = '';
       try {
-        const exactCrop = cropCanvasRegion(variant.source, left, top, right, bottom, variant.scale);
+        const bounds = variant.region || { left, right, top, bottom };
+        const exactCrop = cropCanvasRegion(variant.source, bounds.left, bounds.top, bounds.right, bounds.bottom, variant.scale);
         const view = exactCellEvidenceTransform(exactCrop, variant.transform);
         const params = { tessedit_pageseg_mode: variant.psm, tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' };
         let result;
@@ -6286,7 +6322,7 @@
           if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', params, { mode: variant.mode, sourceRow });
           result = await p109PerfWorkerRecognize(worker, 'text_integrity_ocr', view, { mode: variant.mode, sourceRow });
         } else {
-          result = await p109PerfRecognizeOneShot('text_integrity_ocr', 'deu', view, params, { mode: `${variant.mode}-fallback`, sourceRow });
+          result = await p109PerfRecognizeOneShot('text_integrity_ocr', 'eng', view, params, { mode: `${variant.mode}-fallback`, sourceRow });
         }
         candidate = textIntegrityCellCandidate(result?.data?.text || '', field);
       } catch (_) {}
@@ -6296,11 +6332,21 @@
         candidate,
         sourceRow,
         field,
+        viewRegion: variant.viewRegion,
+        transform: variant.transform,
         cellBounds: { left, top, right, bottom },
-        cropQuality: { ...cropQuality }
+        ...(region ? { contentBounds: { left: region.left, top: region.top, right: region.right, bottom: region.bottom } } : {}),
+        cropQuality: { ...cropQuality, contentRegionInsideConfirmedCell: variant.viewRegion === 'content_inside_cell' }
       });
     }
     return attempts;
+  }
+
+  function exactCellEvidenceSummary(attempts) {
+    return (Array.isArray(attempts) ? attempts : [])
+      .filter(attempt => attempt?.scope === 'cell_view')
+      .map(attempt => `${cellText(attempt?.mode).replace(/^cell-view-/, '')}=${cellText(attempt?.candidate) || '∅'}`)
+      .join(', ');
   }
 
   function textWordsBySourceRow(result, cropTop, cropScale, rowsWithMeta, field) {
@@ -6540,8 +6586,11 @@
           if (!original) return;
           const batchCandidates = (batchCandidatesByRow.get(sourceRow) || []).filter(Boolean);
           const hasNearAlternative = batchCandidates.some(candidate => candidate !== original && textIntegrityAlternativeIsSafe(original, candidate));
-          if (hasNearAlternative || textIntegritySuspiciousEdge(original) || textIntegrityPotentialGlyphSplit(original)) {
-            reviewItems.push({ descriptor, ride, sourceRow, original });
+          const primaryConfidence = Number(ride?.imageCellEvidence?.[descriptor.field]?.confidence);
+          const shortAlphaNumeric = /^[A-Za-z0-9]{2,6}$/.test(original.replace(/\s+/g, ''));
+          const lowConfidenceShortCode = descriptor.field === 'flightLocation' && shortAlphaNumeric && Number.isFinite(primaryConfidence) && primaryConfidence < 65;
+          if (hasNearAlternative || lowConfidenceShortCode || textIntegritySuspiciousEdge(original) || textIntegrityPotentialGlyphSplit(original)) {
+            reviewItems.push({ descriptor, ride, sourceRow, original, reviewTrigger: hasNearAlternative ? 'independent_near_alternative' : (lowConfidenceShortCode ? 'low_confidence_short_code' : 'text_shape') });
           }
         });
       });
@@ -6581,24 +6630,22 @@
           attemptLogByRow.set(item.sourceRow, log);
         }
 
-        // P113: very short alphanumeric cells (codes) are difficult for a wide-cell
-        // PSM6/7 crop. If the independent composite batch saw one SAFE near alternative,
-        // re-read only the primary word bounds twice. Correction still needs batch +
-        // two local confirmations; otherwise decideTextIntegrity() remains fail-closed.
+        // P113/P113.3: very short alphanumeric cells need bounded exact-cell review.
+        // P113.3 no longer depends on one particular batch path and avoids unbounded OCR loops.
         const attemptLogByRow = attemptLogByField.get(descriptor.field);
         const currentLog = attemptLogByRow.get(item.sourceRow) || [];
-        const batchAlternative = currentLog
-          .filter(attempt => attempt.scope === 'batch')
-          .map(attempt => textIntegrityCellCandidate(attempt.candidate || '', descriptor.field))
-          .find(candidate => candidate && candidate !== item.original && textIntegrityAlternativeIsSafe(item.original, candidate));
-        const shortCode = /^[A-Za-z0-9]{2,6}$/.test(item.original) && /^[A-Za-z0-9]{2,6}$/.test(batchAlternative || '');
+        const shortCode = /^[A-Za-z0-9]{2,6}$/.test(item.original.replace(/\s+/g, ''));
 
-        // P113.2 CELL EVIDENCE: when a short alphanumeric cell has a safe independent
-        // alternative, re-read the SAME confirmed geometric cell through several
-        // controlled visual views. No crop may widen into a neighbor column. These
-        // attempts are recorded separately and may promote a correction only through
-        // exactCellMultiViewConsensus(); otherwise the existing fail-closed conflict stays.
+        // P113.3 GPT-VISION CELL REPLAY: do not require one particular batch path.
+        // Any already-triggered short-code review (independent alternative OR low
+        // primary confidence) may ask the SAME confirmed target cell for bounded
+        // multi-view evidence. A tight content region is derived only from a raw word
+        // bounding box that is itself inside that cell; it can never widen into a peer.
         if (shortCode && ['company', 'flightLocation'].includes(descriptor.field)) {
+          if (!shortCodeWorker) {
+            try { shortCodeWorker = await p109SharedOcrWithWorker('eng', async sharedWorker => sharedWorker); } catch (_) { shortCodeWorker = null; }
+          }
+          const contentRegion = exactCellContentRegion(imageMeta, rowMeta, descriptor, item.original);
           const multiViewAttempts = await exactCellMultiViewOcr(
             sourceTruthCanvas || imageCanvas,
             imageCanvas,
@@ -6606,7 +6653,8 @@
             rowMeta,
             item.sourceRow,
             descriptor.field,
-            worker
+            shortCodeWorker || worker,
+            contentRegion
           );
           const log = attemptLogByRow.get(item.sourceRow) || [];
           multiViewAttempts.forEach(attempt => log.push(attempt));
@@ -6636,7 +6684,7 @@
               { name: 'text-code-word-psm7', psm: '7', scale: 6, xPad: 0.36, yPad: 0.56 }
             ];
             if (!shortCodeWorker) {
-              try { shortCodeWorker = await p109SharedOcrWithWorker('deu', async sharedWorker => sharedWorker); } catch (_) { shortCodeWorker = null; }
+              try { shortCodeWorker = await p109SharedOcrWithWorker('eng', async sharedWorker => sharedWorker); } catch (_) { shortCodeWorker = null; }
             }
             for (const attempt of wordAttempts) {
               let candidate = '';
@@ -6686,8 +6734,12 @@
             scope: cellText(attempt?.scope),
             mode: cellText(attempt?.mode),
             candidate: cellText(attempt?.candidate),
+            ...(attempt?.viewRegion ? { viewRegion: cellText(attempt.viewRegion) } : {}),
+            ...(attempt?.transform ? { transform: cellText(attempt.transform) } : {}),
+            ...(attempt?.contentBounds ? { contentBounds: { ...attempt.contentBounds } } : {}),
             ...(attempt?.cropQuality ? { cropQuality: { ...attempt.cropQuality } } : {})
           }));
+          cellEvidence.reviewTrigger = cellText(reviewItems.find(item => item.sourceRow === sourceRow && item.descriptor?.field === descriptor.field)?.reviewTrigger);
         }
         const decision = textIntegrityDecision(original, attempts);
         let candidate = textIntegrityCellCandidate(decision?.candidate || '', descriptor.field);
@@ -6768,7 +6820,8 @@
           ride[`${descriptor.field}OcrConflictCandidate`] = candidate || '';
           ride[`${descriptor.field}OcrEvidence`] = {
             ...(decision?.evidence || {}),
-            ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {})
+            ...(edgeAlternative ? { samePlanPeerCount: peerCount } : {}),
+            exactCellViews: exactCellEvidenceSummary(attempts)
           };
           if (cellEvidence && typeof cellEvidence === 'object') {
             cellEvidence.consensus = exactCellConsensus ? { ...exactCellConsensus } : null;
@@ -6786,7 +6839,10 @@
         if (decision?.status === 'ok' && unresolvedAlternative) {
           ride[`${descriptor.field}OcrConflict`] = true;
           ride[`${descriptor.field}OcrConflictCandidate`] = unresolvedAlternative;
-          ride[`${descriptor.field}OcrEvidence`] = { unresolvedIndependentAlternative: true };
+          ride[`${descriptor.field}OcrEvidence`] = {
+            unresolvedIndependentAlternative: true,
+            exactCellViews: exactCellEvidenceSummary(attempts)
+          };
           if (cellEvidence && typeof cellEvidence === 'object') {
             cellEvidence.manualCheckRequired = true;
             cellEvidence.verificationSource = 'exact_cell_multi_view_unresolved_alternative';

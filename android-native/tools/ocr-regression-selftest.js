@@ -388,23 +388,23 @@ console.log('P113.1 Golden Error Follow-up deterministic regression self-test: P
 const p1132CropQuality={fullCellIncluded:true,leftEdgeClipped:false,rightEdgeClipped:false,neighborColumnIncluded:false};
 const p1132Consensus=core.exactCellMultiViewConsensus('O7C',[
   {scope:'batch',mode:'batch',candidate:'Q7C'},
-  {scope:'cell_view',mode:'original',candidate:'Q7C',cropQuality:p1132CropQuality},
-  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',cropQuality:p1132CropQuality},
-  {scope:'cell_view',mode:'threshold',candidate:'Q7C',cropQuality:p1132CropQuality},
-  {scope:'cell_view',mode:'processed',candidate:'O7C',cropQuality:p1132CropQuality}
+  {scope:'cell_view',mode:'original',candidate:'Q7C',viewRegion:'full_cell',transform:'original',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',viewRegion:'content_inside_cell',transform:'grayscale',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'threshold',candidate:'Q7C',viewRegion:'content_inside_cell',transform:'threshold',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'processed',candidate:'O7C',viewRegion:'full_cell',transform:'processed',cropQuality:p1132CropQuality}
 ],p1132CropQuality);
-assert.deepStrictEqual(p1132Consensus,{candidate:'Q7C',exactViews:3,exactModes:3,batch:1,originalExact:1,runnerExact:1,strength:'strong'});
+assert.deepStrictEqual(p1132Consensus,{candidate:'Q7C',exactViews:3,exactModes:3,evidenceFamilies:3,batch:1,originalExact:1,runnerExact:1,strength:'strong'});
 assert.strictEqual(core.exactCellMultiViewConsensus('O7C',[
   {scope:'batch',mode:'batch',candidate:'Q7C'},
-  {scope:'cell_view',mode:'original',candidate:'Q7C',cropQuality:p1132CropQuality},
-  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',cropQuality:p1132CropQuality},
-  {scope:'cell_view',mode:'threshold',candidate:'O7C',cropQuality:p1132CropQuality}
+  {scope:'cell_view',mode:'original',candidate:'Q7C',viewRegion:'full_cell',transform:'original',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',viewRegion:'content_inside_cell',transform:'grayscale',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'threshold',candidate:'O7C',viewRegion:'content_inside_cell',transform:'threshold',cropQuality:p1132CropQuality}
 ],p1132CropQuality),null,'P113.2 must fail closed when exact-cell views do not win by a safe margin');
 assert.strictEqual(core.exactCellMultiViewConsensus('O7C',[
   {scope:'batch',mode:'batch',candidate:'Q7C'},
-  {scope:'cell_view',mode:'original',candidate:'Q7C',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}},
-  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}},
-  {scope:'cell_view',mode:'threshold',candidate:'Q7C',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}}
+  {scope:'cell_view',mode:'original',candidate:'Q7C',viewRegion:'full_cell',transform:'original',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}},
+  {scope:'cell_view',mode:'grayscale',candidate:'Q7C',viewRegion:'content_inside_cell',transform:'grayscale',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}},
+  {scope:'cell_view',mode:'threshold',candidate:'Q7C',viewRegion:'content_inside_cell',transform:'threshold',cropQuality:{...p1132CropQuality,leftEdgeClipped:true}}
 ],{...p1132CropQuality,leftEdgeClipped:true}),null,'P113.2 clipped evidence must never auto-correct');
 assert(planImportSource.includes('__atmsSourceTruthCanvas'),'P113.2 must preserve a source-truth canvas in the same coordinate system');
 assert(planImportSource.includes('function imageCellEvidenceForRide('),'P113.2 must build per-field cell evidence');
@@ -421,3 +421,33 @@ for(const fixtureLiteral of ['O7C','Q7C']){
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.2 TEST fixture leaked into production: ${fixtureLiteral}`);
 }
 console.log('P113.2 ChatGPT-like Cell Evidence deterministic regression self-test: PASS');
+
+// P113.3 GPT-VISION CELL REPLAY: exact-cell correction can be proven by diverse
+// views of the same confirmed target cell even without depending on one particular
+// composite-batch path. Content views remain inside the target cell.
+const p1133Consensus=core.exactCellMultiViewConsensus('A7D',[
+  {scope:'cell_view',mode:'full-line',candidate:'B7D',viewRegion:'full_cell',transform:'original',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'content-line',candidate:'B7D',viewRegion:'content_inside_cell',transform:'original',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'content-gray',candidate:'B7D',viewRegion:'content_inside_cell',transform:'grayscale',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'processed',candidate:'A7D',viewRegion:'full_cell',transform:'processed',cropQuality:p1132CropQuality}
+],p1132CropQuality);
+assert.deepStrictEqual(p1133Consensus,{candidate:'B7D',exactViews:3,exactModes:3,evidenceFamilies:3,batch:0,originalExact:1,runnerExact:1,strength:'strong'});
+assert.strictEqual(core.exactCellMultiViewConsensus('A7D',[
+  {scope:'cell_view',mode:'m1',candidate:'B7D',viewRegion:'full_cell',transform:'original',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'m2',candidate:'B7D',viewRegion:'full_cell',transform:'original',cropQuality:p1132CropQuality},
+  {scope:'cell_view',mode:'m3',candidate:'B7D',viewRegion:'full_cell',transform:'original',cropQuality:p1132CropQuality}
+],p1132CropQuality),null,'P113.3 must not treat repeated identical view-family votes as independent evidence');
+assert(planImportSource.includes('function exactCellContentRegion('),'P113.3 must derive a tight character region only inside the confirmed target cell');
+assert(planImportSource.includes("viewRegion: 'content_inside_cell'"),'P113.3 must distinguish content-region views from full-cell views');
+assert(planImportSource.includes('primaryConfidence < 65'),'P113.3 low-confidence short codes must enter bounded exact-cell review without waiting for one specific batch path');
+assert(planImportSource.includes("p109SharedOcrWithWorker('eng'"),'P113.3 alphanumeric exact-cell review must reuse the ENG shared OCR session');
+assert(planImportSource.includes("scale: 1, psm: '7'"),'P113.3 must avoid the proven destructive 5x/6x re-enlargement for source-truth full-cell views');
+assert(planImportSource.includes('exactCellEvidenceSummary'),'P113.3 unresolved real-device conflicts must expose exact-cell view evidence for diagnosis');
+assert(fs.existsSync(path.join(__dirname,'golden-image-replay-p1133.py')),'P113.3 real-source image replay tool must be shipped with the regression pack');
+assert.strictEqual(p1132R26?.p1132RealDeviceActual?.zeroSilentErrorGatePass,true,'P113.3 must retain the P113.2 real-device fail-closed proof');
+assert.strictEqual(p1132R26?.p1132RealDeviceActual?.exactValuePass,false,'P113.3 must retain why the exact-cell replay patch is still required');
+for(const fixtureLiteral of ['A7D','B7D']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P113.3 TEST fixture leaked into production: ${fixtureLiteral}`);
+}
+console.log('P113.3 GPT-Vision Cell Replay deterministic regression self-test: PASS');
+
