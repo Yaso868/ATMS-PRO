@@ -1525,12 +1525,273 @@
       },
       "note": "P114.0 successfully restored the full Amsterdam primary value but the independent secondary OCR still left-clipped it and blocked import. P114.1 may veto only the proven 1–2 glyph edge truncation when two source-truth views agree on the current primary.",
       "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0001-R12-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R13-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 13,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R14-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "single_internal_delimiter_loss",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "GetE",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR dropped exactly the single internal hyphen. P114.2 may veto only this exact one-delimiter loss with two agreeing source-truth views.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R25-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 25,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R28-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 28,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R29-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 29,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R31-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 31,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R32-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 32,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
     }
   ],
   "summary": {
-    "caseRecords": 50,
+    "caseRecords": 59,
     "legacyRows": 16,
-    "newErrorRecords": 42,
+    "newErrorRecords": 51,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -1794,6 +2055,73 @@
       "company primary is not a bounded hyphenated edge probe",
       "flight-location candidate is a semantic alternative",
       "no source-truth support for the current primary"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "WA0014_PASS_WA0001_COMPANY_BOUNDARY_FALSE_POSITIVE_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1141",
+    "realDeviceActual": {
+      "wa0014": {
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "reportedHints": 0,
+        "reportedErrors": 0,
+        "automaticCorrections": 21,
+        "company": "Get-E",
+        "flightLocation": "Amsterdam",
+        "automaticImportOccurred": true,
+        "flightVerificationOpen": 0
+      },
+      "wa0001": {
+        "rides": 33,
+        "reportedHints": 3,
+        "reportedErrors": 9,
+        "automaticCorrections": 78,
+        "edgeGlyphGoldenValue": "9MB",
+        "companyFalsePositiveRows": [
+          12,
+          13,
+          14,
+          17,
+          25,
+          28,
+          29,
+          31,
+          32
+        ],
+        "automaticImportOccurred": false
+      }
+    }
+  },
+  "p1142": {
+    "baseHead": "e27e1c6",
+    "parentUploadCommit": "e554b6b",
+    "method": "COMPANY BOUNDARY SOURCE-TRUTH VETO",
+    "sourceCases": [
+      "GE-20261007-WA0001-R12-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R13-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R14-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141",
+      "GE-20261007-WA0001-R25-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R28-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R29-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R31-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R32-COMPANY-TABLE-EDGE-P1141"
+    ],
+    "productionRules": [
+      "the current primary company value is never replaced by this gate; only a weaker secondary conflict can be suppressed",
+      "require at least two independent bounded source-truth cell modes to agree on the current primary value",
+      "apply only to bounded hyphenated company probes",
+      "allow isolated extreme-edge table-rule glyph noise around an otherwise identical candidate",
+      "allow exactly one missing internal delimiter from - _ / only when every other character is identical"
+    ],
+    "failClosed": [
+      "fewer than two agreeing source-truth views",
+      "source-truth views disagree or tie",
+      "semantic or internal character substitution",
+      "delimiter replaced by whitespace or another character",
+      "more than one delimiter missing",
+      "primary company is not a bounded hyphenated probe"
     ],
     "hardcodingAllowed": false,
     "realDeviceProofPending": true

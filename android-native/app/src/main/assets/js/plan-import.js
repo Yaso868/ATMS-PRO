@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P1141 · 07.10.2026: EDGE PRIMARY SOURCE-TRUTH VETO – when two independent bounded source-truth cell views confirm the current primary value, ignore only a strict 1–2 glyph secondary edge truncation or an isolated flight-location table-rule glyph; semantic alternatives and weak/disagreeing evidence remain fail-closed.
+// CORE-007D8A1F1D8P1142 · 07.10.2026: COMPANY BOUNDARY SOURCE-TRUTH VETO – when two independent bounded source-truth views confirm the current primary company value, suppress only isolated table-rule glyph noise or exactly one missing internal company delimiter in weaker secondary OCR; semantic changes remain fail-closed.
 // CORE-007D8A1F1D8P1139 · 07.10.2026: SOURCE-TRUTH EDGE INTEGRITY – add bounded full-cell source-truth consensus for silent edge loss in hyphenated company codes and single-token flight locations; two independent full-cell modes must agree and semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1138 · 07.10.2026: TEXT-EDGE INTEGRITY – preserve strong primary customer/company/route text against bounded edge-degraded secondary OCR and restore a clipped single-token flight location only from strong exact primary raw-cell evidence; fail closed on semantic conflict.
 // CORE-007D8A1F1D8P1136 · 07.10.2026: ROW-ALIGNED TIME GEOMETRY – after the P113.5 raw-line pass, pair recurring raw Preis/time words by physical Y rows so Android line fragmentation cannot erase the primary ride-time column; fail closed on weak/competing geometry.
@@ -6644,6 +6644,18 @@
     return stripped === original;
   }
 
+  function singleInternalCompanyDelimiterLoss(originalValue, candidateValue) {
+    const original = cellText(originalValue).normalize('NFC').trim();
+    const candidate = cellText(candidateValue).normalize('NFC').trim();
+    if (!original || !candidate || original === candidate || !isHyphenatedCompanyEdgeProbe(original)) return false;
+    const a = original.toLocaleLowerCase('de-DE');
+    const b = candidate.toLocaleLowerCase('de-DE');
+    const matches = [...a.matchAll(/[-_/]/g)];
+    if (matches.length !== 1) return false;
+    const i = matches[0].index;
+    return (a.slice(0,i) + a.slice(i+1)) === b;
+  }
+
   function sourceTruthPrimaryEdgeVeto(originalValue, candidateValue, field, attempts) {
     const original = cellText(originalValue).normalize('NFC').trim();
     const candidate = cellText(candidateValue).normalize('NFC').trim();
@@ -6655,12 +6667,16 @@
     if (!support) return null;
     const trunc = strictTextEdgeExtension(candidate, original, 2);
     const tableGlyph = edgeTableGlyphNoise(original, candidate);
+    const internalDelimiterLoss = field === 'company' ? singleInternalCompanyDelimiterLoss(original, candidate) : false;
     if (field === 'company') {
-      if (!isHyphenatedCompanyEdgeProbe(original) || !trunc) return null;
+      if (!isHyphenatedCompanyEdgeProbe(original) || (!trunc && !tableGlyph && !internalDelimiterLoss)) return null;
     } else if (field === 'flightLocation') {
       if (!isSingleTokenFlightLocationEdgeProbe(original) || (!trunc && !tableGlyph)) return null;
     } else return null;
-    return { reason: tableGlyph ? 'source_truth_primary_table_edge_veto' : 'source_truth_primary_edge_truncation_veto', source: support === full ? 'full_cell' : 'edge_expanded', votes:Number(support.votes||0), modes:Number(support.modes||0), edge:trunc?.edge||'', loss:Number(trunc?.loss||0) };
+    const reason = tableGlyph
+      ? 'source_truth_primary_table_edge_veto'
+      : (internalDelimiterLoss ? 'source_truth_primary_internal_delimiter_loss_veto' : 'source_truth_primary_edge_truncation_veto');
+    return { reason, source: support === full ? 'full_cell' : 'edge_expanded', votes:Number(support.votes||0), modes:Number(support.modes||0), edge:trunc?.edge||'', loss:Number(trunc?.loss||0) };
   }
 
   function sourceTruthEdgeRecovery(currentValue, attempts) {

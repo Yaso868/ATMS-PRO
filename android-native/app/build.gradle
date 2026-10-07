@@ -107,6 +107,14 @@ tasks.register('edgePrimaryVetoP1141', Exec) {
     commandLine 'node', 'tools/edge-primary-veto-selftest-p1141.js'
 }
 
+// P114.2: company boundary source-truth veto. Two agreeing bounded source-truth
+// views may suppress only isolated table-rule glyph noise or exactly one missing
+// internal company delimiter; semantic substitutions remain fail-closed.
+tasks.register('companyBoundaryVetoP1142', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-boundary-veto-selftest-p1142.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -125,4 +133,5 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('textEdgeSourceTruthP1139')
     dependsOn tasks.named('edgeSourceTruthP1140')
     dependsOn tasks.named('edgePrimaryVetoP1141')
+    dependsOn tasks.named('companyBoundaryVetoP1142')
 }

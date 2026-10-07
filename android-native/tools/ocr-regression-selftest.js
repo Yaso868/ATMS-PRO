@@ -712,7 +712,8 @@ const p1141Location=p113Manifest.cases.find(item=>item.id==='GE-20261007-WA0014-
 assert(p1141Krakau5&&p1141Krakau6&&p1141Company&&p1141Location,'P114.1 manifest must retain all four confirmed P114.0 false-positive blocks');
 assert.strictEqual(p113Manifest?.p1141?.baseHead,'82cf700','P114.1 manifest must record the freshly user-verified P114.0 post-installer main HEAD');
 assert.strictEqual(p113Manifest?.p1141?.hardcodingAllowed,false,'P114.1 production hardcoding remains forbidden');
-assert.strictEqual(p113Manifest?.p1141?.realDeviceProofPending,true,'P114.1 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1141?.realDeviceProofPending,false,'P114.1 manifest must record that the real-device proof was executed');
+assert.strictEqual(p113Manifest?.p1141?.realDeviceResult,'WA0014_PASS_WA0001_COMPANY_BOUNDARY_FALSE_POSITIVE_FAIL','P114.1 manifest must retain the confirmed WA0001 boundary regression');
 assert(planImportSource.includes('sourceTruthPrimaryEdgeVeto'),'P114.1 must retain primary source-truth veto logic');
 assert(planImportSource.includes('sourceTruthExpandedCellConsensus'),'P114.1 must require expanded source-truth consensus');
 assert(planImportSource.includes('source_truth_primary_table_edge_veto'),'P114.1 table-edge veto must remain diagnosable');
@@ -721,4 +722,24 @@ for(const fixtureLiteral of ['GE-20261007-WA0014-R5-FLIGHTLOCATION-TABLE-EDGE-P1
   for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P114.1 TEST/source identifier leaked into production: ${fixtureLiteral}`);
 }
 console.log('P114.1 primary source-truth edge veto deterministic regression self-test: PASS');
+
+// P114.2: P114.1 passed WA0014 but the mandatory WA0001 regression exposed
+// nine false company conflicts: eight table-rule edge artifacts and one exact
+// loss of the single internal company delimiter. Two agreeing source-truth views
+// may veto only these boundary-only degradations; semantic alternatives stay closed.
+const p1142Ids=[12,13,14,17,25,28,29,31,32].map(row=>`GE-20261007-WA0001-R${row}-COMPANY-${row===17?'INTERNAL-DELIMITER-LOSS':'TABLE-EDGE'}-P1141`);
+const p1142Cases=p1142Ids.map(id=>p113Manifest.cases.find(item=>item.id===id));
+assert(p1142Cases.every(Boolean),'P114.2 manifest must retain all nine confirmed P114.1 WA0001 company boundary blocks');
+assert.strictEqual(p113Manifest?.p1142?.baseHead,'e27e1c6','P114.2 manifest must record the freshly user-verified P114.1 post-installer main HEAD');
+assert.strictEqual(p113Manifest?.p1142?.hardcodingAllowed,false,'P114.2 production hardcoding remains forbidden');
+assert.strictEqual(p113Manifest?.p1142?.realDeviceProofPending,true,'P114.2 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1141?.realDeviceActual?.wa0001?.edgeGlyphGoldenValue,'9MB','P114.2 must retain the P113.4 9MB real-device regression proof');
+assert.strictEqual(Number(p113Manifest.summary?.caseRecords||0)>=59,true,'P114.2 manifest must include all nine new Golden error records');
+assert(planImportSource.includes('singleInternalCompanyDelimiterLoss'),'P114.2 must retain exact one-internal-delimiter loss detection');
+assert(planImportSource.includes('source_truth_primary_internal_delimiter_loss_veto'),'P114.2 delimiter-loss veto must remain diagnosable');
+assert(planImportSource.includes('source_truth_primary_table_edge_veto'),'P114.2 company table-edge veto must remain diagnosable');
+for(const fixtureLiteral of ['IMG-20261007-WA0001.jpg','GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P114.2 TEST/source identifier leaked into production: ${fixtureLiteral}`);
+}
+console.log('P114.2 company boundary source-truth deterministic regression self-test: PASS');
 
