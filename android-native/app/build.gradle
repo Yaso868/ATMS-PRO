@@ -228,6 +228,17 @@ tasks.register('runtimeAssetAlignmentP11411', Exec) {
     commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11411.js'
 }
 
+// P114.12: tested time-source integrity against the actual decision function.
+// Keeps all historical company/flight safety gates unchanged.
+tasks.register('timeSourceIntegrityP11412', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/time-source-integrity-selftest-p11412.js'
+}
+tasks.register('runtimeAssetAlignmentP11412', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11412.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -241,10 +252,11 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
     dependsOn tasks.named('companyConflictPostConsensusP1146')
-    // Version-specific runtime alignment: only the currently active P114.9 gate may block preBuild.
+    // Version-specific runtime alignment: only the currently active P114.12 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP11411')
+    dependsOn tasks.named('runtimeAssetAlignmentP11412')
+    dependsOn tasks.named('timeSourceIntegrityP11412')
     dependsOn tasks.named('companyAdaptiveTailP1149')
     dependsOn tasks.named('companyConflictTraceP11410')
     dependsOn tasks.named('companySourceReconcileP11411')

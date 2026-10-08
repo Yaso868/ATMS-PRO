@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11412 · 08.10.2026: TIME OCR SOURCE-FAMILY INTEGRITY – independent configured PSM modes with a dedicated worker; only qualified high-confidence full-cell counterproof can dismiss a correlated time-column disagreement. Unclear evidence remains fail-closed. No changes to company, flight or imports.
 // CORE-007D8A1F1D8P11411 · diagnostic-only company source-region trace; OCR/import decisions unchanged.
 // CORE-007D8A1F1D8P1149 · 08.10.2026: bounded company cell-tail source replay; source-truth agreement required, neighbor-cell occupancy and dissent veto always fail closed.
 // CORE-007D8A1F1D8P1148 · 08.10.2026: Preserve original full-image cell evidence before independent text OCR mutates verification status; strict competing-view and import vetoes retained.
@@ -8171,31 +8172,31 @@
     ];
     const votesByRow = new Map();
     const attemptLogByRow = new Map();
+    // P114.12: A second reading of the SAME whole-column image is not a new
+    // independent source. Full-cell checks may arbitrate ONLY if a complete,
+    // high-confidence primary source cell already supports the current time.
+    const fullCellProofByRow = new Map();
 
     if (status) {
       status.textContent = `${rowsWithMeta.length} Fahrzeit(en) werden gebündelt durch das Zeit-Quality-Gate gegengeprüft …`;
     }
 
+    let timeWorker = null;
     try {
-      // P59: Die drei bereits vorhandenen Batch-OCR-Versuche derselben unveränderten
-      // DISPO-Zeitspalte werden gleichzeitig gestartet. Die Auswertung erfolgt danach
-      // weiterhin strikt in attempts-Reihenfolge; Crops, Stimmen und Konsens bleiben identisch.
-      const attemptJobs = attempts.map(attempt => {
+      // P114.12: The P109 shared-worker adapter discards one-shot options.
+      // A dedicated worker is required here so PSM 4/6/11 are actually set,
+      // without leaking changed OCR parameters into later flight/price phases.
+      timeWorker = await p109PerfCreateWorker('early_time_batch_ocr', 'eng', { mode: 'p11412-time-source-families' });
+      if (typeof timeWorker?.setParameters !== 'function') throw new Error('p11412_time_parameters_unavailable');
+      for (const attempt of attempts) {
+        await p109PerfWorkerSetParameters(timeWorker, 'early_time_batch_ocr', attempt.options, { mode: attempt.name });
         const crop = cropCanvasRegion(imageCanvas, left + padX, minY, right - padX, maxY, attempt.scale);
-        return p109SharedOcrRecognize('early_time_batch_ocr', 'eng', crop, attempt.options, { mode: attempt.name })
-          .then(second => ({ ok: true, attempt, second }))
-          .catch(error => ({ ok: false, attempt, error }));
-      });
-      for (const job of attemptJobs) {
-        const result = await job;
-        if (!result?.ok) break;
-        const { attempt, second } = result;
+        const second = await p109PerfWorkerRecognize(timeWorker, 'early_time_batch_ocr', crop, { mode: attempt.name });
         const rowCandidates = timeWordsBySourceRow(second, minY, attempt.scale, rowsWithMeta);
-
         rowsWithMeta.forEach(item => {
           const candidate = normalizeTime(rowCandidates.get(item.sourceRow) || '');
           const log = attemptLogByRow.get(item.sourceRow) || [];
-          log.push({ mode: attempt.name, scale: attempt.scale, candidates: candidate ? [candidate] : [] });
+          log.push({ mode: attempt.name, scale: attempt.scale, psmApplied: true, candidates: candidate ? [candidate] : [] });
           attemptLogByRow.set(item.sourceRow, log);
           if (timeToMinutes(candidate) === null) return;
           const rowVotes = votesByRow.get(item.sourceRow) || new Map();
@@ -8203,10 +8204,83 @@
           votesByRow.set(item.sourceRow, rowVotes);
         });
       }
+      // Only examine actual batch conflicts. Bound this to at most two cell
+      // reads per conflicting row. No per-cell OCR on already-agreeing rides.
+      for (const item of rowsWithMeta) {
+        const ride = out[item.rideIndex];
+        const ranked = [...(votesByRow.get(item.sourceRow) || new Map()).entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        if (!ranked.length || ranked[0][1] < 2 || ranked[0][0] === item.initial ||
+            (ranked[1] && ranked[0][1] === ranked[1][1])) continue;
+        if (normalizeTime(ride.timeMirror)) continue; // a mirror is separate evidence
+        const evidence = ride.imageCellEvidence?.time;
+        const bounds = evidence?.cellBounds;
+        const quality = evidence?.cropQuality || {};
+        const confidence = Number(evidence?.confidence);
+        const initialRaw = normalizeTime(evidence?.rawOcr);
+        if (!bounds || evidence?.sourceRow !== item.sourceRow ||
+            Number(evidence?.sourceColumn) !== Number(timeCol) ||
+            evidence?.verificationSource !== 'primary_full_image_cell_assignment' ||
+            evidence?.geometryConfidence !== 'high' || !Number.isFinite(confidence) || confidence < 90 ||
+            initialRaw !== item.initial || quality.fullCellIncluded !== true ||
+            quality.leftEdgeClipped !== false || quality.rightEdgeClipped !== false ||
+            quality.neighborColumnIncluded !== false) continue;
+        const x0 = Number(bounds.left), x1 = Number(bounds.right);
+        const y0 = Number(bounds.top), y1 = Number(bounds.bottom);
+        if (![x0, x1, y0, y1].every(Number.isFinite) || x1 - x0 < 24 || y1 - y0 < 14 ||
+            x0 < left - 1 || x1 > right + 1 || y0 < 0 || y1 > imageCanvas.height ||
+            x0 < 0 || x1 > imageCanvas.width ||
+            Math.min(y1, item.meta.y1) - Math.max(y0, item.meta.y0) < (y1 - y0) * .65) continue;
+        // Different geometry (complete cell, rather than all rows at once)
+        // plus two truly configured single-cell segmentation modes.
+        const specs = [
+          { mode: 'ride-time-full-cell-psm7', psm: '7', scale: 4, inset: .035 },
+          { mode: 'ride-time-full-cell-psm6', psm: '6', scale: 3, inset: .065 }
+        ];
+        const cellReads = [];
+        for (const spec of specs) {
+          try {
+            await p109PerfWorkerSetParameters(timeWorker, 'early_time_batch_ocr',
+              { tessedit_pageseg_mode: spec.psm, tessedit_char_whitelist: '0123456789:.' },
+              { sourceRow: item.sourceRow, mode: spec.mode });
+            const cellCrop = cropCanvasRegion(imageCanvas,
+              x0 + (x1 - x0) * spec.inset, y0 + 1,
+              x1 - (x1 - x0) * spec.inset, y1 - 1, spec.scale);
+            const cellResult = await p109PerfWorkerRecognize(timeWorker, 'early_time_batch_ocr', cellCrop,
+              { sourceRow: item.sourceRow, mode: spec.mode });
+            const candidates = [...new Set(rideTimeCandidatesFromOcrResult(cellResult)
+              .map(normalizeTime).filter(candidate => timeToMinutes(candidate) !== null))];
+            cellReads.push({ mode: spec.mode, psmApplied: true, candidates });
+          } catch (_) {
+            cellReads.push({ mode: spec.mode, psmApplied: false, candidates: [] });
+            break;
+          }
+        }
+        const confirmedPrimary = cellReads.length === 2 && cellReads.every(read =>
+          read.psmApplied && read.candidates.length === 1 && read.candidates[0] === item.initial);
+        const proof = {
+          initial: item.initial,
+          columnAlternative: ranked[0][0],
+          primaryConfidence: confidence,
+          sourceRow: item.sourceRow,
+          sourceColumn: Number(timeCol),
+          fullCellIncluded: true,
+          modes: cellReads,
+          sourceFamily: 'primary_full_cell_plus_two_configured_full_cell_modes',
+          status: confirmedPrimary ? 'qualified_primary_confirmed' : 'unresolved_fail_closed'
+        };
+        ride.timeSuspiciousFullCellProof = proof;
+        if (confirmedPrimary) fullCellProofByRow.set(item.sourceRow, proof);
+      }
     } catch (_) {
-      // Der Primär-OCR-Wert bleibt unverändert, wenn die gebündelte Sicherheits-
-      // Gegenprüfung technisch nicht verfügbar ist. Die Analyse darf nicht wieder
-      // in hunderte serielle Zell-OCR-Aufrufe zurückfallen.
+      // Do not turn an unavailable second source into fabricated proof.
+      // Preserve the primary time. All pre-existing hard conflicts remain
+      // blocked unless a qualified full-cell proof was actually obtained.
+    } finally {
+      if (timeWorker) {
+        try { await p109PerfWorkerTerminate(timeWorker, 'early_time_batch_ocr'); }
+        catch (_) { try { await timeWorker.terminate(); } catch (_) {} }
+      }
     }
 
     rowsWithMeta.forEach(item => {
@@ -8229,6 +8303,19 @@
       if (recovered === item.initial) return;
 
       const mirror = normalizeTime(ride.timeMirror);
+      // P114.12: Dismiss only the *correlated column* disagreement when the
+      // original full-cell primary and both independently configured full-cell
+      // probes agree on the exact time, and no semantic mirror is present.
+      // Never change the time and never disable real fail-closed conflicts.
+      const cellProof = fullCellProofByRow.get(item.sourceRow);
+      if (!mirror && cellProof && cellProof.initial === item.initial &&
+          cellProof.columnAlternative === recovered &&
+          cellProof.status === 'qualified_primary_confirmed') {
+        ride.timeSuspiciousColumnNoiseRejected = true;
+        ride.timeSuspiciousColumnAlternative = recovered;
+        ride.timeRecoverySource = 'p11412_verified_full_cell_primary_against_column_noise';
+        return;
+      }
       ride.timeOcrInitial = item.initial;
       ride.timeSuspiciousConflict = true;
 
