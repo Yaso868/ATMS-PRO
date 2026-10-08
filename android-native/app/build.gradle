@@ -131,6 +131,21 @@ tasks.register('runtimeAssetAlignmentP1144', Exec) {
     commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1144.js'
 }
 
+
+// P114.5: deterministic company-boundary classification gate. Extreme table-rule
+// glyphs may be ignored only around a bounded repeated hyphenated short code;
+// one internal delimiter loss may reuse only recorded >=3-vote plan consensus.
+tasks.register('companyBoundaryDeterministicP1145', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-boundary-deterministic-selftest-p1145.js'
+}
+
+// P114.5: runtime generation alignment gate for the new company-boundary semantics.
+tasks.register('runtimeAssetAlignmentP1145', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1145.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -151,5 +166,6 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('edgePrimaryVetoP1141')
     dependsOn tasks.named('companyBoundaryVetoP1142')
     dependsOn tasks.named('companyBoundaryRealstateP1143')
-    dependsOn tasks.named('runtimeAssetAlignmentP1144')
+    dependsOn tasks.named('companyBoundaryDeterministicP1145')
+    dependsOn tasks.named('runtimeAssetAlignmentP1145')
 }

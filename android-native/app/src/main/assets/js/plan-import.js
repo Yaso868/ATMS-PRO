@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1145 · 08.10.2026: DETERMINISTIC COMPANY BOUNDARY CLASSIFICATION – treat only extreme table-rule glyph noise around a repeated hyphenated short company code as non-semantic, and reuse recorded repeated-text consensus for exactly one internal delimiter loss; semantic alternatives and competing exact-cell evidence remain fail-closed.
 // CORE-007D8A1F1D8P1143 · 07.10.2026: REALSTATE SOURCE-TRUTH NORMALIZATION – normalize bounded full-cell company source-truth candidates before consensus and allow exactly one internal company delimiter loss only with strong primary OCR plus repeated same-plan primary peers; semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1142 · 07.10.2026: COMPANY BOUNDARY SOURCE-TRUTH VETO – when two independent bounded source-truth views confirm the current primary company value, suppress only isolated table-rule glyph noise or exactly one missing internal company delimiter in weaker secondary OCR; semantic changes remain fail-closed.
 // CORE-007D8A1F1D8P1139 · 07.10.2026: SOURCE-TRUTH EDGE INTEGRITY – add bounded full-cell source-truth consensus for silent edge loss in hyphenated company codes and single-token flight locations; two independent full-cell modes must agree and semantic conflicts remain fail-closed.
@@ -6657,26 +6658,44 @@
     return (a.slice(0,i) + a.slice(i+1)) === b;
   }
 
-  function sourceTruthPrimaryEdgeVeto(originalValue, candidateValue, field, attempts) {
+  function sourceTruthPrimaryEdgeVeto(originalValue, candidateValue, field, attempts, primaryPeerCount = 0) {
     const original = cellText(originalValue).normalize('NFC').trim();
     const candidate = cellText(candidateValue).normalize('NFC').trim();
     if (!original || !candidate || original === candidate) return null;
+    const trunc = strictTextEdgeExtension(candidate, original, 2);
+    const tableGlyph = edgeTableGlyphNoise(original, candidate);
+    const internalDelimiterLoss = field === 'company' ? singleInternalCompanyDelimiterLoss(original, candidate) : false;
     const full = sourceTruthFullCellConsensus(attempts);
     const expanded = sourceTruthExpandedCellConsensus(attempts);
     const key = original.toLocaleLowerCase('de-DE');
     const support = [full, expanded].find(item => item?.candidate && item.candidate.toLocaleLowerCase('de-DE') === key) || null;
+
+    // P114.5: if the secondary value differs only by one or more
+    // vertical table-rule glyphs at the extreme cell boundary, stripping those
+    // geometry glyphs yields the primary value exactly. Existing source-truth-backed
+    // behavior keeps its previous reason; when those extra OCR views are unstable,
+    // the geometry identity itself is sufficient because no semantic glyph changes.
+    if (tableGlyph) {
+      if (field === 'company') {
+        if (!isHyphenatedCompanyEdgeProbe(original)) return null;
+        if (support) return { reason:'source_truth_primary_table_edge_veto', source: support === full ? 'full_cell' : 'edge_expanded', votes:Number(support.votes||0), modes:Number(support.modes||0), edge:'', loss:0 };
+        if (Number(primaryPeerCount || 0) < 2) return null;
+        return { reason:'secondary_extreme_table_rule_noise', source:'candidate_geometry_plus_plan_peers', votes:0, modes:0, edge:'table_rule', loss:0, peerCount:Number(primaryPeerCount||0) };
+      }
+      if (field === 'flightLocation') {
+        if (!isSingleTokenFlightLocationEdgeProbe(original) || !support) return null;
+        return { reason:'source_truth_primary_table_edge_veto', source: support === full ? 'full_cell' : 'edge_expanded', votes:Number(support.votes||0), modes:Number(support.modes||0), edge:'', loss:0 };
+      }
+      return null;
+    }
+
     if (!support) return null;
-    const trunc = strictTextEdgeExtension(candidate, original, 2);
-    const tableGlyph = edgeTableGlyphNoise(original, candidate);
-    const internalDelimiterLoss = field === 'company' ? singleInternalCompanyDelimiterLoss(original, candidate) : false;
     if (field === 'company') {
-      if (!isHyphenatedCompanyEdgeProbe(original) || (!trunc && !tableGlyph && !internalDelimiterLoss)) return null;
+      if (!isHyphenatedCompanyEdgeProbe(original) || (!trunc && !internalDelimiterLoss)) return null;
     } else if (field === 'flightLocation') {
-      if (!isSingleTokenFlightLocationEdgeProbe(original) || (!trunc && !tableGlyph)) return null;
+      if (!isSingleTokenFlightLocationEdgeProbe(original) || !trunc) return null;
     } else return null;
-    const reason = tableGlyph
-      ? 'source_truth_primary_table_edge_veto'
-      : (internalDelimiterLoss ? 'source_truth_primary_internal_delimiter_loss_veto' : 'source_truth_primary_edge_truncation_veto');
+    const reason = internalDelimiterLoss ? 'source_truth_primary_internal_delimiter_loss_veto' : 'source_truth_primary_edge_truncation_veto';
     return { reason, source: support === full ? 'full_cell' : 'edge_expanded', votes:Number(support.votes||0), modes:Number(support.modes||0), edge:trunc?.edge||'', loss:Number(trunc?.loss||0) };
   }
 
@@ -6720,7 +6739,7 @@
   // share the same geometric boundary. A strong primary full-image word plus at
   // least one same-plan primary peer may therefore veto ONLY narrowly-defined
   // edge degradation. Semantic substitutions remain fail-closed.
-  function strongPrimarySecondaryEdgeDegradation(originalValue, candidateValue, cellEvidence, peerCount, attempts = []) {
+  function strongPrimarySecondaryEdgeDegradation(originalValue, candidateValue, cellEvidence, peerCount, attempts = [], planConsensusEvidence = null) {
     const original = cellText(originalValue).normalize('NFC').trim();
     const candidate = cellText(candidateValue).normalize('NFC').trim();
     if (!original || !candidate || original === candidate) return null;
@@ -6730,13 +6749,29 @@
     const primaryKey = original.toLocaleLowerCase('de-DE');
     const rawSupportsPrimary = Boolean(rawPrimary && rawPrimary.toLocaleLowerCase('de-DE') === primaryKey && Number.isFinite(confidence) && confidence >= 80);
     const sourceTruthSupportsPrimary = Boolean(sourceTruth?.candidate && sourceTruth.candidate.toLocaleLowerCase('de-DE') === primaryKey);
-    if ((!rawSupportsPrimary && !sourceTruthSupportsPrimary) || Number(peerCount || 0) < 1) return null;
-
     const exactCandidateViews = (Array.isArray(attempts) ? attempts : []).filter(attempt =>
       cellText(attempt?.scope) === 'cell_view' &&
       cellText(attempt?.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === candidate.toLocaleLowerCase('de-DE')
     ).length;
     if (exactCandidateViews >= 2) return null;
+
+    // P114.5: if the current company value was ALREADY selected by
+    // the existing repeated-text consensus from at least three exact same-plan peers,
+    // a later secondary OCR that merely replays the discarded one-delimiter-loss form
+    // must not re-open the same conflict. This reuses recorded provenance instead of
+    // trusting peer count alone; semantic alternatives and unproven primary values stay closed.
+    const consensusFrom = cellText(planConsensusEvidence?.from).normalize('NFC').trim();
+    const consensusTo = cellText(planConsensusEvidence?.to).normalize('NFC').trim();
+    const consensusCount = Number(planConsensusEvidence?.evidenceCount || 0);
+    const repeatedDelimiterPrimary = Boolean(
+      singleInternalCompanyDelimiterLoss(original, candidate) &&
+      Number(peerCount || 0) >= 2 &&
+      consensusCount >= 3 &&
+      consensusTo.toLocaleLowerCase('de-DE') === original.toLocaleLowerCase('de-DE') &&
+      consensusFrom &&
+      consensusFrom.toLocaleLowerCase('de-DE') === candidate.toLocaleLowerCase('de-DE')
+    );
+    if ((!rawSupportsPrimary && !sourceTruthSupportsPrimary && !repeatedDelimiterPrimary) || Number(peerCount || 0) < 1) return null;
 
     const a = original.toLocaleLowerCase('de-DE');
     const b = candidate.toLocaleLowerCase('de-DE');
@@ -7436,7 +7471,7 @@
         const promotedEdgeGlyphAdjudication = Boolean(edgeGlyphAdjudication?.candidate);
         const primaryPeerCount = candidate ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, original) : 0;
         const sourceTruthPrimaryVeto = candidate
-          ? sourceTruthPrimaryEdgeVeto(original, candidate, descriptor.field, attempts)
+          ? sourceTruthPrimaryEdgeVeto(original, candidate, descriptor.field, attempts, primaryPeerCount)
           : null;
         if (sourceTruthPrimaryVeto) {
           ride[`${descriptor.field}OcrSecondaryEdgeNoiseIgnored`] = true;
@@ -7469,7 +7504,7 @@
           return;
         }
         const degradedSecondary = candidate
-          ? strongPrimarySecondaryEdgeDegradation(original, candidate, cellEvidence || null, primaryPeerCount, attempts)
+          ? strongPrimarySecondaryEdgeDegradation(original, candidate, cellEvidence || null, primaryPeerCount, attempts, ride?.repeatedTextConsistency?.[descriptor.field] || null)
           : null;
         if (degradedSecondary) {
           ride[`${descriptor.field}OcrSecondaryEdgeNoiseIgnored`] = true;
