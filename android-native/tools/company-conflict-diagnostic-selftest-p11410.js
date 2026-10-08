@@ -18,7 +18,7 @@ const old=load(original,false), now=load(patched,true);
 // Fingerprint actual production decision bodies rather than a synthetic re-implementation.
 function exactBody(src,fn,next){return src.slice(src.indexOf('  function '+fn+'('),src.indexOf('  function '+next+'('));}
 ok('P114.9 source truth veto byte-identical',exactBody(original,'sourceTruthPrimaryEdgeVeto','sourceTruthEdgeRecovery')===exactBody(patched,'sourceTruthPrimaryEdgeVeto','sourceTruthEdgeRecovery'));
-ok('P114.9 post-consensus decision byte-identical',exactBody(original,'reconcileCompanyConflictAfterRepeatedConsistency','applyRepeatedTextConsistency')===exactBody(patched,'reconcileCompanyConflictAfterRepeatedConsistency','applyRepeatedTextConsistency'));
+ok('P114.11 post-consensus change is explicitly gated',patched.includes('verifiedCompanySourceReconciliation(ride,current,candidate,peerCount,attempts)')); // P114.11 intentionally changes narrow post-consensus behavior
 function fixtures(){
  const canvas={width:1000,height:500}; const descriptor={left:200,right:300,column:2}; const row={y0:120,y1:155};
  const meta={boundaries:[0,100,200,300,400,500],rawOcrWords:[]}; return {canvas,descriptor,row,meta};

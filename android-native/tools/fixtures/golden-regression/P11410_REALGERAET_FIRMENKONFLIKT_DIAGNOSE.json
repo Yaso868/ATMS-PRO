@@ -1,0 +1,183 @@
+{
+  "patch": "CORE-007D8A1F1D8P11410",
+  "diagnosticOnly": true,
+  "noMutation": true,
+  "conflictCount": 1,
+  "source": "IMG-20261007-WA0001.jpg",
+  "sourceSha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+  "plantag": "2026-10-07",
+  "sourceRow": 17,
+  "sourceColumn": 5,
+  "field": "company",
+  "originalValue": "Get-E",
+  "secondaryValue": "GetE",
+  "importBlocked": true,
+  "postConsensusResolved": false,
+  "verificationSource": "exact_cell_multi_view_unresolved_alternative",
+  "primarySourceEvidence": {
+    "verificationSource": "primary_full_image_cell_assignment",
+    "confidence": 85.9,
+    "rawOcr": "Get-E",
+    "cropQuality": {
+      "fullCellIncluded": true,
+      "leftEdgeClipped": false,
+      "rightEdgeClipped": false,
+      "neighborColumnIncluded": false,
+      "tableLineInterference": "unknown"
+    }
+  },
+  "peerCount": 9,
+  "adaptiveProbe": {
+    "sourceRow": 17,
+    "sourceColumn": 5,
+    "original": "Get-E",
+    "status": "ocr_completed",
+    "neighborWordsChecked": 6,
+    "expandedRight": 1830.25,
+    "baseRight": 1802.25,
+    "nearestNeighborX": 1896,
+    "expansionPx": 28,
+    "modes": [
+      {
+        "mode": "adaptive-company-psm6",
+        "candidate": "Get-E"
+      },
+      {
+        "mode": "adaptive-company-psm7",
+        "candidate": "Get-E"
+      }
+    ]
+  },
+  "sourceConsensus": {
+    "full": {
+      "candidate": "Get-E",
+      "votes": 2,
+      "modes": 2
+    },
+    "expanded": {
+      "candidate": "GetE",
+      "votes": 2,
+      "modes": 2
+    },
+    "adaptive": null
+  },
+  "competingExactCellViews": 0,
+  "primaryVetoReason": "source_truth_primary_internal_delimiter_loss_veto",
+  "attempts": [
+    {
+      "scope": "batch",
+      "mode": "text-deu-composite-psm6",
+      "candidate": "Get-E"
+    },
+    {
+      "scope": "local",
+      "mode": "text-deu-cell-psm7",
+      "candidate": "Get-E"
+    },
+    {
+      "scope": "local",
+      "mode": "text-deu-cell-psm6",
+      "candidate": "Get-E"
+    },
+    {
+      "scope": "source_truth_full_cell",
+      "mode": "source-truth-full-cell-psm6",
+      "candidate": "Get-E",
+      "cropQuality": {
+        "fullCellIncluded": true,
+        "leftEdgeClipped": false,
+        "rightEdgeClipped": false,
+        "neighborColumnIncluded": false,
+        "targetCellGeometryConfirmed": true,
+        "tableLineInterference": "full_source_cell"
+      }
+    },
+    {
+      "scope": "source_truth_full_cell",
+      "mode": "source-truth-full-cell-psm7",
+      "candidate": "Get-E",
+      "cropQuality": {
+        "fullCellIncluded": true,
+        "leftEdgeClipped": false,
+        "rightEdgeClipped": false,
+        "neighborColumnIncluded": false,
+        "targetCellGeometryConfirmed": true,
+        "tableLineInterference": "full_source_cell"
+      }
+    },
+    {
+      "scope": "source_truth_edge_expanded",
+      "mode": "source-truth-edge-expanded-psm6",
+      "candidate": "GetE",
+      "cropQuality": {
+        "fullCellIncluded": true,
+        "leftEdgeClipped": false,
+        "rightEdgeClipped": false,
+        "neighborColumnIncluded": "bounded_possible",
+        "targetCellGeometryConfirmed": true,
+        "expansionPx": 18.26
+      }
+    },
+    {
+      "scope": "source_truth_edge_expanded",
+      "mode": "source-truth-edge-expanded-psm7",
+      "candidate": "GetE",
+      "cropQuality": {
+        "fullCellIncluded": true,
+        "leftEdgeClipped": false,
+        "rightEdgeClipped": false,
+        "neighborColumnIncluded": "bounded_possible",
+        "targetCellGeometryConfirmed": true,
+        "expansionPx": 18.26
+      }
+    },
+    {
+      "scope": "source_truth_adaptive_company",
+      "mode": "adaptive-company-psm6",
+      "candidate": "Get-E",
+      "cropQuality": {
+        "fullCellIncluded": true,
+        "leftEdgeClipped": false,
+        "rightEdgeClipped": false,
+        "neighborColumnIncluded": false,
+        "targetCellGeometryConfirmed": true,
+        "neighboringWordsChecked": 6,
+        "expansionPx": 28
+      }
+    },
+    {
+      "scope": "source_truth_adaptive_company",
+      "mode": "adaptive-company-psm7",
+      "candidate": "Get-E",
+      "cropQuality": {
+        "fullCellIncluded": true,
+        "leftEdgeClipped": false,
+        "rightEdgeClipped": false,
+        "neighborColumnIncluded": false,
+        "targetCellGeometryConfirmed": true,
+        "neighboringWordsChecked": 6,
+        "expansionPx": 28
+      }
+    }
+  ],
+  "existingConflictEvidence": {
+    "unresolvedIndependentAlternative": true,
+    "exactCellViews": ""
+  },
+  "realDeviceResult": {
+    "ocrChecked": 33,
+    "automaticCorrections": 78,
+    "notices": 3,
+    "hardErrors": 1,
+    "flights": 23,
+    "drivers": 7,
+    "imported": false,
+    "preservedCorrect": {
+      "flightLocation": "9MB",
+      "flightNumber": "EW9420"
+    },
+    "pendingFlightChecks": 27,
+    "pendingNextDayConfirmationRides": 22
+  },
+  "evidenceOrigin": "user_copied_P11410_real_device_diagnostic_2026-10-08"
+}

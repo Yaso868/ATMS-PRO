@@ -1,6 +1,6 @@
 # ATMS PRO – VERBINDLICHER MASTER-PROMPT
 
-**Version:** 1.3 · 08.10.2026 (freigegebener P114.8-Fehlschlag und Testlücke dokumentiert)  
+**Version:** 1.4 · 08.10.2026 (freigegebener P114.10-Ursachenbefund ergänzt; keine Produktivänderung)  
 **Projekt:** ATMS PRO V1.4.0 / laufende CORE-Entwicklung  
 **Repository / Source of Truth für Quellcode:** https://github.com/Yaso868/ATMS-PRO  
 **Sprache:** Deutsch  
@@ -157,6 +157,21 @@ Vor Freigabe eines Patch-Ergebnisses zwingend:
 - **Verbindliches Prüf-Gate vor zukünftigem Release:** Originalbild-Bytes und Hash nachweisen; für Zeile 17 Primär-OCR (`raw`, Konfidenz, Quellzelle), unabhängige asynchrone Text-Nach-OCR (alle Zellansichten, Zuschnitte, Gewichte), Konsens-/Provenienzverlauf, finalen Konfliktentscheid und **abschließende Importblockade** nachvollziehbar erfassen und gegentesten. Positive, negative und Fail-Closed-Fälle mit der **echten Produktionspipeline** prüfen, ohne künstlich gesetzte Erfolgsvoraussetzungen. Vollständige Golden Regression einschließlich `9MB`, `EW9420` und vorher behobener Get-E-Zeilen erhalten.
 - **Status:** Golden-Fall bleibt **OFFEN NACH P114.8**, keine 61. Fall-ID. Diese V1.3-Ergänzung ist **Dokumentation**, nicht automatisch in GitHub eingecheckt; für einen Produktivpatch ist ein neues „JETZT PATCHEN“ nötig.
 
+## 9C. Freigegebener Nachtrag – P114.10 Realgerät-Ursachenbefund vom 08.10.2026
+
+**Dokumentationsfreigabe:** „Ja, den P114.10-Ursachenbefund aufnehmen.“ Dies erlaubt ausschließlich das Ergänzen des vorhandenen Golden-Falls, **keinen neuen Patch, keinen GitHub-Commit und keinen Import**.
+
+- **Referenz (weiterhin genau EIN Golden-Fall):** `GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146`, Bild `IMG-20261007-WA0001.jpg`, Plantag 07.10.2026, Zeile 17, Original-SHA-256 `f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d`. Golden Pack weiter **60** Fälle.
+- **Realgerät:** `CORE-007D8A1F1D8P11410` – 33/33 OCR-geprüft, 78 Korrekturen, 3 Hinweise, 1 harter Fehler, Import gesperrt und nicht durchgeführt. `9MB` und `EW9420` weiterhin richtig. 27 offene Flugprüfungen und 22 noch zu bestätigende Folgetagfahrten sind davon unabhängig.
+- **Primärzelle:** `Get-E` mit **85,9 %** Konfidenz, vollständige Zelle, keine abgeschnittenen Ränder, keine Nachbarspalte. 9 gleichlautende Vergleichszeilen (`peerCount: 9`).
+- **Korrekte unabhängige OCR-Belege:** Batch `Get-E` (1), lokale Modi `Get-E` (2), vollständige Originalzelle `Get-E` (2), adaptive abgegrenzte Nachlesung `Get-E` (2). Die adaptive Prüfung lief erfolgreich (`ocr_completed`), kontrollierte 6 Nachbarwörter und erweiterte rechts um 28 Pixel bis 1830,25 bei nächstem Nachbarwort x=1896.
+- **Schwächere Gegenbelege:** Zwei `source_truth_edge_expanded`-Modi melden `GetE`, aber `neighborColumnIncluded=bounded_possible` (Erweiterung 18,26 Pixel). Diese Geometrie ist **nicht gleichwertig** mit nachweislich vollständig abgegrenzten Zellbelegen.
+- **Gemeldeter Zustand:** `sourceConsensus.full = Get-E (2/2)`, `sourceConsensus.expanded = GetE (2/2)`, aber `sourceConsensus.adaptive = null` trotz zweier passender adaptiver OCR-Versuche; `competingExactCellViews = 0`. `verificationSource = exact_cell_multi_view_unresolved_alternative` und `primaryVetoReason = source_truth_primary_internal_delimiter_loss_veto`. Die Sperre ist weiterhin aktiv.
+- **Lokale Reproduktion mit echten Diagnose-Eingaben:** Die Produktions-Entscheidungsfunktionen blockieren mit allen Belegen; ohne die beiden unsicher erweiterten `GetE`-Ansichten lösen sie den Konflikt auf; bei erhaltener adaptiver Zeilen-/Spalten-Provenienz ist die adaptive Zustimmung 2× `Get-E` sichtbar. Das ist **Funktions-Replay, noch keine erfolgreich durchlaufene native Android-Importprüfung nach Fix**.
+- **Nachgewiesene Codeprobleme:** Beim späteren Aggregieren fehlen nutzbare Zeilen-/Spalten-Kennungen der adaptiven Versuche; die spätere Konsens-/Fallback-Entscheidung gewichtet geometrisch unsichere Gegenansichten nicht ausreichend gegenüber sauber abgegrenzten Vollzellen. Frühere Hypothesen werden nicht als zusätzliche Ursachen behauptet, sofern sie vom Gerät nicht bestätigt wurden.
+- **Freigegebenes zukünftiges Prüf-Gate:** Den diagnostizierten Zustand ohne künstliche Evidenz in der tatsächlichen Produktions-Entscheidung und am letzten Import-Gate reproduzieren; voll erfasste Zellansichten mit vollständiger Provenienz vergleichen; positive, negative und Fail-Closed-Fälle prüfen. Stärkere widersprechende vollständige Zellen, unklare Geometrie und fehlende Primärbelege müssen weiterhin blockieren. Keine bild-, zeilen- oder firmenspezifischen Produktions-Hardcodes; P113.4/`9MB`, `EW9420`, zuvor behobene Get-E-Zeilen und sämtliche Golden-Fälle schützen.
+- **Status:** Ursache auf Realgerät-Diagnose- und Funktions-Replay-Ebene eingegrenzt und reproduziert; **fachlicher Fix noch offen**. P114.10 bleibt unverändert. Neuer Produktivpatch **nur nach erneutem „JETZT PATCHEN“**.
+
 ## 10. Release-Gate / Selbstkontrolle – vor jeder Übergabe
 
 Eine produktive Übergabe darf **nur** als vollständig bezeichnet werden, wenn folgende Angaben **wirklich** vorhanden/geprüft sind:
@@ -196,3 +211,5 @@ Bei fehlendem Gate: **Blocker ehrlich benennen, nicht als fertigen Patch ausgebe
 **Änderungsvermerk V1.2 (08.10.2026):** Vom Nutzer freigegebene P114.7-Realgerät-Regression und Testabdeckungs-/Prozesslücke dokumentiert. P114.7 bleibt unverändert, kein Commit, kein Patch, kein Import.
 
 **Änderungsvermerk V1.3 (08.10.2026):** Mit ausdrücklicher Nutzerfreigabe P114.8-Realgerät-Fehlschlag am vorhandenen Zeile-17-Golden-Fall ergänzt; Prozess-/Testabdeckungslücke bestätigt. Dieser Nachtrag ist lokal und in der Projekt-Library zu sichern; GitHub und App bleiben unverändert.
+
+**Änderungsvermerk V1.4 (08.10.2026):** Vom Nutzer freigegebene P114.10-Firmendiagnose und lokale Funktionsreproduktion im bestehenden Golden-Fall ergänzt, einschließlich offener technischer Prüf-Gates. Kein Code-Patch, kein Repo-Upload, kein Import.

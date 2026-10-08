@@ -217,6 +217,17 @@ tasks.register('companyConflictTraceP11410', Exec) {
     commandLine 'node', 'tools/company-conflict-diagnostic-selftest-p11410.js'
 }
 
+// P114.11 evidence replay: captures real P114.10 device OCR attempts and runs
+// production post-consensus + zero-silent-error gate with strong counterexamples.
+tasks.register('companySourceReconcileP11411', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-source-reconciliation-selftest-p11411.js'
+}
+tasks.register('runtimeAssetAlignmentP11411', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11411.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -233,9 +244,10 @@ tasks.named('preBuild').configure {
     // Version-specific runtime alignment: only the currently active P114.9 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP11410')
+    dependsOn tasks.named('runtimeAssetAlignmentP11411')
     dependsOn tasks.named('companyAdaptiveTailP1149')
     dependsOn tasks.named('companyConflictTraceP11410')
+    dependsOn tasks.named('companySourceReconcileP11411')
     dependsOn tasks.named('companyPrimaryProvenanceP1148')
     dependsOn tasks.named('masterPromptRuleGateP1147')
 }

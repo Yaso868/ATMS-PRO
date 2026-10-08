@@ -1824,10 +1824,10 @@
       },
       "rootCause": "P114.6 requires repeatedTextConsistency.company correction provenance for one internal delimiter loss. When full-image OCR already produced the final company string, repeatedTextConsistency does not create a from/to record and the legitimate primary remains blocked by secondary truncation.",
       "expectedAfterPatch": "Reconcile only on >=3 independent same-plan exact peers plus complete high-confidence primary full-image company cell OR 2 valid independent full-cell/expanded modes. Never override 2 exact secondary cell views, opposing full-cell consensus or semantic alternatives.",
-      "reproducibility": "confirmed_on_real_device_P1146_P1147_P1148; exact_real_device_internal_OCR_trace_unavailable",
+      "reproducibility": "confirmed_real_device_P1146_through_P11410; P11410_diagnostic_trace_and_production_decision_replay",
       "likelyFunction": "reconcileCompanyConflictAfterRepeatedConsistency / applyRepeatedTextConsistency / validate",
       "testGate": "company-primary-already-correct-selftest-p1147.js",
-      "status": "OPEN_AFTER_P1148_REAL_DEVICE_FAILURE",
+      "status": "OPEN_AFTER_P11410_REAL_DEVICE_DIAGNOSIS",
       "p1147RealDeviceResult": {
         "date": "2026-10-08",
         "evidence": "user_transcribed_ATMS_Android_OCR_result_in_this_conversation",
@@ -1930,6 +1930,60 @@
           "Prohibit image-specific production hardcodes and tests that fabricate success evidence."
         ],
         "processImprovement": "Real-image asynchronous end-to-end regression gate is required before claiming a real-device fix; otherwise explicitly label the coverage gap and halt release."
+      },
+      "p11410RealDeviceDiagnosis": {
+        "date": "2026-10-08",
+        "approval": "Ja, den P114.10-Ursachenbefund aufnehmen.",
+        "source": "IMG-20261007-WA0001.jpg",
+        "plantag": "2026-10-07",
+        "sourceRow": 17,
+        "evidenceFile": "P11410_REALGERAET_FIRMENKONFLIKT_DIAGNOSE.json",
+        "result": "OPEN_FAIL_REAL_DEVICE_DIAGNOSIS",
+        "hardErrors": 1,
+        "importBlocked": true,
+        "imported": false,
+        "observedRootCause": {
+          "classification": "EVIDENCE_RECONCILIATION_AND_PROVENANCE_LOSS_IN_PRODUCTION_DECISION",
+          "evidence": "P11410 diagnostic-only real-device report and local production-decision function replay",
+          "confirmedObserved": [
+            "Primary company Get-E has 85.9 confidence and complete unclipped cell without included neighbor.",
+            "Batch + local (3), full original cell (2), and adaptive bounded company cell (2) all read Get-E.",
+            "Two edge-expanded views read GetE; both carry neighborColumnIncluded=bounded_possible rather than exclusion.",
+            "sourceConsensus.adaptive=null although adaptive probe has two Get-E modes and row/column values.",
+            "Final conflict remains blocked with internal delimiter-loss veto.",
+            "Local function replay blocks with edge-expanded views and resolves after removing only these two lower-quality opposing views."
+          ],
+          "codePathFindings": [
+            "Adaptive attempt trace loses usable source-row/source-column provenance in the later sourceConsensus aggregation.",
+            "Post-consensus/fallback decision does not sufficiently discriminate geometry/evidence quality for uncertain edge-expanded opposing views."
+          ],
+          "status": "CONFIRMED_CODE_LEVEL_FAILURE_AND_REAL_DEVICE_EVIDENCE; CORRECTION_NOT_YET_TESTED_ON_DEVICE",
+          "avoid": "No production hardcode for Get-E, file name, or source row; do not blindly ignore legitimate opposing exact-cell evidence."
+        },
+        "decisionReplay": {
+          "scope": "previous_local_replay_of_P11410_production_decision_functions_using_real_device_evidence",
+          "allAttemptEvidence": {
+            "expected": "BLOCK",
+            "observed": "BLOCK"
+          },
+          "withoutTwoEdgeExpandedGetEViews": {
+            "expected": "RESOLVE",
+            "observed": "RESOLVE"
+          },
+          "withPreservedAdaptiveRowColumnMetadata": {
+            "expected": "adaptive_2x_Get-E",
+            "observed": "adaptive_2x_Get-E"
+          },
+          "qualification": "Validates decision-level behavior for reported runtime evidence, not a complete independent Android end-to-end rerun."
+        },
+        "requiredNextTestGate": [
+          "Feed exact captured P11410 device evidence into production reconciliation and final import validator.",
+          "Preserve original per-view row, column, cropQuality, full-cell scope and provenance until final consensus.",
+          "Weight only geometrically certain and independent views; do not treat bounded_possible as identical to full verified cell.",
+          "Fail closed on real conflicting complete exact-cell views, insufficient geometry, semantic ambiguity or missing primary data.",
+          "Original-image/OCR end-to-end proof plus negative controls and complete 60-case Golden pack.",
+          "Protect 9MB, EW9420, previously repaired Get-E rows and date/flight decision separation."
+        ]
       }
     }
   ],
@@ -2386,5 +2440,17 @@
     "engineeringRootCause": "unproven_needs_runtime_trace",
     "newReleaseGate": "No real device fix claim from synthetic confidence/word geometry alone; capture real async OCR, reconcile and import gate.",
     "nextAction": "Evidence-based local root cause investigation; NO PRODUCTIVE PATCH WITHOUT NEW JETZT PATCHEN."
+  },
+  "p11410": {
+    "date": "2026-10-08",
+    "approval": "Ja, den P114.10-Ursachenbefund aufnehmen.",
+    "scope": "DOCUMENTATION_ONLY_NO_PATCH",
+    "appVersion": "CORE-007D8A1F1D8P11410",
+    "goldenCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+    "additionalCaseCount": 0,
+    "report": "P11410_REALGERAET_FIRMENKONFLIKT_DIAGNOSE.json",
+    "confirmedProblem": "Post-consensus evidence weighting and missing adaptive provenance leave original correct company Get-E blocked against lower-quality GetE edge-expanded OCR despite multiple high-quality Get-E views.",
+    "correctionStatus": "NOT_PATCHED; no import, no GitHub changes",
+    "nextStep": "When separately authorized: implement general evidence-quality-safe correction and run genuine end-to-end image/OCR/import tests plus entire Golden pack."
   }
 }

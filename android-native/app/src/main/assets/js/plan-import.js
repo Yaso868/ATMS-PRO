@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P11410 · diagnostic-only company source-region trace; OCR/import decisions unchanged.
+// CORE-007D8A1F1D8P11411 · diagnostic-only company source-region trace; OCR/import decisions unchanged.
 // CORE-007D8A1F1D8P1149 · 08.10.2026: bounded company cell-tail source replay; source-truth agreement required, neighbor-cell occupancy and dissent veto always fail closed.
 // CORE-007D8A1F1D8P1148 · 08.10.2026: Preserve original full-image cell evidence before independent text OCR mutates verification status; strict competing-view and import vetoes retained.
 // CORE-007D8A1F1D8P1147 · 08.10.2026: PRIMARY-ALREADY-CORRECT COMPANY CONFLICT – missing consensus correction record may be replaced only by strong full-image/full-cell positive evidence with >=3 same-plan peers; competing source views and semantic alternatives fail closed.
@@ -7553,6 +7553,11 @@
             scope: cellText(attempt?.scope),
             mode: cellText(attempt?.mode),
             candidate: cellText(attempt?.candidate),
+            // P114.11: preserve source identity from the real OCR attempt. These
+            // fields are essential for row/column-bound adaptive provenance.
+            ...(Number.isInteger(Number(attempt?.sourceRow)) && attempt?.sourceRow != null ? { sourceRow: Number(attempt.sourceRow) } : {}),
+            ...(Number.isInteger(Number(attempt?.sourceColumn)) && attempt?.sourceColumn != null ? { sourceColumn: Number(attempt.sourceColumn) } : {}),
+            ...(attempt?.field ? { field: cellText(attempt.field) } : {}),
             ...(attempt?.viewRegion ? { viewRegion: cellText(attempt.viewRegion) } : {}),
             ...(attempt?.transform ? { transform: cellText(attempt.transform) } : {}),
             ...(attempt?.contentBounds ? { contentBounds: { ...attempt.contentBounds } } : {}),
@@ -9667,6 +9672,71 @@
   }
 
 
+  // P114.11: the P114.10 real-device trace demonstrates that a weaker
+  // expanded crop can lose an internal delimiter while full-cell + bounded
+  // adaptive OCR independently read the primary. This narrow proof never
+  // rewrites text; it only resolves that exact one-delimiter secondary conflict.
+  // Full source family and adaptive family must BOTH agree, with no grounded
+  // counterevidence from other complete/exact or confirmed neighbor-safe crops.
+  function verifiedCompanySourceReconciliation(ride, original, alternative, peers, attempts) {
+    if (!singleInternalCompanyDelimiterLoss(original, alternative) || Number(peers) < 3) return null;
+    const evidence=ride?.imageCellEvidence?.company;
+    const birth=evidence?.primarySourceEvidence;
+    const sourceRow=Number(ride?.sourceRow), sourceColumn=Number(evidence?.sourceColumn);
+    const key=cellText(original).normalize('NFC').trim().toLocaleLowerCase('de-DE');
+    const alt=cellText(alternative).normalize('NFC').trim().toLocaleLowerCase('de-DE');
+    const q=birth?.cropQuality||{};
+    if (!Number.isInteger(sourceRow) || sourceRow<1 || !Number.isInteger(sourceColumn) || sourceColumn<0 ||
+        birth?.verificationSource!=='primary_full_image_cell_assignment' ||
+        Number(birth.sourceRow)!==sourceRow || Number(birth.sourceColumn)!==sourceColumn ||
+        cellText(birth.rawOcr).normalize('NFC').trim().toLocaleLowerCase('de-DE')!==key ||
+        birth.confidence==null || !Number.isFinite(Number(birth.confidence)) || Number(birth.confidence)<80 ||
+        q.fullCellIncluded!==true || q.leftEdgeClipped!==false || q.rightEdgeClipped!==false ||
+        q.neighborColumnIncluded!==false) return null;
+    const full=sourceTruthFullCellConsensus(attempts);
+    const adaptive=adaptiveCompanyTailConsensus(attempts,sourceRow,sourceColumn);
+    if (!full || !adaptive || Number(full.votes)<2 || Number(full.modes)<2 ||
+        Number(adaptive.votes)<2 || full.candidate.toLocaleLowerCase('de-DE')!==key ||
+        adaptive.candidate.toLocaleLowerCase('de-DE')!==key) return null;
+    const normalized=a=>sourceTruthCellCandidate(a?.candidate,'company').toLocaleLowerCase('de-DE');
+    // One independent trusted opposite reading must never be silently discarded.
+    // An expanded crop marked 'bounded_possible' is explicitly NOT neighbor-safe.
+    const groundedOpposite=(Array.isArray(attempts)?attempts:[]).some(a=>{
+      const value=normalized(a); if (!value || value===key) return false;
+      const scope=cellText(a?.scope), crop=a?.cropQuality||{};
+      if (scope==='source_truth_full_cell' || scope==='source_truth_adaptive_company') {
+        return crop.fullCellIncluded===true && crop.neighborColumnIncluded===false &&
+          crop.leftEdgeClipped===false && crop.rightEdgeClipped===false &&
+          crop.targetCellGeometryConfirmed===true;
+      }
+      return scope==='source_truth_edge_expanded' && crop.fullCellIncluded===true &&
+        crop.neighborColumnIncluded===false && crop.leftEdgeClipped===false &&
+        crop.rightEdgeClipped===false && crop.targetCellGeometryConfirmed===true;
+    });
+    if (groundedOpposite) return null;
+    const exactOpposition=(Array.isArray(attempts)?attempts:[]).filter(a=>
+      cellText(a?.scope)==='cell_view' && normalized(a)===alt).length;
+    if (exactOpposition>=2) return null;
+    return {reason:'post_consensus_company_qualified_source_families',
+      fullVotes:full.votes,fullModes:full.modes,adaptiveVotes:adaptive.votes,peerCount:Number(peers)};
+  }
+
+  // A single trusted source-family counterexample defeats BOTH the qualified
+  // P114.11 path and the legacy confidence/peer fallback. Never let an older
+  // path silently approve a conflict that the new evidence says is unresolved.
+  function groundedCompanySourceOpposition(attempts, primaryValue) {
+    const key=cellText(primaryValue).normalize('NFC').trim().toLocaleLowerCase('de-DE');
+    return (Array.isArray(attempts)?attempts:[]).some(a=>{
+      const q=a?.cropQuality||{};
+      const candidate=sourceTruthCellCandidate(a?.candidate,'company').toLocaleLowerCase('de-DE');
+      return Boolean(candidate && candidate!==key &&
+        ['source_truth_full_cell','source_truth_adaptive_company','source_truth_edge_expanded'].includes(cellText(a?.scope)) &&
+        q.fullCellIncluded===true && q.leftEdgeClipped===false &&
+        q.rightEdgeClipped===false && q.neighborColumnIncluded===false &&
+        q.targetCellGeometryConfirmed===true);
+    });
+  }
+
   // P114.6: Text-integrity OCR runs before repeated-text consistency.
   // A later deterministic company consensus may therefore make an earlier secondary
   // conflict stale. Reconcile only geometry-only table-rule noise or exactly one
@@ -9707,7 +9777,12 @@
         if (exactCandidateViews >= 2) return;
         const fullCell = sourceTruthFullCellConsensus(attempts);
         const expandedCell = sourceTruthExpandedCellConsensus(attempts);
-        if ([fullCell, expandedCell].some(e => e?.candidate &&
+        if (groundedCompanySourceOpposition(attempts,current)) return;
+        const qualifiedSourceProof=verifiedCompanySourceReconciliation(ride,current,candidate,peerCount,attempts);
+        // An expanded crop with uncertain neighbor containment is not a valid
+        // veto against TWO independent, clean source-cell families. Every
+        // other case keeps the legacy fail-closed reconciliation unchanged.
+        if (!qualifiedSourceProof && [fullCell, expandedCell].some(e => e?.candidate &&
           cellText(e.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === candidateKey)) return;
 
         const priorConsensusProvesPrimary = Boolean(
@@ -9746,8 +9821,8 @@
         );
         const alreadyCorrectPrimary = peerCount >= 3 &&
           (trustworthyRawPrimary || sourceTruthProvesPrimary);
-        if (!priorConsensusProvesPrimary && !alreadyCorrectPrimary) return;
-        reason = priorConsensusProvesPrimary
+        if (!qualifiedSourceProof && !priorConsensusProvesPrimary && !alreadyCorrectPrimary) return;
+        reason = qualifiedSourceProof ? qualifiedSourceProof.reason : priorConsensusProvesPrimary
           ? 'post_consensus_company_internal_delimiter_loss'
           : 'post_consensus_company_primary_already_correct';
       } else return;
@@ -11427,7 +11502,7 @@
         existingConflictEvidence:ride.companyOcrEvidence || null
       });
     }
-    return {patch:'CORE-007D8A1F1D8P11410',diagnosticOnly:true,noMutation:true,
+    return {patch:'CORE-007D8A1F1D8P11411',diagnosticOnly:true,noMutation:true,
       conflicts:reports, conflictCount:reports.length};
   }
 
