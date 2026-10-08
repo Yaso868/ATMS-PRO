@@ -184,6 +184,20 @@ tasks.register('masterPromptRuleGateP1147', Exec) {
     commandLine 'node', 'tools/master-prompt-rule-gate-p1147.js'
 }
 
+// P114.8: original-image-cell provenance must survive the independent text review.
+// Real production factory -> conflict -> repeated-text -> reconcile -> import gate;
+// negative competing cell views and semantic alternatives remain fail closed.
+tasks.register('companyPrimaryProvenanceP1148', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-primary-provenance-selftest-p1148.js'
+}
+
+// P114.8: only this generation's asset alignment gate is version-bound.
+tasks.register('runtimeAssetAlignmentP1148', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1148.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -200,6 +214,7 @@ tasks.named('preBuild').configure {
     // Version-specific runtime alignment: only the currently active P114.7 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP1147')
+    dependsOn tasks.named('runtimeAssetAlignmentP1148')
+    dependsOn tasks.named('companyPrimaryProvenanceP1148')
     dependsOn tasks.named('masterPromptRuleGateP1147')
 }

@@ -73,6 +73,6 @@ const manifest=JSON.parse(fs.readFileSync(path.join(root,'tools/fixtures/golden-
 const goldenCase=manifest.cases.find(c=>c.id==='GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146');
 assert(goldenCase && goldenCase.previousActual?.importBlocked===true && goldenCase.expected?.importBlockedByTextConflict===false);
 assert.strictEqual(manifest.summary.caseRecords,manifest.cases.length);
-assert.strictEqual(manifest.p1147.realDeviceProofPending,true);
+assert.strictEqual(manifest.p1147.realDeviceProof?.status,'FAILED'); // Approved real-device observation retained
 
 console.log(`P114.7 REAL-PIPELINE primary-correct & fail-closed matrix: ${positive} positive / ${negative} negative PASS`);

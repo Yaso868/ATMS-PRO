@@ -1824,10 +1824,56 @@
       },
       "rootCause": "P114.6 requires repeatedTextConsistency.company correction provenance for one internal delimiter loss. When full-image OCR already produced the final company string, repeatedTextConsistency does not create a from/to record and the legitimate primary remains blocked by secondary truncation.",
       "expectedAfterPatch": "Reconcile only on >=3 independent same-plan exact peers plus complete high-confidence primary full-image company cell OR 2 valid independent full-cell/expanded modes. Never override 2 exact secondary cell views, opposing full-cell consensus or semantic alternatives.",
-      "reproducibility": "confirmed_real_device_P1146_and_local_real_function_pipeline",
+      "reproducibility": "confirmed_real_device_P1146_and_P1147; local_function_scenarios_only",
       "likelyFunction": "reconcileCompanyConflictAfterRepeatedConsistency / applyRepeatedTextConsistency / validate",
       "testGate": "company-primary-already-correct-selftest-p1147.js",
-      "status": "P1147_LOCAL_TEST_PASS_REAL_DEVICE_PENDING"
+      "status": "OPEN_AFTER_P1147_REAL_DEVICE_FAILURE",
+      "p1147RealDeviceResult": {
+        "date": "2026-10-08",
+        "evidence": "user_transcribed_ATMS_Android_OCR_result_in_this_conversation",
+        "installedVersion": "CORE-007D8A1F1D8P1147",
+        "source": "IMG-20261007-WA0001.jpg",
+        "sourceSha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+        "plantag": "2026-10-07",
+        "rideCount": 33,
+        "ocrChecked": 33,
+        "autoCorrected": 78,
+        "notices": 3,
+        "hardErrors": 1,
+        "uniqueFlights": 23,
+        "drivers": 7,
+        "sourceRow": 17,
+        "displayedPrimaryCompany": "Get-E",
+        "displayedSecondaryTextOcr": "GetE",
+        "displayedError": "Zeile 17 · Firma „Get-E“ widerspricht der unabhängigen Text-Nach-OCR („GetE“) – Original-Planliste prüfen; Import bis zur Klärung blockiert",
+        "importBlocked": true,
+        "imported": false,
+        "goldenProtectedValues": {
+          "flightNumber": "EW9420",
+          "flightLocation": "9MB"
+        },
+        "otherEarlierCompanyCases": "eight previously repaired Get-E lines not flagged in this result",
+        "separateItems": {
+          "flightVerificationOpen": 27,
+          "dateFollowingDayConfirmationPending": 22
+        },
+        "result": "FAIL_REAL_DEVICE_P1147"
+      },
+      "p1147ProcessGap": {
+        "classification": "INSUFFICIENT_REAL_PIPELINE_EVIDENCE_AND_TEST_COVERAGE",
+        "confirmed": "Real-device still blocks source row 17 despite P1147 synthetic tests passing",
+        "earlierLocalTests": "4 positive + 20 negative/fail-closed synthetic/function cases; did not prove Android full-image-to-import E2E for exact observed state",
+        "hypothesisNotYetProven": "The OCR intermediate evidence/provenance may differ between fixture and real device; competing secondary exact-cell views or provenance changes may prevent reconciliation.",
+        "notProven": "Exact path and OCR intermediate states of Android run have not been captured; do not declare a final technical root cause.",
+        "requiredFutureGate": [
+          "Run exact production pipeline on original bytes with intermediate evidence captured (no production test hardcodes).",
+          "Include both already-correct-primary and newly-corrected-primary, actual repeatedTextConsistency history and independent-cell variants.",
+          "Explicit end-to-end assertion on final import gate, not only intermediate reconciliation function.",
+          "Preserve fail-closed when evidence conflicts; never override two independent exact opposing cell views.",
+          "Protect 9MB, EW9420, 8 already repaired Get-E rows and all other Golden cases."
+        ]
+      },
+      "lastVerified": "2026-10-08"
     }
   ],
   "summary": {
@@ -2245,13 +2291,28 @@
   },
   "p1147": {
     "targetCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
-    "realDeviceProofPending": true,
+    "realDeviceProofPending": false,
     "fixturePixelPolicy": "BYTE_IDENTICAL",
     "testedScenarios": {
       "positive": 4,
       "negativeFailClosed": 20
     },
     "noProductionFixtureHardcode": true,
-    "masterPromptVersion": "1.1"
+    "masterPromptVersion": "1.1",
+    "realDeviceProof": {
+      "status": "FAILED",
+      "date": "2026-10-08",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "remainingError": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+      "ocrChecked": 33,
+      "hardErrors": 1,
+      "imported": false,
+      "evidence": "user_transcribed_real_device_output_in_current_conversation",
+      "unresolvedEngineeringRootCause": true
+    },
+    "processGapDocumented": "Local green function tests did not cover true device OCR intermediate evidence and downstream hard-error import gate.",
+    "nextStep": "Collect actual pipeline evidence, reproduce end-to-end, no patch without fresh JETZT PATCHEN.",
+    "documentationApproval": "User explicitly approved 2026-10-08: Ja, aufnehmen."
   }
 }

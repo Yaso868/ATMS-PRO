@@ -1,6 +1,6 @@
 # ATMS PRO – VERBINDLICHER MASTER-PROMPT
 
-**Version:** 1.1 · 08.10.2026 (Freigabe-Prozessregel ergänzt)  
+**Version:** 1.2 · 08.10.2026 (freigegebener P114.7-Fehlschlag dokumentiert)  
 **Projekt:** ATMS PRO V1.4.0 / laufende CORE-Entwicklung  
 **Repository / Source of Truth für Quellcode:** https://github.com/Yaso868/ATMS-PRO  
 **Sprache:** Deutsch  
@@ -133,6 +133,18 @@ Vor Freigabe eines Patch-Ergebnisses zwingend:
 - Die Planliste **NICHT importieren**. Keine weitere Produktivänderung ohne neues **„JETZT PATCHEN“**.
 - Nächste fachliche Arbeit **nach Zugang zum tatsächlichen Quellstand**: echten P114.6-Code, ZIP-HEAD und aktuell sichtbaren GitHub-main-HEAD auseinanderhalten/abgleichen; Local-First-Reproduktion, Root Cause, positive/negative/fail-closed Tests, vollständiges Golden Pack. Historische Tests auf älterer Source ersetzen keine Tests auf P114.6.
 
+## 9A. Freigegebener Nachtrag – P114.7 Realgerät-Regression vom 08.10.2026
+
+**Dokumentationsfreigabe:** Nutzerantwort „Ja, aufnehmen“ am 08.10.2026. **Keine** neue Patchfreigabe, keine GitHub-Änderung, kein Import.
+
+- **Referenz:** Golden-Fall `GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146`, Originalbild `IMG-20261007-WA0001.jpg`, SHA-256 `f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d`, Plantag 07.10.2026, Excel-Zeile 17.
+- **P114.7 Realgerät:** 33/33 Fahrten, 78 automatische Korrekturen, 3 Hinweise, 1 harter Fehler, 23 Flüge, 7 Fahrer. **Harter Fehler weiterhin:** Haupt-Firma `Get-E` vs. unabhängige Text-Nach-OCR `GetE`; Import blockiert, nicht importiert.
+- **Schutz weiterhin korrekt sichtbar:** `9MB`, `EW9420`; die acht zuvor reparierten Get-E-Zeilen werden in diesem Lauf nicht als Fehler gemeldet. Flugprüfung (27 offen) und Folgetagbestätigung (22 Fahrten) sind getrennt vom OCR-Fehler zu behandeln.
+- **Bestätigter Prozessfehler:** Lokale P114.7-Erfolgsprüfungen (4 positive / 20 negative bzw. Fail-Closed-Szenarien) haben den späteren **Realgerät-Endzustand der echten OCR-Pipeline** nicht zuverlässig abgedeckt. Ein lokaler PASS beweist keinen fehlerfreien Realgerät-Import.
+- **Root Cause technisch noch offen:** Mögliche Abweichungen bei Zwischenbelegen, Konsens-Provenienz und opponierenden Zellansichten sind Hypothesen; ohne echten Zwischenzustand nicht als Ursache bezeichnen.
+- **Verbindliche künftige Abdeckung dieses freigegebenen Prozessfehlers:** Originalbild unverändert durch echte Produktionsschritte ausführen; OCR-Zellbelege, Konsens-Provenienz, Post-Consensus-Abgleich **und abschließendes Import-Gate** testen; bereits korrekte Primärwerte sowie echte Korrekturverläufe berücksichtigen. Positive/negative/fail-closed Schutzfälle und vollständiges Golden Pack beibehalten; kein Bild- oder String-Hardcode in Produktion.
+- **Golden-Status:** Den **bestehenden** Zeile-17-Fall ergänzen, keinen neuen Duplikateintrag zählen. Offener Realgerät-Fehler nach P114.7. **Keine weitere Produktivänderung ohne neues „JETZT PATCHEN“.**
+
 ## 10. Release-Gate / Selbstkontrolle – vor jeder Übergabe
 
 Eine produktive Übergabe darf **nur** als vollständig bezeichnet werden, wenn folgende Angaben **wirklich** vorhanden/geprüft sind:
@@ -168,3 +180,5 @@ Bei fehlendem Gate: **Blocker ehrlich benennen, nicht als fertigen Patch ausgebe
 **Änderungsvermerk V1.1 (08.10.2026):** Nach ausdrücklicher Zustimmung die Selbstlern- und Freigaberegel § 1A eingefügt; Anti-Vergessens-Regel, Golden-Error-Register und Übergabe-Gate auf **Zustimmung vor neuen dauerhaften Eintragungen** abgestimmt. **Kein Repo-Commit, kein Produktivpatch, kein Import.**
 
 **Leitsatz:** Maximale technische Eigenverantwortung, minimaler manueller Nutzeraufwand. Fehler erst beweisen, dann sicher beheben. **Ein installer-kompatibles Patch-ZIP statt Einzeldatei-Uploads.** Ein klarer Nutzer-Schritt. Keine unvollständigen Commit- oder Download-Angaben. **Keine Produktivänderung ohne „JETZT PATCHEN“.**
+
+**Änderungsvermerk V1.2 (08.10.2026):** Vom Nutzer freigegebene P114.7-Realgerät-Regression und Testabdeckungs-/Prozesslücke dokumentiert. P114.7 bleibt unverändert, kein Commit, kein Patch, kein Import.

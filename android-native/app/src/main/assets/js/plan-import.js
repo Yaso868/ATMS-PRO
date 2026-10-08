@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1148 · 08.10.2026: Preserve original full-image cell evidence before independent text OCR mutates verification status; strict competing-view and import vetoes retained.
 // CORE-007D8A1F1D8P1147 · 08.10.2026: PRIMARY-ALREADY-CORRECT COMPANY CONFLICT – missing consensus correction record may be replaced only by strong full-image/full-cell positive evidence with >=3 same-plan peers; competing source views and semantic alternatives fail closed.
 // CORE-007D8A1F1D8P1146 · 08.10.2026: POST-CONSENSUS CONFLICT RECONCILIATION – after repeated-text consistency, clear only stale company conflicts caused by extreme table-rule boundary glyphs or one internal delimiter loss already resolved by recorded >=3-vote plan consensus; semantic alternatives and competing exact-cell evidence remain fail-closed.
 // CORE-007D8A1F1D8P1145 · 08.10.2026: DETERMINISTIC COMPANY BOUNDARY CLASSIFICATION – treat only extreme table-rule glyph noise around a repeated hyphenated short company code as non-semantic, and reuse recorded repeated-text consensus for exactly one internal delimiter loss; semantic alternatives and competing exact-cell evidence remain fail-closed.
@@ -9600,13 +9601,21 @@
         // or two valid modes of an independent full-cell/expanded replay. Require
         // >=3 other exact same-plan rows; no generic separator normalisation.
         const evidence = ride?.imageCellEvidence?.company;
-        const crop = evidence?.cropQuality;
-        const rawPrimary = cellText(evidence?.rawOcr).normalize('NFC').trim();
-        const conf = Number(evidence?.confidence);
+        // Original primary OCR is an immutable birth record. A mutable review
+        // status such as exact_cell_multi_view_unresolved_conflict is NOT the
+        // provenance of that original measurement. Legacy records without the
+        // birth record are accepted only if their old primary status survived.
+        const birth = evidence?.primarySourceEvidence;
+        const primary = birth || (evidence?.verificationSource === 'primary_full_image_cell_assignment' ? evidence : null);
+        const crop = primary?.cropQuality;
+        const rawPrimary = cellText(primary?.rawOcr).normalize('NFC').trim();
+        const conf = Number(primary?.confidence);
         const trustworthyRawPrimary = Boolean(
-          evidence?.verificationSource === 'primary_full_image_cell_assignment' &&
+          primary?.verificationSource === 'primary_full_image_cell_assignment' &&
+          (!birth || (Number(birth.sourceRow) === Number(ride.sourceRow) &&
+            Number(birth.sourceColumn) === Number(evidence.sourceColumn))) &&
           rawPrimary && rawPrimary.toLocaleLowerCase('de-DE') === currentKey &&
-          evidence?.confidence !== null && evidence?.confidence !== undefined &&
+          primary?.confidence !== null && primary?.confidence !== undefined &&
           Number.isFinite(conf) && conf >= 80 &&
           crop?.fullCellIncluded === true && crop?.leftEdgeClipped === false &&
           crop?.rightEdgeClipped === false && crop?.neighborColumnIncluded === false
@@ -9887,6 +9896,19 @@
         consensus: null,
         manualCheckRequired: false
       };
+      // P114.8: The independent text-OCR stage mutates verificationSource.
+      // Preserve *this cell's* original primary reading before any such review.
+      // Later disagreements are still evaluated separately and can veto import.
+      if (field === 'company') {
+        evidence[field].primarySourceEvidence = Object.freeze({
+          rawOcr: text,
+          confidence: evidence[field].confidence,
+          verificationSource: 'primary_full_image_cell_assignment',
+          sourceRow: Number(ride?.sourceRow || 0),
+          sourceColumn: Number(column),
+          cropQuality: Object.freeze({ ...evidence[field].cropQuality })
+        });
+      }
     });
     return evidence;
   }
