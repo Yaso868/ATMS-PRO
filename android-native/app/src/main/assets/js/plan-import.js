@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1146 · 08.10.2026: POST-CONSENSUS CONFLICT RECONCILIATION – after repeated-text consistency, clear only stale company conflicts caused by extreme table-rule boundary glyphs or one internal delimiter loss already resolved by recorded >=3-vote plan consensus; semantic alternatives and competing exact-cell evidence remain fail-closed.
 // CORE-007D8A1F1D8P1145 · 08.10.2026: DETERMINISTIC COMPANY BOUNDARY CLASSIFICATION – treat only extreme table-rule glyph noise around a repeated hyphenated short company code as non-semantic, and reuse recorded repeated-text consensus for exactly one internal delimiter loss; semantic alternatives and competing exact-cell evidence remain fail-closed.
 // CORE-007D8A1F1D8P1143 · 07.10.2026: REALSTATE SOURCE-TRUTH NORMALIZATION – normalize bounded full-cell company source-truth candidates before consensus and allow exactly one internal company delimiter loss only with strong primary OCR plus repeated same-plan primary peers; semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1142 · 07.10.2026: COMPANY BOUNDARY SOURCE-TRUTH VETO – when two independent bounded source-truth views confirm the current primary company value, suppress only isolated table-rule glyph noise or exactly one missing internal company delimiter in weaker secondary OCR; semantic changes remain fail-closed.
@@ -9543,6 +9544,65 @@
     return 'compact_insertion_deletion';
   }
 
+
+  // P114.6: Text-integrity OCR runs before repeated-text consistency.
+  // A later deterministic company consensus may therefore make an earlier secondary
+  // conflict stale. Reconcile only geometry-only table-rule noise or exactly one
+  // internal delimiter loss that the existing repeated-text stage itself resolved.
+  function reconcileCompanyConflictAfterRepeatedConsistency(rides) {
+    if (!Array.isArray(rides) || rides.length < 3) return rides;
+    const out = rides.map(ride => ({ ...ride }));
+    out.forEach((ride, index) => {
+      if (!ride?.companyOcrConflict) return;
+      const current = cellText(ride.company).normalize('NFC').trim();
+      const candidate = cellText(ride.companyOcrConflictCandidate).normalize('NFC').trim();
+      if (!current || !candidate || current === candidate || !isHyphenatedCompanyEdgeProbe(current)) return;
+      const currentKey = current.toLocaleLowerCase('de-DE');
+      const candidateKey = candidate.toLocaleLowerCase('de-DE');
+      const peerCount = out.filter((other, peerIndex) => {
+        if (peerIndex === index) return false;
+        return cellText(other?.company).normalize('NFC').trim().toLocaleLowerCase('de-DE') === currentKey;
+      }).length;
+      if (peerCount < 2) return;
+
+      let reason = '';
+      if (edgeTableGlyphNoise(current, candidate)) {
+        reason = 'post_consensus_company_table_rule_noise';
+      } else if (singleInternalCompanyDelimiterLoss(current, candidate)) {
+        const consensus = ride?.repeatedTextConsistency?.company;
+        const from = cellText(consensus?.from).normalize('NFC').trim();
+        const to = cellText(consensus?.to).normalize('NFC').trim();
+        const count = Number(consensus?.evidenceCount || 0);
+        if (!from || !to || count < 3) return;
+        if (from.toLocaleLowerCase('de-DE') !== candidateKey || to.toLocaleLowerCase('de-DE') !== currentKey) return;
+        const attempts = Array.isArray(ride?.imageCellEvidence?.company?.verificationAttempts)
+          ? ride.imageCellEvidence.company.verificationAttempts
+          : [];
+        const exactCandidateViews = attempts.filter(attempt =>
+          cellText(attempt?.scope) === 'cell_view' &&
+          cellText(attempt?.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === candidateKey
+        ).length;
+        if (exactCandidateViews >= 2) return;
+        reason = 'post_consensus_company_internal_delimiter_loss';
+      } else return;
+
+      ride.companyOcrConflict = false;
+      ride.companyOcrConflictCandidate = '';
+      ride.companyOcrConflictResolvedAfterRepeatedConsistency = true;
+      ride.companyOcrSecondaryEdgeNoiseIgnored = true;
+      ride.companyOcrSecondaryEdgeNoiseCandidate = candidate;
+      ride.companyOcrSecondaryEdgeNoiseEvidence = { reason, peerCount };
+      if (ride.companyOcrEvidence && typeof ride.companyOcrEvidence === 'object') {
+        ride.companyOcrEvidence = { ...ride.companyOcrEvidence, resolvedAfterRepeatedConsistency: true, resolutionReason: reason, samePlanPeerCount: peerCount };
+      }
+      const cellEvidence = ride?.imageCellEvidence?.company;
+      if (cellEvidence && typeof cellEvidence === 'object') {
+        cellEvidence.manualCheckRequired = false;
+        cellEvidence.verificationSource = reason;
+      }
+    });
+    return out;
+  }
   function applyRepeatedTextConsistency(rides) {
     if (!Array.isArray(rides) || rides.length < 3) return rides;
 
@@ -11941,6 +12001,7 @@
           mappingInfo.mapping
         ));
         preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
+        preparedRides = p54MeasureSync('company_conflict_post_consensus', () => reconcileCompanyConflictAfterRepeatedConsistency(preparedRides));
         preparedRides = p54MeasureSync('zero_silent_error_gate', () => markZeroSilentErrorIntegrity(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));

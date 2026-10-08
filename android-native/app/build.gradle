@@ -146,6 +146,20 @@ tasks.register('runtimeAssetAlignmentP1145', Exec) {
     commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1145.js'
 }
 
+// P114.6: post-consensus stale company-conflict reconciliation. The real pipeline
+// order is executed: text conflict state -> repeated-text consistency -> narrow
+// reconciliation -> zero-silent-error gate. Semantic alternatives remain fail-closed.
+tasks.register('companyConflictPostConsensusP1146', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-conflict-post-consensus-selftest-p1146.js'
+}
+
+// P114.6: runtime generation alignment gate for the reconciled pipeline semantics.
+tasks.register('runtimeAssetAlignmentP1146', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1146.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -167,5 +181,6 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryVetoP1142')
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
-    dependsOn tasks.named('runtimeAssetAlignmentP1145')
+    dependsOn tasks.named('companyConflictPostConsensusP1146')
+    dependsOn tasks.named('runtimeAssetAlignmentP1146')
 }
