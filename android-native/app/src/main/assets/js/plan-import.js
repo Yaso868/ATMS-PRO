@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11415 · 08.10.2026: HEADERLESS CLOCK-BOUNDARY PREFLIGHT INTEGRITY – align strict headerless time admission with existing bounded table-rule clock parser; reject ambiguous/malformed text, preserve global/row core thresholds and flight fail-closed decisions.
 // CORE-007D8A1F1D8P11414 · 08.10.2026: HEADERLESS EARLY-RETURN METADATA INTEGRITY – preserve original core-rejection cause, actually measured per-row invalid-cell evidence, and explicitly unmeasured flight-gate status across every return path. DIAGNOSTIC ONLY, fail-closed unchanged.
 // CORE-007D8A1F1D8P11413 · 08.10.2026: HEADERLESS FLIGHT-GATE SOURCE TRACE – classify the existing fail-closed flight-column rejection with bounded, original primary OCR-word/cell provenance. DIAGNOSTIC ONLY: no cell/flight changes and no extra implicit import permissions.
 // CORE-007D8A1F1D8P11412 · 08.10.2026: TIME OCR SOURCE-FAMILY INTEGRITY – independent configured PSM modes with a dedicated worker; only qualified high-confidence full-cell counterproof can dismiss a correlated time-column disagreement. Unclear evidence remains fail-closed. No changes to company, flight or imports.
@@ -3203,7 +3204,13 @@
     // Dezimalpreise wie 65,45 duerfen niemals als 06:54/65:45-Zeitanker dienen.
     // Kompaktzeit ist nur zulaessig, wenn der komplette OCR-Token wirklich nur
     // aus 3-4 Ziffern besteht.
-    return looksLikeTime(text) || /^\d{3,4}$/.test(text);
+    if (looksLikeTime(text) || /^\d{3,4}$/.test(text)) return true;
+    // P114.15: OCR table rules may flank an otherwise UNAMBIGUOUS clock token.
+    // The existing boundary parser is anchored to the complete source cell,
+    // verifies real HH/MM ranges and refuses prefixes, suffixes, free text,
+    // competing clocks and price-like text. Never extract an embedded time here.
+    const boundary = clockBoundaryNoiseInfo(text);
+    return Boolean(boundary.changed && boundary.value && looksLikeTime(boundary.value));
   }
 
   function headerlessLineAnchor(line, predicate, minX = -Infinity, maxX = Infinity) {

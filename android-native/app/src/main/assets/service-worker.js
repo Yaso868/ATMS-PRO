@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11415 · 08.10.2026: Strict headerless boundary-time admission uses the already audited edge-only clock parser; ambiguous core fields remain fail-closed.
 // CORE-007D8A1F1D8P11414 · 08.10.2026: Preserve headerless rejection diagnostics and never display unmeasured counts as zero. Fail-closed unchanged.
 // CORE-007D8A1F1D8P11414 · 08.10.2026: headerless flight admission-gate source tracing; diagnostic-only with unchanged fail-closed decisions and synchronized cache generation.
 // CORE-007D8A1F1D8P11411 · 08.10.2026 bounded company cell-tail source replay.
@@ -25,7 +26,7 @@
 // CORE-007D8A1F1D8P111 · 06.10.2026: cache refresh for production Live-Cockpit target promotion; OCR/flight/import semantics unchanged.
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
-const CACHE_NAME = "atms-pro-pwa-2026-10-08-p11414-headerless-metadata-integrity";
+const CACHE_NAME = "atms-pro-pwa-2026-10-08-p11415-headerless-clock-boundary";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -42,9 +43,9 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=P1121",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P11414",
-  "./js/plan-import.js?v=P11414",
-  "./js/pwa.js?v=P11414",
+  "./js/ocr-integrity-core.js?v=P11415",
+  "./js/plan-import.js?v=P11415",
+  "./js/pwa.js?v=P11415",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
@@ -95,7 +96,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P11414");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P11415");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}
