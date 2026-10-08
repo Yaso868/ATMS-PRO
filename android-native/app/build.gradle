@@ -206,9 +206,15 @@ tasks.register('companyAdaptiveTailP1149', Exec) {
     commandLine 'node', 'tools/company-adaptive-tail-selftest-p1149.js'
 }
 // Only current version-specific cache/asset generation may gate preBuild.
-tasks.register('runtimeAssetAlignmentP1149', Exec) {
+tasks.register('runtimeAssetAlignmentP11410', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1149.js'
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11410.js'
+}
+
+// P114.10: independent observation-only contract and production OCR-probe replay.
+tasks.register('companyConflictTraceP11410', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-conflict-diagnostic-selftest-p11410.js'
 }
 
 tasks.named('preBuild').configure {
@@ -227,8 +233,9 @@ tasks.named('preBuild').configure {
     // Version-specific runtime alignment: only the currently active P114.9 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP1149')
+    dependsOn tasks.named('runtimeAssetAlignmentP11410')
     dependsOn tasks.named('companyAdaptiveTailP1149')
+    dependsOn tasks.named('companyConflictTraceP11410')
     dependsOn tasks.named('companyPrimaryProvenanceP1148')
     dependsOn tasks.named('masterPromptRuleGateP1147')
 }

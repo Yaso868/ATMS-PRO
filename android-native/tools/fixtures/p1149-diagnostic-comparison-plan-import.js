@@ -1,4 +1,3 @@
-// CORE-007D8A1F1D8P11410 · diagnostic-only company source-region trace; OCR/import decisions unchanged.
 // CORE-007D8A1F1D8P1149 · 08.10.2026: bounded company cell-tail source replay; source-truth agreement required, neighbor-cell occupancy and dissent veto always fail closed.
 // CORE-007D8A1F1D8P1148 · 08.10.2026: Preserve original full-image cell evidence before independent text OCR mutates verification status; strict competing-view and import vetoes retained.
 // CORE-007D8A1F1D8P1147 · 08.10.2026: PRIMARY-ALREADY-CORRECT COMPANY CONFLICT – missing consensus correction record may be replaced only by strong full-image/full-cell positive evidence with >=3 same-plan peers; competing source views and semantic alternatives fail closed.
@@ -7062,21 +7061,16 @@
 
   // P114.9: never turn an enlarged crop into a trusted source unless a
   // real neighboring-column OCR word proves the margin remains unoccupied.
-  // P114.10: observational trace only; no additional OCR calls or changed return values.
-  async function sourceTruthAdaptiveCompanyTailOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, worker, imageMeta, probeTrace = null) {
-    const trace = (status, details = {}) => {
-      if (probeTrace && typeof probeTrace === 'object') Object.assign(probeTrace, { status, ...details });
-    };
-    trace('entered');
-    if (!descriptor || !rowMeta || !imageMeta || !window.Tesseract) { trace('missing_required_geometry_or_tesseract'); return []; }
+  async function sourceTruthAdaptiveCompanyTailOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, worker, imageMeta) {
+    if (!descriptor || !rowMeta || !imageMeta || !window.Tesseract) return [];
     const source=sourceTruthCanvas || processedCanvas;
     const left=Number(descriptor.left), baseRight=Number(descriptor.right);
     const top=Number(rowMeta.y0), bottom=Number(rowMeta.y1);
     const column=Number(descriptor.column);
-    if (![left,baseRight,top,bottom,column].every(Number.isFinite) || baseRight<=left || bottom<=top) { trace('invalid_target_cell_geometry'); return []; }
+    if (![left,baseRight,top,bottom,column].every(Number.isFinite) || baseRight<=left || bottom<=top) return [];
     const pad=Math.max(4,Math.min(28,(baseRight-left)*0.20));
     const right=Math.min(Number(source.width||0),baseRight+pad);
-    if (left<0 || right<=baseRight || top<0 || bottom>Number(source.height||0)) { trace('expanded_region_outside_image'); return []; }
+    if (left<0 || right<=baseRight || top<0 || bottom>Number(source.height||0)) return [];
     // The immediately adjacent cell can be an empty flight column. Check
     // actual OCR words in ALL columns to the right on this same source row;
     // never require a word in a potentially empty immediate neighbor.
@@ -7085,16 +7079,11 @@
     for (let next=column+1;next<columnCount;next++) {
       neighborWords.push(...rawImageCellWords(imageMeta,rowMeta,next));
     }
-    trace('neighbor_scan', {neighborWordsChecked:neighborWords.length, expandedRight:Math.round(right*100)/100,
-      baseRight:Math.round(baseRight*100)/100, nearestNeighborX:neighborWords.length
-        ? Math.min(...neighborWords.map(w=>Number(w?.x0)).filter(Number.isFinite)) : null});
-    if (!neighborWords.length) { trace('neighbor_words_missing'); return []; }
-    if (neighborWords.some(w => Number(w?.x0) <= right+2)) { trace('neighbor_guard_overlap'); return []; }
+    if (!neighborWords.length || neighborWords.some(w => Number(w?.x0) <= right+2)) return [];
     const proof={fullCellIncluded:true,leftEdgeClipped:false,rightEdgeClipped:false,
       neighborColumnIncluded:false,targetCellGeometryConfirmed:true,
       neighboringWordsChecked:neighborWords.length,expansionPx:Number((right-baseRight).toFixed(2))};
     const modes=[{mode:'adaptive-company-psm6',psm:'6'},{mode:'adaptive-company-psm7',psm:'7'}];
-    trace('ocr_started', {neighborWordsChecked:neighborWords.length, expansionPx:proof.expansionPx});
     const results=[];
     for (const mode of modes) {
       let candidate='';
@@ -7108,11 +7097,10 @@
               : await p109PerfWorkerRecognize(worker,'text_integrity_ocr',crop,{mode:mode.mode,sourceRow}))
           : await p109PerfRecognizeOneShot('text_integrity_ocr','deu',crop,params,{mode:mode.mode,sourceRow});
         candidate=sourceTruthCellCandidate(output?.data?.text||'','company');
-      } catch (_) { trace('ocr_mode_failed', {failedMode:mode.mode}); }
+      } catch (_) {}
       results.push({scope:'source_truth_adaptive_company',mode:mode.mode,candidate,
         sourceRow,sourceColumn:column,field:'company',cropQuality:{...proof}});
     }
-    trace('ocr_completed', {modes:results.map(r=>({mode:r.mode,candidate:r.candidate}))});
     return results;
   }
 
@@ -7255,10 +7243,7 @@
   }
 
   async function recoverTextIntegrityTargeted(rides, imageCanvas, imageMeta, mapping, sourceTruthCanvas = null) {
-    // Transient, diagnostic-only; NEVER written to a ride, import or persistent backup.
-    window.ATMSP11410CompanyTailProbes = [];
     if (!Array.isArray(rides) || !imageCanvas || !imageMeta || !window.Tesseract) return rides;
-    const companyTailProbes = new Map();
     const boundaries = imageMeta.boundaries || [];
     const out = rides.map(ride => ({ ...ride }));
     const status = $('importStatus');
@@ -7437,11 +7422,9 @@
         // P114.9: a separate, row-bounded source view repairs right-edge loss
         // only when the adjacent column has a provably empty guard margin.
         if (descriptor.field === 'company' && isHyphenatedCompanyEdgeProbe(item.original)) {
-          const probe = { sourceRow: item.sourceRow, sourceColumn: descriptor.column, original: item.original };
-          companyTailProbes.set(item.sourceRow, probe);
           const adaptive = await sourceTruthAdaptiveCompanyTailOcr(
             sourceTruthCanvas || imageCanvas,imageCanvas,descriptor,rowMeta,
-            item.sourceRow,worker,imageMeta,probe);
+            item.sourceRow,worker,imageMeta);
           if (adaptive.length) {
             const log=attemptLogByField.get(descriptor.field).get(item.sourceRow)||[];
             log.push(...adaptive);
@@ -7821,7 +7804,6 @@
       });
     });
 
-    window.ATMSP11410CompanyTailProbes = [...companyTailProbes.values()].map(item => ({ ...item }));
     return out;
   }
 
@@ -11388,54 +11370,9 @@
     render();
   }
 
-  // P114.10: read-only report built from ACTUAL production OCR attempts/geometry.
-  // Nothing in this function changes a ride or affects import validation.
-  function buildCompanyConflictDiagnosticP11410(rides, probes = []) {
-    const reports = [];
-    for (const ride of Array.isArray(rides) ? rides : []) {
-      if (!ride?.companyOcrConflict) continue;
-      const row = Number(ride.sourceRow);
-      const current = cellText(ride.company);
-      const secondary = cellText(ride.companyOcrConflictCandidate);
-      const evidence = ride?.imageCellEvidence?.company || {};
-      const attempts = Array.isArray(evidence.verificationAttempts) ? evidence.verificationAttempts : [];
-      const probe = (Array.isArray(probes) ? probes : []).find(item=>Number(item.sourceRow)===row) || null;
-      const companyPeers = (Array.isArray(rides) ? rides : []).filter(item=>
-        Number(item.sourceRow)!==row && cellText(item.company).toLocaleLowerCase('de-DE')===current.toLocaleLowerCase('de-DE')).length;
-      const full = sourceTruthFullCellConsensus(attempts);
-      const expanded = sourceTruthExpandedCellConsensus(attempts);
-      const adaptive = adaptiveCompanyTailConsensus(attempts, row, evidence?.sourceColumn);
-      const primaryVeto = sourceTruthPrimaryEdgeVeto(current,secondary,'company',attempts,companyPeers,row,evidence?.sourceColumn);
-      const key = secondary.toLocaleLowerCase('de-DE');
-      const cellOpposition = attempts.filter(a=>a?.scope==='cell_view' && cellText(a.candidate).toLocaleLowerCase('de-DE')===key).length;
-      reports.push({ row, field:'company', originalValue:current, secondaryValue:secondary,
-        importBlocked:Boolean(ride.companyOcrConflict), postConsensusResolved:Boolean(ride.companyOcrConflictResolvedAfterRepeatedConsistency),
-        verificationSource:cellText(evidence.verificationSource), primarySourceEvidence:evidence.primarySourceEvidence ? {
-          verificationSource:cellText(evidence.primarySourceEvidence.verificationSource),
-          confidence:Number.isFinite(Number(evidence.primarySourceEvidence.confidence))?Number(evidence.primarySourceEvidence.confidence):null,
-          rawOcr:cellText(evidence.primarySourceEvidence.rawOcr), cropQuality:evidence.primarySourceEvidence.cropQuality || null
-        }:null,
-        peerCount:companyPeers, sourceColumn:evidence.sourceColumn ?? null,
-        adaptiveProbe:probe || {status:'not_invoked_or_no_source_geometry'},
-        sourceConsensus:{full:full?{candidate:full.candidate,votes:full.votes,modes:full.modes}:null,
-          expanded:expanded?{candidate:expanded.candidate,votes:expanded.votes,modes:expanded.modes}:null,
-          adaptive:adaptive?{candidate:adaptive.candidate,votes:adaptive.votes}:null},
-        competingExactCellViews:cellOpposition,
-        primaryVetoReason:primaryVeto?.reason || null,
-        attempts:attempts.slice(0,40).map(a=>({scope:cellText(a.scope),mode:cellText(a.mode),
-          candidate:cellText(a.candidate), cropQuality:a.cropQuality || null})),
-        existingConflictEvidence:ride.companyOcrEvidence || null
-      });
-    }
-    return {patch:'CORE-007D8A1F1D8P11410',diagnosticOnly:true,noMutation:true,
-      conflicts:reports, conflictCount:reports.length};
-  }
-
   function render() {
     refreshIssuesAfterFlightSync();
     const rides = state.rides, issues = state.issues;
-    const companyDiagP11410 = buildCompanyConflictDiagnosticP11410(rides, window.ATMSP11410CompanyTailProbes);
-    state.ocrCompanyConflictReportP11410 = companyDiagP11410;
     const cancelledRows = Array.isArray(state.cancelledRows) ? state.cancelledRows : [];
     const flightChecks = issues.filter(issue => issueIsFlightCheck(issue));
     const actionableIssues = issues.filter(issue => !issueIsFlightCheck(issue));
@@ -11854,40 +11791,8 @@
         + `<div style="margin-top:8px"><small>${rowText}</small></div>`
         + `</div>`;
     })() : '';
-    const p11410Html = companyDiagP11410.conflictCount
-      ? `<details style="margin-top:10px;padding:9px;border:1px solid rgba(255,190,88,.5);border-radius:10px"><summary style="cursor:pointer;font-weight:800">🧪 P114.10 Firmenkonflikt – genaue OCR-Diagnose (${companyDiagP11410.conflictCount})</summary>`
-        + `<p style="font-size:12px">Nur Diagnose: kein Import, keine Korrektur, keine automatische Freigabe.</p>`
-        + `<button type="button" id="copyP11410DiagBtn" style="padding:10px;border-radius:8px;font-weight:700">📋 Diagnose kopieren</button>`
-        + `<pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:460px;overflow:auto">${escapeHtml(JSON.stringify(companyDiagP11410,null,2))}</pre></details>`
-      : '';
-    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag || p42CurrentSchemaTimeDiag || p43FlickArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${secondSourceSingleFallbackDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${p42CurrentSchemaTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
-    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + p11410Html + diagnosticHtml;
-    $('copyP11410DiagBtn')?.addEventListener('click', async () => {
-      const payload = JSON.stringify(state.ocrCompanyConflictReportP11410,null,2);
-      let copied = false;
-      try {
-        if (navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(payload);
-          copied = true;
-        }
-      } catch (_) { /* Android WebView may reject Clipboard API; fall back to selection. */ }
-      if (!copied) {
-        const field = document.createElement('textarea');
-        try {
-          field.value = payload;
-          field.setAttribute('readonly', '');
-          field.style.position = 'fixed'; field.style.opacity = '0';
-          document.body.appendChild(field);
-          field.focus(); field.select();
-          copied = Boolean(document.execCommand?.('copy'));
-        } catch (_) { copied = false; }
-        finally { field.remove(); }
-      }
-      if (typeof window.showToast === 'function') window.showToast(
-        copied ? 'P114.10 Diagnose kopiert' : 'Bitte Diagnose-Text markieren und kopieren',
-        copied ? 'ok' : 'warn'
-      );
-    });
+    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag || p42CurrentSchemaTimeDiag || p43FlickArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${secondSourceSingleFallbackDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${p42CurrentSchemaTimeDiagHtml}${p43FlickArrivalTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
+    $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + diagnosticHtml;
 
     $('p39NativeLiveDiagBtn')?.addEventListener('click', runP39NativeLiveDiagnostic);
     $('p39ArrivalTimeDiagBtn')?.addEventListener('click', runP39ArrivalTimeFieldDiagnostic);
