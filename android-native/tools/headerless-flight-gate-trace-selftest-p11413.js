@@ -55,7 +55,7 @@ async function run(name, rows, verify,opts={}){
  await run('headerless dash + blank without flight stays blocked',[mkrow('-','')],t=>{assert.equal(t.reason,'no_recognized_flight');});
  await run('headerless error precedence is dual flight before absent core field',[mkrow('EW9569','EW9814').map((x,i)=>i===4?'':x)],t=>{assert.equal(t.reason,'flight_columns_conflict');},{imageMeta:{rowMetaByMatrixIndex:{}}});
  const file=fs.readFileSync(sourceFile,'utf8');
- assert(file.includes('P11413: FlugGate=${cellText(trace.reason)'));
+ assert(file.includes('P11413: FlugGate=${cellText(trace.reason)') || file.includes('P11414: FlugGate=${cellText(trace.reason)'), 'flight-gate reason must remain visible in either version');
  assert(file.includes('Keine Fahrten übernommen. Fehlerdetails bitte als Text senden.'));
  assert(!file.includes('flightColumnsOk = true;'));
  ++tested;console.log('PASS production P11413 rejection message and fail-closed contracts');

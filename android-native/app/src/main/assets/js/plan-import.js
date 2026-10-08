@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11414 · 08.10.2026: HEADERLESS EARLY-RETURN METADATA INTEGRITY – preserve original core-rejection cause, actually measured per-row invalid-cell evidence, and explicitly unmeasured flight-gate status across every return path. DIAGNOSTIC ONLY, fail-closed unchanged.
 // CORE-007D8A1F1D8P11413 · 08.10.2026: HEADERLESS FLIGHT-GATE SOURCE TRACE – classify the existing fail-closed flight-column rejection with bounded, original primary OCR-word/cell provenance. DIAGNOSTIC ONLY: no cell/flight changes and no extra implicit import permissions.
 // CORE-007D8A1F1D8P11412 · 08.10.2026: TIME OCR SOURCE-FAMILY INTEGRITY – independent configured PSM modes with a dedicated worker; only qualified high-confidence full-cell counterproof can dismiss a correlated time-column disagreement. Unclear evidence remains fail-closed. No changes to company, flight or imports.
 // CORE-007D8A1F1D8P11411 · diagnostic-only company source-region trace; OCR/import decisions unchanged.
@@ -4285,27 +4286,81 @@
   }
 
   async function recoverHeaderlessCellsTargeted(matrix, imageCanvas, imageMeta) {
-    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta?.headerlessAtms || !window.Tesseract) return matrix;
+    if (!Array.isArray(matrix) || !imageMeta?.headerlessAtms) return matrix;
+    // P114.14: The cloned matrix must retain the original provenance even if
+    // admission fails BEFORE targeted OCR. Never turn absent diagnostics into 0.
     const out = matrix.map(row => Array.isArray(row) ? row.slice() : row);
+    out._atmsImageMeta = imageMeta;
     const metaByIndex = imageMeta.rowMetaByMatrixIndex || {};
     const status = $('importStatus');
     const recoveryLog = [];
+    let firstInvalidRow = null;
+    const collectInvalidEvidence = (matrixIndex, invalid) => ({
+      matrixIndex,
+      displayRow: matrixIndex + 1,
+      sourceRow: Number.isFinite(Number(metaByIndex[matrixIndex]?.sourceRow))
+        ? Number(metaByIndex[matrixIndex].sourceRow) : null,
+      count: invalid.length,
+      cells: invalid.slice(0, 8).map(item => ({
+        field: item.field,
+        column: item.column,
+        raw: cellText(out[matrixIndex]?.[item.column]).replace(/[\r\n]+/g, ' ').slice(0, 32)
+      }))
+    });
+    const rejectEarly = (reason, invalidCount, scope, firstFailure) => {
+      // Not yet evaluated means unknown, NOT zero recognized/contradictory flights.
+      const flightGateTrace = {
+        version: 'CORE-007D8A1F1D8P11414',
+        reason: 'not_evaluated_preflight',
+        stage: scope,
+        accepted: false,
+        totalRows: Math.max(0, out.length - 1),
+        recognizedFlightRows: null,
+        conflictingFlightRows: null,
+        failedCoreRows: null,
+        suspiciousRows: [],
+        noMutation: true
+      };
+      const recovery = {
+        accepted: false,
+        reason,
+        totalInvalid: invalidCount,
+        invalidCountScope: scope,
+        recoveredCells: 0,
+        firstInvalidRow: firstFailure || null,
+        recoveryLog: [],
+        flightGateTrace,
+        noMutation: true
+      };
+      imageMeta.headerlessFlightGateTrace = flightGateTrace;
+      imageMeta.headerlessCellRecovery = recovery;
+      imageMeta.headerlessNeedsCellRecovery = true;
+      try {
+        window.ATMSP11413HeaderlessFlightGateTrace = flightGateTrace;
+        window.ATMSP11414HeaderlessRecoveryDiagnostic = recovery;
+      } catch (_) {}
+      return out;
+    };
+    if (!imageCanvas || !window.Tesseract) {
+      return rejectEarly(!imageCanvas ? 'image_canvas_unavailable' : 'tesseract_unavailable', null, 'before_ocr', null);
+    }
 
-    // Sicherheitsbremse: Headerless-Zweit-OCR soll nur wenige schwache Zellen
-    // retten. Sind zu viele Kernzellen unklar, bleibt die Liste abgelehnt statt
-    // einen ganzen Tabelleninhalt aus Einzel-Crops zusammenzuraten.
+    // Sicherheitsbremse unveraendert: Keine OCR-Einzelzellen-Rettung,
+    // sobald die Zahl unklarer Kernfelder die Grenze ueberschreitet.
     let totalInvalid = 0;
     for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
       const invalid = headerlessInvalidCoreColumns(out[matrixIndex]);
+      if (invalid.length && !firstInvalidRow) firstInvalidRow = collectInvalidEvidence(matrixIndex, invalid);
       if (invalid.length > 4) {
-        imageMeta.headerlessCellRecovery = { accepted: false, reason: 'too_many_invalid_cells_in_row', totalInvalid };
-        return out;
+        // Include the rejected row itself; previous P114.13 code reported 0
+        // and dropped all non-index metadata when returning the cloned array.
+        return rejectEarly('too_many_invalid_cells_in_row', totalInvalid + invalid.length,
+          'through_first_rejected_row', collectInvalidEvidence(matrixIndex, invalid));
       }
       totalInvalid += invalid.length;
     }
     if (totalInvalid > 12) {
-      imageMeta.headerlessCellRecovery = { accepted: false, reason: 'too_many_invalid_cells', totalInvalid };
-      return out;
+      return rejectEarly('too_many_invalid_cells', totalInvalid, 'all_core_rows', firstInvalidRow);
     }
 
     for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
@@ -11129,16 +11184,24 @@
         const recovery = matrix._atmsImageMeta?.headerlessCellRecovery;
         if (!recovery?.accepted) {
           const reason = cellText(recovery?.reason) || 'cell_recovery_not_accepted';
-          const totalInvalid = Number(recovery?.totalInvalid || 0);
-          const recoveredCells = Number(recovery?.recoveredCells || 0);
-          // P114.13: Show the specific flight gate without dumping a huge JSON
-          // or requiring a new header image. No change to the rejection decision.
+          // P114.14: Missing/non-measured telemetry must never look like
+          // 0 actual OCR failures or 0 conflicting flight cells.
+          const measured = value => typeof value === 'number' && Number.isFinite(value) ? String(value) : 'nicht_erhoben';
+          const totalInvalid = measured(recovery?.totalInvalid);
+          const recoveredCells = measured(recovery?.recoveredCells);
           const trace = matrix._atmsImageMeta?.headerlessFlightGateTrace || {};
           const culprit = Array.isArray(trace.suspiciousRows) ? trace.suspiciousRows[0] : null;
           const flightDetails = culprit
             ? ` · Ausschnittzeile=${Number(culprit.imageRow)} · FlugAnkunft=${cellText(culprit.arrivalRaw) || 'leer'} · FlugAbflug=${cellText(culprit.departureRaw) || 'leer'}`
             : '';
-          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb nach sicherer Prüfung gesperrt. CORE-007D4: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells}. P11413: FlugGate=${cellText(trace.reason) || 'unavailable'} · Flugzeilen=${Number(trace.recognizedFlightRows || 0)} · Doppelspalten=${Number(trace.conflictingFlightRows || 0)}${flightDetails}. Keine Fahrten übernommen. Fehlerdetails bitte als Text senden.`);
+          const first = recovery?.firstInvalidRow;
+          const coreFields = first && Array.isArray(first.cells)
+            ? first.cells.map(item => `${cellText(item.field)}:${cellText(item.raw) || 'leer'}`).join(', ').slice(0, 220)
+            : '';
+          const earlyDetails = first
+            ? ` · KernZeile=${Number(first.matrixIndex)} · KernFehler=${Number(first.count)} · RohZellen=[${coreFields}]`
+            : '';
+          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb nach sicherer Prüfung gesperrt. CORE-007D4: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells} · Messbereich=${cellText(recovery?.invalidCountScope) || 'nicht_erhoben'}. P11414: FlugGate=${cellText(trace.reason) || 'nicht_erhoben'} · Flugzeilen=${measured(trace.recognizedFlightRows)} · Doppelspalten=${measured(trace.conflictingFlightRows)}${earlyDetails}${flightDetails}. Keine Fahrten übernommen. Fehlerdetails bitte als Text senden.`);
         }
       }
     }

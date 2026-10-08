@@ -251,6 +251,16 @@ tasks.register('runtimeAssetAlignmentP11413', Exec) {
     commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11413.js'
 }
 
+// P114.14: unchanged admission, preserved early-return metadata and no false-zero diagnosis.
+tasks.register('headerlessMetadataIntegrityP11414', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/headerless-metadata-integrity-selftest-p11414.js'
+}
+tasks.register('runtimeAssetAlignmentP11414', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11414.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -264,12 +274,13 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
     dependsOn tasks.named('companyConflictPostConsensusP1146')
-    // Version-specific runtime alignment: only the currently active P114.13 gate may block preBuild.
+    // Version-specific runtime alignment: only the currently active P114.14 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP11413')
+    dependsOn tasks.named('runtimeAssetAlignmentP11414')
     dependsOn tasks.named('timeSourceIntegrityP11412')
     dependsOn tasks.named('headerlessFlightGateTraceP11413')
+    dependsOn tasks.named('headerlessMetadataIntegrityP11414')
     dependsOn tasks.named('companyAdaptiveTailP1149')
     dependsOn tasks.named('companyConflictTraceP11410')
     dependsOn tasks.named('companySourceReconcileP11411')
