@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1147 · 08.10.2026: guarded already-correct primary company reconciliation; cache and offline runtime aligned.
 // CORE-007D8A1F1D8P1146 · 08.10.2026: post-consensus company conflict reconciliation; runtime shell/cache generation aligned to P1146 so the repaired pipeline state cannot be shadowed by stale P1145 assets.
 // CORE-007D8A1F1D8P1145 · 08.10.2026: deterministic company-boundary classification; runtime shell/cache generation aligned to P1145 so the new fail-closed company conflict semantics cannot be shadowed by stale P1144 assets.
 // CORE-007D8A1F1D8P1144 · 08.10.2026: runtime asset alignment; index, PWA bootstrap, service worker cache and OCR/import asset queries share one P1144 generation while OCR semantics remain unchanged from P1143.
@@ -20,7 +21,7 @@
 // CORE-007D8A1F1D8P111 · 06.10.2026: cache refresh for production Live-Cockpit target promotion; OCR/flight/import semantics unchanged.
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
-const CACHE_NAME = "atms-pro-pwa-2026-10-08-p1146-post-consensus-conflict-reconciliation";
+const CACHE_NAME = "atms-pro-pwa-2026-10-08-p1147-guarded-company-primary";
 // CORE-006E · 09.09.2026:
 // Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
 // Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
@@ -37,9 +38,9 @@ const APP_SHELL = [
   "./css/main.css",
   "./js/app.js?v=P1121",
   "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P1146",
-  "./js/plan-import.js?v=P1146",
-  "./js/pwa.js?v=P1146",
+  "./js/ocr-integrity-core.js?v=P1147",
+  "./js/plan-import.js?v=P1147",
+  "./js/pwa.js?v=P1147",
   "./js/firebase-ai.js?v=CORE-004D",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
@@ -90,7 +91,7 @@ self.addEventListener("fetch", event => {
       try {
         const url = new URL(event.request.url);
         if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1146");
+          const freshPlanImport = await caches.match("./js/plan-import.js?v=P1147");
           if (freshPlanImport) return freshPlanImport;
         }
       } catch (_) {}

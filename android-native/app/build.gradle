@@ -169,6 +169,21 @@ tasks.register('planImportRuntimeSmoke', Exec) {
     commandLine 'node', 'tools/plan-import-runtime-smoke-p11331.js'
 }
 
+// P114.7: execute production pipeline, fail-closed regressions and checked-in
+// master prompt as mandatory preBuild tests before the CI accepts an APK.
+tasks.register('companyPrimaryAlreadyCorrectP1147', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-primary-already-correct-selftest-p1147.js'
+}
+tasks.register('runtimeAssetAlignmentP1147', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1147.js'
+}
+tasks.register('masterPromptRuleGateP1147', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/master-prompt-rule-gate-p1147.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -182,5 +197,9 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
     dependsOn tasks.named('companyConflictPostConsensusP1146')
-    dependsOn tasks.named('runtimeAssetAlignmentP1146')
+    // Version-specific runtime alignment: only the currently active P114.7 gate may block preBuild.
+    // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
+    dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
+    dependsOn tasks.named('runtimeAssetAlignmentP1147')
+    dependsOn tasks.named('masterPromptRuleGateP1147')
 }

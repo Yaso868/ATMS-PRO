@@ -1786,12 +1786,54 @@
       },
       "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
       "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "plantag": "2026-10-07",
+      "rideCount": 33,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "secondary_ocr_internal_delimiter_loss",
+        "false_positive_conflict",
+        "primary_already_correct",
+        "missing_consensus_correction_provenance",
+        "fail_closed"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryOcrIsNotAuthoritativeWithoutIndependentEvidence": true,
+        "importBlockedByTextConflict": false,
+        "doNotMutateFlightsOrLocations": true
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1146",
+        "ocrRides": 33,
+        "autoCorrected": 78,
+        "notices": 3,
+        "errors": 1,
+        "uniqueFlights": 23,
+        "drivers": 7,
+        "company": "Get-E",
+        "secondaryTextOcr": "GetE",
+        "importBlocked": true,
+        "planImported": false
+      },
+      "rootCause": "P114.6 requires repeatedTextConsistency.company correction provenance for one internal delimiter loss. When full-image OCR already produced the final company string, repeatedTextConsistency does not create a from/to record and the legitimate primary remains blocked by secondary truncation.",
+      "expectedAfterPatch": "Reconcile only on >=3 independent same-plan exact peers plus complete high-confidence primary full-image company cell OR 2 valid independent full-cell/expanded modes. Never override 2 exact secondary cell views, opposing full-cell consensus or semantic alternatives.",
+      "reproducibility": "confirmed_real_device_P1146_and_local_real_function_pipeline",
+      "likelyFunction": "reconcileCompanyConflictAfterRepeatedConsistency / applyRepeatedTextConsistency / validate",
+      "testGate": "company-primary-already-correct-selftest-p1147.js",
+      "status": "P1147_LOCAL_TEST_PASS_REAL_DEVICE_PENDING"
     }
   ],
   "summary": {
-    "caseRecords": 59,
+    "caseRecords": 60,
     "legacyRows": 16,
-    "newErrorRecords": 51,
+    "newErrorRecords": 52,
     "newControlRecords": 7,
     "layoutClasses": [
       "HEADERLESS_SINGLE_ROW",
@@ -2188,5 +2230,28 @@
     ],
     "hardcodingAllowed": false,
     "realDeviceProofPending": true
+  },
+  "p1146": {
+    "realDeviceProof": {
+      "version": "CORE-007D8A1F1D8P1146",
+      "plantag": "2026-10-07",
+      "source": "IMG-20261007-WA0001.jpg",
+      "rides": 33,
+      "errors": 1,
+      "remainingCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+      "imported": false
+    },
+    "rootCauseReproduced": true
+  },
+  "p1147": {
+    "targetCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+    "realDeviceProofPending": true,
+    "fixturePixelPolicy": "BYTE_IDENTICAL",
+    "testedScenarios": {
+      "positive": 4,
+      "negativeFailClosed": 20
+    },
+    "noProductionFixtureHardcode": true,
+    "masterPromptVersion": "1.1"
   }
 }

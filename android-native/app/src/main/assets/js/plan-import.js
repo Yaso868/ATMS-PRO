@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1147 · 08.10.2026: PRIMARY-ALREADY-CORRECT COMPANY CONFLICT – missing consensus correction record may be replaced only by strong full-image/full-cell positive evidence with >=3 same-plan peers; competing source views and semantic alternatives fail closed.
 // CORE-007D8A1F1D8P1146 · 08.10.2026: POST-CONSENSUS CONFLICT RECONCILIATION – after repeated-text consistency, clear only stale company conflicts caused by extreme table-rule boundary glyphs or one internal delimiter loss already resolved by recorded >=3-vote plan consensus; semantic alternatives and competing exact-cell evidence remain fail-closed.
 // CORE-007D8A1F1D8P1145 · 08.10.2026: DETERMINISTIC COMPANY BOUNDARY CLASSIFICATION – treat only extreme table-rule glyph noise around a repeated hyphenated short company code as non-semantic, and reuse recorded repeated-text consensus for exactly one internal delimiter loss; semantic alternatives and competing exact-cell evidence remain fail-closed.
 // CORE-007D8A1F1D8P1143 · 07.10.2026: REALSTATE SOURCE-TRUTH NORMALIZATION – normalize bounded full-cell company source-truth candidates before consensus and allow exactly one internal company delimiter loss only with strong primary OCR plus repeated same-plan primary peers; semantic conflicts remain fail-closed.
@@ -9573,17 +9574,53 @@
         const from = cellText(consensus?.from).normalize('NFC').trim();
         const to = cellText(consensus?.to).normalize('NFC').trim();
         const count = Number(consensus?.evidenceCount || 0);
-        if (!from || !to || count < 3) return;
-        if (from.toLocaleLowerCase('de-DE') !== candidateKey || to.toLocaleLowerCase('de-DE') !== currentKey) return;
         const attempts = Array.isArray(ride?.imageCellEvidence?.company?.verificationAttempts)
           ? ride.imageCellEvidence.company.verificationAttempts
           : [];
+        // P114.7: Competing exact-cell or independent complete-cell evidence always
+        // vetoes reconciliation. A same-plan majority never overrides the source.
         const exactCandidateViews = attempts.filter(attempt =>
           cellText(attempt?.scope) === 'cell_view' &&
           cellText(attempt?.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === candidateKey
         ).length;
         if (exactCandidateViews >= 2) return;
-        reason = 'post_consensus_company_internal_delimiter_loss';
+        const fullCell = sourceTruthFullCellConsensus(attempts);
+        const expandedCell = sourceTruthExpandedCellConsensus(attempts);
+        if ([fullCell, expandedCell].some(e => e?.candidate &&
+          cellText(e.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === candidateKey)) return;
+
+        const priorConsensusProvesPrimary = Boolean(
+          from && to && count >= 3 &&
+          from.toLocaleLowerCase('de-DE') === candidateKey &&
+          to.toLocaleLowerCase('de-DE') === currentKey
+        );
+        // No prior correction is recorded when full-image OCR was ALREADY right.
+        // Accept that state only with independent positive primary evidence:
+        // a high-confidence full-image word assigned to a complete, unclipped cell,
+        // or two valid modes of an independent full-cell/expanded replay. Require
+        // >=3 other exact same-plan rows; no generic separator normalisation.
+        const evidence = ride?.imageCellEvidence?.company;
+        const crop = evidence?.cropQuality;
+        const rawPrimary = cellText(evidence?.rawOcr).normalize('NFC').trim();
+        const conf = Number(evidence?.confidence);
+        const trustworthyRawPrimary = Boolean(
+          evidence?.verificationSource === 'primary_full_image_cell_assignment' &&
+          rawPrimary && rawPrimary.toLocaleLowerCase('de-DE') === currentKey &&
+          evidence?.confidence !== null && evidence?.confidence !== undefined &&
+          Number.isFinite(conf) && conf >= 80 &&
+          crop?.fullCellIncluded === true && crop?.leftEdgeClipped === false &&
+          crop?.rightEdgeClipped === false && crop?.neighborColumnIncluded === false
+        );
+        const sourceTruthProvesPrimary = [fullCell, expandedCell].some(e => e?.candidate &&
+          cellText(e.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === currentKey &&
+          Number(e.votes || 0) >= 2 && Number(e.modes || 0) >= 2
+        );
+        const alreadyCorrectPrimary = peerCount >= 3 &&
+          (trustworthyRawPrimary || sourceTruthProvesPrimary);
+        if (!priorConsensusProvesPrimary && !alreadyCorrectPrimary) return;
+        reason = priorConsensusProvesPrimary
+          ? 'post_consensus_company_internal_delimiter_loss'
+          : 'post_consensus_company_primary_already_correct';
       } else return;
 
       ride.companyOcrConflict = false;
