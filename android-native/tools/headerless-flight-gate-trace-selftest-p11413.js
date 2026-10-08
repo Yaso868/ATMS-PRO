@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const assert = require('assert');
+const root = path.join(__dirname, '..');
+const core = require(path.join(root,'app/src/main/assets/js/ocr-integrity-core.js'));
+const sourceFile = path.join(root,'app/src/main/assets/js/plan-import.js');
+let source = fs.readFileSync(sourceFile,'utf8');
+const end="  document.addEventListener('DOMContentLoaded', init);\n})();";
+assert(source.includes(end),'production module closure not found');
+source=source.replace(end,"  window.__P11413Test={recoverHeaderlessCellsTargeted,headerlessCoreRowCheck,headerlessInvalidCoreColumns};\n})();");
+const approved61=JSON.parse(fs.readFileSync(path.join(root,'tools/fixtures/golden-regression/ATMS_GOLDEN_REGRESSION_PACK_61_FALL_2026-10-08.json'),'utf8'));
+const approved62=JSON.parse(fs.readFileSync(path.join(root,'tools/fixtures/golden-regression/ATMS_GOLDEN_REGRESSION_PACK_62_FALL_2026-10-08.json'),'utf8'));
+assert.equal(approved61.cases.length,61);
+assert.equal(approved62.cases.length,62);
+assert.equal(approved62.summary.caseRecords,62);
+assert.deepStrictEqual(approved62.cases.slice(0,61),approved61.cases);
+assert.equal(approved62.cases[61].id,'GE-20261008-WA0014-HEADERLESS-ADMISSION-REJECT-P11412');
+let tested=0;
+const mkrow=(arrival,departure)=>['€ 47,60','13:50','DUS Airport','Novotel DUS','Eurowings','WT',arrival,departure,'Pkw','1','14:20','Seville','Yannik'];
+const columns=[0,90,175,445,750,880,1030,1140,1280,1360,1450,1550,1680,1800];
+const words=(row,col)=>{
+ const text=String(row[col]);
+ return {text,confidence:91,x0:columns[col]+13,x1:columns[col]+Math.min(89,30+text.length*7),y0:12,y1:36};
+};
+async function run(name, rows, verify,opts={}){
+ const events=[];
+ const mockTesseract={async recognize(){events.push('OCR');return {data:{text:'',words:[]}};}};
+ const document={currentScript:{src:'https://atms.test/js/plan-import.js'},addEventListener(){},getElementById(){return null;},createElement(){const canvas={width:1,height:1,getContext(){return {drawImage(){},imageSmoothingEnabled:false,imageSmoothingQuality:'high'};}};return canvas;},body:{appendChild(){}}};
+ const w={Tesseract:mockTesseract,ATMSOcrIntegrityCore:core,addEventListener(){},removeEventListener(){},dispatchEvent(){},location:{href:'https://atms.test/'}};
+ const s={window:w,document,console,Tesseract:mockTesseract,location:{href:'https://atms.test/'},performance:{now:()=>0},setTimeout,clearTimeout,setInterval,clearInterval,Map,Set,WeakMap,Promise,Array,Object,Number,String,Boolean,Math,Date,RegExp,JSON,Intl,URL,Blob,FileReader:function(){},TextEncoder,TextDecoder,navigator:{},localStorage:{getItem(){return null;},setItem(){},removeItem(){}},sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},CustomEvent:function(){},Image:function(){},File:function(){}};
+ s.globalThis=s;vm.createContext(s);vm.runInContext(source,s,{filename:'production-plan-import.js'});
+ const matrix=[Array(13).fill('Header'),...rows.map(row=>row.slice())];
+ const imageMeta={headerlessAtms:true,boundaries:columns,rowMetaByMatrixIndex:Object.fromEntries(rows.map((_,i)=>[i+1,{y0:9+i*48,y1:44+i*48,cy:24+i*48}])),rawOcrWords: rows.flatMap((row,i)=>[6,7].map(col=>({...words(row,col),y0:12+i*48,y1:36+i*48}))),...opts.imageMeta};
+ const before=JSON.stringify(matrix);
+ const result=await s.window.__P11413Test.recoverHeaderlessCellsTargeted(matrix,{width:3200,height:520},imageMeta);
+ assert.strictEqual(JSON.stringify(result),before,name+' changed row values');
+ assert.equal(imageMeta.headerlessFlightGateTrace.noMutation,true);
+ assert.strictEqual(w.ATMSP11413HeaderlessFlightGateTrace,imageMeta.headerlessFlightGateTrace);
+ verify(imageMeta.headerlessFlightGateTrace,imageMeta.headerlessCellRecovery,events,result);
+ ++tested;console.log('PASS',name);
+}
+(async()=>{
+ await run('headerless valid arrival + genuine dash stays accepted',[mkrow('EW9569','-')],(t,r,ev)=>{assert.equal(t.accepted,true);assert.equal(t.reason,'');assert.equal(r.accepted,true);assert.equal(ev.length,0);});
+ await run('headerless valid departure + genuine dash stays accepted',[mkrow('-','EW9814')],t=>{assert.equal(t.accepted,true);assert.equal(t.recognizedFlightRows,1);});
+ await run('headerless mixed flight and flightless rows accepted',[mkrow('EW9569','-'),mkrow('-','-'),mkrow('-','EW9814')],t=>{assert.equal(t.accepted,true);assert.equal(t.totalRows,3);assert.equal(t.recognizedFlightRows,2);});
+ await run('headerless dual-flight same number is NEVER silently accepted',[mkrow('EW9569','EW9569')],(t,r)=>{assert.equal(t.reason,'flight_columns_conflict');assert.equal(t.conflictingFlightRows,1);assert.equal(r.accepted,false);assert.equal(t.suspiciousRows[0].arrivalNormalized,'EW9569');assert.equal(t.suspiciousRows[0].departureNormalized,'EW9569');});
+ await run('headerless two distinct actual flights remain blocked',[mkrow('EW9569','EW9814')],t=>{assert.equal(t.reason,'flight_columns_conflict');assert.equal(t.conflictingFlightRows,1);assert.equal(t.suspiciousRows[0].arrivalWordProof[0].text,'EW9569');assert.equal(t.suspiciousRows[0].departureWordProof[0].text,'EW9814');assert.equal(t.suspiciousRows[0].sourceGeometryAvailable,true);});
+ await run('headerless conflict in second row correctly identified',[mkrow('EW9569','-'),mkrow('AF1506','EW9814')],t=>{assert.equal(t.reason,'flight_columns_conflict');assert.equal(t.suspiciousRows[0].imageRow,2);assert.equal(t.recognizedFlightRows,2);});
+ await run('headerless no flight remains blocked',[mkrow('-','-')],(t,r,events)=>{assert.equal(t.reason,'no_recognized_flight');assert.equal(r.accepted,false);assert.equal(t.recognizedFlightRows,0);assert(events.length>=1);});
+ await run('headerless core invalid stays blocked',[mkrow('EW9569','-').map((x,i)=>i===3?'':x)],(t,r)=>{assert.equal(t.reason,'core_cells_unresolved');assert.equal(r.accepted,false);},{imageMeta:{rowMetaByMatrixIndex:{}}});
+ await run('headerless malformed flight code does not create a flight',[mkrow('INVALID','-')],t=>{assert.equal(t.reason,'no_recognized_flight');});
+ await run('headerless dash + blank without flight stays blocked',[mkrow('-','')],t=>{assert.equal(t.reason,'no_recognized_flight');});
+ await run('headerless error precedence is dual flight before absent core field',[mkrow('EW9569','EW9814').map((x,i)=>i===4?'':x)],t=>{assert.equal(t.reason,'flight_columns_conflict');},{imageMeta:{rowMetaByMatrixIndex:{}}});
+ const file=fs.readFileSync(sourceFile,'utf8');
+ assert(file.includes('P11413: FlugGate=${cellText(trace.reason)'));
+ assert(file.includes('Keine Fahrten übernommen. Fehlerdetails bitte als Text senden.'));
+ assert(!file.includes('flightColumnsOk = true;'));
+ ++tested;console.log('PASS production P11413 rejection message and fail-closed contracts');
+ console.log(`P114.13 HEADERLESS FLIGHT GATE TRACE: ${tested}/${tested} PASS; Golden 62-case registry immutable`);
+})().catch(e=>{console.error(e);process.exit(1)});

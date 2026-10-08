@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11413 · 08.10.2026: HEADERLESS FLIGHT-GATE SOURCE TRACE – classify the existing fail-closed flight-column rejection with bounded, original primary OCR-word/cell provenance. DIAGNOSTIC ONLY: no cell/flight changes and no extra implicit import permissions.
 // CORE-007D8A1F1D8P11412 · 08.10.2026: TIME OCR SOURCE-FAMILY INTEGRITY – independent configured PSM modes with a dedicated worker; only qualified high-confidence full-cell counterproof can dismiss a correlated time-column disagreement. Unclear evidence remains fail-closed. No changes to company, flight or imports.
 // CORE-007D8A1F1D8P11411 · diagnostic-only company source-region trace; OCR/import decisions unchanged.
 // CORE-007D8A1F1D8P1149 · 08.10.2026: bounded company cell-tail source replay; source-truth agreement required, neighbor-cell occupancy and dissent veto always fail closed.
@@ -4346,17 +4347,77 @@
     let accepted = out.length > 1;
     for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
       const check = headerlessCoreRowCheck(out[matrixIndex]);
-      rowChecks.push({ matrixIndex, ok: check.ok, flight: check.flight, fields: check.fields });
+      rowChecks.push({ matrixIndex, ok: check.ok, flight: check.flight, flightColumnsOk: check.flightColumnsOk !== false, fields: check.fields });
       if (!check.ok) accepted = false;
       if (check.flight) hasFlight = true;
     }
     if (!hasFlight) accepted = false;
 
+    // P114.13: A valid core-cell count says nothing about contradictory flight
+    // columns. Preserve the ACTUAL production OCR values, source row and raw
+    // word bounding boxes before readImagePlan() throws. Never repair/clear them.
+    const flightConflicts = rowChecks.filter(check => !check.flightColumnsOk);
+    const failedCoreRows = rowChecks.filter(check => !Object.values(check.fields || {}).every(Boolean));
+    const rejectReason = !accepted
+      ? (flightConflicts.length ? 'flight_columns_conflict'
+          : !hasFlight ? 'no_recognized_flight'
+          : failedCoreRows.length ? 'core_cells_unresolved'
+          : out.length <= 1 ? 'no_data_rows' : 'headerless_unknown')
+      : '';
+    const boundaries = imageMeta.boundaries || [];
+    const rawWords = Array.isArray(imageMeta.rawOcrWords) ? imageMeta.rawOcrWords : [];
+    const boundFlightWord = (word, col, meta) => {
+      const x0 = Number(word?.x0), x1 = Number(word?.x1);
+      const y0 = Number(word?.y0), y1 = Number(word?.y1);
+      const lo = Number(boundaries[col]), hi = Number(boundaries[col+1]);
+      if (![x0,x1,y0,y1,lo,hi].every(Number.isFinite) || x1 <= x0 || y1 <= y0 || hi <= lo) return false;
+      const row0 = Number(meta?.y0), row1 = Number(meta?.y1);
+      if (![row0,row1].every(Number.isFinite) || row1 <= row0) return false;
+      return ((Math.max(x0,lo) + Math.min(x1,hi)) / 2 >= lo) &&
+        Math.max(0,Math.min(x1,hi)-Math.max(x0,lo)) / (x1-x0) >= 0.65 &&
+        Math.max(0,Math.min(y1,row1)-Math.max(y0,row0)) / (y1-y0) >= 0.55;
+    };
+    const flightRowTrace = (matrixIndex) => {
+      const row = out[matrixIndex] || [];
+      const meta = metaByIndex[matrixIndex];
+      const wordsFor = col => rawWords.filter(word => boundFlightWord(word,col,meta))
+        .slice(0,6).map(word=>({ text:cellText(word.text).slice(0,24), confidence:Number(word.confidence || 0), x0:Number(word.x0), x1:Number(word.x1) }));
+      return {
+        imageRow: matrixIndex,
+        displayRow: matrixIndex+1,
+        arrivalRaw: cellText(row[6]).slice(0,48),
+        departureRaw: cellText(row[7]).slice(0,48),
+        arrivalNormalized: normalizeFlightNumber(row[6]),
+        departureNormalized: normalizeFlightNumber(row[7]),
+        arrivalWordProof: wordsFor(6),
+        departureWordProof: wordsFor(7),
+        sourceGeometryAvailable: Boolean(meta && boundaries.length>=9)
+      };
+    };
+    const traceIndices = flightConflicts.length
+      ? flightConflicts.map(check=>check.matrixIndex)
+      : (!hasFlight ? rowChecks.slice(0,3).map(check=>check.matrixIndex) : failedCoreRows.map(check=>check.matrixIndex));
+    const flightGateTrace = {
+      version: 'CORE-007D8A1F1D8P11413',
+      reason: rejectReason,
+      accepted,
+      totalRows: Math.max(0,out.length-1),
+      recognizedFlightRows: rowChecks.filter(check=>check.flight).length,
+      conflictingFlightRows: flightConflicts.length,
+      failedCoreRows: failedCoreRows.length,
+      suspiciousRows: traceIndices.slice(0,3).map(flightRowTrace),
+      rawWordCount: rawWords.length,
+      noMutation: true
+    };
+    imageMeta.headerlessFlightGateTrace = flightGateTrace;
+    try { window.ATMSP11413HeaderlessFlightGateTrace = flightGateTrace; } catch (_) {}
     imageMeta.headerlessCellRecovery = {
       accepted,
+      reason: rejectReason,
       totalInvalid,
       recoveredCells: recoveryLog.filter(item => Boolean(item.recovered)).length,
       rowChecks,
+      flightGateTrace,
       recoveryLog
     };
     imageMeta.headerlessNeedsCellRecovery = !accepted;
@@ -11070,7 +11131,14 @@
           const reason = cellText(recovery?.reason) || 'cell_recovery_not_accepted';
           const totalInvalid = Number(recovery?.totalInvalid || 0);
           const recoveredCells = Number(recovery?.recoveredCells || 0);
-          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. CORE-007D4 Diagnose: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells}. Bitte vollständige Kopfzeile mit hochladen.`);
+          // P114.13: Show the specific flight gate without dumping a huge JSON
+          // or requiring a new header image. No change to the rejection decision.
+          const trace = matrix._atmsImageMeta?.headerlessFlightGateTrace || {};
+          const culprit = Array.isArray(trace.suspiciousRows) ? trace.suspiciousRows[0] : null;
+          const flightDetails = culprit
+            ? ` · Ausschnittzeile=${Number(culprit.imageRow)} · FlugAnkunft=${cellText(culprit.arrivalRaw) || 'leer'} · FlugAbflug=${cellText(culprit.departureRaw) || 'leer'}`
+            : '';
+          throw new Error(`Der Ausschnitt ohne Kopfzeile blieb nach sicherer Prüfung gesperrt. CORE-007D4: Grund=${reason} · UngültigeZellen=${totalInvalid} · Wiederhergestellt=${recoveredCells}. P11413: FlugGate=${cellText(trace.reason) || 'unavailable'} · Flugzeilen=${Number(trace.recognizedFlightRows || 0)} · Doppelspalten=${Number(trace.conflictingFlightRows || 0)}${flightDetails}. Keine Fahrten übernommen. Fehlerdetails bitte als Text senden.`);
         }
       }
     }
