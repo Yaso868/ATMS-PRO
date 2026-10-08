@@ -272,6 +272,17 @@ tasks.register('runtimeAssetAlignmentP11415', Exec) {
     commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11415.js'
 }
 
+// P114.16: accept demonstrably blank Fahrer source cells only with exact-cell proof;
+// any OCR name, unconfirmed blank or contradictory source remains fail-closed.
+tasks.register('headerlessUnassignedDriverP11416', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/headerless-unassigned-driver-selftest-p11416.js'
+}
+tasks.register('runtimeAssetAlignmentP11416', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11416.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -285,14 +296,15 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
     dependsOn tasks.named('companyConflictPostConsensusP1146')
-    // Version-specific runtime alignment: only the currently active P114.15 gate may block preBuild.
+    // Version-specific runtime alignment: only the currently active P114.16 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP11415')
+    dependsOn tasks.named('runtimeAssetAlignmentP11416')
     dependsOn tasks.named('timeSourceIntegrityP11412')
     dependsOn tasks.named('headerlessFlightGateTraceP11413')
     dependsOn tasks.named('headerlessMetadataIntegrityP11414')
     dependsOn tasks.named('headerlessClockBoundaryP11415')
+    dependsOn tasks.named('headerlessUnassignedDriverP11416')
     dependsOn tasks.named('companyAdaptiveTailP1149')
     dependsOn tasks.named('companyConflictTraceP11410')
     dependsOn tasks.named('companySourceReconcileP11411')

@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11416 · 08.10.2026: VERIFIED BLANK DRIVER ADMISSION – keep real names, confirm empty exact driver cells without borrowing neighbors/colors, and fail closed on ambiguous driver OCR; empty driver is stored as unassigned.
 // CORE-007D8A1F1D8P11415 · 08.10.2026: HEADERLESS CLOCK-BOUNDARY PREFLIGHT INTEGRITY – align strict headerless time admission with existing bounded table-rule clock parser; reject ambiguous/malformed text, preserve global/row core thresholds and flight fail-closed decisions.
 // CORE-007D8A1F1D8P11414 · 08.10.2026: HEADERLESS EARLY-RETURN METADATA INTEGRITY – preserve original core-rejection cause, actually measured per-row invalid-cell evidence, and explicitly unmeasured flight-gate status across every return path. DIAGNOSTIC ONLY, fail-closed unchanged.
 // CORE-007D8A1F1D8P11413 · 08.10.2026: HEADERLESS FLIGHT-GATE SOURCE TRACE – classify the existing fail-closed flight-column rejection with bounded, original primary OCR-word/cell provenance. DIAGNOSTIC ONLY: no cell/flight changes and no extra implicit import permissions.
@@ -1475,7 +1476,9 @@
 
   function getDriverValue(row, mapping) {
     const mapped = cellText(valueAt(row, mapping, 'driver'));
-    if (mapped) return mapped;
+    // P114.16: A mapped but empty Fahrerzelle must stay empty. Never take
+    // the last *other* column as a substitute driver (including OCR images).
+    if (mapping?.driver !== undefined) return mapped;
 
     const last = row[row.length - 1];
     if (looksLikeDriverName(last)) return cellText(last);
@@ -1864,7 +1867,14 @@
         });
       });
       if (!ride.driver) {
-        issues.push({ level: 'warning', row, text: 'Fahrer fehlt – Fahrt bleibt offen' });
+        if (ride.sourceImageOcr && !ride.driverBlankCellConfirmed) {
+          issues.push({ level: 'error', kind: 'driver_ocr', row,
+            text: 'Fahrerzelle OCR-seitig nicht eindeutig leer – keine automatische Zuweisung; Import bis zur Klärung gesperrt' });
+        } else {
+          // Keep as warning to prevent unattended auto-import in Morgen-Modus.
+          issues.push({ level: 'warning', kind: 'driver_unassigned', row,
+            text: 'Fahrer im Original leer – Nicht zugewiesen; Fahrt kann später einem Fahrer zugeordnet werden' });
+        }
       } else if (ride.driverUncertaintyMarker) {
         issues.push({ level: 'warning', kind: 'driver_uncertainty', row, text: `Fahrer „${ride.driver}“ enthält eine Unsicherheitsmarkierung (${ride.driverUncertaintyMarker}) – nicht als sichere Fahrerzuordnung behandeln` });
       } else if (ride.driverNeedsManualCheck) {
@@ -3236,6 +3246,8 @@
   }
 
   function headerlessDriverLike(value) {
+    // OCR uncertainty marks must never become an ordinary confirmed driver.
+    if (/[0-9?!]/.test(cellText(value))) return false;
     const text = cellText(value)
       .replace(/^[^A-Za-zÄÖÜäöüßÀ-ÿ]+|[^A-Za-zÄÖÜäöüßÀ-ÿ]+$/g, '')
       .trim();
@@ -3243,6 +3255,12 @@
     // In der echten Fahrer-Spalte ist auch der operative Wert "Taxi" erlaubt.
     if (/^taxi$/i.test(text)) return true;
     return /^[A-Za-zÄÖÜäöüßÀ-ÿ][A-Za-zÄÖÜäöüßÀ-ÿ\- ]{1,39}$/.test(text);
+  }
+
+  function headerlessDriverBlankLike(value) {
+    // Only a truly empty cell or isolated vertical table rules qualify.
+    // '?' / '-' / OCR letters and numbers are NOT blank-driver proofs.
+    return !cellText(value).replace(/[|¦│\s]/g, '');
   }
 
   function headerlessTextLike(value, minLetters = 2) {
@@ -3278,7 +3296,10 @@
       company: headerlessTextLike(company),
       vehicle: Boolean(vehicle && !/^\d+(?:[.,]\d+)?$/.test(vehicle) && headerlessTextLike(vehicle, 2)),
       persons: Number.isFinite(persons) && persons >= 1 && persons <= 99,
-      driver: headerlessDriverLike(driver)
+      // P114.16: missing assignment is a valid *data value*, not a corrupted
+      // driver name. OCR uncertainty of nonempty text still fails validation.
+      // Image-cell emptiness is proved independently before admission below.
+      driver: headerlessDriverBlankLike(driver) || headerlessDriverLike(driver)
     };
     const flight = Boolean(arrival || departure);
 
@@ -4263,7 +4284,8 @@
         const result = await Tesseract.recognize(crop, 'eng', headerlessOcrOptions(field, spec.mode));
         const candidate = headerlessCellCandidateFromResult(result, field);
         const key = headerlessCellCandidateKey(candidate, field);
-        attempts.push({ scale: spec.scale, mode: spec.mode, candidate });
+        attempts.push({ scale: spec.scale, mode: spec.mode, candidate,
+          ...(field === 'driver' ? { raw: cellText(result?.data?.text).replace(/[\r\n]+/g, ' ').slice(0,80) } : {}) });
         if (!key) continue;
         votes.set(key, (votes.get(key) || 0) + 1);
         if (!displayByKey.has(key)) displayByKey.set(key, candidate);
@@ -4385,6 +4407,43 @@
 
     }
 
+    // P114.16: A truly blank rightmost Fahrer cell is an allowed, unassigned
+    // ride. Do not equate missing OCR text with an empty source cell: probe the
+    // *same geometric driver cell* and preserve even a single name-like counter-
+    // observation as a blocker, never borrow colors/adjacent drivers.
+    const blankDriverRows = [];
+    const unresolvedBlankDrivers = [];
+    for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
+      const row = out[matrixIndex];
+      if (!headerlessDriverBlankLike(row?.[12])) continue;
+      const rowMeta = metaByIndex[matrixIndex];
+      if (!rowMeta) {
+        unresolvedBlankDrivers.push({ matrixIndex, reason: 'driver_row_geometry_missing' });
+        continue;
+      }
+      const originalWords = rawImageCellWords(imageMeta, rowMeta, 12)
+        .map(word => cellText(word?.text).replace(/[|¦│\s]/g, '').trim())
+        .filter(Boolean);
+      const proof = await recoverHeaderlessCellConsensus(imageCanvas, imageMeta, rowMeta, 12, 'driver');
+      recoveryLog.push({ matrixIndex, field: 'driver_blank_proof', column: 12,
+        attempts: proof.attempts, recovered: proof.value });
+      const observed = proof.attempts.some(item =>
+        Boolean(cellText(item.candidate)) || /[A-Za-zÄÖÜäöüßÀ-ÿ0-9]/.test(cellText(item.raw)));
+      const rawDriverNames = originalWords.map(normalizeDriverCandidate).filter(Boolean);
+      if (proof.value && headerlessDriverLike(proof.value) &&
+          (!originalWords.length || rawDriverNames.some(name => cleanKey(name) === cleanKey(proof.value)))) {
+        row[12] = proof.value;
+      } else if (originalWords.length || observed || proof.attempts.length !== 3) {
+        unresolvedBlankDrivers.push({ matrixIndex, reason: 'driver_cell_not_proven_blank',
+          raw: originalWords.slice(0,3), attempts: proof.attempts });
+      } else {
+        row[12] = ''; // Remove only proven isolated OCR table-rule glyphs.
+        blankDriverRows.push(matrixIndex);
+      }
+    }
+    imageMeta.headerlessConfirmedBlankDriverRows = blankDriverRows;
+    imageMeta.headerlessUnresolvedBlankDriverRows = unresolvedBlankDrivers;
+
     // Flugnummern sind fuer einzelne Fahrten optional. Nur wenn im gesamten
     // kopfzeilenlosen Ausschnitt noch KEIN Flug erkannt wurde, werden die beiden
     // Flugspalten eng nachgelesen. So bleibt der Fallback schnell und rät keine
@@ -4414,6 +4473,7 @@
       if (check.flight) hasFlight = true;
     }
     if (!hasFlight) accepted = false;
+    if (unresolvedBlankDrivers.length) accepted = false;
 
     // P114.13: A valid core-cell count says nothing about contradictory flight
     // columns. Preserve the ACTUAL production OCR values, source row and raw
@@ -4423,6 +4483,7 @@
     const rejectReason = !accepted
       ? (flightConflicts.length ? 'flight_columns_conflict'
           : !hasFlight ? 'no_recognized_flight'
+          : unresolvedBlankDrivers.length ? 'driver_cell_uncertain'
           : failedCoreRows.length ? 'core_cells_unresolved'
           : out.length <= 1 ? 'no_data_rows' : 'headerless_unknown')
       : '';
@@ -4480,7 +4541,9 @@
       recoveredCells: recoveryLog.filter(item => Boolean(item.recovered)).length,
       rowChecks,
       flightGateTrace,
-      recoveryLog
+      recoveryLog,
+      confirmedBlankDriverRows: blankDriverRows.slice(),
+      unresolvedBlankDriverRows: unresolvedBlankDrivers.slice(0,8)
     };
     imageMeta.headerlessNeedsCellRecovery = !accepted;
     out._atmsImageMeta = imageMeta;
@@ -5471,9 +5534,17 @@
       // no primary OCR word and the driver is empty, treat the cell as genuinely empty.
       // Do not spend tens of seconds on 9 near-identical one-shot OCR retries.
       const exactRawWords = rawImageCellWords(imageMeta, rowMeta, driverCol);
-      if (!originalDriver && exactRawWords.length === 0) {
+      const meaningfulRaw = exactRawWords.some(word =>
+        Boolean(cellText(word?.text).replace(/[|¦│\s]/g, '').trim()));
+      // P114.16: The headerless preflight already checked this exact cell with
+      // three separate OCR views. Reuse its affirmative blank proof only if no
+      // primary word or later name signal contradicts it.
+      if (!originalDriver && !meaningfulRaw &&
+          Array.isArray(imageMeta.headerlessConfirmedBlankDriverRows) &&
+          imageMeta.headerlessConfirmedBlankDriverRows.includes(matrixIndex)) {
         ride.driverBlankCellConfirmed = true;
-        ride.driverNeedsManualCheck = true;
+        ride.driverNeedsManualCheck = false;
+        ride.driverAssignmentStatus = 'unassigned';
         ride.driverTargetedOcrAttempts = [];
         continue;
       }
@@ -5509,7 +5580,8 @@
               }
               const second = await p109PerfWorkerRecognize(worker, 'missing_driver_targeted_ocr', crop, { sourceRow: Number(ride.sourceRow || 0), mode: `driver-${mode.name}-${scale}x` });
               const candidates = driverCandidatesFromOcrResult(second);
-              attempts.push({ mode: mode.name, scale, candidates: candidates.slice() });
+              attempts.push({ mode: mode.name, scale, candidates: candidates.slice(),
+                raw: !originalDriver ? cellText(second?.data?.text).replace(/[\r\n]+/g,' ').slice(0,80) : '' });
               if (candidates.length !== 1) continue;
               const candidate = candidates[0];
               const key = cleanKey(candidate);
@@ -5521,7 +5593,7 @@
         });
       } catch (_) {
         ride.driverTargetedOcrAttempts = attempts;
-        if (originalDriver) ride.driverNeedsManualCheck = true;
+        ride.driverNeedsManualCheck = true;
         continue;
       }
 
@@ -5530,17 +5602,29 @@
       const winner = ranked[0] || null;
       const runner = ranked[1] || null;
       if (!winner || winner[1] < 2 || (runner && winner[1] === runner[1])) {
-        if (originalDriver) ride.driverNeedsManualCheck = true;
+        // Empty is safe only with intact cell geometry, no original word, and
+        // no single competing OCR candidate from any of the four local views.
+        const allBlank = !originalDriver && !meaningfulRaw && attempts.length === regions.length * ocrModes.length &&
+          attempts.every(item => item.candidates.length === 0 &&
+            !/[A-Za-zÄÖÜäöüßÀ-ÿ0-9]/.test(cellText(item.raw)));
+        if (allBlank) {
+          ride.driverBlankCellConfirmed = true;
+          ride.driverNeedsManualCheck = false;
+          ride.driverAssignmentStatus = 'unassigned';
+        } else {
+          ride.driverNeedsManualCheck = true;
+        }
         continue;
       }
 
       const recovered = normalizeDriverCandidate(displayByKey.get(winner[0]) || '');
       if (!recovered) {
-        if (originalDriver) ride.driverNeedsManualCheck = true;
+        ride.driverNeedsManualCheck = true;
         continue;
       }
 
       ride.driver = recovered;
+      ride.driverAssignmentStatus = 'assigned';
       ride.driverRecoveredFromTargetedOcr = true;
       ride.driverNeedsManualCheck = false;
       ride.driverRecoverySource = 'bounded_shared_driver_cell_consensus';
@@ -10483,6 +10567,10 @@
       }
 
       const driver = cellText(ride.driver);
+      const rawDriver = normalizeDriverCandidate(cellEvidenceRawValue(evidence, 'driver'));
+      if (rawDriver && !driver) {
+        add('driver_lost', `Originale Fahrerzelle enthält „${rawDriver}", finale Fahrt aber keinen Fahrer`);
+      }
       if (driver && (/(?:^|\s)(?:van|pkw|bus|sprinter)(?:\s|$)/i.test(driver) || /\b\d{1,2}[:.]\d{2}\b/.test(driver) || /(?:^|\s)\d{1,2}(?:\s|$)/.test(driver))) {
         add('driver_composite', `Fahrerwert „${driver}“ enthält typische Inhalte benachbarter Spalten`);
       }
@@ -12239,7 +12327,7 @@
       const typeLabels = { arrival: 'Ankunft', departure: 'Abflug', hotel: 'Hotel', transfer: 'Transfer' };
       return `<tr>
         <td>${escapeHtml(ride.time || '–')}<div style="font-size:11px;opacity:.72;margin-top:3px">${escapeHtml(formatPlanDate(ride.date))}</div></td>
-        <td>${escapeHtml(ride.driver || 'Offen')}</td>
+        <td>${escapeHtml(ride.driver || 'Nicht zugewiesen')}</td>
         <td>${escapeHtml(ride.pickup || '–')}</td>
         <td>${escapeHtml(ride.destination || '–')}</td>
         <td>${escapeHtml(ride.flightNumber || '–')}</td>
@@ -12596,6 +12684,11 @@
 
       if (generation !== state.pipelineGeneration) return;
       state.matrix = matrix;
+      // Persist an explicit unassigned status without inventing a driver name.
+      // Existing correctly read driver names are never replaced by the label.
+      preparedRides = preparedRides.map(ride => ({ ...ride,
+        driverAssignmentStatus: cellText(ride.driver) ? 'assigned' :
+          (ride.driverBlankCellConfirmed || !ride.sourceImageOcr ? 'unassigned' : 'unresolved') }));
       state.rides = assignRideDates(preparedRides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
       state.mapping = mappingInfo.mapping;
