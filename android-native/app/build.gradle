@@ -198,6 +198,19 @@ tasks.register('runtimeAssetAlignmentP1148', Exec) {
     commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1148.js'
 }
 
+// P114.9: bounded source-tail OCR for incomplete printed company cells.
+// Positive & fail-closed real production decision tests; safety rejects neighbor
+// spill, conflicting independent views, malformed provenance and semantic edits.
+tasks.register('companyAdaptiveTailP1149', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-adaptive-tail-selftest-p1149.js'
+}
+// Only current version-specific cache/asset generation may gate preBuild.
+tasks.register('runtimeAssetAlignmentP1149', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1149.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -211,10 +224,11 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
     dependsOn tasks.named('companyConflictPostConsensusP1146')
-    // Version-specific runtime alignment: only the currently active P114.7 gate may block preBuild.
+    // Version-specific runtime alignment: only the currently active P114.9 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP1148')
+    dependsOn tasks.named('runtimeAssetAlignmentP1149')
+    dependsOn tasks.named('companyAdaptiveTailP1149')
     dependsOn tasks.named('companyPrimaryProvenanceP1148')
     dependsOn tasks.named('masterPromptRuleGateP1147')
 }

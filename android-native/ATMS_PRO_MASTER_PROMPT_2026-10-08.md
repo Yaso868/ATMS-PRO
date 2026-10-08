@@ -1,6 +1,6 @@
 # ATMS PRO – VERBINDLICHER MASTER-PROMPT
 
-**Version:** 1.2 · 08.10.2026 (freigegebener P114.7-Fehlschlag dokumentiert)  
+**Version:** 1.3 · 08.10.2026 (freigegebener P114.8-Fehlschlag und Testlücke dokumentiert)  
 **Projekt:** ATMS PRO V1.4.0 / laufende CORE-Entwicklung  
 **Repository / Source of Truth für Quellcode:** https://github.com/Yaso868/ATMS-PRO  
 **Sprache:** Deutsch  
@@ -145,6 +145,18 @@ Vor Freigabe eines Patch-Ergebnisses zwingend:
 - **Verbindliche künftige Abdeckung dieses freigegebenen Prozessfehlers:** Originalbild unverändert durch echte Produktionsschritte ausführen; OCR-Zellbelege, Konsens-Provenienz, Post-Consensus-Abgleich **und abschließendes Import-Gate** testen; bereits korrekte Primärwerte sowie echte Korrekturverläufe berücksichtigen. Positive/negative/fail-closed Schutzfälle und vollständiges Golden Pack beibehalten; kein Bild- oder String-Hardcode in Produktion.
 - **Golden-Status:** Den **bestehenden** Zeile-17-Fall ergänzen, keinen neuen Duplikateintrag zählen. Offener Realgerät-Fehler nach P114.7. **Keine weitere Produktivänderung ohne neues „JETZT PATCHEN“.**
 
+## 9B. Freigegebener Nachtrag – P114.8 Realgerät-Regression vom 08.10.2026
+
+**Dokumentationsfreigabe:** Nutzerantwort „Ja, P114.8-Fehler und Testlücke aufnehmen.“ am 08.10.2026. **Keine Freigabe für einen weiteren Produktivpatch, keinen GitHub-Commit, keinen Planlistenimport.**
+
+- **Bestehender Golden-Fall, keine Verdopplung:** `GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146` aus `IMG-20261007-WA0001.jpg` (SHA-256 `f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d`), Plantag 07.10.2026, Quellzeile 17.
+- **P114.8 Realgerät:** 33/33 geprüft, 78 automatische Korrekturen, 3 Hinweise, **1 harter Fehler**, 23 Flüge, 7 Fahrer. Firmenfeld `Get-E` widerspricht unabhängiger Text-Nach-OCR `GetE`; Import weiterhin gesperrt und nicht durchgeführt. **9MB und EW9420 korrekt**; acht andere zuvor fehlerhafte Get-E-Zeilen in dieser Ausgabe nicht als Fehler gemeldet. 27 offene Flugprüfungen und 22 Fahrten mit offener Folgetagbestätigung bleiben separate Sachverhalte.
+- **Build ≠ fachlicher Erfolg:** GitHub Actions #212 für P114.8 laut Nutzer-Screenshot erfolgreich (Commit `9e51f38`), APK installiert. Lokale **19/19** neue Tests und **16/16** PreBuild-Tests hatten bestanden. Das reale Kernproblem blieb bestehen.
+- **Bestätigter Prozessfehler:** P114.8-Selbsttests verwendeten unter anderem synthetische Firmenevidenz `Get-E` und Konfidenz 95 mit simulierter Wortgeometrie; dies ist kein vollständiger Lauf der **tatsächlichen asynchronen Bild-OCR** mit echten Produktions-Zwischenwerten und abschließendem Import-Gate. Der Umfang der bestandenen Tests wurde deshalb als Nachweis des Realgerät-Erfolgs überschätzt.
+- **Technische Ursache weiterhin ungeklärt:** Die bisher vermutete Überschreibung der Primär-Provenienz wurde lokal nachgestellt, aber als Ursache der echten Android-Ausgabe nicht bewiesen. Keine weitere Aufweichung der Sperrlogik ohne Original-Evidenz.
+- **Verbindliches Prüf-Gate vor zukünftigem Release:** Originalbild-Bytes und Hash nachweisen; für Zeile 17 Primär-OCR (`raw`, Konfidenz, Quellzelle), unabhängige asynchrone Text-Nach-OCR (alle Zellansichten, Zuschnitte, Gewichte), Konsens-/Provenienzverlauf, finalen Konfliktentscheid und **abschließende Importblockade** nachvollziehbar erfassen und gegentesten. Positive, negative und Fail-Closed-Fälle mit der **echten Produktionspipeline** prüfen, ohne künstlich gesetzte Erfolgsvoraussetzungen. Vollständige Golden Regression einschließlich `9MB`, `EW9420` und vorher behobener Get-E-Zeilen erhalten.
+- **Status:** Golden-Fall bleibt **OFFEN NACH P114.8**, keine 61. Fall-ID. Diese V1.3-Ergänzung ist **Dokumentation**, nicht automatisch in GitHub eingecheckt; für einen Produktivpatch ist ein neues „JETZT PATCHEN“ nötig.
+
 ## 10. Release-Gate / Selbstkontrolle – vor jeder Übergabe
 
 Eine produktive Übergabe darf **nur** als vollständig bezeichnet werden, wenn folgende Angaben **wirklich** vorhanden/geprüft sind:
@@ -182,3 +194,5 @@ Bei fehlendem Gate: **Blocker ehrlich benennen, nicht als fertigen Patch ausgebe
 **Leitsatz:** Maximale technische Eigenverantwortung, minimaler manueller Nutzeraufwand. Fehler erst beweisen, dann sicher beheben. **Ein installer-kompatibles Patch-ZIP statt Einzeldatei-Uploads.** Ein klarer Nutzer-Schritt. Keine unvollständigen Commit- oder Download-Angaben. **Keine Produktivänderung ohne „JETZT PATCHEN“.**
 
 **Änderungsvermerk V1.2 (08.10.2026):** Vom Nutzer freigegebene P114.7-Realgerät-Regression und Testabdeckungs-/Prozesslücke dokumentiert. P114.7 bleibt unverändert, kein Commit, kein Patch, kein Import.
+
+**Änderungsvermerk V1.3 (08.10.2026):** Mit ausdrücklicher Nutzerfreigabe P114.8-Realgerät-Fehlschlag am vorhandenen Zeile-17-Golden-Fall ergänzt; Prozess-/Testabdeckungslücke bestätigt. Dieser Nachtrag ist lokal und in der Projekt-Library zu sichern; GitHub und App bleiben unverändert.

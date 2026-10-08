@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1149 · 08.10.2026: bounded company cell-tail source replay; source-truth agreement required, neighbor-cell occupancy and dissent veto always fail closed.
 // CORE-007D8A1F1D8P1148 · 08.10.2026: Preserve original full-image cell evidence before independent text OCR mutates verification status; strict competing-view and import vetoes retained.
 // CORE-007D8A1F1D8P1147 · 08.10.2026: PRIMARY-ALREADY-CORRECT COMPANY CONFLICT – missing consensus correction record may be replaced only by strong full-image/full-cell positive evidence with >=3 same-plan peers; competing source views and semantic alternatives fail closed.
 // CORE-007D8A1F1D8P1146 · 08.10.2026: POST-CONSENSUS CONFLICT RECONCILIATION – after repeated-text consistency, clear only stale company conflicts caused by extreme table-rule boundary glyphs or one internal delimiter loss already resolved by recorded >=3-vote plan consensus; semantic alternatives and competing exact-cell evidence remain fail-closed.
@@ -6641,6 +6642,32 @@
     return { candidate:winner.candidate, votes:winner.votes, modes:winner.modes.size, runnerVotes:Number(runner?.votes||0) };
   }
 
+  // P114.9: evidence family distinct from ordinary narrow/expanded crops.
+  // Two complete readings of ONE bounded source region are necessary but NOT
+  // sufficient: a row-identical competing cell/primary result always vetoes.
+  function adaptiveCompanyTailConsensus(attempts, sourceRow, sourceColumn) {
+    const eligible = (Array.isArray(attempts) ? attempts : []).filter(a => {
+      const q = a?.cropQuality || {};
+      return a?.scope === 'source_truth_adaptive_company' &&
+        Number(a?.sourceRow) === Number(sourceRow) &&
+        Number(a?.sourceColumn) === Number(sourceColumn) &&
+        q.fullCellIncluded === true && q.neighborColumnIncluded === false &&
+        q.leftEdgeClipped === false && q.rightEdgeClipped === false &&
+        q.targetCellGeometryConfirmed === true;
+    });
+    const votes = new Map();
+    for (const item of eligible) {
+      const value = sourceTruthCellCandidate(item.candidate, 'company');
+      if (!value) continue;
+      const k=value.toLocaleLowerCase('de-DE');
+      if (!votes.has(k)) votes.set(k,{value,modes:new Set()});
+      votes.get(k).modes.add(cellText(item.mode));
+    }
+    const ranked=[...votes.values()].sort((a,b)=>b.modes.size-a.modes.size);
+    if (!ranked.length || ranked[0].modes.size < 2 || (ranked[1] && ranked[1].modes.size >= ranked[0].modes.size)) return null;
+    return {candidate:ranked[0].value,votes:ranked[0].modes.size};
+  }
+
   function edgeTableGlyphNoise(originalValue, candidateValue) {
     const original = cellText(originalValue).normalize('NFC').trim();
     const candidate = cellText(candidateValue).normalize('NFC').trim();
@@ -6661,7 +6688,7 @@
     return (a.slice(0,i) + a.slice(i+1)) === b;
   }
 
-  function sourceTruthPrimaryEdgeVeto(originalValue, candidateValue, field, attempts, primaryPeerCount = 0) {
+  function sourceTruthPrimaryEdgeVeto(originalValue, candidateValue, field, attempts, primaryPeerCount = 0, sourceRow = null, sourceColumn = null) {
     const original = cellText(originalValue).normalize('NFC').trim();
     const candidate = cellText(candidateValue).normalize('NFC').trim();
     if (!original || !candidate || original === candidate) return null;
@@ -6692,6 +6719,23 @@
       return null;
     }
 
+    // P114.9: A printed company suffix may overflow the OCR-detected cell by
+    // a few pixels. Only bounded same-row source crops with verified empty
+    // neighbor ink and two agreeing modes can protect the original value.
+    // A complete-cell or >=2 exact-cell views supporting the alternative veto it.
+    if (field === 'company' && internalDelimiterLoss && Number(primaryPeerCount) >= 3) {
+      const proof = sourceRow !== null && sourceColumn !== null
+        ? adaptiveCompanyTailConsensus(attempts, sourceRow, sourceColumn) : null;
+      const o=original.toLocaleLowerCase('de-DE'), c=candidate.toLocaleLowerCase('de-DE');
+      const oppositeCell = attempts.filter(a => a?.scope === 'cell_view' &&
+        cellText(a?.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === c).length >= 2;
+      const oppositeFull = [full,expanded].some(v => v?.candidate &&
+        cellText(v.candidate).normalize('NFC').trim().toLocaleLowerCase('de-DE') === c);
+      if (proof && proof.candidate.toLocaleLowerCase('de-DE') === o &&
+          !oppositeCell && !oppositeFull) {
+        return {reason:'source_truth_adaptive_company_tail_veto',source:'bounded_independent_modes',votes:proof.votes,peerCount:Number(primaryPeerCount)};
+      }
+    }
     if (!support) return null;
     if (field === 'company') {
       if (!isHyphenatedCompanyEdgeProbe(original) || (!trunc && !internalDelimiterLoss)) return null;
@@ -7015,6 +7059,51 @@
     return attempts;
   }
 
+  // P114.9: never turn an enlarged crop into a trusted source unless a
+  // real neighboring-column OCR word proves the margin remains unoccupied.
+  async function sourceTruthAdaptiveCompanyTailOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, worker, imageMeta) {
+    if (!descriptor || !rowMeta || !imageMeta || !window.Tesseract) return [];
+    const source=sourceTruthCanvas || processedCanvas;
+    const left=Number(descriptor.left), baseRight=Number(descriptor.right);
+    const top=Number(rowMeta.y0), bottom=Number(rowMeta.y1);
+    const column=Number(descriptor.column);
+    if (![left,baseRight,top,bottom,column].every(Number.isFinite) || baseRight<=left || bottom<=top) return [];
+    const pad=Math.max(4,Math.min(28,(baseRight-left)*0.20));
+    const right=Math.min(Number(source.width||0),baseRight+pad);
+    if (left<0 || right<=baseRight || top<0 || bottom>Number(source.height||0)) return [];
+    // The immediately adjacent cell can be an empty flight column. Check
+    // actual OCR words in ALL columns to the right on this same source row;
+    // never require a word in a potentially empty immediate neighbor.
+    const columnCount=Math.max(0,(imageMeta?.boundaries||[]).length-1);
+    const neighborWords=[];
+    for (let next=column+1;next<columnCount;next++) {
+      neighborWords.push(...rawImageCellWords(imageMeta,rowMeta,next));
+    }
+    if (!neighborWords.length || neighborWords.some(w => Number(w?.x0) <= right+2)) return [];
+    const proof={fullCellIncluded:true,leftEdgeClipped:false,rightEdgeClipped:false,
+      neighborColumnIncluded:false,targetCellGeometryConfirmed:true,
+      neighboringWordsChecked:neighborWords.length,expansionPx:Number((right-baseRight).toFixed(2))};
+    const modes=[{mode:'adaptive-company-psm6',psm:'6'},{mode:'adaptive-company-psm7',psm:'7'}];
+    const results=[];
+    for (const mode of modes) {
+      let candidate='';
+      try {
+        const crop=cropCanvasRegion(source,left,top,right,bottom,1);
+        const params={tessedit_pageseg_mode:mode.psm};
+        const output=worker&&typeof worker.recognize==='function'
+          ? (typeof worker.setParameters==='function'
+              ? (await p109PerfWorkerSetParameters(worker,'text_integrity_ocr',params,{mode:mode.mode,sourceRow}),
+                await p109PerfWorkerRecognize(worker,'text_integrity_ocr',crop,{mode:mode.mode,sourceRow}))
+              : await p109PerfWorkerRecognize(worker,'text_integrity_ocr',crop,{mode:mode.mode,sourceRow}))
+          : await p109PerfRecognizeOneShot('text_integrity_ocr','deu',crop,params,{mode:mode.mode,sourceRow});
+        candidate=sourceTruthCellCandidate(output?.data?.text||'','company');
+      } catch (_) {}
+      results.push({scope:'source_truth_adaptive_company',mode:mode.mode,candidate,
+        sourceRow,sourceColumn:column,field:'company',cropQuality:{...proof}});
+    }
+    return results;
+  }
+
   function exactCellEvidenceSummary(attempts) {
     return (Array.isArray(attempts) ? attempts : [])
       .filter(attempt => attempt?.scope === 'cell_view')
@@ -7330,6 +7419,19 @@
           attemptLogByRow.set(item.sourceRow, log);
         }
 
+        // P114.9: a separate, row-bounded source view repairs right-edge loss
+        // only when the adjacent column has a provably empty guard margin.
+        if (descriptor.field === 'company' && isHyphenatedCompanyEdgeProbe(item.original)) {
+          const adaptive = await sourceTruthAdaptiveCompanyTailOcr(
+            sourceTruthCanvas || imageCanvas,imageCanvas,descriptor,rowMeta,
+            item.sourceRow,worker,imageMeta);
+          if (adaptive.length) {
+            const log=attemptLogByField.get(descriptor.field).get(item.sourceRow)||[];
+            log.push(...adaptive);
+            attemptLogByField.get(descriptor.field).set(item.sourceRow,log);
+          }
+        }
+
         // P113/P113.3: very short alphanumeric cells need bounded exact-cell review.
         // P113.3 no longer depends on one particular batch path and avoids unbounded OCR loops.
         const attemptLogByRow = attemptLogByField.get(descriptor.field);
@@ -7474,7 +7576,7 @@
         const promotedEdgeGlyphAdjudication = Boolean(edgeGlyphAdjudication?.candidate);
         const primaryPeerCount = candidate ? textIntegritySamePlanPeerCount(out, descriptor, sourceRow, original) : 0;
         const sourceTruthPrimaryVeto = candidate
-          ? sourceTruthPrimaryEdgeVeto(original, candidate, descriptor.field, attempts, primaryPeerCount)
+          ? sourceTruthPrimaryEdgeVeto(original, candidate, descriptor.field, attempts, primaryPeerCount, sourceRow, descriptor.column)
           : null;
         if (sourceTruthPrimaryVeto) {
           ride[`${descriptor.field}OcrSecondaryEdgeNoiseIgnored`] = true;

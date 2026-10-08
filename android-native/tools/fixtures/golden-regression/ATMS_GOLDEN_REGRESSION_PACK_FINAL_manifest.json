@@ -1824,10 +1824,10 @@
       },
       "rootCause": "P114.6 requires repeatedTextConsistency.company correction provenance for one internal delimiter loss. When full-image OCR already produced the final company string, repeatedTextConsistency does not create a from/to record and the legitimate primary remains blocked by secondary truncation.",
       "expectedAfterPatch": "Reconcile only on >=3 independent same-plan exact peers plus complete high-confidence primary full-image company cell OR 2 valid independent full-cell/expanded modes. Never override 2 exact secondary cell views, opposing full-cell consensus or semantic alternatives.",
-      "reproducibility": "confirmed_real_device_P1146_and_P1147; local_function_scenarios_only",
+      "reproducibility": "confirmed_on_real_device_P1146_P1147_P1148; exact_real_device_internal_OCR_trace_unavailable",
       "likelyFunction": "reconcileCompanyConflictAfterRepeatedConsistency / applyRepeatedTextConsistency / validate",
       "testGate": "company-primary-already-correct-selftest-p1147.js",
-      "status": "OPEN_AFTER_P1147_REAL_DEVICE_FAILURE",
+      "status": "OPEN_AFTER_P1148_REAL_DEVICE_FAILURE",
       "p1147RealDeviceResult": {
         "date": "2026-10-08",
         "evidence": "user_transcribed_ATMS_Android_OCR_result_in_this_conversation",
@@ -1873,7 +1873,64 @@
           "Protect 9MB, EW9420, 8 already repaired Get-E rows and all other Golden cases."
         ]
       },
-      "lastVerified": "2026-10-08"
+      "lastVerified": "2026-10-08",
+      "p1148RealDeviceResult": {
+        "date": "2026-10-08",
+        "evidence": "user_transcribed_real_device_ocr_result_in_current_conversation",
+        "source": "IMG-20261007-WA0001.jpg",
+        "sourceSha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+        "plantag": "2026-10-07",
+        "installedVersion": "CORE-007D8A1F1D8P1148",
+        "githubActions": {
+          "runNumber": 212,
+          "reportedStatus": "success",
+          "reportedCommitShort": "9e51f38",
+          "evidence": "user_screenshot"
+        },
+        "ocrChecked": 33,
+        "rideCount": 33,
+        "autoCorrected": 78,
+        "notices": 3,
+        "hardErrors": 1,
+        "flights": 23,
+        "drivers": 7,
+        "sourceRow": 17,
+        "displayedCompany": "Get-E",
+        "independentTextAfterOcr": "GetE",
+        "displayedError": "Zeile 17 · Firma „Get-E“ widerspricht der unabhängigen Text-Nach-OCR („GetE“) – Original-Planliste prüfen; Import bis zur Klärung blockiert",
+        "importBlocked": true,
+        "imported": false,
+        "protectedValues": {
+          "flightLocation": "9MB",
+          "departureFlight": "EW9420"
+        },
+        "otherEarlierCompanyCases": "eight earlier Get-E errors not flagged as errors in this run",
+        "separateNotices": {
+          "driverColor": "KoelnBus",
+          "flightLocationNoFlight": [
+            "1RA",
+            "9MB"
+          ]
+        },
+        "separateFlightVerificationOpen": 27,
+        "overnightRidesAwaitingConfirmation": 22,
+        "result": "FAIL_REAL_DEVICE_P1148"
+      },
+      "p1148ProcessGap": {
+        "classification": "REPEATED_NON_REPRESENTATIVE_TEST_COVERAGE",
+        "confirmed": "P114.8 local positives 19/19 and PreBuild 16/16 plus a successful GitHub APK build did not prevent the identical real-device import-blocking error.",
+        "confirmedTestLimit": "p1148 selftest builds a simulated row and word geometry with e.g. Get-E and confidence=95, rather than capturing actual asynchronous independent text-after-OCR and real cell evidence from original image bytes through final import gate.",
+        "unprovenTechnicalRootCause": "The exact runtime evidence path and last blocking decision cannot be determined from UI text alone. Prior provenance-marker overwrite hypothesis remains unconfirmed as root cause of this run.",
+        "requiredEvidenceNext": [
+          "Capture primary company OCR text/raw/confidence and source row/column from original image bytes.",
+          "Capture async independent text-after-OCR including normalized text, crop boundaries and per-view attempt evidence.",
+          "Trace repeated text consensus, primary provenance, conflict reconciliation and exact fail-closed branch.",
+          "Assert final 0-hard-error import gate only with real evidence; verify unresolved authentic conflicts stay blocked.",
+          "Protect source image SHA, 9MB, EW9420, the eight previously fixed Get-E cases, and all Golden records.",
+          "Prohibit image-specific production hardcodes and tests that fabricate success evidence."
+        ],
+        "processImprovement": "Real-image asynchronous end-to-end regression gate is required before claiming a real-device fix; otherwise explicitly label the coverage gap and halt release."
+      }
     }
   ],
   "summary": {
@@ -2314,5 +2371,20 @@
     "processGapDocumented": "Local green function tests did not cover true device OCR intermediate evidence and downstream hard-error import gate.",
     "nextStep": "Collect actual pipeline evidence, reproduce end-to-end, no patch without fresh JETZT PATCHEN.",
     "documentationApproval": "User explicitly approved 2026-10-08: Ja, aufnehmen."
+  },
+  "p1148": {
+    "date": "2026-10-08",
+    "status": "FAILED_REAL_DEVICE",
+    "approvedDocumentation": "Ja, P114.8-Fehler und Testlücke aufnehmen.",
+    "evidence": "user_transcribed_real_device_result_in_current_conversation",
+    "installedVersion": "CORE-007D8A1F1D8P1148",
+    "githubActionsBuildReported": "success #212",
+    "remainingGoldenErrorCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+    "duplicateCaseCreated": false,
+    "hardErrors": 1,
+    "imported": false,
+    "engineeringRootCause": "unproven_needs_runtime_trace",
+    "newReleaseGate": "No real device fix claim from synthetic confidence/word geometry alone; capture real async OCR, reconcile and import gate.",
+    "nextAction": "Evidence-based local root cause investigation; NO PRODUCTIVE PATCH WITHOUT NEW JETZT PATCHEN."
   }
 }

@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+'use strict';
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+const root=path.join(__dirname,'..');
+let source=fs.readFileSync(path.join(root,'app/src/main/assets/js/plan-import.js'),'utf8');
+const end="  document.addEventListener('DOMContentLoaded', init);\n})();";
+assert(source.includes(end));
+source=source.replace(end,"  window.__P1149Test={adaptiveCompanyTailConsensus,sourceTruthPrimaryEdgeVeto,sourceTruthAdaptiveCompanyTailOcr,reconcileCompanyConflictAfterRepeatedConsistency,markZeroSilentErrorIntegrity,validate};\n})();");
+const ctx={console,window:{ATMSOcrIntegrityCore:require(path.join(root,'app/src/main/assets/js/ocr-integrity-core.js')),Tesseract:{},addEventListener(){},location:{href:'https://atms.test/'}},document:{currentScript:{src:'https://atms.test/js/plan-import.js'},addEventListener(){},getElementById(){return null;},createElement(){return {style:{},getContext(){return {drawImage(){},imageSmoothingEnabled:false}}}},body:{appendChild(){}}},location:{href:'https://atms.test/'},performance:{now:()=>0},setTimeout,clearTimeout,setInterval,clearInterval,Map,Set,WeakMap,Promise,Array,Object,Number,String,Boolean,Math,Date,RegExp,JSON,Intl,URL,Blob,FileReader:function(){},TextEncoder,TextDecoder,navigator:{},localStorage:{getItem(){return null;},setItem(){}},sessionStorage:{},CustomEvent:function(){},Image:function(){}};
+ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(source,ctx);
+const a=ctx.window.__P1149Test;
+const q={fullCellIncluded:true,neighborColumnIncluded:false,leftEdgeClipped:false,rightEdgeClipped:false,targetCellGeometryConfirmed:true};
+const proof=(candidate='Get-E')=>['adaptive-company-psm6','adaptive-company-psm7'].map(mode=>({scope:'source_truth_adaptive_company',candidate,mode,sourceRow:17,sourceColumn:5,cropQuality:{...q}}));
+const cell=(candidate)=>({scope:'cell_view',candidate});
+const full=(candidate,scope='source_truth_full_cell',mode='psm6')=>({scope,candidate,mode,cropQuality:{...q}});
+let good=0,stop=0;
+function test(name,attempts,expect,primary='Get-E',secondary='GetE',peers=8){
+ const actual=a.sourceTruthPrimaryEdgeVeto(primary,secondary,'company',attempts,peers,17,5);
+ assert.equal(Boolean(actual),expect,name);
+ if(expect){assert.equal(actual.reason,'source_truth_adaptive_company_tail_veto',name);good++}else stop++;
+ console.log(`${expect?'POSITIVE':'FAIL-CLOSED'} ${name}`);
+}
+test('same original source from two independent OCR modes',proof(),true);
+test('one mode insufficient',proof().slice(0,1),false);
+test('wrong source text',proof('GetE'),false);
+test('semantic mutation',proof(),false,'Get-E','GetA');
+test('no primary same-plan peers',proof(),false,'Get-E','GetE',2);
+test('competing exact-cell confirmations',proof().concat([cell('GetE'),cell('GetE')]),false);
+test('competing full-cell confirmations',proof().concat([full('GetE'),full('GetE','source_truth_full_cell','psm7')]),false);
+test('competing expanded-cell confirmations',proof().concat([full('GetE','source_truth_edge_expanded'),full('GetE','source_truth_edge_expanded','psm7')]),false);
+test('source row mismatch',proof().map(v=>({...v,sourceRow:18})),false);
+test('source column mismatch',proof().map(v=>({...v,sourceColumn:6})),false);
+test('neighbor not proven clear',proof().map(v=>({...v,cropQuality:{...q,neighborColumnIncluded:'unknown'}})),false);
+test('neighbor crop intrusion',proof().map(v=>({...v,cropQuality:{...q,neighborColumnIncluded:true}})),false);
+test('edge clipped',proof().map(v=>({...v,cropQuality:{...q,rightEdgeClipped:true}})),false);
+test('not exact full cell',proof().map(v=>({...v,cropQuality:{...q,fullCellIncluded:false}})),false);
+test('no confirmed geometry',proof().map(v=>({...v,cropQuality:{...q,targetCellGeometryConfirmed:false}})),false);
+test('source alternatives tied',proof().concat(proof('GetE')),false);
+assert(source.includes('sourceTruthAdaptiveCompanyTailOcr('));
+console.log(`P114.9 BOUNDED SOURCE PROOF: ${good} positives + ${stop} negative/fail-closed PASS`);
