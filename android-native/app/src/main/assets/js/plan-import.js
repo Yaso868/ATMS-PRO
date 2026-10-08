@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P1143 · 07.10.2026: REALSTATE SOURCE-TRUTH NORMALIZATION – normalize bounded full-cell company source-truth candidates before consensus and allow exactly one internal company delimiter loss only with strong primary OCR plus repeated same-plan primary peers; semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1142 · 07.10.2026: COMPANY BOUNDARY SOURCE-TRUTH VETO – when two independent bounded source-truth views confirm the current primary company value, suppress only isolated table-rule glyph noise or exactly one missing internal company delimiter in weaker secondary OCR; semantic changes remain fail-closed.
 // CORE-007D8A1F1D8P1139 · 07.10.2026: SOURCE-TRUTH EDGE INTEGRITY – add bounded full-cell source-truth consensus for silent edge loss in hyphenated company codes and single-token flight locations; two independent full-cell modes must agree and semantic conflicts remain fail-closed.
 // CORE-007D8A1F1D8P1138 · 07.10.2026: TEXT-EDGE INTEGRITY – preserve strong primary customer/company/route text against bounded edge-degraded secondary OCR and restore a clipped single-token flight location only from strong exact primary raw-cell evidence; fail closed on semantic conflict.
@@ -6596,7 +6597,7 @@
     const stats = new Map();
     (Array.isArray(attempts) ? attempts : []).forEach(attempt => {
       if (cellText(attempt?.scope) !== 'source_truth_full_cell') return;
-      const candidate = cellText(attempt?.candidate).normalize('NFC').trim();
+      const candidate = sourceTruthCellCandidate(attempt?.candidate || '', cellText(attempt?.field));
       if (!candidate) return;
       const q = attempt?.cropQuality && typeof attempt.cropQuality === 'object' ? attempt.cropQuality : {};
       if (q.fullCellIncluded === false || q.neighborColumnIncluded === true || q.leftEdgeClipped === true || q.rightEdgeClipped === true) return;
@@ -6759,6 +6760,9 @@
         /^[a-z0-9]+(?:[-_/][a-z0-9]+)+$/iu.test(compactOriginal) &&
         (compactOriginal.startsWith(compactCandidate) || compactOriginal.endsWith(compactCandidate))) {
       return { reason: 'secondary_short_code_edge_truncation', confidence: Number.isFinite(confidence) ? confidence : null, peerCount: Number(peerCount || 0), sourceTruthViews: Number(sourceTruth?.votes || 0) };
+    }
+    if (singleInternalCompanyDelimiterLoss(original, candidate) && Number(peerCount || 0) >= 2) {
+      return { reason: 'secondary_internal_company_delimiter_loss', confidence: Number.isFinite(confidence) ? confidence : null, peerCount: Number(peerCount || 0), sourceTruthViews: Number(sourceTruth?.votes || 0) };
     }
     return null;
   }

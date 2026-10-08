@@ -115,6 +115,14 @@ tasks.register('companyBoundaryVetoP1142', Exec) {
     commandLine 'node', 'tools/company-boundary-veto-selftest-p1142.js'
 }
 
+// P114.3: real-state company source-truth gate. Full-cell candidates are
+// field-normalized before consensus, and one internal delimiter loss may be
+// suppressed only with strong primary OCR plus repeated same-plan peers.
+tasks.register('companyBoundaryRealstateP1143', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/company-boundary-realstate-selftest-p1143.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -134,4 +142,5 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('edgeSourceTruthP1140')
     dependsOn tasks.named('edgePrimaryVetoP1141')
     dependsOn tasks.named('companyBoundaryVetoP1142')
+    dependsOn tasks.named('companyBoundaryRealstateP1143')
 }

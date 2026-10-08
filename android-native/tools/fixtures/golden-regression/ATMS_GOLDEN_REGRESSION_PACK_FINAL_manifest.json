@@ -2124,6 +2124,69 @@
       "primary company is not a bounded hyphenated probe"
     ],
     "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "WA0001_SAME_9_COMPANY_FALSE_POSITIVE_BLOCKS",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1142",
+    "realDeviceActual": {
+      "rides": 33,
+      "reportedHints": 3,
+      "reportedErrors": 9,
+      "automaticCorrections": 78,
+      "edgeGlyphGoldenValue": "9MB",
+      "companyFalsePositiveRows": [
+        12,
+        13,
+        14,
+        17,
+        25,
+        28,
+        29,
+        31,
+        32
+      ],
+      "secondaryVariants": {
+        "tableEdge": [
+          "| Get-E",
+          "| Get-E |",
+          "Get-E |"
+        ],
+        "internalDelimiterLoss": "GetE"
+      },
+      "automaticImportOccurred": false
+    }
+  },
+  "p1143": {
+    "baseHead": "5475536",
+    "parentUploadCommit": "86206f9",
+    "method": "REALSTATE SOURCE-TRUTH NORMALIZATION",
+    "sourceCases": [
+      "GE-20261007-WA0001-R12-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R13-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R14-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141",
+      "GE-20261007-WA0001-R25-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R28-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R29-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R31-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R32-COMPANY-TABLE-EDGE-P1141"
+    ],
+    "productionRules": [
+      "normalize bounded source_truth_full_cell candidates through field-aware sourceTruthCellCandidate before consensus",
+      "strip only isolated extreme-edge table-rule glyphs for company/flightLocation source-truth; never alter semantic letters/digits/internal delimiters",
+      "for exactly one missing internal company delimiter require exact high-confidence primary raw OCR plus at least two additional same-plan primary peers",
+      "never replace the primary value; only suppress a narrowly proven weaker secondary conflict"
+    ],
+    "failClosed": [
+      "semantic character substitution",
+      "delimiter replaced by whitespace or another character",
+      "more than one internal delimiter lost",
+      "primary raw OCR does not exactly support the current primary",
+      "primary confidence below 80 for delimiter-loss fallback",
+      "fewer than two same-plan primary peers for delimiter-loss fallback",
+      "two exact independent cell-view votes support the secondary candidate",
+      "source-truth views disagree or tie where source-truth proof is required"
+    ],
+    "hardcodingAllowed": false,
     "realDeviceProofPending": true
   }
 }

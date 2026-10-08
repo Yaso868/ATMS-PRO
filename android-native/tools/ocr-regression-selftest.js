@@ -732,7 +732,7 @@ const p1142Cases=p1142Ids.map(id=>p113Manifest.cases.find(item=>item.id===id));
 assert(p1142Cases.every(Boolean),'P114.2 manifest must retain all nine confirmed P114.1 WA0001 company boundary blocks');
 assert.strictEqual(p113Manifest?.p1142?.baseHead,'e27e1c6','P114.2 manifest must record the freshly user-verified P114.1 post-installer main HEAD');
 assert.strictEqual(p113Manifest?.p1142?.hardcodingAllowed,false,'P114.2 production hardcoding remains forbidden');
-assert.strictEqual(p113Manifest?.p1142?.realDeviceProofPending,true,'P114.2 must not pre-claim real-device success');
+assert.strictEqual(p113Manifest?.p1142?.realDeviceProofPending,false,'P114.2 manifest must record the completed real-device proof');
 assert.strictEqual(p113Manifest?.p1141?.realDeviceActual?.wa0001?.edgeGlyphGoldenValue,'9MB','P114.2 must retain the P113.4 9MB real-device regression proof');
 assert.strictEqual(Number(p113Manifest.summary?.caseRecords||0)>=59,true,'P114.2 manifest must include all nine new Golden error records');
 assert(planImportSource.includes('singleInternalCompanyDelimiterLoss'),'P114.2 must retain exact one-internal-delimiter loss detection');
@@ -743,3 +743,25 @@ for(const fixtureLiteral of ['IMG-20261007-WA0001.jpg','GE-20261007-WA0001-R17-C
 }
 console.log('P114.2 company boundary source-truth deterministic regression self-test: PASS');
 
+
+
+// P114.3: P114.2 remained a real-device FAIL because source_truth_full_cell
+// consensus compared Android table-rule-bearing candidates without the same
+// bounded field normalization used elsewhere. The delimiter-loss fallback also
+// needs explicit strong-primary + repeated-peer evidence when source-truth itself
+// reads the delimiter-less candidate.
+assert.strictEqual(p113Manifest?.p1142?.realDeviceProofPending,false,'P114.2 manifest must record that the real-device proof was executed');
+assert.strictEqual(p113Manifest?.p1142?.realDeviceResult,'WA0001_SAME_9_COMPANY_FALSE_POSITIVE_BLOCKS','P114.2 manifest must retain the confirmed repeated WA0001 failure');
+assert.strictEqual(p113Manifest?.p1142?.realDeviceActual?.edgeGlyphGoldenValue,'9MB','P114.2 real-device run must retain the P113.4 9MB Golden value');
+assert.deepStrictEqual(Array.from(p113Manifest?.p1142?.realDeviceActual?.companyFalsePositiveRows||[]),[12,13,14,17,25,28,29,31,32],'P114.2 must retain all nine real-device false-positive company rows');
+assert.strictEqual(p113Manifest?.p1143?.baseHead,'5475536','P114.3 manifest must record the freshly user-verified P114.2 post-installer main HEAD');
+assert.strictEqual(p113Manifest?.p1143?.parentUploadCommit,'86206f9','P114.3 manifest must record the P114.2 upload parent shown on GitHub');
+assert.strictEqual(p113Manifest?.p1143?.hardcodingAllowed,false,'P114.3 production hardcoding remains forbidden');
+assert.strictEqual(p113Manifest?.p1143?.realDeviceProofPending,true,'P114.3 must not pre-claim real-device success');
+assert(planImportSource.includes("sourceTruthCellCandidate(attempt?.candidate || '', cellText(attempt?.field))"),'P114.3 full-cell source truth must field-normalize Android table-rule-bearing candidates before consensus');
+assert(planImportSource.includes("singleInternalCompanyDelimiterLoss(original, candidate) && Number(peerCount || 0) >= 2"),'P114.3 delimiter-loss fallback must require at least two same-plan primary peers');
+assert(planImportSource.includes("secondary_internal_company_delimiter_loss"),'P114.3 delimiter-loss fallback must remain diagnosable');
+for(const fixtureLiteral of ['IMG-20261007-WA0001.jpg','GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141']){
+  for(const source of productionFiles) assert(!source.includes(fixtureLiteral),`P114.3 fixture/value hardcode leaked into production: ${fixtureLiteral}`);
+}
+console.log('P114.3 real-state source-truth normalization deterministic regression self-test: PASS');
