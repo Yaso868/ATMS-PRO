@@ -123,6 +123,14 @@ tasks.register('companyBoundaryRealstateP1143', Exec) {
     commandLine 'node', 'tools/company-boundary-realstate-selftest-p1143.js'
 }
 
+// P114.4: runtime asset-generation alignment gate. The visible core, index script
+// queries, PWA bootstrap registration, service-worker cache/shell and offline
+// fallback must all use P1144 before packaging. OCR/import semantics stay P1143.
+tasks.register('runtimeAssetAlignmentP1144', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p1144.js'
+}
+
 // P113.3.1: executable runtime gate. Syntax/source assertions alone did not catch
 // the real-device block-scope ReferenceError in P113.3. This task executes the
 // real recoverTextIntegrityTargeted() body and a complete analyze() control path
@@ -143,4 +151,5 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('edgePrimaryVetoP1141')
     dependsOn tasks.named('companyBoundaryVetoP1142')
     dependsOn tasks.named('companyBoundaryRealstateP1143')
+    dependsOn tasks.named('runtimeAssetAlignmentP1144')
 }
