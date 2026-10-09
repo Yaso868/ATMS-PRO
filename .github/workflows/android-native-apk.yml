@@ -69,6 +69,115 @@ jobs:
           test -f "$TMP/payload/SHA256.txt" || { echo 'ERROR: SHA256.txt missing.' >&2; exit 1; }
           test -d "$TMP/payload/android-native" || { echo 'ERROR: android-native/ missing.' >&2; exit 1; }
           (cd "$TMP/payload" && sha256sum -c SHA256.txt)
+          # Rollback guard: require an authenticated, SHA-covered baseline declaration
+          # and reject older/unrelated patches BEFORE overwriting runtime assets.
+          python3 - "$TMP/payload" "$PATCH" <<'ATMS_GUARD_PY'
+          import hashlib, pathlib, re, subprocess, sys
+          payload, patch_name = pathlib.Path(sys.argv[1]), sys.argv[2]
+          repo = pathlib.Path.cwd().resolve()
+          
+          def refuse(message):
+              raise SystemExit('ERROR: ATMS guarded patch denied: ' + message)
+          
+          def git(*args):
+              r = subprocess.run(['git', *args], capture_output=True, text=True)
+              if r.returncode:
+                  refuse('git ' + ' '.join(args) + ' failed: ' + r.stderr.strip())
+              return r.stdout.strip()
+          
+          manifest = payload / 'README_PATCH_BASELINE.txt'
+          if not manifest.is_file():
+              refuse('README_PATCH_BASELINE.txt missing (legacy unguarded patch)')
+          sha_manifest = (payload/'SHA256.txt').read_text(encoding='utf-8')
+          if not re.search(r'^[0-9a-f]{64}  README_PATCH_BASELINE\.txt$',sha_manifest,re.M):
+              refuse('guard manifest not covered by SHA256.txt')
+          lines = manifest.read_text(encoding='utf-8').splitlines()
+          if not lines or lines[0] != 'ATMS_PATCH_GUARD_V1':
+              refuse('unknown manifest schema')
+          metadata, baselines, watches = {}, {}, {}
+          for line in lines[1:]:
+              if line.startswith(('BASE_SHA256 ', 'WATCH_SHA256 ')):
+                  parts = line.split(' ', 2)
+                  if len(parts) != 3:
+                      refuse('invalid hash entry')
+                  typ, digest, name = parts
+                  if not re.fullmatch(r'[a-f0-9]{64}|ABSENT', digest):
+                      refuse('invalid SHA256')
+                  if not name.startswith('android-native/') or not re.fullmatch(r'[a-zA-Z0-9_./-]+', name) or '/..' in name or '//' in name:
+                      refuse('invalid path in guard manifest')
+                  slot = baselines if typ == 'BASE_SHA256' else watches
+                  if name in slot or (typ == 'WATCH_SHA256' and name in baselines) or (typ == 'BASE_SHA256' and name in watches):
+                      refuse('duplicate source path')
+                  slot[name] = digest
+              else:
+                  if '=' not in line:
+                      refuse('malformed metadata')
+                  k, v = line.split('=', 1)
+                  if k in metadata or k not in {'BASE_COMMIT','SOURCE_VERSION','TARGET_VERSION','FILE_COUNT'}:
+                      refuse('invalid or repeated metadata key')
+                  metadata[k] = v
+          if set(metadata) != {'BASE_COMMIT','SOURCE_VERSION','TARGET_VERSION','FILE_COUNT'}:
+              refuse('missing required metadata')
+          base = metadata['BASE_COMMIT']
+          if not re.fullmatch(r'[a-f0-9]{40}',base):
+              refuse('BASE_COMMIT must be a full Git commit SHA')
+          if not all(re.fullmatch(r'[1-9][0-9]*',metadata[k]) for k in ('SOURCE_VERSION','TARGET_VERSION','FILE_COUNT')):
+              refuse('invalid version/count')
+          if int(metadata['TARGET_VERSION']) <= int(metadata['SOURCE_VERSION']):
+              refuse('version must increase')
+          if int(metadata['FILE_COUNT']) != len(baselines) or not baselines:
+              refuse('wrong file count')
+          if not re.search(r'P'+re.escape(metadata['TARGET_VERSION'])+r'(?:_|\.)', patch_name):
+              refuse('upload filename does not match TARGET_VERSION')
+          
+          # The uploader commit should only have added one ZIP, not source edits or other patches.
+          head = git('rev-parse', 'HEAD')
+          parent = git('rev-parse', 'HEAD^')
+          modified = git('diff','--name-only','HEAD^','HEAD').splitlines()
+          if modified != [patch_name]:
+              refuse('upload commit must modify only the single patch ZIP')
+          if subprocess.run(['git','merge-base','--is-ancestor',base,parent]).returncode:
+              refuse('patch baseline commit is not in parent history')
+          if base == head:
+              refuse('invalid base commit')
+          
+          # The source version must be read from the LIVE pre-patch index, not just a claimed label.
+          def version_from(path):
+              if not path.is_file():
+                  refuse('missing runtime index.html')
+              s=path.read_text(encoding='utf-8')
+              v = re.findall(r'class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P([0-9]+)</div>',s)
+              if len(v)!=1:
+                  refuse('cannot uniquely identify runtime version')
+              return int(v[0])
+          index = repo/'android-native/app/src/main/assets/index.html'
+          old = version_from(index)
+          new = version_from(payload/'android-native/app/src/main/assets/index.html')
+          if old!=int(metadata['SOURCE_VERSION']):
+              refuse(f'source version mismatch: actual P{old}')
+          if new!=int(metadata['TARGET_VERSION']) or new<=old:
+              refuse(f'target index version mismatch: P{new} vs P{old}')
+          
+          # Every payload Android file must be declared with an exact pre-image digest.
+          actual = {p.relative_to(payload).as_posix() for p in (payload/'android-native').rglob('*') if p.is_file() or p.is_symlink()}
+          if actual != set(baselines):
+              refuse('payload file list differs from declared baseline files')
+          for name, expected in {**baselines, **watches}.items():
+              old_file = repo/name
+              if old_file.is_symlink():
+                  refuse('symlink in original repository source')
+              if expected == 'ABSENT':
+                  if old_file.exists():
+                      refuse('new file unexpectedly already exists: '+name)
+              else:
+                  if not old_file.is_file() or hashlib.sha256(old_file.read_bytes()).hexdigest() != expected:
+                      refuse('source SHA256 mismatch: '+name)
+          for name in baselines:
+              new_file = payload/name
+              if new_file.is_symlink() or not new_file.is_file():
+                  refuse('payload missing or symlink file: '+name)
+          print(f'ATMS patch guard PASS: source P{old}, target P{new}, {len(baselines)} files, {len(watches)} watch hashes, baseline {base}')
+          ATMS_GUARD_PY
           cp -a "$TMP/payload/android-native/." android-native/
 
       - name: Prepare clean Android workspace
