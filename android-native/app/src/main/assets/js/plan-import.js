@@ -1,6 +1,7 @@
 // CORE-007D8A1F1D8P11420 · 09.10.2026: DRIVER IDENTITY OCR FAIL-CLOSED REVIEW; no hardcoded names, safe blank driver, no silent replacement, manual row-only confirmation.
 // CORE-007D8A1F1D8P11419 · 09.10.2026: Preview displays true Wg/Fahrzeug and Pers; warning-only duplicate recognition distinguishes them; no re-import/storage mutation.
 // CORE-007D8A1F1D8P11418 · 09.10.2026: selected-file manual date persistence, evidence-based midnight review, bounded route clip/long-prefix OCR adjudication.
+// CORE-007D8A1F1D8P11421 · 09.10.2026: Manual Plantag selection status synchronized; explicit preview-only analysis with fail-closed import authorization.
 // CORE-007D8A1F1D8P11417 · 09.10.2026: IMAGE-HEADER DATE PRIORITY + EXPLICIT ANDROID PICKER FALLBACK; NO AUTOIMPORT ON SOURCE DATE CONTRADICTION.
 // CORE-007D8A1F1D8P11416 · 08.10.2026: VERIFIED BLANK DRIVER ADMISSION – keep real names, confirm empty exact driver cells without borrowing neighbors/colors, and fail closed on ambiguous driver OCR; empty driver is stored as unassigned.
 // CORE-007D8A1F1D8P11415 · 08.10.2026: HEADERLESS CLOCK-BOUNDARY PREFLIGHT INTEGRITY – align strict headerless time admission with existing bounded table-rule clock parser; reject ambiguous/malformed text, preserve global/row core thresholds and flight fail-closed decisions.
@@ -184,7 +185,7 @@
   // CORE-007D8A1F1D8P1062 · 02.10.2026: IMAGE HEADER SCHEMA + OCR PERFORMANCE GUARD – toleriert genau eine OCR-Abweichung in der Kopfzeile "Uhrzeit" (z. B. "Uhrzett"), damit echte 14-Spalten-Preislisten mit mittlerer Spiegelzeit nicht irrtümlich als 13-Spalten-Schema rekonstruiert werden. Zusätzlich bricht eine klar verschobene rechte Tabellenhälfte vor teurer Zell-Nach-OCR fail-closed ab. Keine Lockerung von OCR-/Flug-/Import-Sicherheitsregeln.
   // CORE-007D8A1F1D8P106 · 02.10.2026: MULTI-IMAGE + DRIVER OCR/COLOR INTEGRITY PACK – erlaubt mehrere Bildteile derselben Planliste in einem Analyse-Lauf, verbindet Fortsetzungsbilder ohne eigene Kopfzeile vor der OCR sicher mit dem Kopfzeilenbild, erweitert den Fahrer-Spaltenkonsens um genau eine eindeutig fehlende Buchstabenposition (z. B. Selm→Selim) und prüft Fahrerzellfarben auf fehlende/inkonsistente Erkennung. Keine Flug-, Routing-, Preis-, Dedupe- oder Speicherlogik wird aufgeweicht.
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', manualPlanDate: false, filenamePlanDate: '', headerPlanDate: '', dateSourceConflict: false, priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
+  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', manualPlanDate: false, filenamePlanDate: '', headerPlanDate: '', dateSourceConflict: false, priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, previewOnlyAnalysis: false, pipelineGeneration: 0, autoFlightSummary: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -875,6 +876,24 @@
     return found.size === 1 ? [...found][0] : '';
   }
 
+  // P114.21: single source of truth for selected file + current Plantag.
+  // This is a file-selection prompt, never overwrites the post-OCR summary.
+  function updateSelectedPlanFileStatus() {
+    const status = $('importStatus');
+    if (!status) return;
+    const files = Array.isArray(state.files) && state.files.length ? state.files : (state.file ? [state.file] : []);
+    const date = formatPlanDate(state.planDate || currentPlanDate());
+    if (!files.length) { status.textContent = 'Noch keine Planliste ausgewählt.'; return; }
+    if (files.length > 1) {
+      const allImages = files.every(isImageFile);
+      status.textContent = allImages
+        ? `Ausgewählt: ${files.length} Bildteile · Plantag ${date}. ATMS verbindet sie in Auswahlreihenfolge.`
+        : `Ausgewählt: ${files.length} Dateien · Plantag ${date}. Mehrfachauswahl nur für Bild-/WhatsApp-Planlisten.`;
+    } else {
+      status.textContent = `Ausgewählt: ${files[0].name} · Plantag ${date}. Analyse oder sichere Testanalyse auswählen.`;
+    }
+  }
+
   function applyManualPlanDate(date) {
     const match = String(date || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.(20\d{2})$/);
     const iso = match ? validIsoPlanDate(match[3],match[2],match[1]) :
@@ -894,6 +913,7 @@
     const status = $('planDateStatus');
     if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(iso)} · manuell bestätigt (Vorrang)`;
     if ($('planDateManualText')) $('planDateManualText').value = formatPlanDate(iso);
+    if (!state.rides.length) updateSelectedPlanFileStatus();
     if (changed && state.rides.length) {
       // Invalidate old OCR/flight review and import authorization instead of
       // accidentally dropping evidence-backed blocking issues via validate().
@@ -906,7 +926,7 @@
       state.pipelineGeneration += 1;
       if ($('planAnalysis')) $('planAnalysis').classList.add('hidden');
       if ($('importPlanBtn')) $('importPlanBtn').disabled = true;
-      if ($('importStatus')) $('importStatus').textContent = `Plantag ${formatPlanDate(iso)} manuell gesetzt. Analyse erneut starten; keine Fahrten übernommen.`;
+      updateSelectedPlanFileStatus();
     }
     return true;
   }
@@ -12582,7 +12602,7 @@
       </tr>`;
     }).join('');
 
-    $('importPlanBtn').disabled = rides.length === 0 || blockingErrors > 0 || actionableIssues.some(issue => issue.kind === 'price');
+    $('importPlanBtn').disabled = state.previewOnlyAnalysis || rides.length === 0 || blockingErrors > 0 || actionableIssues.some(issue => issue.kind === 'price');
     const unresolvedPriceIssues = actionableIssues.filter(issue => issue.kind === 'price').length;
     const cancelledSuffix = cancelledRows.length
       ? ` ${cancelledRows.length} Storno-Zeile${cancelledRows.length === 1 ? '' : 'n'} sicher ausgeschlossen.`
@@ -12598,6 +12618,8 @@
         : flightChecks.length
           ? `${rides.length} Fahrten erkannt und OCR-geprüft. ${flightChecks.length} Flugprüfung(en) offen. Bereit zur Übernahme.`
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
+    if (state.previewOnlyAnalysis) $('importStatus').textContent = `TESTANALYSE · ${rides.length} Fahrten geprüft · kein Import möglich. ` + $('importStatus').textContent;
+
   }
 
   function releaseAnalysisRunGuard(generation = state.pipelineGeneration) {
@@ -12605,6 +12627,7 @@
     state.analysisRunInProgress = false;
     const analyzeButton = $('analyzePlanBtn');
     if (analyzeButton) analyzeButton.disabled = !state.file;
+    if ($('previewOnlyPlanBtn')) $('previewOnlyPlanBtn').disabled = !state.file;
   }
 
   function resetTransientFlightDiagnosticsForAnalysis() {
@@ -12621,6 +12644,13 @@
 
   async function analyze() {
     if (!state.file || state.analysisRunInProgress || state.autoPipelineInProgress) return;
+    // Explicit click handlers set previewOnlyAnalysis; the analysis call never grants import permission.
+    if (state.previewOnlyAnalysis) {
+      if ($('importPlanBtn')) $('importPlanBtn').disabled = true;
+      if ($('importPlanBtn')) $('importPlanBtn').textContent = 'Testanalyse: Übernahme gesperrt';
+    } else if ($('importPlanBtn')) {
+      $('importPlanBtn').textContent = 'Geprüfte Fahrten übernehmen';
+    }
     const p54AnalyzeStartedAt = performance.now();
     const p54AnalyzeStages = [];
     const p54MeasureAsync = async (name, task) => {
@@ -12642,6 +12672,7 @@
     const generation = state.pipelineGeneration;
     const analyzeButton = $('analyzePlanBtn');
     if (analyzeButton) analyzeButton.disabled = true;
+    if ($('previewOnlyPlanBtn')) $('previewOnlyPlanBtn').disabled = true;
     resetTransientFlightDiagnosticsForAnalysis();
     let pipelineStarted = false;
     try {
@@ -12945,7 +12976,7 @@
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
       writeCurrentAnalysisJsonPreview(state.rides);
-      localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
+      if (!state.previewOnlyAnalysis) localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);
       render();
       pipelineStarted = maybeAutoImportCleanPlan();
@@ -12975,6 +13006,7 @@
     state.autoPipelineInProgress = false;
     state.analysisRunInProgress = false;
     state.autoImportCompleted = false;
+    state.previewOnlyAnalysis = false;
     state.autoFlightSummary = null;
     try { window.ATMSOfficialAirportLastDiagnostic = null; } catch (_) {}
     try { window.ATMSNativeSecondSourceLastDiagnostic = null; } catch (_) {}
@@ -13000,19 +13032,11 @@
       if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
     }
     $('analyzePlanBtn').disabled = !file;
+    if ($('previewOnlyPlanBtn')) $('previewOnlyPlanBtn').disabled = !file;
     $('importPlanBtn').disabled = true;
     $('planAnalysis').classList.add('hidden');
-    const planDate = currentPlanDate();
-    if (!file) {
-      $('importStatus').textContent = 'Noch keine Planliste ausgewählt.';
-    } else if (files.length > 1) {
-      const imageOnly = files.every(isImageFile);
-      $('importStatus').textContent = imageOnly
-        ? `Ausgewählt: ${files.length} Bildteile · Plantag ${formatPlanDate(planDate)}. ATMS verbindet sie in Auswahlreihenfolge und analysiert sie gemeinsam.`
-        : `Ausgewählt: ${files.length} Dateien. Mehrfachauswahl ist nur für Bild-/WhatsApp-Planlisten erlaubt.`;
-    } else {
-      $('importStatus').textContent = `Ausgewählt: ${file.name} · Plantag ${formatPlanDate(planDate)}. Jetzt „Planliste analysieren“ tippen.`;
-    }
+    currentPlanDate();
+    updateSelectedPlanFileStatus();
   }
 
   function selectFile(file) {
@@ -13044,6 +13068,11 @@
   }
 
   async function importRides(options = {}) {
+    // P114.21: irreversible, backend-level refusal for preview-only analyses.
+    if (state.previewOnlyAnalysis) {
+      if ($('importStatus')) $('importStatus').textContent = 'TESTANALYSE · Keine Fahrten übernommen. Für einen echten Import normal erneut analysieren.';
+      return false;
+    }
     if (!state.rides.length) return false;
     // P114.20 safety gate: button state is not authorization. Never persist
     // a staged list with a still-unresolved driver OCR identity.
@@ -13083,6 +13112,7 @@
   }
 
   async function runCleanPlanAutoPipeline(generation) {
+    if (state.previewOnlyAnalysis) return false;
     const status = $('importStatus');
     let flightSummary = null;
     try {
@@ -13159,6 +13189,7 @@
   }
 
   function maybeAutoImportCleanPlan() {
+    if (state.previewOnlyAnalysis) return false;
     // A file/header date conflict must never silently enter Morgen-Modus,
     // even if the OCR data are otherwise clean. Manual review/import only.
     if (state.dateSourceConflict) return false;
@@ -16159,7 +16190,8 @@
     ensurePlanDateControl();
     currentPlanDate();
     input.addEventListener('change', event => selectFiles(event.target.files || []));
-    $('analyzePlanBtn')?.addEventListener('click', analyze);
+    $('analyzePlanBtn')?.addEventListener('click', () => { state.previewOnlyAnalysis = false; void analyze(); });
+    $('previewOnlyPlanBtn')?.addEventListener('click', () => { state.previewOnlyAnalysis = true; void analyze(); });
     $('importPlanBtn')?.addEventListener('click', importRides);
     $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
     $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
@@ -16195,6 +16227,12 @@
     driverConsensusCandidateIsSafe,
     resolveDriverIdentityOcrIssue,
     readState: () => state
+  }); } catch (_) {}
+
+  // P114.21 test hooks, no import/storage side effects from hook exposure.
+  try { window.ATMSP11421PreviewRegression = Object.freeze({
+    updateSelectedPlanFileStatus, selectFiles, applyManualPlanDate,
+    maybeAutoImportCleanPlan, importRides, analyze, readState: () => state
   }); } catch (_) {}
 
   // Internal deterministic date regression hooks (do not mutate storage or import).
