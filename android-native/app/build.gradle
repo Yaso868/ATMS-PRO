@@ -283,6 +283,16 @@ tasks.register('runtimeAssetAlignmentP11416', Exec) {
     commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11416.js'
 }
 
+// P114.17: root-cause tested Plantag and Android calendar fallback.
+tasks.register('planDateIntegrityP11417', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/plan-date-integrity-selftest-p11417.js'
+}
+tasks.register('runtimeAssetAlignmentP11417', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11417.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -296,10 +306,11 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
     dependsOn tasks.named('companyConflictPostConsensusP1146')
-    // Version-specific runtime alignment: only the currently active P114.16 gate may block preBuild.
+    // Version-specific runtime alignment: only the currently active P114.17 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP11416')
+    dependsOn tasks.named('runtimeAssetAlignmentP11417')
+    dependsOn tasks.named('planDateIntegrityP11417')
     dependsOn tasks.named('timeSourceIntegrityP11412')
     dependsOn tasks.named('headerlessFlightGateTraceP11413')
     dependsOn tasks.named('headerlessMetadataIntegrityP11414')

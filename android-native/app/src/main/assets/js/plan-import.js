@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11417 · 09.10.2026: IMAGE-HEADER DATE PRIORITY + EXPLICIT ANDROID PICKER FALLBACK; NO AUTOIMPORT ON SOURCE DATE CONTRADICTION.
 // CORE-007D8A1F1D8P11416 · 08.10.2026: VERIFIED BLANK DRIVER ADMISSION – keep real names, confirm empty exact driver cells without borrowing neighbors/colors, and fail closed on ambiguous driver OCR; empty driver is stored as unassigned.
 // CORE-007D8A1F1D8P11415 · 08.10.2026: HEADERLESS CLOCK-BOUNDARY PREFLIGHT INTEGRITY – align strict headerless time admission with existing bounded table-rule clock parser; reject ambiguous/malformed text, preserve global/row core thresholds and flight fail-closed decisions.
 // CORE-007D8A1F1D8P11414 · 08.10.2026: HEADERLESS EARLY-RETURN METADATA INTEGRITY – preserve original core-rejection cause, actually measured per-row invalid-cell evidence, and explicitly unmeasured flight-gate status across every return path. DIAGNOSTIC ONLY, fail-closed unchanged.
@@ -180,7 +181,7 @@
   // CORE-007D8A1F1D8P1062 · 02.10.2026: IMAGE HEADER SCHEMA + OCR PERFORMANCE GUARD – toleriert genau eine OCR-Abweichung in der Kopfzeile "Uhrzeit" (z. B. "Uhrzett"), damit echte 14-Spalten-Preislisten mit mittlerer Spiegelzeit nicht irrtümlich als 13-Spalten-Schema rekonstruiert werden. Zusätzlich bricht eine klar verschobene rechte Tabellenhälfte vor teurer Zell-Nach-OCR fail-closed ab. Keine Lockerung von OCR-/Flug-/Import-Sicherheitsregeln.
   // CORE-007D8A1F1D8P106 · 02.10.2026: MULTI-IMAGE + DRIVER OCR/COLOR INTEGRITY PACK – erlaubt mehrere Bildteile derselben Planliste in einem Analyse-Lauf, verbindet Fortsetzungsbilder ohne eigene Kopfzeile vor der OCR sicher mit dem Kopfzeilenbild, erweitert den Fahrer-Spaltenkonsens um genau eine eindeutig fehlende Buchstabenposition (z. B. Selm→Selim) und prüft Fahrerzellfarben auf fehlende/inkonsistente Erkennung. Keine Flug-, Routing-, Preis-, Dedupe- oder Speicherlogik wird aufgeweicht.
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
+  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', manualPlanDate: false, filenamePlanDate: '', headerPlanDate: '', dateSourceConflict: false, priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, pipelineGeneration: 0, autoFlightSummary: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -825,13 +826,80 @@
     return out;
   }
 
+  // P114.17: A user's explicit Plantag selection always wins over filename/OCR inference.
+  // The file date is only a provisional suggestion until source/header evidence is read.
   function setDetectedPlanDate(date, source = '') {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return false;
+    if (source === 'Dateiname') state.filenamePlanDate = date;
+    if (source === 'Bildkopf') state.headerPlanDate = date;
+    state.dateSourceConflict = Boolean(state.filenamePlanDate && state.headerPlanDate && state.filenamePlanDate !== state.headerPlanDate);
+    if (state.manualPlanDate) return false;
     state.planDate = date;
     const input = $('planDateInput');
     if (input) input.value = date;
+    if ($('planDateManualText')) $('planDateManualText').value = formatPlanDate(date);
     const status = $('planDateStatus');
-    if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(date)}${source ? ` · automatisch aus ${source}` : ''}`;
+    if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(date)}${source ? ` · automatisch aus ${source}` : ''}${state.dateSourceConflict ? ' · Bildkopf hat Vorrang vor Dateiname' : ''}`;
+    return true;
+  }
+
+  // Read only the already-produced full-image primary OCR words, ABOVE a proven
+  // table header. Dates in ride cells, flight columns or any loose OCR line do
+  // not count as a dated "Liste" heading. No extra OCR or hardcoded date.
+  function detectPlanDateFromImageHeader(meta) {
+    const top = Number(meta?.headerLineMeta?.y0);
+    if (!meta?.safeHeaderDetected || !Number.isFinite(top) || top <= 0) return '';
+    const words = (Array.isArray(meta.rawOcrWords) ? meta.rawOcrWords : [])
+      .filter(w => Number.isFinite(Number(w?.y0)) && Number.isFinite(Number(w?.y1)) &&
+        Number(w.y1) < top && Number(w.y0) >= 0 && Number(w.y1) > Number(w.y0))
+      .sort((a,b) => Number(a.y0)-Number(b.y0) || Number(a.x0)-Number(b.x0));
+    const found = new Set();
+    for (const anchor of words) {
+      if (!/^liste\b/i.test(cellText(anchor.text))) continue;
+      const center = (Number(anchor.y0) + Number(anchor.y1)) / 2;
+      const tolerance = Math.max(12, (Number(anchor.y1)-Number(anchor.y0))*0.9);
+      const line = words.filter(w => Math.abs((Number(w.y0)+Number(w.y1))/2-center) <= tolerance)
+        .sort((a,b) => Number(a.x0)-Number(b.x0));
+      const joined = line.map(w => cellText(w.text)).join(' ');
+      const compact = line.map(w => cellText(w.text)).join('');
+      for (const candidate of [...extractPlanDateCandidates(joined), ...extractPlanDateCandidates(compact)]) found.add(candidate);
+    }
+    return found.size === 1 ? [...found][0] : '';
+  }
+
+  function applyManualPlanDate(date) {
+    const match = String(date || '').trim().match(/^(\d{1,2})\.(\d{1,2})\.(20\d{2})$/);
+    const iso = match ? validIsoPlanDate(match[3],match[2],match[1]) :
+      (/^20\d{2}-\d{2}-\d{2}$/.test(String(date || '').trim()) ?
+        validIsoPlanDate(date.slice(0,4),date.slice(5,7),date.slice(8,10)) : '');
+    if (!iso) {
+      const status = $('planDateStatus');
+      if (status) status.textContent = '⚠ Ungültiges Datum. Bitte TT.MM.JJJJ eingeben.';
+      return false;
+    }
+    // Compare to committed state: a native date input already holds its NEW value when change fires.
+    const changed = state.planDate !== iso;
+    state.manualPlanDate = true;
+    state.planDate = iso;
+    const input = $('planDateInput');
+    if (input) input.value = iso;
+    const status = $('planDateStatus');
+    if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(iso)} · manuell bestätigt (Vorrang)`;
+    if ($('planDateManualText')) $('planDateManualText').value = formatPlanDate(iso);
+    if (changed && state.rides.length) {
+      // Invalidate old OCR/flight review and import authorization instead of
+      // accidentally dropping evidence-backed blocking issues via validate().
+      state.rides = [];
+      state.matrix = [];
+      state.issues = [];
+      state.dateInfo = {};
+      state.dateBoundaryDecision = '';
+      state.autoImportCompleted = false;
+      state.pipelineGeneration += 1;
+      if ($('planAnalysis')) $('planAnalysis').classList.add('hidden');
+      if ($('importPlanBtn')) $('importPlanBtn').disabled = true;
+      if ($('importStatus')) $('importStatus').textContent = `Plantag ${formatPlanDate(iso)} manuell gesetzt. Analyse erneut starten; keine Fahrten übernommen.`;
+    }
     return true;
   }
 
@@ -1046,33 +1114,26 @@
     wrap.innerHTML = `
       <label for="planDateInput" style="display:block;font-weight:800;margin-bottom:6px">📅 Plantag</label>
       <div style="font-size:12px;opacity:.75;margin-bottom:10px">Plantag = erster Kalendertag der Liste. Fahrten zwischen 00:00 und 05:59 werden als möglicher Folgetag gemeinsam erkannt und einmal bestätigt.</div>
-      <input id="planDateInput" type="date" value="${state.planDate}" style="width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:#071a2b;color:#fff;font-size:16px">
-      <div id="planDateStatus" style="font-size:12px;opacity:.8;margin-top:8px">Aktiver Plantag: ${formatPlanDate(state.planDate)}</div>
+      <input id="planDateInput" type="date" value="${state.planDate}" aria-label="Plantag Datum" style="width:100%;min-height:48px;box-sizing:border-box;padding:12px 14px;border-radius:10px;border:1px solid rgba(255,255,255,.3);background:#071a2b;color:#fff;color-scheme:dark;font-size:16px;cursor:pointer">
+      <button type="button" id="planDateOpenCalendar" style="width:100%;margin-top:8px;padding:11px;border:1px solid rgba(72,156,255,.8);border-radius:10px;background:#0d3157;color:#fff;font-weight:800">📅 Kalender öffnen</button>
+      <label for="planDateManualText" style="display:block;margin-top:12px;font-size:13px">Falls der Kalender auf Android nicht öffnet: Datum direkt eingeben (TT.MM.JJJJ)</label>
+      <div style="display:flex;gap:8px;margin-top:5px;flex-wrap:wrap"><input id="planDateManualText" type="text" inputmode="numeric" placeholder="TT.MM.JJJJ" value="${formatPlanDate(state.planDate)}" style="flex:1;min-width:135px;padding:10px;border-radius:9px;border:1px solid rgba(255,255,255,.3);background:#071a2b;color:#fff;font-size:16px"><button type="button" id="planDateConfirmManual" style="padding:10px;border-radius:9px;background:#0d457a;color:#fff;font-weight:800">Datum setzen</button></div>
+      <div id="planDateStatus" aria-live="polite" style="font-size:12px;opacity:.9;margin-top:8px">Aktiver Plantag: ${formatPlanDate(state.planDate)}</div>
     `;
 
     if (drop) drop.insertAdjacentElement('afterend', wrap);
     else analyzeBtn.parentElement?.insertBefore(wrap, analyzeBtn);
 
-    $('planDateInput')?.addEventListener('change', event => {
-      state.planDate = event.target.value || berlinToday();
-      event.target.value = state.planDate;
-      const status = $('planDateStatus');
-      if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(state.planDate)}`;
-      if (state.rides.length) {
-        state.dateBoundaryDecision = '';
-        state.rides = assignRideDates(state.rides);
-        state.issues = validate(state.rides);
-      if (mappingInfo.timeHeaderRecovery) {
-        state.issues.unshift({
-          level: 'info',
-          kind: 'ocr_recovery',
-          row: headerDetection.index + 1,
-          text: `Uhrzeit-Kopfwort fehlte im OCR; Fahrtzeitspalte wurde strukturell aus ${Number(mappingInfo.timeHeaderRecovery.valid || 0)}/${Number(mappingInfo.timeHeaderRecovery.seen || 0)} gültigen Zeitwerten direkt links von „Von“ wiederhergestellt`
-        });
-      }
-        render();
-      }
+    $('planDateInput')?.addEventListener('change', event => applyManualPlanDate(event.target.value));
+    $('planDateOpenCalendar')?.addEventListener('click', () => {
+      const picker = $('planDateInput');
+      if (!picker) return;
+      try {
+        if (typeof picker.showPicker === 'function') picker.showPicker();
+        else { picker.focus(); picker.click(); }
+      } catch (_) { picker.focus(); picker.click(); }
     });
+    $('planDateConfirmManual')?.addEventListener('click', () => applyManualPlanDate($('planDateManualText')?.value));
   }
 
   function clockBoundaryNoiseInfo(value) {
@@ -12431,8 +12492,14 @@
 
       const matrix = result.matrix || [];
       if (!matrix.length) throw new Error('Keine Datenzeilen gefunden.');
-      const detectedMatrixDate = detectPlanDateFromMatrix(matrix);
-      if (detectedMatrixDate) setDetectedPlanDate(detectedMatrixDate, result.imageOcr ? 'Bildinhalt' : 'Planliste');
+      // P114.17: first trust a geometrically bounded "Liste DD.MM.YYYY" image heading.
+      // Date hints from filenames and miscellaneous grid cells are lower priority.
+      const headerDate = result.imageOcr ? detectPlanDateFromImageHeader(result.imageMeta) : '';
+      if (headerDate) setDetectedPlanDate(headerDate, 'Bildkopf');
+      else {
+        const detectedMatrixDate = detectPlanDateFromMatrix(matrix);
+        if (detectedMatrixDate) setDetectedPlanDate(detectedMatrixDate, result.imageOcr ? 'Bildinhalt' : 'Planliste');
+      }
       const headerDetection = detectHeader(matrix);
       if (headerDetection.score < 3) throw new Error('Die Überschriften der Planliste wurden nicht eindeutig erkannt. Erwartet werden unter anderem Uhrzeit, Von und Nach.');
       const headers = uniqueHeaders(matrix[headerDetection.index]);
@@ -12740,6 +12807,10 @@
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
     state.dateInfo = {};
+    state.manualPlanDate = false;
+    state.filenamePlanDate = '';
+    state.headerPlanDate = '';
+    state.dateSourceConflict = false;
     if (file) {
       const detectedFileDate = detectPlanDateFromFile(file);
       if (detectedFileDate) setDetectedPlanDate(detectedFileDate, 'Dateiname');
@@ -12898,6 +12969,9 @@
   }
 
   function maybeAutoImportCleanPlan() {
+    // A file/header date conflict must never silently enter Morgen-Modus,
+    // even if the OCR data are otherwise clean. Manual review/import only.
+    if (state.dateSourceConflict) return false;
     if (state.autoImportCompleted || state.autoPipelineInProgress || !state.rides.length) return false;
     const allIssues = Array.isArray(state.issues) ? state.issues : [];
     const actionable = ocrSummaryActionableIssues(allIssues);
@@ -15923,5 +15997,10 @@
     });
   } catch (_) {}
 
+  // Internal deterministic date regression hooks (do not mutate storage or import).
+  try { window.ATMSP11417DateRegression = Object.freeze({
+    detectPlanDateFromImageHeader, extractPlanDateCandidates, applyManualPlanDate,
+    setDetectedPlanDate, assignRideDates, maybeAutoImportCleanPlan, readState: () => ({...state})
+  }); } catch (_) {}
   document.addEventListener('DOMContentLoaded', init);
 })();
