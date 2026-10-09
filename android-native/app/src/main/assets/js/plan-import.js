@@ -1,5 +1,3 @@
-// CORE-007D8A1F1D8P11419 · 09.10.2026: Preview displays true Wg/Fahrzeug and Pers; warning-only duplicate recognition distinguishes them; no re-import/storage mutation.
-// CORE-007D8A1F1D8P11418 · 09.10.2026: selected-file manual date persistence, evidence-based midnight review, bounded route clip/long-prefix OCR adjudication.
 // CORE-007D8A1F1D8P11417 · 09.10.2026: IMAGE-HEADER DATE PRIORITY + EXPLICIT ANDROID PICKER FALLBACK; NO AUTOIMPORT ON SOURCE DATE CONTRADICTION.
 // CORE-007D8A1F1D8P11416 · 08.10.2026: VERIFIED BLANK DRIVER ADMISSION – keep real names, confirm empty exact driver cells without borrowing neighbors/colors, and fail closed on ambiguous driver OCR; empty driver is stored as unassigned.
 // CORE-007D8A1F1D8P11415 · 08.10.2026: HEADERLESS CLOCK-BOUNDARY PREFLIGHT INTEGRITY – align strict headerless time admission with existing bounded table-rule clock parser; reject ambiguous/malformed text, preserve global/row core thresholds and flight fail-closed decisions.
@@ -834,12 +832,7 @@
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return false;
     if (source === 'Dateiname') state.filenamePlanDate = date;
     if (source === 'Bildkopf') state.headerPlanDate = date;
-    // A manual date differing from an independently proven image heading is an
-    // explicit conflict: preserve user input, forbid silent Morgen-mode import.
-    state.dateSourceConflict = Boolean(
-      (state.filenamePlanDate && state.headerPlanDate && state.filenamePlanDate !== state.headerPlanDate) ||
-      (state.manualPlanDate && state.headerPlanDate && state.planDate !== state.headerPlanDate)
-    );
+    state.dateSourceConflict = Boolean(state.filenamePlanDate && state.headerPlanDate && state.filenamePlanDate !== state.headerPlanDate);
     if (state.manualPlanDate) return false;
     state.planDate = date;
     const input = $('planDateInput');
@@ -974,20 +967,9 @@
     const baseDate = currentPlanDate();
     const nextDate = addDaysIso(baseDate, 1);
     const preserveExplicit = Boolean(options.preserveExplicit);
-    // Explicit heading/manual date + exclusively day/morning rows = a same-day
-    // list.  Clock <06:00 alone is NOT evidence of a rollover.  A possible
-    // previous-evening/early-morning crossover remains fail-closed for review.
-    // Do not rely on strict row order: ATMS plans can be partly unsorted.
-    const allRides = Array.isArray(rides) ? rides : [];
-    const rideClocks = allRides.map(ride => timeToMinutes(ride?.time || ride?.planTime)).filter(Number.isFinite);
-    const hasEvening = rideClocks.some(min => min >= 18 * 60);
-    const qualifiedSameDaySource = Boolean(
-      (state.headerPlanDate && state.headerPlanDate === baseDate) || state.manualPlanDate
-    ) && (!state.headerPlanDate || state.headerPlanDate === baseDate);
-    const requiresEarlyDayReview = !qualifiedSameDaySource || hasEvening;
     const candidateIndexes = [];
 
-    const out = allRides.map((ride, index) => {
+    const out = (Array.isArray(rides) ? rides : []).map((ride, index) => {
       const explicitDate = cellText(ride?.date);
       if (preserveExplicit && /^\d{4}-\d{2}-\d{2}$/.test(explicitDate)) {
         return {
@@ -1001,7 +983,7 @@
       }
 
       const mins = timeToMinutes(ride?.time || ride?.planTime);
-      const isNextDayCandidate = requiresEarlyDayReview && mins !== null && mins < NEXT_DAY_CUTOFF_MINUTES;
+      const isNextDayCandidate = mins !== null && mins < NEXT_DAY_CUTOFF_MINUTES;
       if (isNextDayCandidate) candidateIndexes.push(index);
 
       return {
@@ -1057,9 +1039,7 @@
       candidateCount: candidateIndexes.length,
       decision,
       requiresConfirmation: Boolean(candidateIndexes.length && !decision),
-      cutoff: '06:00',
-      evidence: requiresEarlyDayReview ? (hasEvening ? 'evening_plus_early_ambiguous' : 'plan_day_unverified') : 'proven_day_start',
-      qualifiedSameDaySource
+      cutoff: '06:00'
     };
     return out;
   }
@@ -1888,18 +1868,6 @@
     return Boolean(values[0] || (values[1] && values[2]));
   }
 
-  // P114.19: Warning-only duplicate detection. Preserve every source row;
-  // differences in vehicle or persons are distinct passenger bookings.
-  // This fingerprint never participates in the storage/re-import merge (GE-67 remains open).
-  function planPreviewDuplicateFingerprint(ride) {
-    return [
-      cellText(ride.date), cellText(ride.time), cleanKey(ride.pickup),
-      cleanKey(ride.destination), cleanKey(ride.driver),
-      cellText(ride.flightNumber).toUpperCase(),
-      cleanKey(ride.vehicle), cellText(ride.persons)
-    ].join('|');
-  }
-
   function validate(rides) {
     const issues = [];
     const fingerprints = new Set();
@@ -2296,7 +2264,7 @@
         });
       }
 
-      const fingerprint = planPreviewDuplicateFingerprint(ride);
+      const fingerprint = [ride.time, cleanKey(ride.pickup), cleanKey(ride.destination), cleanKey(ride.driver), ride.flightNumber].join('|');
       if (fingerprints.has(fingerprint)) issues.push({ level: 'warning', row, text: 'Mögliche doppelte Fahrt erkannt' });
       fingerprints.add(fingerprint);
     });
@@ -6545,35 +6513,6 @@
     return out;
   }
 
-  // P114.18: Only suppress an independently CLIPPED route reading, not a
-  // different route.  Requires a first word physically crossing the matrix's
-  // artificial LEFT cell boundary, strong original full-image word confidence,
-  // a COMPLETE exact suffix, and two identical route peers with same endpoint.
-  function provenRouteLeftClipAtMatrixBoundary(original, candidate, imageMeta, rowMeta, left, right, rides, ride, field, localCandidates = []) {
-    const full = routeOcrText(original).split(/\s+/).filter(Boolean);
-    const short = routeOcrText(candidate).split(/\s+/).filter(Boolean);
-    if (full.length < 3 || short.length < 2 || full.length !== short.length + 1) return null;
-    if (full[0].length < 4 || short.join(' ').toLocaleLowerCase('de-DE') !== full.slice(1).join(' ').toLocaleLowerCase('de-DE')) return null;
-    if (![left, right, Number(rowMeta?.y0), Number(rowMeta?.y1)].every(Number.isFinite) || left >= right) return null;
-    if (localCandidates.some(value => value && routeOcrText(value) !== routeOcrText(original) && routeOcrText(value) !== routeOcrText(candidate))) return null;
-    const firstWord = (imageMeta?.rawOcrWords || []).find(word =>
-      cellText(word?.text).toLocaleLowerCase('de-DE') === full[0].toLocaleLowerCase('de-DE') &&
-      Number(word.x0) < left && Number(word.x1) > left && Number(word.x1) < right &&
-      Number(word.y1) > Number(rowMeta.y0) && Number(word.y0) < Number(rowMeta.y1) &&
-      Number(word.confidence ?? word.conf ?? -1) >= 85
-    );
-    if (!firstWord) return null;
-    const opposite = field === 'pickup' ? 'destination' : 'pickup';
-    const peers = (Array.isArray(rides) ? rides : []).filter(peer =>
-      peer !== ride && routeOcrBase(peer?.[field]) === routeOcrBase(original) &&
-      routeOcrBase(peer?.[opposite]) === routeOcrBase(ride?.[opposite])
-    ).length;
-    if (peers < 2) return null;
-    return { reason: 'verified_primary_left_clip_of_secondary', peers,
-      primaryFirstWordConfidence: Number(firstWord.confidence ?? firstWord.conf),
-      firstWordLeft: Number(firstWord.x0), matrixLeft: left };
-  }
-
   async function recoverRouteDiacriticsTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const boundaries = imageMeta.boundaries || [];
@@ -6760,14 +6699,6 @@
             continue;
           }
 
-          const provenClip = provenRouteLeftClipAtMatrixBoundary(original, candidate, imageMeta,
-            rowMetaForRoute, left, right, out, ride, descriptor.field, localCandidates);
-          if (provenClip) {
-            ride[`${descriptor.field}OcrSecondaryLeftEdgeNoiseIgnored`] = true;
-            ride[`${descriptor.field}OcrSecondaryLeftEdgeNoiseCandidate`] = candidate;
-            ride[`${descriptor.field}OcrSecondaryLeftEdgeNoiseEvidence`] = provenClip;
-            continue;
-          }
           if (!Number.isFinite(primaryConfidence)) {
             primaryConfidence = routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMetaForRoute, left, right);
           }
@@ -9229,41 +9160,6 @@
     return longPrefixBoundaryGlyphShiftMatch(initial, candidate);
   }
 
-  // P114.18: Extreme noisy prefix + one differing FIRST numeric glyph can
-  // be adjudicated ONLY using complete, unanimous crop/mode evidence.  The
-  // primary value never produces a guessed candidate; all candidates are actual
-  // exact independent OCR readings of this same flight cell.
-  function doubleGlyphLongPrefixShape(initialValue, candidateValue) {
-    const initial = normalizeFlightNumber(initialValue);
-    const candidate = normalizeFlightNumber(candidateValue);
-    return /^[A-Z]{3}\d{4}$/.test(initial) && /^[A-Z]{2}\d{4}$/.test(candidate) &&
-      initial.slice(0, 2) === candidate.slice(0, 2) &&
-      initial.slice(-3) === candidate.slice(-3) && initial[3] !== candidate[2];
-  }
-
-  function strictDoubleGlyphLongPrefixProof(initialValue, candidateValue, attempts) {
-    if (!doubleGlyphLongPrefixShape(initialValue, candidateValue)) return null;
-    const candidate = normalizeFlightNumber(candidateValue);
-    const verifiedCrops = new Set(), verifiedModes = new Set();
-    let supportingViews = 0, checked = 0;
-    for (const attempt of Array.isArray(attempts) ? attempts : []) {
-      if (!Number.isInteger(attempt?.crop) || attempt.crop < 1 || !cellText(attempt?.rawText)) continue;
-      const raw = normalizeFlightNumber(attempt.rawText);
-      // All non-empty independent full-cell views must support the SAME exact
-      // four digits. A single dissenting digit or extra token vetoes recovery.
-      const m = raw.match(/^([A-Z]{2})([A-Z]?)(\d{4})$/);
-      if (!m || m[1] !== candidate.slice(0, 2) || m[3] !== candidate.slice(2)) return null;
-      checked++;
-      if (raw === candidate) {
-        verifiedCrops.add(attempt.crop);
-        verifiedModes.add(cellText(attempt.mode));
-        supportingViews++;
-      }
-    }
-    if (checked < 6 || supportingViews < 6 || verifiedCrops.size < 2 || verifiedModes.size < 2) return null;
-    return { mode:'strict_full_cell_numeric_unanimity', supportingViews, checked, crops:verifiedCrops.size, modes:verifiedModes.size };
-  }
-
   // P47: Nur der konkrete S↔9-Grenzfall wird zusätzlich geprüft. Die Funktion
   // erzeugt KEINE Korrektur aus einer Flugnummern-/Airline-Liste, sondern nur den
   // Kandidaten, dessen Zahlenteil anschließend direkt aus der Bildzelle belegt
@@ -9814,7 +9710,7 @@
           }));
           for (const { mode, second } of modeResults) {
             const candidates = [...new Set(flightCandidatesFromOcrResultPreserveBoundaries(second)
-              .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate) || doubleGlyphLongPrefixShape(initial, candidate)))];
+              .filter(candidate => candidate === initial || safeLongPrefixFlightAlternative(initial, candidate)))];
             // CORE-007D8A1F1D3: Rohtrace bleibt sichtbar. Zusätzlich nutzt diese gezielte
             // Flug-Gegenprüfung jetzt den Boundary-erhaltenden Kandidaten-Extractor.
             // Keine Flugnummern-/Airline-Hardcodes; Stimmen/Recovery-Schwellen bleiben gleich.
@@ -9844,7 +9740,7 @@
       ride.flightLongPrefixOcrAttempts = attempts;
       ride.flightLongPrefixOcrInitial = initial;
       const alternatives = [...votes.entries()]
-        .filter(([candidate]) => candidate !== initial && (safeLongPrefixFlightAlternative(initial, candidate) || doubleGlyphLongPrefixShape(initial, candidate)))
+        .filter(([candidate]) => candidate !== initial && safeLongPrefixFlightAlternative(initial, candidate))
         .sort((a,b) => b[1] - a[1] || a[0].localeCompare(b[0]));
       const winner = alternatives[0] || null;
       const runner = alternatives[1] || null;
@@ -9857,12 +9753,12 @@
         ride.flightLongPrefixSuggestedCorrection = manualSuggestion.candidate;
         ride.flightLongPrefixSuggestionEvidence = manualSuggestion;
       }
-      const strictDoubleGlyphProof = winner && doubleGlyphLongPrefixShape(initial, winner[0])
-        ? strictDoubleGlyphLongPrefixProof(initial, winner[0], attempts) : null;
       const winnerAccepted = Boolean(
-        winner && winner[1] >= 3 && supportingCrops >= 2 &&
-        winner[1] > initialVotes && (!runner || winner[1] > runner[1]) &&
-        (doubleGlyphLongPrefixShape(initial, winner[0]) ? Boolean(strictDoubleGlyphProof) : true)
+        winner
+        && winner[1] >= 3
+        && supportingCrops >= 2
+        && winner[1] > initialVotes
+        && (!runner || winner[1] > runner[1])
       );
 
       if (winnerAccepted) {
@@ -9872,8 +9768,7 @@
         if (routeType === 'departure') ride.departureFlight = recovered;
         ride.flightDirection = routeType;
         ride.flightRecoveredFromLongPrefixOcr = true;
-        ride.flightLongPrefixOcrEvidence = { mode: 'full_flight_consensus', votes: winner[1], crops: supportingCrops, initialVotes,
-          ...(strictDoubleGlyphProof ? { strictDoubleGlyphProof } : {}) };
+        ride.flightLongPrefixOcrEvidence = { mode: 'full_flight_consensus', votes: winner[1], crops: supportingCrops, initialVotes };
         ride.flightLongPrefixOcrUnresolved = false;
         continue;
       }
@@ -12498,9 +12393,7 @@
         <td>${escapeHtml(ride.destination || '–')}</td>
         <td>${escapeHtml(ride.flightNumber || '–')}</td>
         <td>${escapeHtml(ride.flightLocation || '–')}</td>
-        <td>${escapeHtml(typeLabels[ride.rideType] || ride.rideType || '–')}</td>
-        <td>${escapeHtml(ride.vehicle || '–')}</td>
-        <td>${escapeHtml(ride.persons === null || ride.persons === undefined || ride.persons === '' ? '–' : String(ride.persons))}</td>
+        <td>${escapeHtml(typeLabels[ride.rideType] || ride.rideType)}</td>
         <td>${ride.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
         <td><span class="plan-status ${status === 'OK' ? 'ok' : status === 'Fehler' ? 'error' : 'warning'}">${status}</span></td>
       </tr>`;
@@ -12914,8 +12807,7 @@
     state.priceDecisions = {};
     state.dateBoundaryDecision = '';
     state.dateInfo = {};
-    // P114.18: Selecting a file MUST NOT erase a user-confirmed Plantag.  The
-    // filename remains only a hint; a later verified image heading is checked.
+    state.manualPlanDate = false;
     state.filenamePlanDate = '';
     state.headerPlanDate = '';
     state.dateSourceConflict = false;
@@ -16109,11 +16001,6 @@
   try { window.ATMSP11417DateRegression = Object.freeze({
     detectPlanDateFromImageHeader, extractPlanDateCandidates, applyManualPlanDate,
     setDetectedPlanDate, assignRideDates, maybeAutoImportCleanPlan, readState: () => ({...state})
-  }); } catch (_) {}
-  try { window.ATMSP11418Regression = Object.freeze({
-    selectFiles, readState: () => state, applyManualPlanDate, setDetectedPlanDate,
-    assignRideDates, provenRouteLeftClipAtMatrixBoundary, doubleGlyphLongPrefixShape,
-    strictDoubleGlyphLongPrefixProof
   }); } catch (_) {}
   document.addEventListener('DOMContentLoaded', init);
 })();
