@@ -54,6 +54,8 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
   </div>
   <button id="previewOnlyPlanBtn" type="button" class="act dark" disabled style="width:100%;margin:8px 0 10px;background:#164869;border:1px solid #53a8ec">🔍 Nur Testanalyse – garantiert ohne Fahrtenimport</button><div class="actions2"><button id="analyzePlanBtn" class="act blue" disabled>Planliste analysieren</button><button id="importPlanBtn" class="act green" disabled>Geprüfte Fahrten übernehmen</button></div>
   <p id="importStatus" class="sub">Noch keine Planliste ausgewählt.</p>
+  <button id="previewFlightCheckBtn" type="button" class="act dark" disabled hidden style="display:none;width:100%;margin:8px 0;background:#183d59;border:1px solid #4c9dd2">✈ Flüge prüfen – garantiert ohne Fahrtenimport</button>
+  <div id="previewFlightDiagnosticPanel" role="status" aria-live="polite" hidden style="padding:10px 12px;margin:8px 0;border:1px solid #4c9dd2;border-radius:8px;font-size:13px;line-height:1.6;overflow-wrap:anywhere"></div>
 </div>
 <div class="card legacy-json"><details><summary>Erweiterter JSON-Import</summary><textarea id="jsonInput" placeholder="ATMS-JSON hier einfügen …"></textarea><div class="actions2"><button id="loadBtn" class="act green">JSON laden</button><button id="clearBtn" class="act dark">Leeren</button></div></details></div>
 </main></section>
@@ -128,7 +130,7 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
   <div class="info-slogan">Smart Dispatch. Simple Workflow.</div>
 </div>
 <div class="info-details">
-  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11421</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11422</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Stable Native-App · V1.4.0 Final</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">♙</div><div><div class="info-detail-label">Entwickelt von</div><div class="info-detail-value">Yaser Tatli</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">✓</div><div><div class="info-detail-label">Status</div><div class="info-detail-value status">● Produktiv</div></div></div>
@@ -141,8 +143,8 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
 <div id="driverDialog" class="overlay hidden" role="dialog" aria-modal="true"><div class="sheet" id="driverSheet"><div class="row"><h2>Fahrten anzeigen</h2><button id="closeDrivers" class="icon x" type="button">×</button></div><div id="driverChoices"></div></div></div>
 <div id="atmsToast" class="atms-toast" role="status" aria-live="polite"></div><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="./js/ocr-integrity-core.js?v=P11421" defer></script>
-<script src="./js/plan-import.js?v=P11421" defer></script>
+<script src="./js/ocr-integrity-core.js?v=P11422" defer></script>
+<script src="./js/plan-import.js?v=P11422" defer></script>
 <script src="./js/app.js?v=P1121" defer></script>
-<script src="./js/pwa.js?v=P11421" defer></script>
+<script src="./js/pwa.js?v=P11422" defer></script>
 </body></html>

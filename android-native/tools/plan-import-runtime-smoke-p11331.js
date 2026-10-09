@@ -161,6 +161,8 @@ async function runTextIntegrityRuntimeSmoke() {
 
 async function runAnalyzeControlRuntimeSmoke() {
   const functionSource = extractNamedFunction('analyze');
+  const resetDiagnosticSource = extractNamedFunction('resetPreviewFlightDiagnostic');
+  const syncDiagnosticSource = extractNamedFunction('syncPreviewFlightCheckControl');
   const elements = new Map();
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
@@ -168,6 +170,8 @@ async function runAnalyzeControlRuntimeSmoke() {
       textContent: '',
       innerHTML: '',
       disabled: false,
+      style: {},
+      hidden: false,
       classList: { add() {}, remove() {} }
     });
     return elements.get(id);
@@ -178,6 +182,9 @@ async function runAnalyzeControlRuntimeSmoke() {
     files: [],
     analysisRunInProgress: false,
     autoPipelineInProgress: false,
+    previewFlightRunId: 0,
+    previewOnlyAnalysis: true,
+    previewFlightCheckInProgress: false,
     pipelineGeneration: 0,
     ocrPerformanceDiagnostic: null,
     cancelledRows: [],
@@ -220,7 +227,7 @@ async function runAnalyzeControlRuntimeSmoke() {
   };
 
   vm.createContext(sandbox);
-  vm.runInContext(`${functionSource}\nthis.__analyze = analyze;`, sandbox, { filename: 'plan-import-runtime-smoke:analyze' });
+  vm.runInContext(`${syncDiagnosticSource}\n${resetDiagnosticSource}\n${functionSource}\nthis.__analyze = analyze;`, sandbox, { filename: 'plan-import-runtime-smoke:analyze' });
 
   try {
     await sandbox.__analyze();

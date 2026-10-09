@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11422 · 09.10.2026: Native flight verification in import-free preview, isolated diagnostics and generation/identity staleness guards; no writes to staged or persistent rides.
 // CORE-007D8A1F1D8P11420 · 09.10.2026: DRIVER IDENTITY OCR FAIL-CLOSED REVIEW; no hardcoded names, safe blank driver, no silent replacement, manual row-only confirmation.
 // CORE-007D8A1F1D8P11419 · 09.10.2026: Preview displays true Wg/Fahrzeug and Pers; warning-only duplicate recognition distinguishes them; no re-import/storage mutation.
 // CORE-007D8A1F1D8P11418 · 09.10.2026: selected-file manual date persistence, evidence-based midnight review, bounded route clip/long-prefix OCR adjudication.
@@ -185,7 +186,7 @@
   // CORE-007D8A1F1D8P1062 · 02.10.2026: IMAGE HEADER SCHEMA + OCR PERFORMANCE GUARD – toleriert genau eine OCR-Abweichung in der Kopfzeile "Uhrzeit" (z. B. "Uhrzett"), damit echte 14-Spalten-Preislisten mit mittlerer Spiegelzeit nicht irrtümlich als 13-Spalten-Schema rekonstruiert werden. Zusätzlich bricht eine klar verschobene rechte Tabellenhälfte vor teurer Zell-Nach-OCR fail-closed ab. Keine Lockerung von OCR-/Flug-/Import-Sicherheitsregeln.
   // CORE-007D8A1F1D8P106 · 02.10.2026: MULTI-IMAGE + DRIVER OCR/COLOR INTEGRITY PACK – erlaubt mehrere Bildteile derselben Planliste in einem Analyse-Lauf, verbindet Fortsetzungsbilder ohne eigene Kopfzeile vor der OCR sicher mit dem Kopfzeilenbild, erweitert den Fahrer-Spaltenkonsens um genau eine eindeutig fehlende Buchstabenposition (z. B. Selm→Selim) und prüft Fahrerzellfarben auf fehlende/inkonsistente Erkennung. Keine Flug-, Routing-, Preis-, Dedupe- oder Speicherlogik wird aufgeweicht.
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', manualPlanDate: false, filenamePlanDate: '', headerPlanDate: '', dateSourceConflict: false, priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, previewOnlyAnalysis: false, pipelineGeneration: 0, autoFlightSummary: null };
+  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', manualPlanDate: false, filenamePlanDate: '', headerPlanDate: '', dateSourceConflict: false, priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, previewOnlyAnalysis: false, pipelineGeneration: 0, autoFlightSummary: null, previewFlightRunId: 0, previewFlightCheckInProgress: false, previewFlightDiagnostic: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -924,6 +925,7 @@
       state.dateBoundaryDecision = '';
       state.autoImportCompleted = false;
       state.pipelineGeneration += 1;
+      resetPreviewFlightDiagnostic();
       if ($('planAnalysis')) $('planAnalysis').classList.add('hidden');
       if ($('importPlanBtn')) $('importPlanBtn').disabled = true;
       updateSelectedPlanFileStatus();
@@ -12091,6 +12093,7 @@
       $('flightCheckStatus').textContent = fs.total ? `${fs.total} Flüge · ${fs.withLocation} Ort aus Liste · ${fs.needsCheck} aktuell zu prüfen` : 'Keine Flugnummern erkannt.';
     }
     if ($('copyFlightCheckBtn')) $('copyFlightCheckBtn').disabled = !rides.some(ride => ride.flightNumber);
+    syncPreviewFlightCheckControl();
 
     // P107.5: Blockierende Fehler duerfen nie hinter vielen Info-/Recovery-Zeilen
     // verschwinden. Zuerst alle Errors, danach Warnings, danach reine Infos.
@@ -12618,7 +12621,7 @@
         : flightChecks.length
           ? `${rides.length} Fahrten erkannt und OCR-geprüft. ${flightChecks.length} Flugprüfung(en) offen. Bereit zur Übernahme.`
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
-    if (state.previewOnlyAnalysis) $('importStatus').textContent = `TESTANALYSE · ${rides.length} Fahrten geprüft · kein Import möglich. ` + $('importStatus').textContent;
+    if (state.previewOnlyAnalysis) $('importStatus').textContent = `TESTANALYSE · ${rides.length} Fahrten geprüft · kein Import möglich. ` + $('importStatus').textContent.replace(/Bereit zur Übernahme\./g, 'Nur Vorschau, keine Übernahme.');
 
   }
 
@@ -12628,6 +12631,7 @@
     const analyzeButton = $('analyzePlanBtn');
     if (analyzeButton) analyzeButton.disabled = !state.file;
     if ($('previewOnlyPlanBtn')) $('previewOnlyPlanBtn').disabled = !state.file;
+    syncPreviewFlightCheckControl(); // P114.22: unlock only AFTER OCR run finishes.
   }
 
   function resetTransientFlightDiagnosticsForAnalysis() {
@@ -12669,6 +12673,7 @@
     try { window.ATMSP54ReadImageTiming = null; } catch (_) {}
     state.analysisRunInProgress = true;
     state.pipelineGeneration += 1;
+    resetPreviewFlightDiagnostic();
     const generation = state.pipelineGeneration;
     const analyzeButton = $('analyzePlanBtn');
     if (analyzeButton) analyzeButton.disabled = true;
@@ -13003,6 +13008,7 @@
     state.issues = [];
     state.meta = {};
     state.pipelineGeneration += 1;
+    resetPreviewFlightDiagnostic();
     state.autoPipelineInProgress = false;
     state.analysisRunInProgress = false;
     state.autoImportCompleted = false;
@@ -15824,6 +15830,187 @@
     };
   }
 
+  // P114.22: flight-only diagnostics NEVER call importRides(), the auto pipeline,
+  // applyGeminiResultsToStagedPlan(), or any stored-ride mutation. A separate
+  // on-screen report shows evidence; the OCR preview is never silently rewritten.
+  function syncPreviewFlightCheckControl() {
+    const button = $('previewFlightCheckBtn');
+    const panel = $('previewFlightDiagnosticPanel');
+    if (button) {
+      button.hidden = !state.previewOnlyAnalysis;
+      button.style.display = state.previewOnlyAnalysis ? '' : 'none';
+      button.disabled = !state.previewOnlyAnalysis || !state.rides.length || state.analysisRunInProgress || state.autoPipelineInProgress || state.previewFlightCheckInProgress;
+    }
+    if (panel && !state.previewOnlyAnalysis) panel.hidden = true;
+  }
+
+  function resetPreviewFlightDiagnostic() {
+    state.previewFlightRunId += 1;
+    state.previewFlightCheckInProgress = false;
+    state.previewFlightDiagnostic = null;
+    const panel = $('previewFlightDiagnosticPanel');
+    if (panel) { panel.hidden = true; panel.textContent = ''; }
+    syncPreviewFlightCheckControl();
+  }
+
+  function flightPreviewSourceHosts(item) {
+    const hosts = new Set();
+    for (const source of Array.isArray(item?.sources) ? item.sources : []) {
+      try {
+        const url = typeof source === 'string' ? source : source?.url;
+        const host = new URL(String(url || '')).hostname.toLowerCase().replace(/^www\./, '');
+        if (host) hosts.add(host);
+      } catch (_) {}
+    }
+    return hosts;
+  }
+
+  function makePreviewFlightDiagnostic(previewRides, checked, technicalFailures, firstTechnicalError, routeProbe = null, boardProbe = null) {
+    const groups = new Map();
+    for (const ride of previewRides) {
+      const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
+      if (!flightNumber) continue;
+      const event = stagedAirportEventDateContext(ride);
+      const direction = stagedFlightDirection(ride);
+      const airportIata = stagedAirportIata(ride);
+      const key = [flightNumber, cellText(ride?.date), cellText(event?.airportEventDate || ride?.date), direction, airportIata, normalizeTime(ride?.flightTime) || ''].join('|');
+      if (!groups.has(key)) groups.set(key, { flightNumber, date: cellText(event?.airportEventDate || ride?.date), direction, airportIata, ride, rows: [] });
+      groups.get(key).rows.push(Number(ride?.sourceRow || 0));
+    }
+    const entries = [...groups.values()].map(group => {
+      const hit = findCheckedFlightForRide(group.ride, checked);
+      const status = String(hit?.status || '').toLowerCase();
+      const confidence = String(hit?.confidence || '').toLowerCase();
+      const hostCount = flightPreviewSourceHosts(hit).size;
+      const routeIata = String(hit?.iata || hit?.relevantIata || '').toUpperCase();
+      const origin = String(hit?.officialOriginIata || '').toUpperCase();
+      const destination = String(hit?.officialDestinationIata || '').toUpperCase();
+      const expectedRoute = group.direction === 'departure'
+        ? origin === group.airportIata && destination === routeIata
+        : group.direction === 'arrival' && origin === routeIata && destination === group.airportIata;
+      const verified = Boolean(hit && hit.officialAirportEvidence === true && status === 'verified'
+        && (confidence === 'high' || confidence === 'verified') && !hit.conflict
+        && /^[A-Z]{3}$/.test(routeIata) && expectedRoute
+        && checkedSourceCount(hit) >= 2 && hostCount >= 2);
+      // Native opposite-airport probes are diagnostic evidence only. A conflicting
+      // exact-date opposite route is never promoted to a verified flight.
+      const routeConflict = (Array.isArray(routeProbe?.rows) ? routeProbe.rows : []).some(item =>
+        item?.reachable === true && item?.exactDateFound === true && item?.airportConflict === true
+        && normalizeFlightForCurrentCheck(item?.flightNumber) === group.flightNumber
+        && cellText(item?.airportEventDate) === group.date
+        && String(item?.airportIata || '').toUpperCase() === group.airportIata
+        && String(item?.direction || '').toLowerCase() === group.direction);
+      const boardConflict = (Array.isArray(boardProbe?.rows) ? boardProbe.rows : []).some(item =>
+        item?.reachable === true && cellText(item?.reason) === 'route_mismatch'
+        && normalizeFlightForCurrentCheck(item?.flightNumber) === group.flightNumber
+        && cellText(item?.airportEventDate) === group.date
+        && String(item?.airportIata || '').toUpperCase() === group.airportIata
+        && String(item?.direction || '').toLowerCase() === group.direction);
+      const conflict = Boolean(hit?.conflict) || routeConflict || boardConflict;
+      const singleSource = !verified && !conflict && hit?.officialAirportEvidence === true && hostCount >= 1;
+      return {
+        flightNumber: group.flightNumber, date: group.date, direction: group.direction,
+        airportIata: group.airportIata, rows: [...new Set(group.rows)].filter(n => n > 0).sort((a,b) => a-b),
+        status: verified && !conflict ? 'verified' : (conflict ? 'conflict' : (singleSource ? 'single_source' : 'open')),
+        location: verified && !conflict ? normalizeFlightLocation(hit?.flightLocation || hit?.relevantLocation) : '',
+        iata: verified && !conflict ? routeIata : '',
+        sourceCount: verified && !conflict ? hostCount : (singleSource ? 1 : 0)
+      };
+    });
+    return {
+      checkedAt: new Date().toISOString(),
+      total: entries.length,
+      verified: entries.filter(x => x.status === 'verified').length,
+      conflict: entries.filter(x => x.status === 'conflict').length,
+      open: entries.filter(x => x.status !== 'verified').length,
+      technicalFailures: Number(technicalFailures || 0),
+      firstTechnicalError: cellText(firstTechnicalError).slice(0, 150),
+      entries
+    };
+  }
+
+  function renderPreviewFlightDiagnostic(report) {
+    const panel = $('previewFlightDiagnosticPanel');
+    if (!panel) return;
+    panel.hidden = false;
+    const rows = report.entries.map(item => {
+      const label = item.status === 'verified' ? `Zwei Quellen: ${item.location} (${item.iata})`
+        : item.status === 'conflict' ? 'QUELLENKONFLIKT – nicht übernehmen'
+        : item.status === 'single_source' ? 'Nur eine Quelle – offen'
+        : 'Nicht streng bestätigt – offen';
+      const origin = item.direction === 'departure' ? `${item.airportIata} →` : `→ ${item.airportIata}`;
+      return `<li>${escapeHtml(item.flightNumber)} · ${escapeHtml(item.date)} · ${escapeHtml(origin)} · ${escapeHtml(label)}</li>`;
+    }).join('');
+    panel.innerHTML = `<strong>✈ Importfreie Flugprüfung · ${report.verified}/${report.total} streng bestätigt · ${report.open} offen</strong>`
+      + `<div>Nur Diagnose: keine Fahrten geändert, keine Übernahme möglich. Geprüft: ${escapeHtml(report.checkedAt)}</div>`
+      + (report.technicalFailures ? `<div>Technische Quellenfehler: ${report.technicalFailures} · ${escapeHtml(report.firstTechnicalError)}</div>` : '')
+      + `<ul>${rows}</ul>`;
+  }
+
+  async function runPreviewOnlyFlightCheck(options = {}) {
+    // The real UI never supplies providers. Only a browser-VM regression may
+    // inject deterministic mocks; the production path always calls native sources.
+    if (!state.previewOnlyAnalysis || !state.file || !state.rides.length
+        || state.analysisRunInProgress || state.autoPipelineInProgress || state.previewFlightCheckInProgress) return { ok: false, blocked: true };
+    const nativeApp = typeof location !== 'undefined' && (location.protocol === 'file:'
+      || (location.protocol === 'https:' && location.hostname === 'appassets.androidplatform.net'));
+    if (!nativeApp && options?.selftest !== true) {
+      const el = $('previewFlightDiagnosticPanel');
+      if (el) { el.hidden = false; el.textContent = 'Importfreie Flugprüfung erfordert die native Android-App. Kein Import erfolgt.'; }
+      return { ok: false, unsupported: true };
+    }
+    const providers = options?.selftest === true && window.__ATMS_P11422_REGRESSION__ === true ? options.providers || {} : {};
+    const official = providers.official || runOfficialAirportEvidence;
+    const board = providers.board || runNativeSecondSourceBoardProbe;
+    const single = providers.single || runNativeSecondSourceSingleFallback;
+    const oppositeRoute = providers.oppositeRoute || runNativeUnresolvedFlightRouteProbe;
+    const snapshotRides = JSON.parse(JSON.stringify(state.rides));
+    const originalRides = state.rides;
+    const originalSignature = JSON.stringify(state.rides);
+    const expectedGeneration = state.pipelineGeneration;
+    const runId = ++state.previewFlightRunId;
+    const current = () => state.previewFlightRunId === runId && state.previewOnlyAnalysis && state.pipelineGeneration === expectedGeneration
+      && state.rides === originalRides && JSON.stringify(state.rides) === originalSignature;
+    const panel = $('previewFlightDiagnosticPanel');
+    const showProgress = label => {
+      if (current() && panel) { panel.hidden = false; panel.textContent = `✈ Importfreie Flugprüfung: ${label} · keine Fahrtenübernahme`; }
+    };
+    state.previewFlightCheckInProgress = true;
+    syncPreviewFlightCheckControl();
+    try {
+      showProgress('Offizielle Airportquelle …');
+      const officialSummary = await official(snapshotRides, { onProgress: p => showProgress(`Airportquelle ${Number(p?.current || 0)}/${Number(p?.total || 0)}`) });
+      if (!current()) return { ok: false, stale: true };
+      const checkedOfficial = Array.isArray(officialSummary?.checked) ? officialSummary.checked : [];
+      showProgress('Zweitquelle Airport-Board …');
+      const boardProbe = await board(checkedOfficial, { onProgress: p => showProgress(`Zweitquelle ${Number(p?.current || 0)}/${Number(p?.total || 0)}`) });
+      if (!current()) return { ok: false, stale: true };
+      const promoted = promoteOfficialEvidenceWithNativeBoard(checkedOfficial, boardProbe);
+      showProgress('Einzelflug-Zweitquelle …');
+      const singleProbe = await single(promoted.checked, boardProbe, { onProgress: p => showProgress(`Einzelflug ${Number(p?.current || 0)}/${Number(p?.total || 0)}`) });
+      if (!current()) return { ok: false, stale: true };
+      const checked = promoteOfficialEvidenceWithNativeSingleFallback(promoted.checked, singleProbe).checked;
+      showProgress('Offene Gegenrouten …');
+      const routeProbe = await oppositeRoute(officialAirportDiagnosticSummary(officialSummary).rows, { onProgress: p => showProgress(`Gegenrouten ${Number(p?.current || 0)}/${Number(p?.total || 0)}`) });
+      if (!current()) return { ok: false, stale: true };
+      const technicalFailures = (Array.isArray(officialSummary?.failures) ? officialSummary.failures : [])
+        .filter(x => ['technical', 'provider_unavailable'].includes(String(x?.reason || '').toLowerCase()));
+      const report = makePreviewFlightDiagnostic(snapshotRides, checked, technicalFailures.length, technicalFailures[0]?.message, routeProbe, boardProbe);
+      if (!current()) return { ok: false, stale: true };
+      state.previewFlightDiagnostic = report;
+      renderPreviewFlightDiagnostic(report);
+      return { ok: true, report };
+    } catch (error) {
+      if (current() && panel) { panel.hidden = false; panel.textContent = `Flugprüfung technisch offen: ${cellText(error?.message) || 'unbekannt'}. Keine Fahrten geändert oder importiert.`; }
+      return { ok: false, stale: !current(), error: cellText(error?.message) };
+    } finally {
+      if (state.previewFlightRunId === runId) {
+        state.previewFlightCheckInProgress = false;
+        syncPreviewFlightCheckControl();
+      }
+    }
+  }
+
   async function runAutomaticFlightCheck(options = {}) {
     if (!state.rides.length) return;
     const status = $('importStatus');
@@ -16192,6 +16379,7 @@
     input.addEventListener('change', event => selectFiles(event.target.files || []));
     $('analyzePlanBtn')?.addEventListener('click', () => { state.previewOnlyAnalysis = false; void analyze(); });
     $('previewOnlyPlanBtn')?.addEventListener('click', () => { state.previewOnlyAnalysis = true; void analyze(); });
+    $('previewFlightCheckBtn')?.addEventListener('click', () => { void runPreviewOnlyFlightCheck(); });
     $('importPlanBtn')?.addEventListener('click', importRides);
     $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
     $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
@@ -16227,6 +16415,12 @@
     driverConsensusCandidateIsSafe,
     resolveDriverIdentityOcrIssue,
     readState: () => state
+  }); } catch (_) {}
+
+  // P114.22 selftest hooks never grant import rights.
+  try { window.ATMSP11422FlightRegression = Object.freeze({
+    runPreviewOnlyFlightCheck, resetPreviewFlightDiagnostic, syncPreviewFlightCheckControl,
+    makePreviewFlightDiagnostic, readState: () => state
   }); } catch (_) {}
 
   // P114.21 test hooks, no import/storage side effects from hook exposure.
