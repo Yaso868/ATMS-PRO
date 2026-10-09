@@ -1,0 +1,3561 @@
+{
+  "format": "ATMS_GOLDEN_REGRESSION_PACK",
+  "version": "72_P11418_PENDING_REAL_DEVICE",
+  "status": "REGRESSION_DOCUMENTED_PENDING_REALDEVICE",
+  "createdFor": "2026-10-09 P11418 after real-device P11417 regression",
+  "baseHead": "cc73597a9b146fb1d477aa22cdac3ee9ca3c9b19",
+  "policy": {
+    "correctOrFailClosed": true,
+    "pixelPolicy": "Source images copied byte-identical; no retouching, rewriting, sharpening or geometry edits.",
+    "noHardcoding": true,
+    "noCaseDisappearsUntilPass": true,
+    "productionMutationAllowed": false
+  },
+  "sourceImages": [
+    {
+      "file": "ATMS_GOLDEN_ERROR_PACK_2026-10-06.png",
+      "sha256": "d46a0026bb06ac8e09436123588f04c1b4ff0b70ede57ecc5e936303df166c26",
+      "bytes": 918234
+    },
+    {
+      "file": "IMG-20261006-WA0020.jpg",
+      "sha256": "37984f626d7a4b737e4ee1f7b4a94aa765843c4643563b0cfd127789aaed41f4",
+      "bytes": 43987
+    },
+    {
+      "file": "IMG-20261006-WA0022.jpg",
+      "sha256": "e5b4dc81da2052c5908e280f51ea4d8532d379634303fe1237e57142cd00c9fa",
+      "bytes": 88133
+    },
+    {
+      "file": "IMG-20261006-WA0023.jpg",
+      "sha256": "e949717304d1243138fe23c3d25856060333e82cb55b34387a798ecc032b7d2c",
+      "bytes": 12991
+    },
+    {
+      "file": "IMG-20261006-WA0024.jpg",
+      "sha256": "3f3209618b1781f468c5d41ed152926fcec719aa708fa6ef98c025effabb28f7",
+      "bytes": 233480
+    },
+    {
+      "file": "IMG-20261007-WA0000.jpg",
+      "sha256": "f9a26d902c2de88dc06ee7c4ab42e89f176e7023271f35f44c34d759e58673fa",
+      "bytes": 440605
+    },
+    {
+      "file": "IMG-20261007-WA0001.jpg",
+      "sha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+      "bytes": 463566
+    },
+    {
+      "file": "IMG-20261007-WA0014.jpg",
+      "sha256": "2de840c03b08ed9f97c4e020e17d90877f6d08413267f62e938aa34ebf0ed3b0",
+      "bytes": 184962
+    },
+    {
+      "file": "IMG-20261008-WA0014.jpg",
+      "sourceOriginalBytesVerified": false,
+      "displayedChatImage": "92699.jpg",
+      "displayedChatImageSha256": "b3072619d7237ccf5cd4696509c412c7d8a9f7142f7240372641862cb2ab48a2",
+      "displayedChatImageBytes": 217346,
+      "note": "Chat-export/rendered user image; no byte-identical WhatsApp source verified. No claim of original SHA."
+    },
+    {
+      "file": "92759.jpg",
+      "sha256": "441b8588d2f085ddd70f01bd5c26df83d8a164f1a40b1d0b96d5536416390fa2",
+      "bytes": 111029,
+      "plantag": "2026-10-08",
+      "visibleRides": 9,
+      "originalBytesVerified": false,
+      "sourceKind": "user_provided_chat_image",
+      "note": "Headerless follow-on crop separate from WA0014. User confirms plantag 08.10.2026. Do not conflate source rows with earlier 17-ride image."
+    },
+    {
+      "file": "92767.jpg",
+      "sha256": "dcbfd290ec4fee8822be6d5cfd56e1223473ead909eb054dd43e2f26445a449d",
+      "bytes": 84867,
+      "plantag": "2026-10-08",
+      "sourceKind": "user-provided chat image displaying new original plan WA0020",
+      "originalBytesVerified": false
+    },
+    {
+      "file": "92763.jpg",
+      "sha256": "6903f2658a27189b26821db030ff384043a59c1006bc2cf2cf90907f8ab14791",
+      "bytes": 83072,
+      "plantag": "2026-10-08",
+      "sourceKind": "user-provided chat image displaying prior original plan WA0019",
+      "originalBytesVerified": false
+    },
+    {
+      "file": "93125.jpg",
+      "sha256": "f714938c8540da0421c7120906e6f435a9ce0401b7d45f506970b510c619fc5f",
+      "bytes": 481913,
+      "plantag": "2026-10-09",
+      "sourceKind": "user chat screenshot rendering original 09.10.2026 source plan; WA0023 original WhatsApp bytes not independently verified",
+      "originalBytesVerified": false
+    }
+  ],
+  "cases": [
+    {
+      "id": "LEGACY-P110",
+      "type": "LEGACY_PACK",
+      "source": "ATMS_GOLDEN_ERROR_PACK_2026-10-06.png",
+      "sourceRow": null,
+      "layoutClass": "L15_FULL_2026-10-06",
+      "errorClasses": [
+        "legacy_p110_bundle"
+      ],
+      "expected": {
+        "legacyManifest": "../ATMS_GOLDEN_ERROR_PACK_2026-10-06_manifest.json",
+        "rows": 16
+      },
+      "note": "Bestehender P110 Golden Error Pack bleibt vollständig verpflichtend; kein Fall darf verschwinden."
+    },
+    {
+      "id": "GE-20261006-WA0020-R2",
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0020.jpg",
+      "sourceRow": 2,
+      "layoutClass": "L15_SHORT_TWO_ROW",
+      "errorClasses": [
+        "header_mapping",
+        "column_mapping",
+        "cross_field_integrity",
+        "recovery_fallback",
+        "fail_closed",
+        "performance"
+      ],
+      "expected": {
+        "price": 47.6,
+        "time": "21:15",
+        "pickup": "DUS Airport",
+        "destination": "NH Nord-Holiday Inn",
+        "customer": "Eurowings",
+        "company": "WT",
+        "timeMirror": "21:15",
+        "arrivalFlight": "EW9735",
+        "departureFlight": "",
+        "flightNumber": "EW9735",
+        "vehicle": "Van",
+        "persons": 4,
+        "flightTime": "20:56",
+        "flightLocation": "Warschau",
+        "driver": "Lana"
+      },
+      "note": "Kurze 2-Zeilen-Liste: rechte Spalten umgelegt; Fahrer-Recovery-Crop umfasst Nachbarspalten.",
+      "previousActual": {
+        "timeMirror": "",
+        "flightTime": "21:15",
+        "flightNumber": "",
+        "flightLocation": "EW9735 -",
+        "vehicle": "",
+        "persons": 0,
+        "driver": "Van 4 20:56 Warschau Lana",
+        "importGate": "Bereit zur Übernahme"
+      },
+      "performanceEvidence": {
+        "totalMs": 61250,
+        "phase": "missing_driver_targeted_ocr",
+        "phaseMs": 59485
+      }
+    },
+    {
+      "id": "GE-20261006-WA0020-R3",
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0020.jpg",
+      "sourceRow": 3,
+      "layoutClass": "L15_SHORT_TWO_ROW",
+      "errorClasses": [
+        "header_mapping",
+        "column_mapping",
+        "cross_field_integrity",
+        "recovery_fallback",
+        "fail_closed",
+        "performance"
+      ],
+      "expected": {
+        "price": 35.0,
+        "time": "21:30",
+        "pickup": "DUS Airport",
+        "destination": "Marriott Seestern DUS",
+        "customer": "Avion",
+        "company": "Get-E",
+        "timeMirror": "21:30",
+        "arrivalFlight": "EW9765",
+        "departureFlight": "",
+        "flightNumber": "EW9765",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightTime": "",
+        "flightLocation": "Zurich",
+        "driver": "Büni"
+      },
+      "note": "Gleiche Strukturstörung in zweiter Zeile; leere echte Flugzeit darf nicht mit Hauptzeit gefüllt werden.",
+      "previousActual": {
+        "timeMirror": "",
+        "flightTime": "21:30",
+        "flightNumber": "",
+        "flightLocation": "EW9765 -",
+        "vehicle": "",
+        "persons": 0,
+        "driver": "Van 6 Zurich Bini",
+        "importGate": "Bereit zur Übernahme"
+      },
+      "performanceEvidence": {
+        "totalMs": 61250,
+        "phase": "missing_driver_targeted_ocr",
+        "phaseMs": 59485
+      }
+    },
+    {
+      "id": "GC-20261006-WA0022-R2",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0022.jpg",
+      "sourceRow": 2,
+      "layoutClass": "L14_NO_DEP_COLUMN",
+      "errorClasses": [
+        "control_short_layout"
+      ],
+      "expected": {
+        "time": "21:15",
+        "timeMirror": "21:15",
+        "flightTime": "20:56",
+        "flightNumber": "EW9735",
+        "vehicle": "Van",
+        "persons": 4,
+        "flightLocation": "Warschau",
+        "driver": "Lana"
+      },
+      "note": "Nahe Kontrollzeile: gleiche Daten funktionieren bei stabiler Header-/Geometrieerkennung.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261006-WA0022-R3",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0022.jpg",
+      "sourceRow": 3,
+      "layoutClass": "L14_NO_DEP_COLUMN",
+      "errorClasses": [
+        "control_short_layout",
+        "control_umlaut_driver"
+      ],
+      "expected": {
+        "time": "21:30",
+        "timeMirror": "21:30",
+        "flightTime": "21:40",
+        "flightNumber": "EW9765",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightLocation": "Zurich",
+        "driver": "Büni"
+      },
+      "note": "Kontrolle für Büni/Van/6 und rechte Spalten.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261006-WA0023-HEADERLESS",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0023.jpg",
+      "sourceRow": 1,
+      "layoutClass": "HEADERLESS_SINGLE_ROW",
+      "errorClasses": [
+        "control_fail_closed_headerless"
+      ],
+      "expected": {
+        "importBlocked": true,
+        "reasonClass": "header_or_geometry_insufficient"
+      },
+      "note": "Headerloser Einzelzeilen-Ausschnitt muss fail-closed bleiben; keine aggressive Rekonstruktion.",
+      "previousActual": {
+        "importBlocked": true
+      }
+    },
+    {
+      "id": "GE-20261006-WA0024-R15",
+      "type": "ERROR",
+      "source": "IMG-20261006-WA0024.jpg",
+      "sourceRow": 15,
+      "layoutClass": "L14_NO_DEP_COLUMN_LONG",
+      "errorClasses": [
+        "performance",
+        "recovery_fallback",
+        "empty_cell_semantics"
+      ],
+      "expected": {
+        "time": "22:25",
+        "flightNumber": "EW9571",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightTime": "",
+        "flightLocation": "Jerez",
+        "driver": "",
+        "driverNeedsManualCheck": true
+      },
+      "note": "Inhaltlich leerer Fahrer ist zulässig; Recovery darf nicht eskalieren.",
+      "previousActual": {
+        "driver": "",
+        "driverNeedsManualCheck": true
+      },
+      "performanceEvidence": {
+        "totalMs": 40932,
+        "phase": "missing_driver_targeted_ocr",
+        "phaseMs": 33413
+      }
+    },
+    {
+      "id": "GC-20261006-WA0024-R16",
+      "type": "CONTROL",
+      "source": "IMG-20261006-WA0024.jpg",
+      "sourceRow": 16,
+      "layoutClass": "L14_NO_DEP_COLUMN_LONG",
+      "errorClasses": [
+        "control_driver_present",
+        "control_cgn"
+      ],
+      "expected": {
+        "time": "22:20",
+        "pickup": "CGN Vorfeld",
+        "destination": "Adagio-Asahi DUS",
+        "customer": "Corendon",
+        "company": "TakeOff",
+        "flightNumber": "XR414",
+        "vehicle": "Van",
+        "persons": 6,
+        "flightTime": "22:00",
+        "flightLocation": "Heraklion",
+        "driver": "Selim"
+      },
+      "note": "Kontrolle direkt neben leerem Fahrerfall.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GE-20261007-WA0000-R15",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0000.jpg",
+      "sourceRow": 15,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "05:15"
+      },
+      "note": "Reines Tabellen-/Boundary-Zeichen vor gültiger Flugzeit.",
+      "previousActual": {
+        "flightTime": "[05:15"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0000-R19",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0000.jpg",
+      "sourceRow": 19,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "05:35"
+      },
+      "note": "Reines Tabellen-/Boundary-Zeichen vor gültiger Flugzeit.",
+      "previousActual": {
+        "flightTime": "|05:35"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0000-R30",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0000.jpg",
+      "sourceRow": 30,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "flight_cell",
+        "fail_closed",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "time": "09:20",
+        "arrivalFlight": "OS161",
+        "flightNumber": "OS161",
+        "vehicle": "Pkw",
+        "persons": 1,
+        "flightTime": "09:20",
+        "driver": "Nimet"
+      },
+      "note": "Sichtbare OS161 ging verloren, Zeile wurde dennoch als OK freigegeben.",
+      "previousActual": {
+        "flightNumber": "",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R11",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 11,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "primary_ocr",
+        "field_normalization",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "company": "WT",
+        "flightTime": "05:05"
+      },
+      "note": "Firma und sichtbare Flugzeit fehlerhaft/verloren, trotzdem OK.",
+      "previousActual": {
+        "company": "OWT",
+        "flightTime": "",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R15",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 15,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "05:15"
+      },
+      "note": "Wiederholbarer Boundary-Zeitfehler.",
+      "previousActual": {
+        "flightTime": "[05:15"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R23",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 23,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "field_loss",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "flightTime": "05:45"
+      },
+      "note": "Sichtbare Flugzeit 05:45 geht still verloren.",
+      "previousActual": {
+        "flightTime": "",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R26",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 26,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "primary_ocr",
+        "recovery_fallback",
+        "field_normalization",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "9MB",
+        "time": "07:15",
+        "price": 108.0,
+        "destination": "DUS Airport",
+        "customer": "Eurowings",
+        "company": "KoelnBus",
+        "arrivalFlight": "",
+        "departureFlight": "",
+        "flightNumber": "",
+        "vehicle": "Pkw",
+        "persons": 1,
+        "flightTime": "07:15",
+        "driver": "Nimet"
+      },
+      "note": "P113.2 bleibt sicher fail-closed, löst den exakten Kurzcode aber noch nicht. P113.3 prüft die bestätigte Ort-Zelle am Originalbild mit nativer OCR-Skalierung plus enger Zeichenregion innerhalb derselben Zellgrenzen; keine 9MB/IMB-Produktionsregel. P113.4 Realgerät bestätigt die generische Edge-Glyph-Adjudication: 9MB korrekt, 0 OCR-/Datenfehler; keine produktive Übernahme.",
+      "previousActual": {
+        "pickup": "Novotel Kain",
+        "flightLocation": "IMB"
+      },
+      "p113RealDeviceActual": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "IMB",
+        "independentTextOcr": "9MB",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113_P1131_P1132_and_P1134",
+      "p1131RealDeviceActual": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "IMB",
+        "independentTextOcr": "9MB",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "zeroSilentErrorGatePass": true,
+        "exactValuePass": false
+      },
+      "p1132RealDeviceActual": {
+        "pickup": "Novotel Köln",
+        "flightLocation": "IMB",
+        "independentTextOcr": "9MB",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "zeroSilentErrorGatePass": true,
+        "exactValuePass": false,
+        "summary": "33/33; 3 Hinweise; 1 Fehler; P113.2 blieb bei IMB↔9MB fail-closed ohne Regression der bereits korrigierten Kontrollfälle"
+      },
+      "p1134Target": {
+        "flightLocation": "9MB",
+        "mode": "edge_glyph_adjudication",
+        "requires": {
+          "singleEdgeGlyphDifference": true,
+          "invariantRemainingCore": true,
+          "minCompatibleExactCellViews": 3,
+          "minEvidenceFamilies": 2,
+          "minEdgeStates": 2,
+          "requiresMissingEdgeView": true,
+          "requiresExactIndependentBatchCandidate": true,
+          "rejectCompetingBatchOrCoreEvidence": true
+        },
+        "realDeviceProofPending": false
+      },
+      "p1134RealDeviceActual": {
+        "flightLocation": "9MB",
+        "rowStatus": "Hinweis",
+        "importBlockedByOcr": false,
+        "dateConfirmationPending": true,
+        "rides": 33,
+        "automaticCorrections": 83,
+        "warnings": 3,
+        "errors": 0,
+        "exactValuePass": true,
+        "summary": "33/33; 83 automatisch korrigiert; 3 Hinweise; 0 Fehler; Zeile 26 korrekt 9MB; keine OCR-/Datenblockade, nur Datumsbestätigung offen; nichts übernommen"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R27",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 27,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "cross_field_integrity",
+        "field_normalization",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "company": "WT"
+      },
+      "note": "Kunde Eurowings wurde fälschlich in Firma übernommen.",
+      "previousActual": {
+        "company": "Eurowings",
+        "rowStatus": "OK"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R32",
+      "type": "ERROR_CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 32,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "flight_ocr_O_vs_0_prefix",
+        "control_flight_recovery"
+      ],
+      "expected": {
+        "arrivalFlight": "OS161",
+        "flightNumber": "OS161",
+        "flightTime": "09:20",
+        "driver": "Yannik"
+      },
+      "note": "OS161-Recovery ist hier positiv; gleichzeitig Boundary-Zeitfehler.",
+      "previousActual": {
+        "arrivalFlight": "OS161",
+        "flightNumberRawOcr": "0S161",
+        "flightTime": "|09:20"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0001-R33",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 33,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "boundary_noise",
+        "normalization"
+      ],
+      "expected": {
+        "flightTime": "09:30"
+      },
+      "note": "Boundary-Zeitfehler unmittelbar neben sauberer Kontrollzeile.",
+      "previousActual": {
+        "flightTime": "|09:30"
+      }
+    },
+    {
+      "id": "GC-20261007-WA0001-R14",
+      "type": "CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "control_time_0515"
+      ],
+      "expected": {
+        "flightTime": "05:15",
+        "flightNumber": "EW9538",
+        "driver": "Nimet"
+      },
+      "note": "Gleiche Zeit 05:15 ohne Boundary-Artefakt.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261007-WA0001-R19",
+      "type": "CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 19,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "control_time_0535"
+      ],
+      "expected": {
+        "flightTime": "05:35",
+        "flightNumber": "EW9750",
+        "driver": "Schimmi"
+      },
+      "note": "Gleiche Zeitklasse 05:35 korrekt.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GC-20261007-WA0001-R34",
+      "type": "CONTROL",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 34,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "control_time_0930"
+      ],
+      "expected": {
+        "flightTime": "09:30",
+        "flightNumber": "EW9612",
+        "driver": "Nimet"
+      },
+      "note": "Direkt benachbarte 09:30-Zeile ohne Boundary-Artefakt.",
+      "previousActual": "correct"
+    },
+    {
+      "id": "GE-20261007-WA0001-R7-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: vollständiger Primärwert wurde durch links abgeschnittene unabhängige Routen-OCR irriott Seestern DUS fälschlich hart blockiert.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R12-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: vollständiger Primärwert wurde durch links abgeschnittene unabhängige Routen-OCR irriott Seestern DUS fälschlich hart blockiert.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R13-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 13,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "flight_numeric_mutation",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "departureFlight": "EW9420",
+        "flightNumber": "EW9420",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: Route wurde wegen irriott... falsch blockiert und sichtbares EW9420 endete als formal gültiges, aber falsches EW8420.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "departureFlight": "EW8420",
+        "flightNumber": "EW8420",
+        "rowStatus": "Fehler"
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R17-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "secondary_ocr_left_edge_clipping",
+        "false_positive_conflict",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113 real-device: vollständiger Primärwert wurde durch links abgeschnittene unabhängige Routen-OCR irriott Seestern DUS fälschlich hart blockiert.",
+      "previousActual": {
+        "pickup": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "irriott Seestern DUS",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-R29-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 29,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "primary_ocr_left_edge_clipping",
+        "repeated_text_consistency",
+        "zero_silent_error",
+        "fail_closed"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "departureFlight": "EW9574",
+        "flightNumber": "EW9574",
+        "rowStatus": "OK"
+      },
+      "note": "P113 real-device: sichtbarer Abholort verlor linken Präfix und wurde als rriott Seestern DUS mit Status OK freigegeben.",
+      "previousActual": {
+        "pickup": "rriott Seestern DUS",
+        "departureFlight": "EW9574",
+        "flightNumber": "EW9574",
+        "rowStatus": "OK"
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-SUMMARY-P1131",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "summary_consistency",
+        "date_confirmation_separation",
+        "ui_integrity"
+      ],
+      "expected": {
+        "ocrErrorCountMatchesVisibleOcrErrors": true,
+        "dateBatchCountedAsOcrError": false,
+        "dateConfirmationStillBlocksImport": true,
+        "dateBatchRideCount": 22
+      },
+      "note": "P113 real-device: Kopf zeigte 6 Fehler, obwohl fünf sichtbare harte OCR-/Datenfehler in Liste/Tabelle standen; die offene Datumsbestätigung wurde intern als error mitgezählt. Sie muss separat sichtbar und weiterhin blockierend bleiben.",
+      "previousActual": {
+        "headlineErrorCount": 6,
+        "visibleHardOcrErrors": 5,
+        "dateBatchPending": true,
+        "dateBatchRideCount": 22
+      },
+      "reproducibility": "confirmed_real_device_P113"
+    },
+    {
+      "id": "GE-20261007-WA0001-RUNTIME-P1133-REVIEWITEMS",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "runtime",
+        "reference_error",
+        "scope",
+        "release_gate"
+      ],
+      "expected": {
+        "analysisCompletesWithoutRuntimeException": true,
+        "textIntegrityStageCompletes": true,
+        "reviewItemsScope": "function_scope",
+        "apkBuildBlockedWhenRuntimeSmokeFails": true
+      },
+      "note": "P113.3 Realgeraet: Analyse brach unmittelbar mit `reviewItems is not defined` ab. Ursache war block-scoped reviewItems im try-Block bei spaeterer Nutzung nach finally. P113.3.1 muss den realen Funktionspfad ausfuehren und eine APK bei Runtime-Fehlern vor dem Packaging blockieren.",
+      "previousActual": {
+        "analysisCompleted": false,
+        "error": "reviewItems is not defined",
+        "stage": "text_integrity_ocr",
+        "buildHadBeenGreen": true
+      },
+      "reproducibility": "confirmed_real_device_P1133"
+    },
+    {
+      "id": "GE-20261007-WA0014-HEADER-TIME-P1135",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "header_mapping",
+        "required_time_missing",
+        "matrix_geometry",
+        "fail_closed"
+      ],
+      "expected": {
+        "visibleRows": 13,
+        "cancelledRows": 1,
+        "activeRides": 12,
+        "timeColumn": "first Uhrzeit between Preis and Von",
+        "flightTimeColumn": "last Uhrzeit before Ort",
+        "timeMappingPresent": true,
+        "analysisReachesRideParsing": true
+      },
+      "note": "P113.4 real-device: visible first Uhrzeit column exists, but analysis aborts before ride parsing with Pflichtspalten nicht erkannt: time. No Technik/Diagnose UI is built because failure occurs before the normal ride diagnostics path.",
+      "previousActual": {
+        "error": "Pflichtspalten nicht erkannt: time.",
+        "ridesParsed": 0,
+        "diagnosticUiAvailable": false,
+        "timeMappingPresent": false
+      },
+      "reproducibility": "confirmed_real_device_P1134",
+      "p1135Target": {
+        "method": "RAW OCR HEADER/TIME GEOMETRY RECOVERY",
+        "recoverBeforeMatrixCompletion": true,
+        "requiresPriceAndPickupAnchors": true,
+        "requiresRepeatedClockRows": 3,
+        "minimumCoverage": 0.6,
+        "rejectStableCompetingClockCluster": true,
+        "noConcreteTimeHardcodes": true,
+        "realDeviceProofPending": false
+      },
+      "p1135RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1135",
+        "analysisCompleted": false,
+        "error": "Pflichtspalten nicht erkannt: time.",
+        "ridesParsed": 0,
+        "timeMappingPresent": false,
+        "result": "FAIL"
+      },
+      "p1136Target": {
+        "method": "ROW-ALIGNED RAW-WORD PRICE/TIME GEOMETRY + TIME-ONLY MATRIX REPLAY",
+        "baseHead": "920d5f7",
+        "trigger": "time-only mapping failure or missing primary ride-time anchor",
+        "minimumMatchedPhysicalRows": 3,
+        "minimumPriceCoverage": 0.6,
+        "minimumTimeCoverage": 0.6,
+        "rejectStableCompetingTimeCluster": true,
+        "rejectCompetingPriceClusterWhenHeaderMissing": true,
+        "protectNoPriceLayouts": true,
+        "secondOcrCallRequired": false,
+        "diagnosticBeforeRequiredColumnAbort": true,
+        "noConcreteTimeHardcodes": true,
+        "realDeviceProofPending": false
+      },
+      "p1136RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1136",
+        "analysisCompleted": true,
+        "ridesOcrChecked": 13,
+        "timeMappingPresent": true,
+        "requiredTimeErrorPresent": false,
+        "ocrDataErrors": 7,
+        "mapping": {
+          "time": 1,
+          "pickup": 2,
+          "destination": 3,
+          "arrivalFlight": 6,
+          "departureFlight": 7,
+          "flightTime": 10,
+          "driver": 12
+        },
+        "boundaryCount": 14,
+        "result": "PARTIAL_PASS_OVERALL_FAIL"
+      },
+      "p1137Target": {
+        "method": "RAW-WORD MIRROR-TIME SCHEMA INTEGRITY + BOUNDED EDGE ADJUDICATION",
+        "trigger": "14-column price layout degraded to 13 columns or bounded corroborated OCR edge noise",
+        "mirrorEvidenceMinimumRows": 3,
+        "mirrorEvidenceMinimumCoverage": 0.6,
+        "rejectCompetingStableMirrorCluster": true,
+        "protectTrue13ColumnNoMirrorLayouts": true,
+        "protectExistingTimeMapping": true,
+        "realDeviceProofPending": false,
+        "hardcodingAllowed": false
+      },
+      "p1137RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1137",
+        "analysisCompleted": true,
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "timeMappingPresent": true,
+        "timeMirrorMappingPresent": true,
+        "flightTimeMappingPresent": true,
+        "flightNumbersNoLongerMirrorPrefixed": true,
+        "ocrDataErrors": 8,
+        "result": "STRUCTURAL_PASS_INTEGRITY_FAIL"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0014-P1136-MIRROR-SCHEMA-COMPRESSION",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "matrix_geometry",
+        "time_mirror_missing",
+        "column_shift",
+        "flight_cell_contamination",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "physicalColumns": 14,
+        "time": 1,
+        "pickup": 2,
+        "destination": 3,
+        "timeMirror": 6,
+        "arrivalFlight": 7,
+        "departureFlight": 8,
+        "vehicle": 9,
+        "persons": 10,
+        "flightTime": 11,
+        "flightLocation": 12,
+        "driver": 13,
+        "arrivalFlightHasTimePrefix": false
+      },
+      "note": "P113.6 real-device reached ride parsing but reported boundaries=14 (13 data columns) and no timeMirror. All semantics after Firma shifted left; mirror-time tails were prepended to arrival-flight values.",
+      "previousActual": {
+        "boundaryCount": 14,
+        "dataColumns": 13,
+        "mapping": {
+          "time": 1,
+          "pickup": 2,
+          "destination": 3,
+          "arrivalFlight": 6,
+          "departureFlight": 7,
+          "flightTime": 10,
+          "driver": 12
+        },
+        "examples": [
+          "10EW9733",
+          "45EW9577",
+          "35EW9989",
+          "40EW9775",
+          "50EW9775",
+          "05KL1803"
+        ]
+      },
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1137",
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "timeMirrorPresent": true,
+        "flightNumbersNoLongerMirrorPrefixed": true,
+        "result": "PASS"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0014-R2-TIME-REOCR-CONFLICT-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 2,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "time_ocr",
+        "secondary_ocr_conflict",
+        "mirror_time_missing",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "time": "15:35",
+        "timeMirror": "15:35",
+        "importBlockedByTimeConflict": false
+      },
+      "note": "P113.6 real-device retained primary 15:35 but hard-blocked against repeated post-OCR 16:35 because the structurally missing timeMirror could not independently confirm the primary value.",
+      "previousActual": {
+        "time": "15:35",
+        "secondaryTimeOcr": "16:35",
+        "timeMirror": null,
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R6-ROUTE-EDGEGLYPH-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 6,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "NH Nord-Holiday Inn",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 real-device primary destination was complete but independent route OCR ended with Inr and caused a hard block.",
+      "previousActual": {
+        "destination": "NH Nord-Holiday Inn",
+        "secondaryRouteOcr": "NH Nord-Holiday Inr",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R7-COMPANY-BOUNDARY-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "table_boundary_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "timeMirror": "15:45",
+        "importBlockedByTextConflict": false
+      },
+      "note": "P113.6 real-device carried a terminal table-edge glyph into company as Get-E | while independent text OCR read Get-E.",
+      "previousActual": {
+        "company": "Get-E |",
+        "secondaryTextOcr": "Get-E",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R7-ROUTE-RIGHTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_clipping",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 real-device complete primary destination was blocked by independent route OCR clipped to Marriott Seestern DU.",
+      "previousActual": {
+        "destination": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "Marriott Seestern DU",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R9-ROUTE-EDGEGLYPH-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 9,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "NH Nord-Holiday Inn",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 real-device repeated the terminal Inr secondary-OCR conflict on a second same-plan occurrence.",
+      "previousActual": {
+        "destination": "NH Nord-Holiday Inn",
+        "secondaryRouteOcr": "NH Nord-Holiday Inr",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-PICKUP-LEFTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "primary_ocr_left_edge_clipping",
+        "route_text_integrity",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "pickup": "Marriott Seestern DUS"
+      },
+      "note": "P113.6 result table silently displayed arriott Seestern DUS although raw-word diagnostics contained the full leading Marriott token at strong confidence.",
+      "previousActual": {
+        "pickup": "arriott Seestern DUS",
+        "rowStatus": "OK"
+      },
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "pickup": "arriott Seestern DUS",
+        "rowStatus": "OK",
+        "result": "FAIL_PERSISTED"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-COMPANY-BOUNDARY-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "table_boundary_glyph",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "timeMirror": "18:05",
+        "importBlockedByTextConflict": false
+      },
+      "note": "P113.6 repeated the company/table-edge conflict on the final source row.",
+      "previousActual": {
+        "company": "Get-E |",
+        "secondaryTextOcr": "Get-E",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-ROUTE-RIGHTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "route_text_integrity",
+        "secondary_ocr_right_edge_clipping",
+        "false_positive_conflict"
+      ],
+      "expected": {
+        "destination": "Marriott Seestern DUS",
+        "importBlockedByRouteConflict": false
+      },
+      "note": "P113.6 repeated the clipped DU secondary route OCR conflict on the final source row.",
+      "previousActual": {
+        "destination": "Marriott Seestern DUS",
+        "secondaryRouteOcr": "Marriott Seestern DU",
+        "rowStatus": "Fehler",
+        "importBlocked": true
+      },
+      "reproducibility": "confirmed_real_device_P1136"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-FLIGHTLOCATION-LEFTCLIP-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "column_shift",
+        "left_edge_clipping",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "flightLocation": "Amsterdam"
+      },
+      "note": "P113.6 result table displayed msterdam. The source image visibly contains Amsterdam; correct 14-column reconstruction must keep the full location cell.",
+      "previousActual": {
+        "flightLocation": "msterdam",
+        "rowStatus": "Fehler"
+      },
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "result": "FAIL_PERSISTED"
+      },
+      "p1138RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1138",
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "ocrDataErrorsReported": 0,
+        "automaticImportOccurred": true,
+        "result": "FAIL_PERSISTED_SILENT"
+      },
+      "p1139RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "result": "FAIL_PERSISTED_SILENT"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0014-R4-STORNO-EXCLUSION-P1136",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 4,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "cancellation_detection",
+        "row_color_corroboration",
+        "active_ride_count"
+      ],
+      "expected": {
+        "driverMarker": "Storno",
+        "rowColorSignal": "warm_red",
+        "cancelled": true,
+        "includedAsActiveRide": false,
+        "activeRidesAfterExclusion": 12
+      },
+      "note": "P113.6 parsed all 13 visible rows as rides although one source row is visibly red and carries an exact Storno driver marker. Text marker alone remains insufficient; row color provides the independent second signal.",
+      "previousActual": {
+        "ridesParsed": 13,
+        "cancelledRowsExcluded": 0,
+        "stornoRowIncluded": true
+      },
+      "reproducibility": "confirmed_real_device_P1136",
+      "p1137RealDeviceActual": {
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "result": "PASS"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0014-P1137-CUSTOMER-TERMINAL-PUNCT",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRows": [
+        2,
+        3,
+        6,
+        8,
+        9,
+        10,
+        11,
+        13
+      ],
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "customer_text_integrity",
+        "secondary_ocr_terminal_punctuation",
+        "false_positive_conflict",
+        "repeated_secondary_crop_bias"
+      ],
+      "expected": {
+        "customer": "Eurowings",
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "primaryCustomer": "Eurowings",
+        "secondaryTextOcr": "Eurowing:",
+        "blockedRows": 8,
+        "result": "FAIL"
+      },
+      "note": "P113.7 real-device: strong primary full-image customer text was repeatedly blocked by an edge-corrupted secondary OCR variant ending in punctuation. P113.8 may suppress only a single extreme-edge punctuation substitution with strong exact primary evidence and same-plan peer support; semantic substitutions remain fail-closed.",
+      "reproducibility": "confirmed_real_device_P1137"
+    },
+    {
+      "id": "GE-20261007-WA0014-R7-COMPANY-EDGE-TRUNCATION-P1137",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 7,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "secondary_ocr_edge_truncation",
+        "false_auto_correction",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "automaticCorrectionToTruncatedValue": false
+      },
+      "previousActual": {
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "displayedCompany": "Get-",
+        "result": "FAIL"
+      },
+      "note": "P113.7 real-device: after mirror-schema repair, secondary text OCR incorrectly shortened a strong primary hyphenated company code at the cell edge. P113.8 suppresses only strict 1-2 character edge truncation of a delimiter-bearing short code with strong primary raw evidence and peer support.",
+      "reproducibility": "confirmed_real_device_P1137"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-COMPANY-SILENT-TRUNCATION-P1138",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "silent_auto_correction",
+        "hyphenated_short_code",
+        "source_truth_edge_loss",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "automaticCorrectionToTruncatedValue": false,
+        "rowStatus": "OK only when source value is preserved"
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1138",
+        "primaryDisplayedBeforeCorrection": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "displayedCompany": "Get-",
+        "autoCorrectionMessage": "Firma Get-E → Get- durch unabhängige DEU-Spalten- + Zell-OCR sicher korrigiert",
+        "ocrDataErrorsReported": 0,
+        "automaticImportOccurred": true,
+        "result": "FAIL_SILENT"
+      },
+      "note": "P113.8 real-device: the new edge guard still allowed a silent Get-E→Get- correction when the existing raw-cell evidence was itself clipped. P113.9 requires a separate two-mode full-cell source-truth consensus before preserving the longer delimiter-bearing company code.",
+      "reproducibility": "confirmed_real_device_P1138",
+      "p1139RealDeviceActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "displayedCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "PRIMARY_PRESERVED_BUT_FALSE_CONFLICT_PERSISTED"
+      }
+    },
+    {
+      "id": "GE-20261007-WA0014-P1138-ZERO-SILENT-ERROR-GATE",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": null,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "zero_silent_error",
+        "automatic_import_gate",
+        "silent_data_mutation",
+        "text_edge_integrity"
+      ],
+      "expected": {
+        "activeRides": 12,
+        "cancelledRows": 1,
+        "reportedOcrDataErrors": 0,
+        "silentTextErrors": 0,
+        "automaticImportAllowedOnlyWhenSilentErrorsAreZero": true
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1138",
+        "ridesOcrChecked": 12,
+        "automaticCorrections": 23,
+        "reportedHints": 0,
+        "reportedErrors": 0,
+        "silentMismatches": [
+          "company Get-E→Get-",
+          "flightLocation Amsterdam→msterdam"
+        ],
+        "automaticImportOccurred": true,
+        "result": "FAIL"
+      },
+      "note": "P113.8 displayed a clean 0-error result and automatically imported the list although two source-visible text values were still silently wrong. P113.9 adds source-truth full-cell evidence for these bounded edge-loss classes; unresolved evidence must stay fail-closed instead of silently green.",
+      "reproducibility": "confirmed_real_device_P1138"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1139",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "source_truth_peer_gate",
+        "false_positive_conflict",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryEdgeTruncationMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL"
+      },
+      "note": "P113.9 real-device preserved the correct source company value but still blocked import because source-truth preservation additionally required a same-plan peer. P114.0 removes only that unrelated peer dependency when two independent full-cell source-truth modes agree on the longer hyphenated primary and the competing value is a strict 1-2 glyph edge truncation.",
+      "reproducibility": "confirmed_real_device_P1139"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-FLIGHTLOCATION-SILENT-LEFTCLIP-P1139",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "source_truth_crop_boundary",
+        "left_edge_clipping",
+        "zero_silent_error"
+      ],
+      "expected": {
+        "flightLocation": "Amsterdam",
+        "rowStatus": "OK only when full source value is present",
+        "silentMismatchAllowed": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1139",
+        "flightLocation": "msterdam",
+        "rowStatus": "OK",
+        "result": "FAIL_SILENT"
+      },
+      "note": "P113.9 full-cell source-truth views were still bounded by a synthetic/schema edge that could sit inside the printed cell on Android. P114.0 adds a small bounded edge-expanded source-truth family and accepts only two-mode agreement on an exact 1-2 glyph edge extension; neighbor text and semantic alternatives remain fail-closed.",
+      "reproducibility": "confirmed_real_device_P1139"
+    },
+    {
+      "id": "GE-20261007-WA0014-R5-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 5,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "false_positive_conflict",
+        "table_edge_glyph",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "flightLocation": "Krakau",
+        "secondaryTableEdgeGlyphMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryFlightLocation": "Krakau",
+        "secondaryTextOcr": "Krakau |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.0 real-device kept the correct Krakau source value but blocked import because the independent text OCR appended an isolated table-rule glyph. P114.1 may ignore only that edge glyph when two independent source-truth views confirm the unchanged primary value.",
+      "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0014-R6-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 6,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "false_positive_conflict",
+        "table_edge_glyph",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "flightLocation": "Krakau",
+        "secondaryTableEdgeGlyphMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryFlightLocation": "Krakau",
+        "secondaryTextOcr": "Krakau |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "Second independent P114.0 real-device row proving the same table-rule suffix class on a separate ride. The production rule must remain generic and must not hardcode Krakau or row numbers.",
+      "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "hyphenated_short_code",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryEdgeTruncationMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.0 real-device already displayed the correct Get-E primary but still blocked against a strict right-edge-truncated secondary value. P114.1 adds a veto only when two independent source-truth views confirm the current primary.",
+      "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0014-R14-FLIGHTLOCATION-FALSE-CONFLICT-P1140",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0014.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "flight_location",
+        "false_positive_conflict",
+        "left_edge_clipping",
+        "source_truth_primary_veto"
+      ],
+      "expected": {
+        "flightLocation": "Amsterdam",
+        "secondaryEdgeTruncationMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1140",
+        "primaryFlightLocation": "Amsterdam",
+        "secondaryTextOcr": "msterdam",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.0 successfully restored the full Amsterdam primary value but the independent secondary OCR still left-clipped it and blocked import. P114.1 may veto only the proven 1–2 glyph edge truncation when two source-truth views agree on the current primary.",
+      "reproducibility": "confirmed_real_device_P1140"
+    },
+    {
+      "id": "GE-20261007-WA0001-R12-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 12,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R13-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 13,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R14-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 14,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "single_internal_delimiter_loss",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "GetE",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR dropped exactly the single internal hyphen. P114.2 may veto only this exact one-delimiter loss with two agreeing source-truth views.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R25-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 25,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R28-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 28,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R29-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 29,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R31-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 31,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "| Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R32-COMPANY-TABLE-EDGE-P1141",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 32,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "false_positive_conflict",
+        "source_truth_primary_veto",
+        "table_edge_glyph",
+        "hyphenated_short_code"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryBoundaryArtifactMayBlockImport": false,
+        "importBlockedByTextConflict": false
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1141",
+        "primaryCompany": "Get-E",
+        "secondaryTextOcr": "Get-E |",
+        "rowStatus": "Fehler",
+        "importBlocked": true,
+        "result": "FAIL_FALSE_POSITIVE"
+      },
+      "note": "P114.1 real-device regression on WA0001: the primary company value remained correct, but independent secondary OCR introduced only table-edge rule glyph noise.",
+      "reproducibility": "confirmed_real_device_P1141"
+    },
+    {
+      "id": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+      "type": "ERROR",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "plantag": "2026-10-07",
+      "rideCount": 33,
+      "layoutClass": "L14_ARR_DEP_SPLIT_LONG",
+      "errorClasses": [
+        "company_text_integrity",
+        "secondary_ocr_internal_delimiter_loss",
+        "false_positive_conflict",
+        "primary_already_correct",
+        "missing_consensus_correction_provenance",
+        "fail_closed"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "secondaryOcrIsNotAuthoritativeWithoutIndependentEvidence": true,
+        "importBlockedByTextConflict": false,
+        "doNotMutateFlightsOrLocations": true
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P1146",
+        "ocrRides": 33,
+        "autoCorrected": 78,
+        "notices": 3,
+        "errors": 1,
+        "uniqueFlights": 23,
+        "drivers": 7,
+        "company": "Get-E",
+        "secondaryTextOcr": "GetE",
+        "importBlocked": true,
+        "planImported": false,
+        "historical": true
+      },
+      "rootCause": "P114.6 requires repeatedTextConsistency.company correction provenance for one internal delimiter loss. When full-image OCR already produced the final company string, repeatedTextConsistency does not create a from/to record and the legitimate primary remains blocked by secondary truncation.",
+      "expectedAfterPatch": "Reconcile only on >=3 independent same-plan exact peers plus complete high-confidence primary full-image company cell OR 2 valid independent full-cell/expanded modes. Never override 2 exact secondary cell views, opposing full-cell consensus or semantic alternatives.",
+      "reproducibility": "confirmed_real_device_P1146_through_P11410_fail; confirmed_real_device_P11411_reference_OCR_pass",
+      "likelyFunction": "reconcileCompanyConflictAfterRepeatedConsistency / applyRepeatedTextConsistency / validate",
+      "testGate": "P11411 nine-attempt measured evidence production decision + final OCR UI result; strict regression gates preserved",
+      "status": "PASSED_REAL_DEVICE_P11411_REFERENCE_PLAN_OCR",
+      "p1147RealDeviceResult": {
+        "date": "2026-10-08",
+        "evidence": "user_transcribed_ATMS_Android_OCR_result_in_this_conversation",
+        "installedVersion": "CORE-007D8A1F1D8P1147",
+        "source": "IMG-20261007-WA0001.jpg",
+        "sourceSha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+        "plantag": "2026-10-07",
+        "rideCount": 33,
+        "ocrChecked": 33,
+        "autoCorrected": 78,
+        "notices": 3,
+        "hardErrors": 1,
+        "uniqueFlights": 23,
+        "drivers": 7,
+        "sourceRow": 17,
+        "displayedPrimaryCompany": "Get-E",
+        "displayedSecondaryTextOcr": "GetE",
+        "displayedError": "Zeile 17 · Firma „Get-E“ widerspricht der unabhängigen Text-Nach-OCR („GetE“) – Original-Planliste prüfen; Import bis zur Klärung blockiert",
+        "importBlocked": true,
+        "imported": false,
+        "goldenProtectedValues": {
+          "flightNumber": "EW9420",
+          "flightLocation": "9MB"
+        },
+        "otherEarlierCompanyCases": "eight previously repaired Get-E lines not flagged in this result",
+        "separateItems": {
+          "flightVerificationOpen": 27,
+          "dateFollowingDayConfirmationPending": 22
+        },
+        "result": "FAIL_REAL_DEVICE_P1147"
+      },
+      "p1147ProcessGap": {
+        "classification": "INSUFFICIENT_REAL_PIPELINE_EVIDENCE_AND_TEST_COVERAGE",
+        "confirmed": "Real-device still blocks source row 17 despite P1147 synthetic tests passing",
+        "earlierLocalTests": "4 positive + 20 negative/fail-closed synthetic/function cases; did not prove Android full-image-to-import E2E for exact observed state",
+        "hypothesisNotYetProven": "The OCR intermediate evidence/provenance may differ between fixture and real device; competing secondary exact-cell views or provenance changes may prevent reconciliation.",
+        "notProven": "Exact path and OCR intermediate states of Android run have not been captured; do not declare a final technical root cause.",
+        "requiredFutureGate": [
+          "Run exact production pipeline on original bytes with intermediate evidence captured (no production test hardcodes).",
+          "Include both already-correct-primary and newly-corrected-primary, actual repeatedTextConsistency history and independent-cell variants.",
+          "Explicit end-to-end assertion on final import gate, not only intermediate reconciliation function.",
+          "Preserve fail-closed when evidence conflicts; never override two independent exact opposing cell views.",
+          "Protect 9MB, EW9420, 8 already repaired Get-E rows and all other Golden cases."
+        ]
+      },
+      "lastVerified": "2026-10-08",
+      "p1148RealDeviceResult": {
+        "date": "2026-10-08",
+        "evidence": "user_transcribed_real_device_ocr_result_in_current_conversation",
+        "source": "IMG-20261007-WA0001.jpg",
+        "sourceSha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+        "plantag": "2026-10-07",
+        "installedVersion": "CORE-007D8A1F1D8P1148",
+        "githubActions": {
+          "runNumber": 212,
+          "reportedStatus": "success",
+          "reportedCommitShort": "9e51f38",
+          "evidence": "user_screenshot"
+        },
+        "ocrChecked": 33,
+        "rideCount": 33,
+        "autoCorrected": 78,
+        "notices": 3,
+        "hardErrors": 1,
+        "flights": 23,
+        "drivers": 7,
+        "sourceRow": 17,
+        "displayedCompany": "Get-E",
+        "independentTextAfterOcr": "GetE",
+        "displayedError": "Zeile 17 · Firma „Get-E“ widerspricht der unabhängigen Text-Nach-OCR („GetE“) – Original-Planliste prüfen; Import bis zur Klärung blockiert",
+        "importBlocked": true,
+        "imported": false,
+        "protectedValues": {
+          "flightLocation": "9MB",
+          "departureFlight": "EW9420"
+        },
+        "otherEarlierCompanyCases": "eight earlier Get-E errors not flagged as errors in this run",
+        "separateNotices": {
+          "driverColor": "KoelnBus",
+          "flightLocationNoFlight": [
+            "1RA",
+            "9MB"
+          ]
+        },
+        "separateFlightVerificationOpen": 27,
+        "overnightRidesAwaitingConfirmation": 22,
+        "result": "FAIL_REAL_DEVICE_P1148"
+      },
+      "p1148ProcessGap": {
+        "classification": "REPEATED_NON_REPRESENTATIVE_TEST_COVERAGE",
+        "confirmed": "P114.8 local positives 19/19 and PreBuild 16/16 plus a successful GitHub APK build did not prevent the identical real-device import-blocking error.",
+        "confirmedTestLimit": "p1148 selftest builds a simulated row and word geometry with e.g. Get-E and confidence=95, rather than capturing actual asynchronous independent text-after-OCR and real cell evidence from original image bytes through final import gate.",
+        "unprovenTechnicalRootCause": "The exact runtime evidence path and last blocking decision cannot be determined from UI text alone. Prior provenance-marker overwrite hypothesis remains unconfirmed as root cause of this run.",
+        "requiredEvidenceNext": [
+          "Capture primary company OCR text/raw/confidence and source row/column from original image bytes.",
+          "Capture async independent text-after-OCR including normalized text, crop boundaries and per-view attempt evidence.",
+          "Trace repeated text consensus, primary provenance, conflict reconciliation and exact fail-closed branch.",
+          "Assert final 0-hard-error import gate only with real evidence; verify unresolved authentic conflicts stay blocked.",
+          "Protect source image SHA, 9MB, EW9420, the eight previously fixed Get-E cases, and all Golden records.",
+          "Prohibit image-specific production hardcodes and tests that fabricate success evidence."
+        ],
+        "processImprovement": "Real-image asynchronous end-to-end regression gate is required before claiming a real-device fix; otherwise explicitly label the coverage gap and halt release."
+      },
+      "p11410RealDeviceDiagnosis": {
+        "date": "2026-10-08",
+        "approval": "Ja, den P114.10-Ursachenbefund aufnehmen.",
+        "source": "IMG-20261007-WA0001.jpg",
+        "plantag": "2026-10-07",
+        "sourceRow": 17,
+        "evidenceFile": "P11410_REALGERAET_FIRMENKONFLIKT_DIAGNOSE.json",
+        "result": "OPEN_FAIL_REAL_DEVICE_DIAGNOSIS",
+        "hardErrors": 1,
+        "importBlocked": true,
+        "imported": false,
+        "observedRootCause": {
+          "classification": "EVIDENCE_RECONCILIATION_AND_PROVENANCE_LOSS_IN_PRODUCTION_DECISION",
+          "evidence": "P11410 diagnostic-only real-device report and local production-decision function replay",
+          "confirmedObserved": [
+            "Primary company Get-E has 85.9 confidence and complete unclipped cell without included neighbor.",
+            "Batch + local (3), full original cell (2), and adaptive bounded company cell (2) all read Get-E.",
+            "Two edge-expanded views read GetE; both carry neighborColumnIncluded=bounded_possible rather than exclusion.",
+            "sourceConsensus.adaptive=null although adaptive probe has two Get-E modes and row/column values.",
+            "Final conflict remains blocked with internal delimiter-loss veto.",
+            "Local function replay blocks with edge-expanded views and resolves after removing only these two lower-quality opposing views."
+          ],
+          "codePathFindings": [
+            "Adaptive attempt trace loses usable source-row/source-column provenance in the later sourceConsensus aggregation.",
+            "Post-consensus/fallback decision does not sufficiently discriminate geometry/evidence quality for uncertain edge-expanded opposing views."
+          ],
+          "status": "CONFIRMED_CODE_LEVEL_FAILURE_AND_REAL_DEVICE_EVIDENCE; CORRECTION_NOT_YET_TESTED_ON_DEVICE",
+          "avoid": "No production hardcode for Get-E, file name, or source row; do not blindly ignore legitimate opposing exact-cell evidence."
+        },
+        "decisionReplay": {
+          "scope": "previous_local_replay_of_P11410_production_decision_functions_using_real_device_evidence",
+          "allAttemptEvidence": {
+            "expected": "BLOCK",
+            "observed": "BLOCK"
+          },
+          "withoutTwoEdgeExpandedGetEViews": {
+            "expected": "RESOLVE",
+            "observed": "RESOLVE"
+          },
+          "withPreservedAdaptiveRowColumnMetadata": {
+            "expected": "adaptive_2x_Get-E",
+            "observed": "adaptive_2x_Get-E"
+          },
+          "qualification": "Validates decision-level behavior for reported runtime evidence, not a complete independent Android end-to-end rerun."
+        },
+        "requiredNextTestGate": [
+          "Feed exact captured P11410 device evidence into production reconciliation and final import validator.",
+          "Preserve original per-view row, column, cropQuality, full-cell scope and provenance until final consensus.",
+          "Weight only geometrically certain and independent views; do not treat bounded_possible as identical to full verified cell.",
+          "Fail closed on real conflicting complete exact-cell views, insufficient geometry, semantic ambiguity or missing primary data.",
+          "Original-image/OCR end-to-end proof plus negative controls and complete 60-case Golden pack.",
+          "Protect 9MB, EW9420, previously repaired Get-E rows and date/flight decision separation."
+        ]
+      },
+      "p11411RealDeviceResult": {
+        "date": "2026-10-08",
+        "approval": "Ja, P114.11 als bestanden dokumentieren.",
+        "evidence": "User-transcribed P114.11 original-image OCR analysis in current conversation; no independent APK inspection or actual import",
+        "version": "CORE-007D8A1F1D8P11411",
+        "githubActions": {
+          "runNumber": 215,
+          "result": "SUCCESS_user_screenshot",
+          "commitShort": "1d1b735"
+        },
+        "source": "IMG-20261007-WA0001.jpg",
+        "sourceSha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+        "plantag": "2026-10-07",
+        "sourceRow": 17,
+        "rideCount": 33,
+        "ocrChecked": 33,
+        "autoCorrected": 78,
+        "notices": 3,
+        "hardOcrDataErrors": 0,
+        "drivers": 7,
+        "uniqueFlights": 23,
+        "companyExpected": "Get-E",
+        "companyConflictForRow17Reported": false,
+        "sourceRow17DisplayedStatus": "OK",
+        "companyCellTextDisplayedInCompactRideTable": false,
+        "result": "PASS_REAL_DEVICE_OCR_REFERENCE_PLAN_ONLY",
+        "expectedAfterFix": "No false-positive hard company conflict for validated primary company Get-E when stronger independent source views concur; retain fail-closed for genuine competing well-bounded OCR evidence",
+        "protectedValuesObserved": {
+          "flightNumber": "EW9420",
+          "flightLocation": "9MB"
+        },
+        "otherPriorCompanyConflicts": "not reported as hard errors (overall 0)",
+        "warningsIndependent": [
+          "Row 6 KoelnBus driver color uncertain",
+          "Row 24 flight location 1RA without flight number",
+          "Row 26 flight location 9MB without flight number"
+        ],
+        "separateItems": {
+          "flightVerificationOpen": 27,
+          "dateFollowingDayConfirmationPending": 22,
+          "followingDayOffered": "2026-10-08"
+        },
+        "planImportedDuringThisTest": false,
+        "p103CleanupPerformedDuringThisTest": false,
+        "remainingScope": "Full production import after date confirmation, wider generalisation to other planlists, and end-to-end verification of flight status not established by this OCR result",
+        "reportSource": "Current-chat user OCR transcription for P114.11. P11410 intermediate OCR trace remains archived unchanged."
+      },
+      "resolutionScope": "Reference image row 17 false company conflict no longer present, final OCR analysis 0 hard errors. Do not infer import completion or cross-image generalization."
+    },
+    {
+      "id": "GE-20261008-WA0010-R12-PICKUPTIME-1355-VS-1356-P11411",
+      "type": "ERROR",
+      "source": "IMG-20261008-WA0010.jpg",
+      "sourceOriginalBytesVerified": false,
+      "sourceEvidenceNote": "Dateiname aus ATMS-Auswahl; das im Chat angezeigte Tabellenbild liegt als separat benanntes Bild vor. Nicht behaupten, dass die Chat-Datei byteidentisch zur WhatsApp-Originaldatei ist.",
+      "sourceRow": 12,
+      "rowIndexSemantics": "ATMS Tabellenblatt: Zeile 12 (einschließlich Kopfzeile im Original entsprechend der 13:55-Fahrt)",
+      "plantag": "2026-10-08",
+      "rideCount": 19,
+      "layoutClass": "PRICE_TIME_FROM_TO_CUSTOMER_COMPANY_ARRIVAL_DEPARTURE_VEHICLE_PERSONS_FLIGHTTIME_LOCATION_DRIVER",
+      "errorClasses": [
+        "pickup_time_text_integrity",
+        "secondary_ocr_digit_disagreement",
+        "false_positive_hard_conflict",
+        "import_gate_false_block",
+        "root_cause_pending"
+      ],
+      "context": {
+        "pickup": "Novotel DUS",
+        "destination": "DUS Airport",
+        "customer": "Eurowings",
+        "company": "WT",
+        "departureFlight": "EW4675",
+        "arrivalFlight": null,
+        "price": "35,70 €",
+        "vehicle": "Pkw",
+        "persons": 1,
+        "driver": "Ghasem",
+        "pickupTime": "13:55"
+      },
+      "expected": {
+        "pickupTime": "13:55",
+        "preserveSourceValue": "13:55",
+        "doNotReplaceWithSecondaryTime": "13:56",
+        "errorHandling": "Kein harter Zeitkonflikt allein aufgrund unzureichend begründeter sekundärer OCR-Abweichung. Bei echter mehrdeutiger Zelle oder hinreichend starkem Gegenbeleg weiterhin fail-closed; niemals automatisch einen ungeklärten Wert freigeben.",
+        "noAutomaticPlanImport": true
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P11411",
+        "sourceSelection": "IMG-20261008-WA0010.jpg",
+        "plantag": "2026-10-08",
+        "ocrRides": 19,
+        "autoCorrected": 19,
+        "notices": 0,
+        "hardErrors": 1,
+        "drivers": 3,
+        "uniqueFlights": 12,
+        "primaryTimeShownInError": "13:55",
+        "secondaryMultiOcrTimeShownInError": "13:56",
+        "exactErrorText": "Zeile 12 · Abholzeit 13:55 widerspricht mehrfacher Nach-OCR 13:56 – Original-Planliste prüfen; Import bis zur Klärung blockiert",
+        "importBlocked": true,
+        "planImported": false,
+        "result": "FAIL_FALSE_POSITIVE_REAL_DEVICE"
+      },
+      "exactDeviation": "Das Originalbild zeigt 13:55; ATMS meldet zusätzlich sekundäre, wiederholte Nach-OCR 13:56 und sperrt die Übernahme. 13:56 ist nicht der in der Bildvorlage lesbare Fahrtbeginn.",
+      "expectedAfterPatch": "Originalwert 13:55 korrekt und unverändert beibehalten; unabhängige OCR mit Provenienz/Qualität abgleichen. Ein klarer, gegen Evidenz gewichteter Nachlesefehler darf keinen unberechtigten harten Block auslösen. Starke echte Gegenbelege und unklare Zellen müssen weiter fail-closed bleiben. Keine automatische Übernahme.",
+      "reproducibility": "Einmal auf Samsung P11411 via Ergebnis-Screenshot bestätigt; weitere reproduzierende Runs noch nicht durchgeführt und derzeit nicht angefordert.",
+      "rootCause": null,
+      "rootCauseStatus": "OPEN_NOT_PROVEN",
+      "likelyAffectedStages": [
+        "Primär-OCR Uhrzeitzelle",
+        "unabhängige wiederholte Text-Nach-OCR Uhrzeitzelle",
+        "Evidenzgewichtung/Zeilenprovenienz und Konfliktaggregation",
+        "abschließendes OCR-Import-Sperr-Gate"
+      ],
+      "likelyFunction": "NICHT_FESTGESTELLT; erst echten Code und Laufzeit-Traces der aktuellen Produktionspipeline prüfen.",
+      "requiredReadOnlyProof": [
+        "Primär-OCR der Uhrzeitzelle Zeile 12 mit Rohtext/Konfidenz/Bounding Box",
+        "alle unabhängigen Nach-OCR-Versuche mit Zeit, Herkunft, Geometrie, Ausschnitt, Vorverarbeitung, Konfidenz",
+        "Belegdichte, Unabhängigkeit und eventuelle umgebende Zell-/Tabellenlinien-Verwechslungen",
+        "konkrete Konsensentscheidung und harter Sperrgrund im letzten Import-Gate"
+      ],
+      "regressionGate": {
+        "positive": "Mit dem echten Planbild 08.10.2026 muss für Zeile 12 der klare Originalwert 13:55 erhalten bleiben; keine künstliche Fixierung des Ergebnisses per Hardcode.",
+        "negative": [
+          "Mehrere wirklich unabhängige, sauber abgegrenzte konträre OCR-Zellbelege dürfen nicht blind ignoriert werden.",
+          "Unklare Uhrzeit oder fehlende eindeutige Primärevidenz muss weiterhin zur Prüfung führen.",
+          "Nachbarzeit 13:50/14:20, Flugzeit und Abholzeit nicht verwechseln."
+        ],
+        "golden": "Alle 60 bisherigen Fälle inklusive Get-E/P114.11, EW9420 und 9MB schützen; danach 61 Fälle.",
+        "fullProductionPipeline": true,
+        "noHardcoding": true
+      },
+      "evidence": [
+        {
+          "kind": "source_image_in_chat",
+          "filename": "92663.jpg",
+          "sha256": "bc0b8b936e3c299a6871fc85f0d6aa371d64f5338ebcf2abf2feae31bb94daf3",
+          "label": "Darstellung des 19-Fahrten-Originaltabellenbildes im Chat; nicht als überprüft byteidentische WhatsApp-Datei ausgeben."
+        },
+        {
+          "kind": "real_device_screen_in_chat",
+          "filename": "1791458734429.jpeg",
+          "sha256": "1f600799e1723f5edb6dbb8bc7fe41b1e8717d8fe64f82ef9cc586749db2038a",
+          "label": "Samsung ATMS OCR-Analyse und roter harter Zeile-12-Konflikt."
+        }
+      ],
+      "documentation": {
+        "date": "2026-10-08",
+        "approval": "Ja, Fehler 61 dokumentieren.",
+        "authorization": "DOCUMENTATION_ONLY_NO_PATCH_NO_GITHUB_NO_IMPORT",
+        "state": "APPROVED_CONFIRMED_ERROR_PENDING_ROOT_CAUSE"
+      }
+    },
+    {
+      "id": "GE-20261008-WA0014-HEADERLESS-ADMISSION-REJECT-P11412",
+      "type": "ERROR",
+      "source": "IMG-20261008-WA0014.jpg",
+      "sourceOriginalBytesVerified": false,
+      "sourceEvidenceNote": "Dateiname durch Samsung-Auswahlanzeige belegt; angezeigt wurde zusätzlich 92699.jpg (1536x520) als Chat-Bild. WhatsApp-Originalbytes NICHT bestätigt.",
+      "sourceRow": null,
+      "rowIndexSemantics": "Gesamter kopfzeilenloser Plan-Ausschnitt; keine einzelne verursachende Zeile diagnostiziert.",
+      "plantag": "2026-10-08",
+      "rideCount": 17,
+      "rideCountSource": "17 visuell erkennbare Tabellen-Datenzeilen im bereitgestellten Chat-Bild; ATMS erkannte bei diesem Fehlversuch keine verifizierte Fahrtenzahl.",
+      "layoutClass": "HEADERLESS_13_COLUMN_PRICE_TIME_FROM_TO_NAME_COMPANY_ARR_DEP_VEHICLE_PERSONS_FLIGHTTIME_LOCATION_DRIVER",
+      "errorClasses": [
+        "headerless_layout_import_rejection",
+        "cell_recovery_not_accepted",
+        "diagnostic_gap",
+        "flight_column_integrity_or_no_flight_gate",
+        "root_cause_partial",
+        "headerless_time_boundary_noise_strict_validator_mismatch",
+        "preflight_core_threshold_prevents_targeted_recovery"
+      ],
+      "context": {
+        "inputKind": "Bild/WhatsApp",
+        "visibleRowCount": 17,
+        "headerVisible": false,
+        "firstVisibleTime": "13:50",
+        "lastVisibleTime": "16:10",
+        "lastSuccessfulAppPreviewRideCount": 19,
+        "lastSuccessfulAppPreviewFrom": "IMG-20261008-WA0010.jpg",
+        "note": "19 Fahrtdaten in Status kann vorherige WA0010-Analyse widerspiegeln und belegt NICHT Erkennung dieser WA0014-Liste."
+      },
+      "expected": {
+        "behavior": "Ohne Kopfzeile zulässige ATMS-13-Spalten-Bildausschnitte anhand eindeutiger Geometrie, Preis-Zeit- und Routenanker sicher lesen; legitime leere Flugfelder nicht zwingend als Fehler werten. Bei uneindeutigen Zeilen fail-closed, aber konkrete betroffene Zeile, Feld und Beleg anzeigen. Keine automatisierte Fahrtenübernahme.",
+        "noAutomaticPlanImport": true,
+        "actualRideCountMustBeMeasured": true
+      },
+      "previousActual": {
+        "installedVersion": "CORE-007D8A1F1D8P11412",
+        "sourceSelection": "IMG-20261008-WA0014.jpg",
+        "plantag": "2026-10-08",
+        "importBlocked": true,
+        "previewGenerated": false,
+        "totalInvalidReported": 0,
+        "recoveredCellsReported": 0,
+        "reasonReported": "cell_recovery_not_accepted",
+        "exactErrorText": "Der Ausschnitt ohne Kopfzeile blieb auch nach gezielter Zellprüfung nicht eindeutig genug. CORE-007D4 Diagnose: Grund=cell_recovery_not_accepted · UngültigeZellen=0 · Wiederhergestellt=0. Bitte vollständige Kopfzeile mit hochladen.",
+        "planImported": false
+      },
+      "exactDeviation": "Gesamte 17-Zeilen-Ausschnittsprüfung wird trotz 0 gemeldeter ungültiger Pflichtzellen und 0 nachgelesener Zellen im finalen Admission-Gate abgewiesen; Meldung macht konkrete Flugspalten-/Zeilenursache nicht sichtbar. Die eigentliche OCR-Vertrauenslage bleibt zu klären.",
+      "expectedAfterPatch": "Generische, evidenzbasierte Headerless-Admission ohne unberechtigte Freigabe von Konflikten. Eindeutige Kopfzeilenlos-Planlisten akzeptieren; bei echten Gegenbelegen genaues Row-/Column-/Candidate-Fail-Closed mit prüfbarer Diagnostik. Alle 62 Golden-Fälle erhalten.",
+      "reproducibility": "P11412/P11413/P11414 original Samsung import fails; P11414 exposes 16 measured core-cell failures and first row time `| 13:50`. Independent unchanged P11414 source function confirms `headerlessTimeLike` rejects this token while normalizeTime accepts it.",
+      "rootCause": {
+        "codeStage": "recoverHeaderlessCellsTargeted(matrix, imageCanvas, imageMeta)",
+        "codeSource": "P11412 One-ZIP android-native/app/src/main/assets/js/plan-import.js",
+        "knownMechanism": "headerlessInvalidCoreColumns prüft nur zehn Kernfelder, nicht flightColumnsOk oder globale hasFlight-Bedingung. totalInvalid=0 bedeutet deshalb nicht accepted=true. Ohne invalid cells wird keine Nachlese ausgelöst. Am Ende accepted=false falls mindestens ein check.ok=false (z.B. beide Flugspalten gleichzeitig belegt) ODER kein einziger Flug nach normalizeFlightNumber erkannt wurde. Detailursache für diese konkrete Datei nicht in der Meldung enthalten.",
+        "candidateCauses": [
+          "mindestens eine OCR-Zeile enthält gleichzeitig zwei gültig normalisierte Flugnummern in Ankunft und Abflug",
+          "keine Flugnummer wird im vollständigen Matrixbild als gültig erkannt"
+        ],
+        "perRowCauseProven": true,
+        "actualRawMatrixAvailable": false,
+        "firstRowVerifiedCodeFailure": {
+          "inputRaw": "| 13:50",
+          "headerlessTimeLike": false,
+          "normalizeTime": "13:50",
+          "clockBoundaryNoiseInfo": {
+            "changed": true,
+            "value": "13:50"
+          },
+          "verifiedMethod": "read_only_exact_P11414_production_functions_executed_in_Node",
+          "violation": "headerlessTimeLike does not apply the existing verified boundary-noise handler, although normalizeTime does; headerlessCoreRowCheck demands BOTH strict predicate and normalization success",
+          "earlyReturnMechanism": "totalInvalid=16 >12 cutoff blocks before per-cell recovery",
+          "note": "Only first-row time cell is proven; 15 additional invalid cells are counted but raw fields unobserved."
+        },
+        "priorFlightGateHypothesis": "SUPERSEDED for this actual P11414 run: flight gate is not reached at all.",
+        "unresolved": "Full row/field breakdown for other 15 invalid cells not exposed in P11414 message."
+      },
+      "rootCauseStatus": "P11414_real_device_confirmed_total_16_core_invalid; time_precheck_boundary_noise_false_rejection_confirmed_first_row; remaining_15_fields_unproven",
+      "likelyAffectedStages": [
+        "inferHeaderlessAtmsPriceLayout",
+        "headerlessCoreRowCheck",
+        "headerlessInvalidCoreColumns",
+        "recoverHeaderlessCellsTargeted",
+        "readImagePlan"
+      ],
+      "likelyFunction": "recoverHeaderlessCellsTargeted",
+      "requiredReadOnlyProof": [
+        "Full non-mutating invalid-field histogram / row raw OCR for remaining 15 invalid cells",
+        "Targeted image same source P11415 regression with real Tesseract.js and zero silent errors",
+        "Fail-closed for genuine ambiguous time, price, flights",
+        "Ensure headerless only uses strict boundary-noise without inventing characters"
+      ],
+      "regressionGate": [
+        "Same original image yields structured row-by-row diagnostics",
+        "17 visible rides accounted for, no fabricated or swapped values",
+        "legitimate no-flight rows preserved",
+        "simultaneous opposing flight codes cannot be silently accepted",
+        "other 61 cases unchanged; P11412 time13:55 remains correct",
+        "no automatic import"
+      ],
+      "evidence": {
+        "userChatScreenshot": "92699.jpg",
+        "sha256": "b3072619d7237ccf5cd4696509c412c7d8a9f7142f7240372641862cb2ab48a2",
+        "dimensions": "1536x520",
+        "ocrFailureText": true,
+        "sourceBinaryNotGuaranteed": true,
+        "p11415RealDeviceError": "Grund=core_cells_unresolved; UngültigeZellen=1; Wiederhergestellt=0; FlugGate=core_cells_unresolved; Flugzeilen=15; Doppelspalten=0; Ausschnittzeile=15; FlugAnkunft=-; FlugAbflug=-"
+      },
+      "documentation": {
+        "date": "2026-10-08",
+        "mode": "DIAGNOSIS_AND_REGRESSION_RECORD_ONLY",
+        "patchAuthorizedForThisCase": false,
+        "githubMutationAllowed": false,
+        "noAutomaticImport": true,
+        "lastEvidenceDate": "2026-10-08",
+        "latestState": "P11415 REAL DEVICE: 16->1 invalid; 15 recognized flight rows, 0 dual; row 15 has blank driver in visible source, so safety gate likely correct; no silent assignment, no ride import."
+      },
+      "p11414Actual": {
+        "installedVersion": "CORE-007D8A1F1D8P11414",
+        "source": "IMG-20261008-WA0014.jpg",
+        "planDate": "2026-10-08",
+        "reason": "too_many_invalid_cells",
+        "totalInvalidMeasured": 16,
+        "recoveredCells": 0,
+        "invalidCountScope": "all_core_rows",
+        "flightGate": "not_evaluated_preflight",
+        "recognizedFlightRows": null,
+        "conflictingFlightRows": null,
+        "firstInvalid": {
+          "matrixIndex": 1,
+          "count": 1,
+          "rawCells": [
+            {
+              "field": "time",
+              "raw": "| 13:50"
+            }
+          ]
+        },
+        "noRideImport": true,
+        "testVerdict": "P11414_Diagnostic_Gate_SUCCESS; Fall62_import_still_BLOCKED"
+      },
+      "p11415Actual": {
+        "installedVersion": "CORE-007D8A1F1D8P11415",
+        "planDate": "2026-10-08",
+        "source": "IMG-20261008-WA0014.jpg",
+        "reason": "core_cells_unresolved",
+        "measuredInvalidCoreCellsBeforeRecovery": 1,
+        "recoveredCells": 0,
+        "flightGate": "core_cells_unresolved",
+        "recognizedFlightRows": 15,
+        "conflictingFlightRows": 0,
+        "diagnosticFirstFailedRow": {
+          "imageRow": 15,
+          "arrivalFlightRaw": "-",
+          "departureFlightRaw": "-"
+        },
+        "imageVisibleRow": {
+          "time": "16:00",
+          "pickup": "DUS Airport",
+          "destination": "NH Nord",
+          "customer": "Eurowings",
+          "company": "WT",
+          "arrivalFlight": "-",
+          "departureFlight": "-",
+          "vehicle": "Pkw",
+          "persons": 1,
+          "driver": ""
+        },
+        "imageEvidence": "Chat image 92699.jpg, row15 has blank last column Name/Fahrer and two blank flight cells; source WhatsApp bytes not verified",
+        "isolatedProductionFunctionReplay": {
+          "check": "headerlessCoreRowCheck",
+          "inputFromVisibleRow": true,
+          "falseFields": [
+            "driver"
+          ],
+          "trueFields": [
+            "price",
+            "time",
+            "pickup",
+            "destination",
+            "customer",
+            "company",
+            "vehicle",
+            "persons"
+          ],
+          "flight": false,
+          "flightColumnsOk": true
+        },
+        "inference": "The sole unfulfilled core field is consistent with genuinely missing driver in image row15; original Android rowChecks/raw driver cell not exposed, so this is supported rather than independently confirmed Android character output.",
+        "testVerdict": "P11415_BOUNDARY_TIME_FALSE_REJECTIONS_REDUCED_16_TO_1; FALL62_NOT_FULLY_IMPORTABLE_DUE_TO_SOURCE_BLANK_DRIVER",
+        "noRideImport": true,
+        "sourceDecisionPending": "Should intentionally unassigned rides be representable as unassigned or blocked pending assignment? No automatic driver assignment by inference."
+      }
+    },
+    {
+      "id": "GE-20261008-WA0014-P11416-EWQ577-VS-EW9577",
+      "type": "ERROR",
+      "source": "IMG-20261008-WA0014.jpg",
+      "plantag": "2026-10-08",
+      "sourceOriginalBytesVerified": false,
+      "originalVisualEvidence": "User-provided chat-rendered plan image /mnt/data/92699.jpg (not byte-verified original WhatsApp JPEG). Original shows EW9577 on both 15:55 rows and no EWQ577 anywhere.",
+      "rowRef": {
+        "appDisplayedRow": 15,
+        "originalCandidateVisibleRows": [
+          13,
+          14
+        ],
+        "originalCandidateTime": "15:55",
+        "rowMappingUnresolved": true,
+        "reason": "The app reports Zeile 15; original visual rows with flight EW9577 are at positions 13 and 14, while visible row15 (16:00) has blank flight cells. Need current preview sourceRow/time to determine exact app row alignment."
+      },
+      "rideCount": 17,
+      "layoutClass": "HEADERLESS_13_COLUMN_PRICE_TIME_FROM_TO_NAME_COMPANY_ARR_DEP_VEHICLE_PERSONS_FLIGHTTIME_LOCATION_DRIVER",
+      "errorClasses": [
+        "flight_number_ocr_character_confusion",
+        "flight_prefix_boundary_review",
+        "headerless_source_row_provenance_pending"
+      ],
+      "expected": {
+        "flightNumber": "EW9577",
+        "originalRows": [
+          {
+            "visibleRow": 13,
+            "time": "15:55",
+            "pickup": "DUS Airport",
+            "destination": "Marriott Seestern DUS",
+            "arrivalFlight": "EW9577",
+            "driver": "Lana"
+          },
+          {
+            "visibleRow": 14,
+            "time": "15:55",
+            "pickup": "DUS Airport",
+            "destination": "NH Nord",
+            "arrivalFlight": "EW9577",
+            "driver": "Yannik"
+          }
+        ],
+        "behavior": "Do not introduce EWQ577 (Q replacing original 9) into recognized flight numbers; any automatic correction requires independent exact-cell evidence for the specific source row; keep strict conflict gate if OCR source ambiguous. Both 15:55 flight cells must stay EW9577 in source-truth regression. Never infer the driver for the empty-driver 16:00 ride."
+      },
+      "actual": {
+        "version": "CORE-007D8A1F1D8P11416",
+        "selectedFile": "IMG-20261008-WA0014.jpg",
+        "plantag": "2026-10-08",
+        "ridesRecognized": 17,
+        "drivers": 3,
+        "flights": 10,
+        "automaticCorrections": 29,
+        "notices": 1,
+        "errors": 1,
+        "errorText": "Zeile 15 · Flugnummer EWQ577 hat einen auffälligen langen Präfix und muss vor dem Import bestätigt/korrigiert werden",
+        "importBlocked": true,
+        "ridesImported": false
+      },
+      "exactDeviation": "Original image has EW9577 (twice at 15:55) but ATMS output/error reports EWQ577, a Q/9 substitution at the designator–digit boundary; ATMS correctly blocks unverified long-prefix value, but OCR cell result is wrong and row correspondence is not yet proven.",
+      "likelyAffectedFunction": "recoverSuspiciousLongFlightPrefixesTargeted and upstream flight cell extraction / image row association; exact first wrong OCR stage not determined",
+      "reproducibility": "Observed once in P11416 Samsung analysis; requires future real-device regression with same selected source. Original chat image available; byte-identical WhatsApp original not verified.",
+      "afterPatchExpectation": "Accurately retain or recover EW9577 from source-cell evidence without hardcoded flight numbers; retain fail-closed for truly ambiguous candidate; preserve existing 62 golden cases, especially empty-driver ride handling from case 62.",
+      "patchAuthorized": false,
+      "safeState": "No plan import, no new patch; diagnosis/documentation only."
+    },
+    {
+      "type": "ERROR",
+      "source": "92759.jpg",
+      "sourceLabel": "08.10.2026 headerless nine-ride chat crop; user-confirmed plan date; no original Whatsapp filename verified",
+      "plantag": "2026-10-08",
+      "rideCount": 9,
+      "sourceOriginalBytesVerified": false,
+      "sourceImageSha256": "441b8588d2f085ddd70f01bd5c26df83d8a164f1a40b1d0b96d5536416390fa2",
+      "installedVersion": "CORE-007D8A1F1D8P11416",
+      "layoutClass": "HEADERLESS_13_COLUMN_PRICE_TIME_FROM_TO_NAME_COMPANY_ARR_DEP_VEHICLE_PERSONS_FLIGHTTIME_LOCATION_DRIVER",
+      "hardImportBlockObserved": true,
+      "patchAuthorized": false,
+      "importExecuted": false,
+      "regressionTestingRequired": true,
+      "id": "GE-20261008-CROP9-P11416-EW4203-VISIBLE3",
+      "sourceRow": 3,
+      "rowIndexSemantics": "1-based visually visible image row; app Zeile has +1 offset presumably reconstructed virtual header, not asserted as proven Excel mapping",
+      "rowRef": {
+        "originalVisibleRow": 3,
+        "appReportedZeile": 4,
+        "time": "17:45",
+        "driver": "Yannik",
+        "pickup": "Holiday Inn DUS",
+        "destination": "DUS Airport",
+        "persons": 2,
+        "vehicle": "Pkw",
+        "priceEUR": "47.60"
+      },
+      "errorClasses": [
+        "flight_exact_cell_vs_repeated_column_ocr_conflict",
+        "false_positive_import_block",
+        "duplicate_dependent_secondary_ocr_votes"
+      ],
+      "expected": {
+        "departureFlight": "EW4203",
+        "time": "17:45",
+        "driver": "Yannik",
+        "pickup": "Holiday Inn DUS",
+        "destination": "DUS Airport",
+        "rowCheck": "OK if all other fields verified"
+      },
+      "actual": {
+        "previewDepartureFlight": "EW4203",
+        "secondaryColumnOcr": "EW4202",
+        "independentColumnOcrAgreementCountReported": 2,
+        "exactCellAdjudication": "unresolved",
+        "rowCheck": "Fehler",
+        "hardBlock": true
+      },
+      "exactDeviation": "Primary preview matches original EW4203; 2 matching secondary column OCR results EW4202 contradict original; exact-cell failed to adjudicate; hard-block falsely triggered.",
+      "reproducibility": "Confirmed P114.16 Android 2026-10-08, original crop visually compared to full preview/error text",
+      "rootCauseStatus": "Observed conflict/false positive proven; precise upstream OCR source of EW4202 not instrumented/verified",
+      "likelyAffectedFunction": "flight column secondary OCR evidence aggregation + exact-cell conflict adjudication; must retain fail-closed for genuinely unresolved flight numbers",
+      "expectedAfterPatch": "Preserve EW4203 only with sufficient independent exact-cell/original-geometry evidence; avoid 2 dependent secondary column passes outvoting stronger exact-cell evidence. If genuinely unresolved continue to block; never auto-hardcode a flight.",
+      "regressionGate": "Crop9 original flight EW4203 two separate rows; no false EW4202 override; no inappropriate false hard-block when independent exact-cell proof is sufficient, while ambiguous cases remain blocked."
+    },
+    {
+      "type": "ERROR",
+      "source": "92759.jpg",
+      "sourceLabel": "08.10.2026 headerless nine-ride chat crop; user-confirmed plan date; no original Whatsapp filename verified",
+      "plantag": "2026-10-08",
+      "rideCount": 9,
+      "sourceOriginalBytesVerified": false,
+      "sourceImageSha256": "441b8588d2f085ddd70f01bd5c26df83d8a164f1a40b1d0b96d5536416390fa2",
+      "installedVersion": "CORE-007D8A1F1D8P11416",
+      "layoutClass": "HEADERLESS_13_COLUMN_PRICE_TIME_FROM_TO_NAME_COMPANY_ARR_DEP_VEHICLE_PERSONS_FLIGHTTIME_LOCATION_DRIVER",
+      "hardImportBlockObserved": true,
+      "patchAuthorized": false,
+      "importExecuted": false,
+      "regressionTestingRequired": true,
+      "id": "GE-20261008-CROP9-P11416-EW4203-VISIBLE4",
+      "sourceRow": 4,
+      "rowIndexSemantics": "1-based visually visible image row; app Zeile has +1 offset presumably reconstructed virtual header, not asserted as proven Excel mapping",
+      "rowRef": {
+        "originalVisibleRow": 4,
+        "appReportedZeile": 5,
+        "time": "17:45",
+        "driver": "Yannik",
+        "pickup": "NH Nord DUS",
+        "destination": "DUS Airport",
+        "persons": 1,
+        "vehicle": "Pkw",
+        "priceEUR": "47.60"
+      },
+      "errorClasses": [
+        "flight_exact_cell_vs_repeated_column_ocr_conflict",
+        "false_positive_import_block",
+        "duplicate_dependent_secondary_ocr_votes"
+      ],
+      "expected": {
+        "departureFlight": "EW4203",
+        "time": "17:45",
+        "driver": "Yannik",
+        "pickup": "NH Nord DUS",
+        "destination": "DUS Airport",
+        "rowCheck": "OK if all other fields verified"
+      },
+      "actual": {
+        "previewDepartureFlight": "EW4203",
+        "secondaryColumnOcr": "EW4202",
+        "independentColumnOcrAgreementCountReported": 2,
+        "exactCellAdjudication": "unresolved",
+        "rowCheck": "Fehler",
+        "hardBlock": true
+      },
+      "exactDeviation": "Primary preview matches original EW4203; 2 matching secondary column OCR results EW4202 contradict original; exact-cell failed to adjudicate; hard-block falsely triggered.",
+      "reproducibility": "Confirmed P114.16 Android 2026-10-08, original crop visually compared to full preview/error text",
+      "rootCauseStatus": "Observed conflict/false positive proven; precise upstream OCR source of EW4202 not instrumented/verified",
+      "likelyAffectedFunction": "flight column secondary OCR evidence aggregation + exact-cell conflict adjudication; must retain fail-closed for genuinely unresolved flight numbers",
+      "expectedAfterPatch": "Preserve EW4203 only with sufficient independent exact-cell/original-geometry evidence; avoid 2 dependent secondary column passes outvoting stronger exact-cell evidence. If genuinely unresolved continue to block; never auto-hardcode a flight.",
+      "regressionGate": "Crop9 original flight EW4203 two separate rows; no false EW4202 override; no inappropriate false hard-block when independent exact-cell proof is sufficient, while ambiguous cases remain blocked."
+    },
+    {
+      "type": "ERROR",
+      "source": "92759.jpg",
+      "sourceLabel": "08.10.2026 headerless nine-ride chat crop; user-confirmed plan date; no original Whatsapp filename verified",
+      "plantag": "2026-10-08",
+      "rideCount": 9,
+      "sourceOriginalBytesVerified": false,
+      "sourceImageSha256": "441b8588d2f085ddd70f01bd5c26df83d8a164f1a40b1d0b96d5536416390fa2",
+      "installedVersion": "CORE-007D8A1F1D8P11416",
+      "layoutClass": "HEADERLESS_13_COLUMN_PRICE_TIME_FROM_TO_NAME_COMPANY_ARR_DEP_VEHICLE_PERSONS_FLIGHTTIME_LOCATION_DRIVER",
+      "hardImportBlockObserved": true,
+      "patchAuthorized": false,
+      "importExecuted": false,
+      "regressionTestingRequired": true,
+      "id": "GE-20261008-CROP9-P11416-GETE-VISIBLE7",
+      "sourceRow": 7,
+      "rowIndexSemantics": "1-based visually visible image row; app Zeile 8 corresponds to visible row 7",
+      "rowRef": {
+        "originalVisibleRow": 7,
+        "appReportedZeile": 8,
+        "time": "17:20",
+        "driver": "Yannik",
+        "pickup": "DUS Airport",
+        "destination": "Marriott Seestern DUS",
+        "priceEUR": "35.00",
+        "vehicle": "Van",
+        "persons": 6
+      },
+      "errorClasses": [
+        "company_independent_text_ocr_table_boundary_artifact",
+        "false_positive_import_block"
+      ],
+      "expected": {
+        "company": "Get-E",
+        "arrivalFlight": "EW9547",
+        "time": "17:20",
+        "rowCheck": "OK if all other fields verified"
+      },
+      "actual": {
+        "previewCompany": "Get-E",
+        "independentTextOcr": "| Get-E",
+        "rowCheck": "Fehler",
+        "hardBlock": true
+      },
+      "exactDeviation": "Independent OCR prepended vertical table boundary `|` to otherwise exact company Get-E, causing spurious hard company conflict.",
+      "reproducibility": "Confirmed P114.16 Android 2026-10-08, company Get-E visible in original crop, false secondary `| Get-E` in reported error",
+      "rootCauseStatus": "Leading table-border glyph difference directly proven, exact function branch not instrumented",
+      "likelyAffectedFunction": "P114.10 company text re-OCR cross-check + cell boundary normalization",
+      "expectedAfterPatch": "Ignore ONLY independently verified table boundary glyphs outside company text (e.g. leading |), preserving all actual company letters, normalizing both OCR representations before conflict classification; block genuine company disagreement.",
+      "regressionGate": "Get-E vs `| Get-E` not hard-conflict; real changed company string remains hard conflict."
+    },
+    {
+      "id": "GE-20261008-WA0020-P11416-REIMPORT-DRIVER-CHANGE-DUPLICATE",
+      "type": "ERROR",
+      "source": "IMG-20261008-WA0020.jpg",
+      "sourceLabel": "Updated 5-ride plan 08.10.2026, compared with earlier IMG-20261008-WA0019.jpg and actual stored rides",
+      "sourceImages": [
+        "92767.jpg",
+        "92763.jpg"
+      ],
+      "plantag": "2026-10-08",
+      "rideCount": 5,
+      "sourceOriginalBytesVerified": false,
+      "installedVersion": "CORE-007D8A1F1D8P11416",
+      "sourceRow": 5,
+      "rowIndexSemantics": "1-based visible row in updated source (without header)",
+      "layoutClass": "L15_PRICE_THREE_TIME_HEADERS",
+      "errorClasses": [
+        "reimport_same_trip_duplicate",
+        "changed_driver_not_reconciled",
+        "mutable_flight_time_old_version_retained"
+      ],
+      "rowRef": {
+        "time": "21:25",
+        "driverOld": "Lana",
+        "driverUpdated": "Dennis",
+        "pickup": "DUS Airport",
+        "destination": "NH Nord-Holiday Inn",
+        "arrivalFlight": "EW9735",
+        "vehicle": "Van",
+        "persons": 5,
+        "priceEUR": "47.60",
+        "flightTimeOld": null,
+        "flightTimeUpdated": "21:22"
+      },
+      "expected": {
+        "driver": "Dennis",
+        "flightTime": "21:22",
+        "persistedCurrentRecordsForSameRide": 1,
+        "oldAssignment": "Lana should not remain as an independently active duplicate when a unique update is safely identified"
+      },
+      "actual": {
+        "appNewImportPreview": {
+          "driver": "Dennis",
+          "arrivalFlight": "EW9735"
+        },
+        "storedRecords": [
+          {
+            "driver": "Dennis",
+            "flightTime": "21:22",
+            "priceEUR": "47.60"
+          },
+          {
+            "driver": "Lana",
+            "flightTime": null,
+            "priceEUR": "47.60"
+          }
+        ],
+        "sameRouteSameTimeSameFlightSamePrice": true
+      },
+      "exactDeviation": "P114.16 stored the revised Dennis version but also left the older Lana version active as a separate ride with the same date, dispatch time, pickup, destination, flight, vehicle, persons and price.",
+      "reproducibility": "Real Samsung P114.16, user pasted 08.10.2026 Fahrten/Alle Fahrten showing both records after updated WA0020 analysis/import; prior WA0019 had been confirmed automatically saved.",
+      "rootCauseStatus": "Duplicate state proven; exact dedupe/upsert key and import branch NOT yet instrumented or code-verified. It may include driver/flightTime or have a separate update path defect.",
+      "likelyAffectedFunction": "Re-import identity matching/dedupe/upsert and persistency layer, not core OCR parser",
+      "expectedAfterPatch": "For a sufficiently unique identical ride identity across plan versions, update existing ride driver and flightTime instead of creating an active duplicate; when identity is ambiguous, do not delete/overwrite a potentially separate valid ride; preserve backups, historic source provenance and unchanged rides.",
+      "regressionGate": "Import WA0019 then updated WA0020; final unique 21:25/EW9735 ride has driver Dennis and flightTime 21:22 without active duplicate Lana; re-import same WA0020 idempotent; genuinely different rides not merged; safety backup before mutation.",
+      "patchAuthorized": false,
+      "importExecuted": true,
+      "storageObserved": true,
+      "customerManualDeleteRequested": false,
+      "relatedNotes": "At 21:05 both EW9755 cards display updated list flightTime=21:18 but manual check and Vienna; cause of those manual flags not diagnosed. No additional separate error yet confirmed."
+    },
+    {
+      "source": "IMG-20261008-WA0023.jpg",
+      "sourceImages": [
+        "93125.jpg"
+      ],
+      "sourceOriginalBytesVerified": false,
+      "rideCount": 34,
+      "plantag": "2026-10-09",
+      "installedVersion": "CORE-007D8A1F1D8P11416",
+      "sourceTitle": "Liste 09.10.2026",
+      "originalTimeRange": "01:35–08:25",
+      "patchAuthorized": false,
+      "importExecuted": false,
+      "testState": "Real Samsung P114.16, before any import; two blocked OCR rows",
+      "id": "GE-20261009-WA0023-P11416-SOURCE-HEADER-DATE-IGNORED-FILENAME",
+      "type": "ERROR",
+      "sourceRow": null,
+      "rowIndexSemantics": "entire source day",
+      "layoutClass": "L13_WITH_HEADER_IN_IMAGE",
+      "errorClasses": [
+        "document_date_ignored",
+        "filename_date_overrides_source",
+        "false_cross_midnight_split_suggestion"
+      ],
+      "expected": {
+        "planDate": "2026-10-09",
+        "allRideDates": "2026-10-09",
+        "numberOfRides": 34,
+        "nextDayPrompt": "Not applicable solely because start times are 01:35–05:50 when the source explicitly titles the whole plan 09.10.2026"
+      },
+      "actual": {
+        "documentTitle": "Liste 09.10.2026",
+        "selectedFileName": "IMG-20261008-WA0023.jpg",
+        "activePlanDate": "2026-10-08",
+        "earlyMorningRows": 21,
+        "suggestion": "21 Fahrt(en) → 09.10.2026",
+        "remainingRowsIfSuggestionSelected": 13,
+        "remainingRowsWrongDate": "2026-10-08"
+      },
+      "exactDeviation": "ATMS selected 08.10.2026 from filename and proposed moving only 21 early rows to 09.10.2026, leaving the remaining 13 of the 09.10.2026 titled plan on 08.10.2026. User did not confirm the split.",
+      "reproducibility": "Direct Android UI transcript plus original user chat image 93125.jpg with unequivocal document title 09.10.2026",
+      "rootCauseStatus": "Date discrepancy observed; algorithm priority/implementation not code-instrumented.",
+      "likelyAffectedFunction": "plan date inference from filename vs OCR-visible document title and cross-midnight confirmation logic",
+      "expectedAfterPatch": "Prefer confirmed explicit plan date in source header over media filename when unambiguous; require full-list date integrity; no partial next-day split when all rides belong to title date.",
+      "regressionGate": "Image title 09.10.2026 and filename IMG-20261008-WA0023.jpg; all 34 rides dated 09.10.2026; never accept 21/13 split based only on filename; separate midnight spillover cases still fail-closed.",
+      "doNotPress": "21 Fahrt(en) → 09.10.2026",
+      "manualNextStep": "Explicitly select Plantag 09.10.2026 before any further analysis/import."
+    },
+    {
+      "source": "IMG-20261008-WA0023.jpg",
+      "sourceImages": [
+        "93125.jpg"
+      ],
+      "sourceOriginalBytesVerified": false,
+      "rideCount": 34,
+      "plantag": "2026-10-09",
+      "installedVersion": "CORE-007D8A1F1D8P11416",
+      "sourceTitle": "Liste 09.10.2026",
+      "originalTimeRange": "01:35–08:25",
+      "patchAuthorized": false,
+      "importExecuted": false,
+      "testState": "Real Samsung P114.16, before any import; two blocked OCR rows",
+      "id": "GE-20261009-WA0023-P11416-MARRIOTT-PREFIX-TRUNCATION-FALSE-CONFLICT",
+      "type": "ERROR",
+      "sourceRow": 9,
+      "appRow": 10,
+      "rowIndexSemantics": "source row 9 excluding table heading / app row10 including heading",
+      "layoutClass": "L13_WITH_HEADER_IN_IMAGE",
+      "errorClasses": [
+        "route_secondary_ocr_prefix_truncation",
+        "false_route_conflict",
+        "correct_main_ocr_blocked"
+      ],
+      "rowRef": {
+        "time": "05:05",
+        "driver": "Nimet",
+        "pickup": "Marriott Seestern DUS",
+        "destination": "DUS Airport",
+        "departureFlight": "EW9424",
+        "priceEUR": "35.00"
+      },
+      "expected": {
+        "pickup": "Marriott Seestern DUS",
+        "rowCheck": "no false block for obvious missing left OCR prefix"
+      },
+      "actual": {
+        "primaryPickup": "Marriott Seestern DUS",
+        "secondaryPickup": "Seestern DUS",
+        "appStatus": "hard OCR error, import blocked"
+      },
+      "exactDeviation": "The original clearly shows Marriott Seestern DUS, and primary OCR is correct; separate route reread clips Marriott and falsely flags a conflict.",
+      "reproducibility": "Real Samsung app error text for Zeile 10 compared against original source row 9 in 93125.jpg",
+      "rootCauseStatus": "False conflict evidenced; exact secondary image crop and normalization code not yet instrumented.",
+      "likelyAffectedFunction": "route OCR independent reread and prefix truncation adjudication",
+      "expectedAfterPatch": "Accept primary string only if independent evidence proves obvious partial clipping and preserves full route; otherwise remain blocked when genuinely conflicting.",
+      "regressionGate": "Return Marriott Seestern DUS for source row 9, no false conflict from clipped Seestern DUS; preserve real route mismatches."
+    },
+    {
+      "source": "IMG-20261008-WA0023.jpg",
+      "sourceImages": [
+        "93125.jpg"
+      ],
+      "sourceOriginalBytesVerified": false,
+      "rideCount": 34,
+      "plantag": "2026-10-09",
+      "installedVersion": "CORE-007D8A1F1D8P11416",
+      "sourceTitle": "Liste 09.10.2026",
+      "originalTimeRange": "01:35–08:25",
+      "patchAuthorized": false,
+      "importExecuted": false,
+      "testState": "Real Samsung P114.16, before any import; two blocked OCR rows",
+      "id": "GE-20261009-WA0023-P11416-EXTRA-LONG-FLIGHT-PREFIX-EWS8420",
+      "type": "ERROR",
+      "sourceRow": 21,
+      "appRow": 22,
+      "rowIndexSemantics": "source row21 excluding header, UI Zeile22 including header",
+      "layoutClass": "L13_WITH_HEADER_IN_IMAGE",
+      "errorClasses": [
+        "flight_code_ocr_prefix_insertion",
+        "flight_code_digit_mutation",
+        "flagged_bad_long_prefix"
+      ],
+      "rowRef": {
+        "time": "05:50",
+        "driver": "Kjamil",
+        "pickup": "Marriott Seestern DUS",
+        "destination": "DUS Airport",
+        "departureFlight": "EW9420",
+        "priceEUR": "35.00",
+        "vehicle": "Van",
+        "persons": 7
+      },
+      "expected": {
+        "departureFlight": "EW9420",
+        "rowCheck": "not blocked once independent valid flight cell is verified"
+      },
+      "actual": {
+        "departureFlightDiagnostic": "EWS8420",
+        "appStatus": "hard OCR error; requests explicit correction"
+      },
+      "exactDeviation": "Original flight number EW9420 but Android displays EWS8420 (extra S and mismatched numeral) in hard error; system correctly fail-closed rather than quietly guessing.",
+      "reproducibility": "Real Samsung P114.16 diagnostics text and the original screenshot flight text zoom confirmation in row21.",
+      "rootCauseStatus": "Mismatch proved, cell source view versus secondary OCR not yet instrumented.",
+      "likelyAffectedFunction": "flight-number OCR cell recognition and edge/prefix adjudication",
+      "expectedAfterPatch": "Retain validated original EW9420 only with enough independent exact-cell confirmation; reject/flag mismatched or unsupported alternatives and never hardcode an individual flight.",
+      "regressionGate": "Exactly EW9420 after verified reread at source row21, no spontaneous EWS8420; verify other similar flight cases do not regress."
+    },
+    {
+      "type": "ERROR",
+      "source": "IMG-20261008-WA0023.jpg",
+      "sourceImages": [
+        "93125.jpg",
+        "1791521508812.jpeg",
+        "1791521581460.jpeg"
+      ],
+      "sourceOriginalBytesVerified": false,
+      "rideCount": 34,
+      "plantag": "2026-10-09",
+      "installedVersion": "CORE-007D8A1F1D8P11417",
+      "sourceTitle": "Liste 09.10.2026",
+      "importExecuted": false,
+      "layoutClass": "L13_WITH_HEADER_IN_IMAGE",
+      "id": "GE-20261009-WA0023-P11417-MANUAL-PLANTAG-RESET-ON-FILE-SELECTION",
+      "sourceRow": null,
+      "errorClasses": [
+        "manual_plan_date_priority_reset_on_file_selection",
+        "wrong_filename_date_override"
+      ],
+      "expected": {
+        "activePlanDate": "2026-10-09",
+        "manualPlanDate": true,
+        "fileDateOnlyHint": "2026-10-08"
+      },
+      "actual": {
+        "beforeSelection": "09.10.2026 manuell bestätigt (Vorrang)",
+        "afterSelection": "08.10.2026 automatisch aus Dateiname"
+      },
+      "exactDeviation": "Real device P114.17 resets manually confirmed Plantag to wrong filename day when image is selected, before analysis.",
+      "reproducibility": "Real Samsung screenshots before and after selecting IMG-20261008-WA0023.jpg, 09.10.2026.",
+      "rootCauseStatus": "Code-proven: selectFiles state.manualPlanDate=false before filename inference, independently reproduced with actual production module.",
+      "likelyAffectedFunction": "selectFiles(), setDetectedPlanDate()",
+      "expectedAfterPatch": "Keep manual input across file selection, preserve filename as provisional evidence; prevent silent auto import if title/manual contradict.",
+      "regressionGate": "Native selected-file handler, real file name; manual 09.10 stays 09.10 after selection; reload analysis safely; no autoimport.",
+      "patchAuthorized": true,
+      "patchTarget": "P114.18",
+      "testState": "Confirmed Realgerät fail P114.17; local production module regression prepared, not yet Samsung confirmed"
+    },
+    {
+      "type": "ERROR",
+      "source": "IMG-20261008-WA0023.jpg",
+      "sourceImages": [
+        "93125.jpg",
+        "1791521508812.jpeg",
+        "1791521581460.jpeg"
+      ],
+      "sourceOriginalBytesVerified": false,
+      "rideCount": 34,
+      "plantag": "2026-10-09",
+      "installedVersion": "CORE-007D8A1F1D8P11417",
+      "sourceTitle": "Liste 09.10.2026",
+      "importExecuted": false,
+      "layoutClass": "L13_WITH_HEADER_IN_IMAGE",
+      "id": "GE-20261009-WA0023-P11417-FALSE-EARLY-MORNING-NEXT-DAY-PROMPT",
+      "sourceRow": null,
+      "errorClasses": [
+        "next_day_candidate_without_rollover_evidence",
+        "unnecessary_import_block"
+      ],
+      "expected": {
+        "allRideDates": "2026-10-09",
+        "unnecessaryNextDayPrompt": false,
+        "realCrossMidnightExample": "08.10 23:00 -> 09.10 01:35 must remain reviewable"
+      },
+      "actual": {
+        "all34RideDates": "2026-10-09",
+        "nextDayPrompt": "21 early rides → 10.10.2026",
+        "importBlocked": true
+      },
+      "exactDeviation": "P114.17 asks to move 21 01:35–05:50 rides to 10.10, although title is 09.10 and all 34 are already correctly dated 09.10.",
+      "reproducibility": "Real Samsung P114.17 34/34 OCR analysis and expanded diagnostic transcript 09.10.2026.",
+      "rootCauseStatus": "Code-proven: assignRideDates marks any time <06:00 a next-day candidate regardless of evidence of preceding evening.",
+      "likelyAffectedFunction": "assignRideDates(), validate(), render date_batch",
+      "expectedAfterPatch": "With manual/title-confirmed day and only early/day entries, no next-day prompt; when evening + early clocks co-occur require review (no blind chronological sort).",
+      "regressionGate": "34 rides from 01:35–08:25 all same day; distinct 23:00/01:35 case remains candidate and needs explicit decision.",
+      "patchAuthorized": true,
+      "patchTarget": "P114.18",
+      "testState": "Confirmed Realgerät fail P114.17; local regression prepared, not yet Samsung confirmed"
+    }
+  ],
+  "summary": {
+    "caseRecords": 70,
+    "legacyRows": 16,
+    "newErrorRecords": 62,
+    "newControlRecords": 7,
+    "layoutClasses": [
+      "HEADERLESS_13_COLUMN_PRICE_TIME_FROM_TO_NAME_COMPANY_ARR_DEP_VEHICLE_PERSONS_FLIGHTTIME_LOCATION_DRIVER",
+      "HEADERLESS_SINGLE_ROW",
+      "L14_ARR_DEP_SPLIT_LONG",
+      "L14_NO_DEP_COLUMN",
+      "L14_NO_DEP_COLUMN_LONG",
+      "L14_PRICE_THREE_TIME_HEADERS",
+      "L15_FULL_2026-10-06",
+      "L15_SHORT_TWO_ROW"
+    ],
+    "lastRealDeviceOutcome": "09.10.2026 source header / filename IMG-20261008-WA0023.jpg mismatch: 34/34 OCR recognized, 2 errors (Marriott truncation; EW9420→EWS8420); filename erroneously selected 08.10 and proposed only 21 early rides to 09.10 leaving 13 wrong. Stop before import.",
+    "openOtherVerification": "Altfall 07.10: 22 Datumssprünge und 27 Flugprüfungen weiterhin ohne Zuordnung. Keine Schlüsse für Flugprüfungen der neuen Liste.",
+    "goldenPackPreviousCaseCount": 67,
+    "newCaseId": "GE-20261009-WA0023-P11416-EXTRA-LONG-FLIGHT-PREFIX-EWS8420",
+    "lastDiagnosisVersion": "CORE-007D8A1F1D8P11416",
+    "newCaseIds": [
+      "GE-20261009-WA0023-P11416-SOURCE-HEADER-DATE-IGNORED-FILENAME",
+      "GE-20261009-WA0023-P11416-MARRIOTT-PREFIX-TRUNCATION-FALSE-CONFLICT",
+      "GE-20261009-WA0023-P11416-EXTRA-LONG-FLIGHT-PREFIX-EWS8420"
+    ]
+  },
+  "p1133": {
+    "baseHead": "f4d326b50d1f4e13992e3fb6c78f98c2d5001588",
+    "method": "GPT-VISION CELL REPLAY",
+    "sourceTruth": "original_image",
+    "shortCodeReviewTrigger": [
+      "independent_near_alternative",
+      "low_primary_cell_confidence"
+    ],
+    "cellViews": [
+      "full_cell_original",
+      "full_cell_psm10",
+      "content_inside_cell_original",
+      "content_inside_cell_grayscale",
+      "processed_cell"
+    ],
+    "consensusRule": "diverse_exact_cell_families_or_fail_closed",
+    "hardcodingAllowed": false,
+    "realSourceReplay": {
+      "tool": "golden-image-replay-p1133.py",
+      "case": "GE-20261007-WA0001-R26",
+      "status": "PASS_local_reference_engine",
+      "note": "Test-only developer replay derives Ort column from the real image header/grid and row from the ride-time column; runtime release still requires the Android/Tesseract.js real-device replay."
+    }
+  },
+  "p11331": {
+    "baseHead": "dc705ee8656dedb1f7ecde5570ffc19dedb43217",
+    "method": "RUNTIME FIX + EXECUTABLE SMOKE GATE",
+    "realDeviceFailure": "reviewItems is not defined",
+    "rootCause": "reviewItems declared in try block but consumed after finally",
+    "productionFix": "move reviewItems declaration to recoverTextIntegrityTargeted function scope",
+    "runtimeSmokeTool": "plan-import-runtime-smoke-p11331.js",
+    "buildGate": "app preBuild depends on planImportRuntimeSmoke",
+    "ocrSemanticsChanged": false,
+    "hardcodingAllowed": false
+  },
+  "p1135": {
+    "baseHead": "e4f6933",
+    "method": "HEADER/TIME RAW-GEOMETRY RECOVERY",
+    "sourceCase": "GE-20261007-WA0014-HEADER-TIME-P1135",
+    "productionRule": "only restore a missing primary ride-time header from repeated stable raw clock geometry inside the Preis→Von corridor before schema/matrix completion",
+    "failClosed": [
+      "less than 3 supporting rows",
+      "coverage below 60%",
+      "stable competing clock cluster",
+      "no Preis/Von anchor pair",
+      "ride-time header already present"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1135",
+    "realDeviceError": "Pflichtspalten nicht erkannt: time."
+  },
+  "p1136": {
+    "baseHead": "920d5f7",
+    "method": "ROW-ALIGNED TIME GEOMETRY",
+    "sourceCase": "GE-20261007-WA0014-HEADER-TIME-P1135",
+    "rootCauseClass": "P113.5 raw-line evidence can be diluted by OCR line fragmentation and cannot recover when the Preis header itself is absent; downstream time-only failures also need one deterministic replay from existing raw words.",
+    "productionRule": "pair recurring decimal price words with clock words on physical Y rows; only on strong unique evidence synthesize the missing left-side Preis/time geometry, and on an actual time-only mapping failure allow one no-new-OCR forced matrix replay",
+    "failClosed": [
+      "fewer than 3 matched physical rows",
+      "price coverage below 60%",
+      "time coverage below 60%",
+      "stable competing clock cluster",
+      "competing recurring price cluster when Preis header is absent",
+      "no recurring decimal price evidence",
+      "pickup header unavailable"
+    ],
+    "noSecondOcrForReplay": true,
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": true
+  },
+  "p1137": {
+    "baseSource": "P1136 validated source tree from installer workflow #199; current post-installer main HEAD must be freshly verified before production upload",
+    "method": "MIRROR SCHEMA INTEGRITY + BOUNDED OCR EDGE ADJUDICATION + ROW-COLOR CANCELLATION CORROBORATION",
+    "sourceCase": "GE-20261007-WA0014-P1136-MIRROR-SCHEMA-COMPRESSION",
+    "productionRules": [
+      "reconstruct middle timeMirror only from strong recurring row-aligned raw-word clock geometry",
+      "keep true 13-column no-mirror layouts unchanged",
+      "remove one terminal company table-edge glyph only with image-OCR plus a valid separately mapped timeMirror",
+      "restore clipped multi-word route edge only from strong exact primary raw-cell evidence",
+      "ignore bounded secondary route edge degradation only with strong primary confidence, same-plan peer support, and no unanimous exact-cell alternative",
+      "allow cancellation by exact driver marker plus independently sampled warm-red row color; color alone never cancels"
+    ],
+    "failClosed": [
+      "fewer than 3 mirror rows",
+      "mirror coverage below 60%",
+      "competing stable mirror-time cluster",
+      "weak primary route confidence",
+      "single-word route raw-edge promotion",
+      "two exact-cell views confirm secondary route alternative",
+      "semantic route conflict",
+      "cancellation text without second signal",
+      "row color without exact cancellation marker"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "STRUCTURAL_PASS_INTEGRITY_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1137"
+  },
+  "p1138": {
+    "baseHead": "9430b5a",
+    "parentUploadCommit": "4b87fde",
+    "method": "BOUNDED TEXT-EDGE INTEGRITY AFTER MIRROR-SCHEMA RECOVERY",
+    "sourceCases": [
+      "GE-20261007-WA0014-P1137-CUSTOMER-TERMINAL-PUNCT",
+      "GE-20261007-WA0014-R7-COMPANY-EDGE-TRUNCATION-P1137",
+      "GE-20261007-WA0014-R12-PICKUP-LEFTCLIP-P1136",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-LEFTCLIP-P1136"
+    ],
+    "productionRules": [
+      "strong primary exact customer/company text may veto only one extreme-edge punctuation substitution or strict delimiter-bearing short-code edge truncation when same-plan peer evidence exists",
+      "strong exact primary multi-token route evidence may veto only bounded secondary left/right edge degradation; semantic route changes remain conflicts",
+      "a clipped single-token flight location may be restored only from a longer strong exact raw primary token differing by at most two edge characters"
+    ],
+    "failClosed": [
+      "weak primary confidence",
+      "no same-plan primary peer for customer/company veto",
+      "two exact-cell views independently confirm the competing customer/company candidate",
+      "semantic substitution instead of edge degradation",
+      "raw single-token location differs internally instead of only at an edge",
+      "raw single-token location spans multiple OCR words"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "STRUCTURAL_PASS_SILENT_INTEGRITY_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1138",
+    "realDeviceActual": {
+      "activeRides": 12,
+      "cancelledRowsExcluded": 1,
+      "timeMirrorPresent": true,
+      "reportedHints": 0,
+      "reportedErrors": 0,
+      "automaticCorrections": 23,
+      "silentCompanyTruncation": "Get-E→Get-",
+      "silentFlightLocationClip": "Amsterdam→msterdam",
+      "automaticImportOccurred": true
+    }
+  },
+  "p1139": {
+    "baseHead": "476cb3a",
+    "parentUploadCommit": "2c4234a",
+    "method": "SOURCE-TRUTH FULL-CELL EDGE CONSENSUS",
+    "sourceCases": [
+      "GE-20261007-WA0014-R12-COMPANY-SILENT-TRUNCATION-P1138",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-LEFTCLIP-P1136",
+      "GE-20261007-WA0014-P1138-ZERO-SILENT-ERROR-GATE"
+    ],
+    "productionRules": [
+      "only probe source-truth full-cell OCR for bounded hyphenated company codes or single-token flight-location edge cases",
+      "require two independent full-cell OCR modes to agree on the same candidate",
+      "require full target-cell geometry with no neighboring column and no clipped cell edge",
+      "allow only a strict 1-2 glyph extension at the left or right edge; internal substitutions remain conflicts",
+      "company primary preservation still requires same-plan peer support",
+      "flight-location recovery may replace only a clipped current token with the agreed longer full-cell token"
+    ],
+    "failClosed": [
+      "fewer than two agreeing source-truth modes",
+      "tied competing source-truth candidates",
+      "neighbor column included",
+      "source-truth crop itself clipped",
+      "more than two missing edge glyphs",
+      "internal or semantic substitution",
+      "no same-plan peer for company preservation"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "FAIL_COMPANY_FALSE_CONFLICT_AND_SILENT_LOCATION_CLIP",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1139",
+    "realDeviceActual": {
+      "activeRides": 12,
+      "cancelledRowsExcluded": 1,
+      "reportedHints": 0,
+      "reportedErrors": 1,
+      "automaticCorrections": 22,
+      "companyDisplayed": "Get-E",
+      "companySecondaryTextOcr": "Get-",
+      "companyImportBlocked": true,
+      "flightLocationDisplayed": "msterdam",
+      "flightLocationRowStatus": "OK",
+      "automaticImportOccurred": false
+    }
+  },
+  "p1140": {
+    "baseHead": "d977e3e",
+    "parentUploadCommit": "ac962b6",
+    "method": "BOUNDED EDGE-EXPANDED SOURCE-TRUTH INTEGRITY",
+    "sourceCases": [
+      "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1139",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-SILENT-LEFTCLIP-P1139"
+    ],
+    "productionRules": [
+      "a hyphenated company primary may veto a shorter secondary candidate without plan-peer support only when two independent full-cell source-truth modes agree on the current primary and the secondary is a strict 1-2 glyph edge truncation",
+      "single-token flight-location recovery may use a small bounded horizontal/vertical edge-expanded source-truth crop when the normal full-cell family cannot prove the missing edge glyphs",
+      "two independent expanded source-truth OCR modes must agree on the same longer candidate",
+      "the candidate must be an exact left or right extension of only 1-2 glyphs; internal substitutions, neighbor text and unrelated words are rejected"
+    ],
+    "failClosed": [
+      "only one source-truth view supports the candidate",
+      "expanded views disagree or tie",
+      "candidate is not a strict 1-2 glyph edge extension",
+      "candidate includes adjacent time/neighbor-column content",
+      "company source-truth does not exactly support the longer current primary",
+      "semantic substitution rather than edge truncation"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "VALUES_CORRECT_FALSE_POSITIVE_BLOCKING_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1140",
+    "realDeviceActual": {
+      "activeRides": 12,
+      "cancelledRowsExcluded": 1,
+      "reportedHints": 0,
+      "reportedErrors": 4,
+      "automaticCorrections": 20,
+      "correctPrimaryValues": [
+        "Krakau",
+        "Get-E",
+        "Amsterdam"
+      ],
+      "blockingSecondaryValues": [
+        "Krakau |",
+        "Get-",
+        "msterdam"
+      ],
+      "automaticImportOccurred": false
+    }
+  },
+  "p1141": {
+    "baseHead": "82cf700",
+    "parentUploadCommit": "aa32d28",
+    "method": "PRIMARY SOURCE-TRUTH EDGE VETO",
+    "sourceCases": [
+      "GE-20261007-WA0014-R5-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "GE-20261007-WA0014-R6-FLIGHTLOCATION-TABLE-EDGE-P1140",
+      "GE-20261007-WA0014-R12-COMPANY-FALSE-CONFLICT-P1140",
+      "GE-20261007-WA0014-R14-FLIGHTLOCATION-FALSE-CONFLICT-P1140"
+    ],
+    "productionRules": [
+      "the current primary value is never replaced by this gate; the gate can only suppress a weaker secondary edge conflict",
+      "require two independent source-truth cell modes to agree on the current primary value",
+      "for company fields allow only a strict 1-2 glyph edge truncation of a hyphenated primary code",
+      "for single-token flight locations allow only a strict 1-2 glyph edge truncation or an isolated extreme-edge table-rule glyph",
+      "semantic alternatives, internal substitutions, weak evidence and disagreeing source views remain conflicts"
+    ],
+    "failClosed": [
+      "fewer than two agreeing source-truth views",
+      "source-truth views disagree or tie",
+      "secondary value is not edge-only degradation",
+      "company primary is not a bounded hyphenated edge probe",
+      "flight-location candidate is a semantic alternative",
+      "no source-truth support for the current primary"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "WA0014_PASS_WA0001_COMPANY_BOUNDARY_FALSE_POSITIVE_FAIL",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1141",
+    "realDeviceActual": {
+      "wa0014": {
+        "activeRides": 12,
+        "cancelledRowsExcluded": 1,
+        "reportedHints": 0,
+        "reportedErrors": 0,
+        "automaticCorrections": 21,
+        "company": "Get-E",
+        "flightLocation": "Amsterdam",
+        "automaticImportOccurred": true,
+        "flightVerificationOpen": 0
+      },
+      "wa0001": {
+        "rides": 33,
+        "reportedHints": 3,
+        "reportedErrors": 9,
+        "automaticCorrections": 78,
+        "edgeGlyphGoldenValue": "9MB",
+        "companyFalsePositiveRows": [
+          12,
+          13,
+          14,
+          17,
+          25,
+          28,
+          29,
+          31,
+          32
+        ],
+        "automaticImportOccurred": false
+      }
+    }
+  },
+  "p1142": {
+    "baseHead": "e27e1c6",
+    "parentUploadCommit": "e554b6b",
+    "method": "COMPANY BOUNDARY SOURCE-TRUTH VETO",
+    "sourceCases": [
+      "GE-20261007-WA0001-R12-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R13-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R14-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141",
+      "GE-20261007-WA0001-R25-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R28-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R29-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R31-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R32-COMPANY-TABLE-EDGE-P1141"
+    ],
+    "productionRules": [
+      "the current primary company value is never replaced by this gate; only a weaker secondary conflict can be suppressed",
+      "require at least two independent bounded source-truth cell modes to agree on the current primary value",
+      "apply only to bounded hyphenated company probes",
+      "allow isolated extreme-edge table-rule glyph noise around an otherwise identical candidate",
+      "allow exactly one missing internal delimiter from - _ / only when every other character is identical"
+    ],
+    "failClosed": [
+      "fewer than two agreeing source-truth views",
+      "source-truth views disagree or tie",
+      "semantic or internal character substitution",
+      "delimiter replaced by whitespace or another character",
+      "more than one delimiter missing",
+      "primary company is not a bounded hyphenated probe"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": false,
+    "realDeviceResult": "WA0001_SAME_9_COMPANY_FALSE_POSITIVE_BLOCKS",
+    "realDeviceVersion": "CORE-007D8A1F1D8P1142",
+    "realDeviceActual": {
+      "rides": 33,
+      "reportedHints": 3,
+      "reportedErrors": 9,
+      "automaticCorrections": 78,
+      "edgeGlyphGoldenValue": "9MB",
+      "companyFalsePositiveRows": [
+        12,
+        13,
+        14,
+        17,
+        25,
+        28,
+        29,
+        31,
+        32
+      ],
+      "secondaryVariants": {
+        "tableEdge": [
+          "| Get-E",
+          "| Get-E |",
+          "Get-E |"
+        ],
+        "internalDelimiterLoss": "GetE"
+      },
+      "automaticImportOccurred": false
+    }
+  },
+  "p1143": {
+    "baseHead": "5475536",
+    "parentUploadCommit": "86206f9",
+    "method": "REALSTATE SOURCE-TRUTH NORMALIZATION",
+    "sourceCases": [
+      "GE-20261007-WA0001-R12-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R13-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R14-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R17-COMPANY-INTERNAL-DELIMITER-LOSS-P1141",
+      "GE-20261007-WA0001-R25-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R28-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R29-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R31-COMPANY-TABLE-EDGE-P1141",
+      "GE-20261007-WA0001-R32-COMPANY-TABLE-EDGE-P1141"
+    ],
+    "productionRules": [
+      "normalize bounded source_truth_full_cell candidates through field-aware sourceTruthCellCandidate before consensus",
+      "strip only isolated extreme-edge table-rule glyphs for company/flightLocation source-truth; never alter semantic letters/digits/internal delimiters",
+      "for exactly one missing internal company delimiter require exact high-confidence primary raw OCR plus at least two additional same-plan primary peers",
+      "never replace the primary value; only suppress a narrowly proven weaker secondary conflict"
+    ],
+    "failClosed": [
+      "semantic character substitution",
+      "delimiter replaced by whitespace or another character",
+      "more than one internal delimiter lost",
+      "primary raw OCR does not exactly support the current primary",
+      "primary confidence below 80 for delimiter-loss fallback",
+      "fewer than two same-plan primary peers for delimiter-loss fallback",
+      "two exact independent cell-view votes support the secondary candidate",
+      "source-truth views disagree or tie where source-truth proof is required"
+    ],
+    "hardcodingAllowed": false,
+    "realDeviceProofPending": true
+  },
+  "p1146": {
+    "realDeviceProof": {
+      "version": "CORE-007D8A1F1D8P1146",
+      "plantag": "2026-10-07",
+      "source": "IMG-20261007-WA0001.jpg",
+      "rides": 33,
+      "errors": 1,
+      "remainingCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+      "imported": false
+    },
+    "rootCauseReproduced": true
+  },
+  "p1147": {
+    "targetCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+    "realDeviceProofPending": false,
+    "fixturePixelPolicy": "BYTE_IDENTICAL",
+    "testedScenarios": {
+      "positive": 4,
+      "negativeFailClosed": 20
+    },
+    "noProductionFixtureHardcode": true,
+    "masterPromptVersion": "1.1",
+    "realDeviceProof": {
+      "status": "FAILED",
+      "date": "2026-10-08",
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceRow": 17,
+      "remainingError": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+      "ocrChecked": 33,
+      "hardErrors": 1,
+      "imported": false,
+      "evidence": "user_transcribed_real_device_output_in_current_conversation",
+      "unresolvedEngineeringRootCause": true
+    },
+    "processGapDocumented": "Local green function tests did not cover true device OCR intermediate evidence and downstream hard-error import gate.",
+    "nextStep": "Collect actual pipeline evidence, reproduce end-to-end, no patch without fresh JETZT PATCHEN.",
+    "documentationApproval": "User explicitly approved 2026-10-08: Ja, aufnehmen."
+  },
+  "p1148": {
+    "date": "2026-10-08",
+    "status": "FAILED_REAL_DEVICE",
+    "approvedDocumentation": "Ja, P114.8-Fehler und Testlücke aufnehmen.",
+    "evidence": "user_transcribed_real_device_result_in_current_conversation",
+    "installedVersion": "CORE-007D8A1F1D8P1148",
+    "githubActionsBuildReported": "success #212",
+    "remainingGoldenErrorCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+    "duplicateCaseCreated": false,
+    "hardErrors": 1,
+    "imported": false,
+    "engineeringRootCause": "unproven_needs_runtime_trace",
+    "newReleaseGate": "No real device fix claim from synthetic confidence/word geometry alone; capture real async OCR, reconcile and import gate.",
+    "nextAction": "Evidence-based local root cause investigation; NO PRODUCTIVE PATCH WITHOUT NEW JETZT PATCHEN."
+  },
+  "p11410": {
+    "date": "2026-10-08",
+    "approval": "Ja, den P114.10-Ursachenbefund aufnehmen.",
+    "scope": "DOCUMENTATION_ONLY_NO_PATCH",
+    "appVersion": "CORE-007D8A1F1D8P11410",
+    "goldenCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+    "additionalCaseCount": 0,
+    "report": "P11410_REALGERAET_FIRMENKONFLIKT_DIAGNOSE.json",
+    "confirmedProblem": "Post-consensus evidence weighting and missing adaptive provenance leave original correct company Get-E blocked against lower-quality GetE edge-expanded OCR despite multiple high-quality Get-E views.",
+    "correctionStatus": "NOT_PATCHED; no import, no GitHub changes",
+    "nextStep": "When separately authorized: implement general evidence-quality-safe correction and run genuine end-to-end image/OCR/import tests plus entire Golden pack."
+  },
+  "p11411": {
+    "date": "2026-10-08",
+    "approval": "Ja, P114.11 als bestanden dokumentieren.",
+    "scope": "Documentation only. No GitHub commit, APK modification, plan import or cleanup.",
+    "goldenCase": "GE-20261007-WA0001-R17-PRIMARY-ALREADY-CORRECT-P1146",
+    "additionalCaseCount": 0,
+    "result": {
+      "date": "2026-10-08",
+      "approval": "Ja, P114.11 als bestanden dokumentieren.",
+      "evidence": "User-transcribed P114.11 original-image OCR analysis in current conversation; no independent APK inspection or actual import",
+      "version": "CORE-007D8A1F1D8P11411",
+      "githubActions": {
+        "runNumber": 215,
+        "result": "SUCCESS_user_screenshot",
+        "commitShort": "1d1b735"
+      },
+      "source": "IMG-20261007-WA0001.jpg",
+      "sourceSha256": "f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d",
+      "plantag": "2026-10-07",
+      "sourceRow": 17,
+      "rideCount": 33,
+      "ocrChecked": 33,
+      "autoCorrected": 78,
+      "notices": 3,
+      "hardOcrDataErrors": 0,
+      "drivers": 7,
+      "uniqueFlights": 23,
+      "companyExpected": "Get-E",
+      "companyConflictForRow17Reported": false,
+      "sourceRow17DisplayedStatus": "OK",
+      "companyCellTextDisplayedInCompactRideTable": false,
+      "result": "PASS_REAL_DEVICE_OCR_REFERENCE_PLAN_ONLY",
+      "expectedAfterFix": "No false-positive hard company conflict for validated primary company Get-E when stronger independent source views concur; retain fail-closed for genuine competing well-bounded OCR evidence",
+      "protectedValuesObserved": {
+        "flightNumber": "EW9420",
+        "flightLocation": "9MB"
+      },
+      "otherPriorCompanyConflicts": "not reported as hard errors (overall 0)",
+      "warningsIndependent": [
+        "Row 6 KoelnBus driver color uncertain",
+        "Row 24 flight location 1RA without flight number",
+        "Row 26 flight location 9MB without flight number"
+      ],
+      "separateItems": {
+        "flightVerificationOpen": 27,
+        "dateFollowingDayConfirmationPending": 22,
+        "followingDayOffered": "2026-10-08"
+      },
+      "planImportedDuringThisTest": false,
+      "p103CleanupPerformedDuringThisTest": false,
+      "remainingScope": "Full production import after date confirmation, wider generalisation to other planlists, and end-to-end verification of flight status not established by this OCR result",
+      "reportSource": "Current-chat user OCR transcription for P114.11. P11410 intermediate OCR trace remains archived unchanged."
+    },
+    "status": "GOLDEN_ROW17_REFERENCE_OCR_PASSED_REAL_DEVICE",
+    "historicFailuresPreserved": true
+  },
+  "documentationUpdate": {
+    "date": "2026-10-08",
+    "revision": "P11411_DOC_ONLY_GOLDEN_CASE_61",
+    "approval": "Ja, Fehler 61 dokumentieren.",
+    "sourceManifestFile": "ATMS_GOLDEN_REGRESSION_PACK_FINAL_manifest_P11411_REALDEVICE_PASS.json",
+    "sourceManifestSha256": "04c7677c9c8b5e073b26b47c7b664efbee240da09de995dbbfb7b7bc937399f8",
+    "newCases": 1,
+    "previousCases": 60,
+    "totalCases": 61,
+    "patchAuthorized": false,
+    "githubChangesAuthorized": false,
+    "automaticImportAuthorized": false,
+    "reason": "New confirmed false-positive pickup-time conflict in 2026-10-08 planlist."
+  },
+  "documentationUpdate62": {
+    "date": "2026-10-08",
+    "status": "P11415_REALDEVICE_DIAGNOSED_ONE_SOURCE_DRIVER_BLANK; NO_IMPORT",
+    "newCases": 1,
+    "totalCases": 62,
+    "basedOnManifest": "ATMS_GOLDEN_REGRESSION_PACK_61_FALL_2026-10-08.json",
+    "newCaseId": "GE-20261008-WA0014-HEADERLESS-ADMISSION-REJECT-P11412",
+    "patchAuthorized": false,
+    "githubChangesAuthorized": false,
+    "automaticImportAuthorized": false,
+    "note": "P11415 reduced invalid core cells from 16 to 1. Final failed image row15 16:00 DUS Airport->NH Nord, both flight cells intentionally blank and driver Name column visibly blank. Isolated unchanged production headerlessCoreRowCheck rejects driver only. Do not assume flight required, do not guess driver. Actual Android rowChecks field not printed; source driver absence explains case. 62 cases remain; previous 61 preserved."
+  },
+  "documentationUpdate63": {
+    "date": "2026-10-08",
+    "sourceFile": "IMG-20261008-WA0014.jpg",
+    "installedVersion": "CORE-007D8A1F1D8P11416",
+    "newCases": 1,
+    "previousCases": 62,
+    "totalCases": 63,
+    "newCaseId": "GE-20261008-WA0014-P11416-EWQ577-VS-EW9577",
+    "sourceOriginalBytesVerified": false,
+    "sourceRowMappingConfirmed": false,
+    "noImport": true,
+    "patchAuthorized": false
+  },
+  "documentationUpdate64to66": {
+    "date": "2026-10-08",
+    "sourceFile": "92759.jpg",
+    "plantagUserConfirmed": "2026-10-08",
+    "installedVersion": "CORE-007D8A1F1D8P11416",
+    "previousCases": 63,
+    "newCases": 3,
+    "totalCases": 66,
+    "newCaseIds": [
+      "GE-20261008-CROP9-P11416-EW4203-VISIBLE3",
+      "GE-20261008-CROP9-P11416-EW4203-VISIBLE4",
+      "GE-20261008-CROP9-P11416-GETE-VISIBLE7"
+    ],
+    "sharedProbableCauseFor64and65": "dependent secondary column OCR votes disagree with clearly visible primary values",
+    "importExecuted": false,
+    "patchAuthorized": false,
+    "flightVerificationSeparate": {
+      "openCount": 2,
+      "flights": [
+        "EW9088",
+        "EW4203"
+      ]
+    },
+    "evidenceSummary": "All 9 preview rows match source at displayed level. 2 correct preview flight values EW4203 blocked by secondary EW4202; one correct preview company Get-E blocked due to leading | in text re-OCR.",
+    "fileRecord": "ATMS_GOLDEN_FALL_64_65_66_9FAHRTEN_2026-10-08.md"
+  },
+  "documentationUpdate67": {
+    "date": "2026-10-08",
+    "sourceFileNew": "IMG-20261008-WA0020.jpg",
+    "sourceFilePrevious": "IMG-20261008-WA0019.jpg",
+    "installedVersion": "CORE-007D8A1F1D8P11416",
+    "previousCases": 66,
+    "newCases": 1,
+    "totalCases": 67,
+    "newCaseId": "GE-20261008-WA0020-P11416-REIMPORT-DRIVER-CHANGE-DUPLICATE",
+    "isOCRCase": false,
+    "class": "same-day updated plan re-import duplicate not reconciled",
+    "confirmedBy": "user-provided actual stored rides text, not just import preview",
+    "importConfirmed": true,
+    "rootCauseProven": false,
+    "patchAuthorized": false,
+    "protection": "Do not delete, overwrite, repeat import or patch without explicit user permission; verify true trip identity and retention-safe migration."
+  },
+  "documentationUpdate68to70": {
+    "date": "2026-10-09",
+    "sourceFile": "IMG-20261008-WA0023.jpg",
+    "sourceImage": "93125.jpg",
+    "headerDate": "2026-10-09",
+    "incorrectAppDate": "2026-10-08",
+    "previousCases": 67,
+    "newCases": 3,
+    "totalCases": 70,
+    "newCaseIds": [
+      "GE-20261009-WA0023-P11416-SOURCE-HEADER-DATE-IGNORED-FILENAME",
+      "GE-20261009-WA0023-P11416-MARRIOTT-PREFIX-TRUNCATION-FALSE-CONFLICT",
+      "GE-20261009-WA0023-P11416-EXTRA-LONG-FLIGHT-PREFIX-EWS8420"
+    ],
+    "realDeviceVersion": "CORE-007D8A1F1D8P11416",
+    "importExecuted": false,
+    "dateWarning": "Do not click the proposed 21→09.10 next-day correction: it will split 34 same-day rides across 08/09 October. Select 09.10 as Plantag for all 34.",
+    "confirmedOCRTextProblems": [
+      "Marriott Seestern DUS vs clipped Seestern DUS",
+      "EW9420 vs OCR EWS8420"
+    ],
+    "patchAuthorized": false
+  },
+  "documentationUpdate71to72": {
+    "date": "2026-10-09",
+    "previousCases": 70,
+    "newCases": 2,
+    "totalCases": 72,
+    "original70Sha256": "78c09acd14b3f0fde2283a83cefcbe0f9f10b4ff544ffe6edfeb8feeede8e656",
+    "newCaseIds": [
+      "GE-20261009-WA0023-P11417-MANUAL-PLANTAG-RESET-ON-FILE-SELECTION",
+      "GE-20261009-WA0023-P11417-FALSE-EARLY-MORNING-NEXT-DAY-PROMPT"
+    ],
+    "reimport67Status": "OPEN_UNCHANGED",
+    "patchAuthorized": true,
+    "noNewImport": true
+  }
+}
