@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11420 · 09.10.2026: DRIVER IDENTITY OCR FAIL-CLOSED REVIEW; no hardcoded names, safe blank driver, no silent replacement, manual row-only confirmation.
 // CORE-007D8A1F1D8P11419 · 09.10.2026: Preview displays true Wg/Fahrzeug and Pers; warning-only duplicate recognition distinguishes them; no re-import/storage mutation.
 // CORE-007D8A1F1D8P11418 · 09.10.2026: selected-file manual date persistence, evidence-based midnight review, bounded route clip/long-prefix OCR adjudication.
 // CORE-007D8A1F1D8P11417 · 09.10.2026: IMAGE-HEADER DATE PRIORITY + EXPLICIT ANDROID PICKER FALLBACK; NO AUTOIMPORT ON SOURCE DATE CONTRADICTION.
@@ -1968,6 +1969,15 @@
           issues.push({ level: 'warning', kind: 'driver_unassigned', row,
             text: 'Fahrer im Original leer – Nicht zugewiesen; Fahrt kann später einem Fahrer zugeordnet werden' });
         }
+      } else if (ride.sourceImageOcr &&
+          !ride.driverManualOcrCorrection?.confirmed &&
+          (ride.driverIdentityOcrUnresolved || driverIdentityGlyphSuspectP11420(ride.driver))) {
+        issues.push({
+          level: 'error', kind: 'driver_identity_ocr', row, rideId: ride.id,
+          originalDriver: cellText(ride.driver),
+          suggestedDriver: cellText(ride.driverIdentityOcrAlternative),
+          text: `Fahreridentität „${cellText(ride.driver)}“ ist OCR-seitig nicht eindeutig. Fahrt vor der Übernahme manuell am Originalbild bestätigen oder korrigieren.`
+        });
       } else if (ride.driverUncertaintyMarker) {
         issues.push({ level: 'warning', kind: 'driver_uncertainty', row, text: `Fahrer „${ride.driver}“ enthält eine Unsicherheitsmarkierung (${ride.driverUncertaintyMarker}) – nicht als sichere Fahrerzuordnung behandeln` });
       } else if (ride.driverNeedsManualCheck) {
@@ -5566,6 +5576,14 @@
     return normalized;
   }
 
+  // P114.20: A capital OCR-I surrounded by lowercase letters is an ambiguous
+  // visual glyph, not proof of a different dispatcher/driver identity.
+  // Generic shape-only check: no known driver strings, no dictionaries or colors.
+  function driverIdentityGlyphSuspectP11420(value) {
+    const raw = cellText(value);
+    return /[a-zäöüß]I(?=[a-zäöüß])/u.test(raw);
+  }
+
   function driverNeedsTargetedRecovery(value) {
     const raw = cellText(value);
     if (!raw) return true;
@@ -5573,7 +5591,7 @@
     // Saubere Namen wie "Rida", "Lana", "Sabrina" bleiben unangetastet.
     // Führende/abschließende Satzzeichen, OCR-Balken, Ziffern oder sonstige
     // Nicht-Namenszeichen machen den Primärwert dagegen verdächtig.
-    if (!looksLikeDriverName(raw)) return true;
+    if (!looksLikeDriverName(raw) || driverIdentityGlyphSuspectP11420(raw)) return true;
 
     const normalized = normalizeDriverCandidate(raw);
     if (!normalized) return true;
@@ -5716,6 +5734,16 @@
         continue;
       }
 
+      // P114.20: never silently replace an already plausible driver identity
+      // with a different text returned by local OCR. Four modes/crops of the
+      // same image are correlated evidence, not independent booking authority.
+      if (originalDriver && looksLikeDriverName(originalDriver) && recovered !== originalDriver) {
+        ride.driverIdentityOcrUnresolved = true;
+        ride.driverIdentityOcrAlternative = recovered;
+        ride.driverIdentityOcrEvidence = 'targeted_cell_disagreement';
+        ride.driverNeedsManualCheck = true;
+        continue;
+      }
       ride.driver = recovered;
       ride.driverAssignmentStatus = 'assigned';
       ride.driverRecoveredFromTargetedOcr = true;
@@ -5899,7 +5927,16 @@
       }
 
       if (candidate === original) return;
-      if (!driverConsensusCandidateIsSafe(original, candidate)) return;
+      if (!driverConsensusCandidateIsSafe(original, candidate)) {
+        // P114.20: only a closely confusable identity is escalated here;
+        // distant accidental line OCR is not guessed into a driver name.
+        if (driverIdentityGlyphSuspectP11420(original) || driverEditDistance(original, candidate) <= 2) {
+          ride.driverIdentityOcrUnresolved = true;
+          ride.driverIdentityOcrAlternative = candidate;
+          ride.driverIdentityOcrEvidence = 'german_column_consensus_disagreement';
+        }
+        return;
+      }
 
       ride.driverRawOcr = ride.driverRawOcr || original;
       ride.driver = candidate;
@@ -11881,6 +11918,28 @@
   }
 
 
+  function resolveDriverIdentityOcrIssue(rideId, driverValue) {
+    const ride = state.rides.find(item => String(item.id) === String(rideId));
+    if (!ride || !ride.sourceImageOcr) return;
+    const corrected = cellText(driverValue);
+    if (corrected.length > 80 || !looksLikeDriverName(corrected)) {
+      if (typeof window.showToast === 'function') window.showToast('Bitte den exakten Fahrernamen aus der Originalzelle eingeben', 'warn');
+      return;
+    }
+    const previous = cellText(ride.driver);
+    // No peer copying and no write to persisted rides until an independent,
+    // separately permitted import. Only this staged row is changed.
+    ride.driver = corrected;
+    ride.driverManualOcrCorrection = { from: previous, to: corrected, confirmed: true, at: new Date().toISOString() };
+    ride.driverIdentityOcrUnresolved = false;
+    ride.driverIdentityOcrAlternative = '';
+    ride.driverNeedsManualCheck = false;
+    ride.driverAssignmentStatus = 'assigned';
+    if (typeof window.showToast === 'function') window.showToast('Fahrer für diese Fahrt bestätigt', 'ok');
+    state.issues = validate(state.rides);
+    render();
+  }
+
   function resolveFlightOcrIssue(rideId, flightValue, action = 'manual') {
     const ride = state.rides.find(item => String(item.id) === String(rideId));
     if (!ride) return;
@@ -12037,6 +12096,15 @@
                 <button type="button" class="date-boundary-btn" data-date-action="next_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(String(issue.count))} Fahrt(en) → ${escapeHtml(formatPlanDate(issue.nextDate))}</button>
                 <button type="button" class="date-boundary-btn" data-date-action="same_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">Alle bleiben ${escapeHtml(formatPlanDate(issue.baseDate))}</button>
               </div>
+            </div>`;
+          }
+
+          if (issue.kind === 'driver_identity_ocr') {
+            return `<div class="plan-issue error" style="padding-bottom:12px">
+              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              <div style="font-size:12px;opacity:.82;margin-top:7px">Original: ${escapeHtml(issue.originalDriver || '–')}. Die Fahreridentität wird niemals allein aus ähnlichen Namen, Farben oder OCR-Nachbarzeilen geraten. Bitte direkt am Bild prüfen.</div>
+              <input type="text" class="driver-ocr-manual-input" data-ride-id="${escapeHtml(issue.rideId)}" value="" placeholder="Fahrer exakt aus der Originalzelle eingeben" style="width:100%;box-sizing:border-box;margin-top:10px;padding:11px;border-radius:10px">
+              <button type="button" class="driver-ocr-review-btn" data-ride-id="${escapeHtml(issue.rideId)}" style="width:100%;margin-top:9px;padding:10px;border-radius:10px;font-weight:800">Fahrer für diese Fahrt bestätigen</button>
             </div>`;
           }
 
@@ -12468,6 +12536,14 @@
           button.dataset.priceAction,
           value
         );
+      });
+    });
+
+    $('planIssues').querySelectorAll('.driver-ocr-review-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const input = Array.from($('planIssues').querySelectorAll('.driver-ocr-manual-input'))
+          .find(item => String(item.dataset.rideId) === String(button.dataset.rideId));
+        resolveDriverIdentityOcrIssue(button.dataset.rideId, input?.value || '');
       });
     });
 
@@ -12969,6 +13045,12 @@
 
   async function importRides(options = {}) {
     if (!state.rides.length) return false;
+    // P114.20 safety gate: button state is not authorization. Never persist
+    // a staged list with a still-unresolved driver OCR identity.
+    if (blockingNonFlightIssues(validate(state.rides)).length) {
+      if ($('importStatus')) $('importStatus').textContent = 'Import blockiert: offene OCR-/Datenfehler zuerst klären.';
+      return false;
+    }
     const auto = Boolean(options && options.auto);
     try {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
@@ -16104,6 +16186,16 @@
       oneNumericEditFlightAlternative
     });
   } catch (_) {}
+
+  // Pure regression-only functions (no auto-import or storage write).
+  try { window.ATMSP11420DriverRegression = Object.freeze({
+    driverIdentityGlyphSuspectP11420,
+    driverNeedsTargetedRecovery,
+    validate,
+    driverConsensusCandidateIsSafe,
+    resolveDriverIdentityOcrIssue,
+    readState: () => state
+  }); } catch (_) {}
 
   // Internal deterministic date regression hooks (do not mutate storage or import).
   try { window.ATMSP11417DateRegression = Object.freeze({
