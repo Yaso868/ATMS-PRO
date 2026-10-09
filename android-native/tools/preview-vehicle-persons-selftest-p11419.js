@@ -1,0 +1,67 @@
+#!/usr/bin/env node
+'use strict';
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const vm=require('node:vm');
+const crypto=require('node:crypto');
+const root=path.join(__dirname,'..');
+const read=p=>fs.readFileSync(path.join(root,p),'utf8');
+const src=read('app/src/main/assets/js/plan-import.js');
+const html=read('app/src/main/assets/index.html');
+const app=read('app/src/main/assets/js/app.js');
+assert(read('app/src/main/assets/css/main.css').includes('.plan-preview{min-width:1360px}'),'11-column preview must remain horizontally scrollable on Android');
+const listHtml=html.match(/<table class="plan-preview">[\s\S]*?<\/table>/)?.[0]||'';
+assert(listHtml.includes('<th>Fahrzeug</th><th>Personen</th>'),'preview must display both independent source fields');
+assert(listHtml.includes('<th>Typ</th>'),'keep ride type separate');
+assert(!/<th>Typ<\/th><th>Preis<\/th>/.test(listHtml),'vehicle and persons must not be hidden');
+assert(src.includes('vehicle,')&&src.includes('persons: getPersonsValue('),'parser must preserve mapped vehicle/persons');
+const beg=src.indexOf('  function planPreviewDuplicateFingerprint(ride) {');
+const end=src.indexOf('\n  function validate(rides)',beg);
+assert(beg>0&&end>beg,'warning fingerprint must be defined before validation');
+const block=src.slice(beg,end);
+const finger=vm.runInNewContext(`(function(){const cellText=v=>String(v??'').trim();const cleanKey=v=>cellText(v).toLowerCase().replace(/\\s+/g,'');${block};return planPreviewDuplicateFingerprint})()`,{});
+const a={sourceRow:31,date:'2026-10-09',time:'08:15',driver:'Ghasem',pickup:'Novotel DUS',destination:'Trainingscenter DUS',flightNumber:'',vehicle:'Pkw',persons:1,rideType:'transfer',price:35.7};
+const b={...a,sourceRow:32,vehicle:'Van',persons:7};
+assert.notEqual(finger(a),finger(b),'Pkw /1 and Van /7 are not duplicate fingerprints');
+assert.equal(finger(a),finger({...a,sourceRow:99}),'exact identical ride remains warnable without removing any source row');
+assert.notEqual(finger(a),finger({...a,persons:7}),'number of persons alone distinguishes trips');
+assert.notEqual(finger(a),finger({...a,vehicle:'Van'}),'vehicle alone distinguishes trips');
+assert.notEqual(finger(a),finger({...a,date:'2026-10-10'}),'different calendar days are distinct');
+assert(src.includes('if (fingerprints.has(fingerprint)) issues.push')&&src.includes('fingerprints.add(fingerprint)'),'warning mechanism remains warning only');
+assert(src.includes('const fingerprint = planPreviewDuplicateFingerprint(ride);'),'validator calls corrected pure warning identity');
+
+// Render actual production preview mapping, not a parallel hand-written implementation.
+const marker="    $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {";
+const from=src.indexOf(marker);
+const to=src.indexOf("    }).join('');",from);
+assert(from>0&&to>from,'production preview renderer exists');
+const snippet=src.slice(from,to+"    }).join('');".length);
+const node={innerHTML:''};
+const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const render=vm.runInNewContext('(function(rides, ocrActionableIssues, $, escapeHtml, formatPlanDate, Intl){'+snippet+';})',{});
+render([a,b],[],()=>node,escapeHtml,v=>v,Intl);
+const rows=node.innerHTML.match(/<tr>/g)||[];
+assert.equal(rows.length,2,'exactly two Ghasem plan rows stay in preview');
+assert.match(node.innerHTML,/<td>Pkw<\/td>\s*<td>1<\/td>/,'first ride shows vehicle Pkw + 1 passenger');
+assert.match(node.innerHTML,/<td>Van<\/td>\s*<td>7<\/td>/,'second ride shows vehicle Van + 7 passengers');
+assert.equal((node.innerHTML.match(/<td>Transfer<\/td>/g)||[]).length,2,'ride type remains separate');
+assert.equal((node.innerHTML.match(/class="plan-status ok"/g)||[]).length,2,'no spurious warning for two distinct source rows');
+render([{...a,vehicle:'<Van>&',persons:2}],[],()=>node,escapeHtml,v=>v,Intl);
+assert(node.innerHTML.includes('&lt;Van&gt;&amp;'),'vehicle safely HTML-escaped');
+render([a,{...a,sourceRow:32}], [{row:32,level:'warning',text:'Mögliche doppelte Fahrt erkannt'}],()=>node,escapeHtml,v=>v,Intl);
+assert(node.innerHTML.includes('class="plan-status warning"'),'true identical values keep the warning');
+
+// Never patch storage/re-import handling while GE-67 remains open.
+assert(app.includes('function mergePlanImportByIdentity('),'storage re-import logic retains its own identity path');
+const golden72=JSON.parse(read('tools/fixtures/golden-regression/ATMS_GOLDEN_REGRESSION_PACK_72_P11418_DATE_PRIORITY_MIDNIGHT_2026-10-09.json'));
+const golden73=JSON.parse(read('tools/fixtures/golden-regression/ATMS_GOLDEN_REGRESSION_PACK_73_P11419_VEHICLE_PERSON_PREVIEW_2026-10-09.json'));
+assert.equal(golden72.cases.length,72);
+assert.equal(golden73.cases.length,73);
+assert.deepEqual(golden73.cases.slice(0,72),golden72.cases,'past 72 full Golden case objects must be identical');
+const gold=golden73.cases[72];
+assert.equal(gold.source,'IMG-20261008-WA0023.jpg');
+assert.equal(gold.expected.first.vehicle,'Pkw');assert.equal(gold.expected.first.persons,1);
+assert.equal(gold.expected.second.vehicle,'Van');assert.equal(gold.expected.second.persons,7);
+assert.equal(gold.expected.rowsRemainSeparate,2);
+console.log('P114.19 vehicle/person preview + distinct warnings + golden72 preservation: PASS (16 assertions/scenarios)');

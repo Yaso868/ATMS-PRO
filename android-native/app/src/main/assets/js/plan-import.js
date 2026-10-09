@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11419 · 09.10.2026: Preview displays true Wg/Fahrzeug and Pers; warning-only duplicate recognition distinguishes them; no re-import/storage mutation.
 // CORE-007D8A1F1D8P11418 · 09.10.2026: selected-file manual date persistence, evidence-based midnight review, bounded route clip/long-prefix OCR adjudication.
 // CORE-007D8A1F1D8P11417 · 09.10.2026: IMAGE-HEADER DATE PRIORITY + EXPLICIT ANDROID PICKER FALLBACK; NO AUTOIMPORT ON SOURCE DATE CONTRADICTION.
 // CORE-007D8A1F1D8P11416 · 08.10.2026: VERIFIED BLANK DRIVER ADMISSION – keep real names, confirm empty exact driver cells without borrowing neighbors/colors, and fail closed on ambiguous driver OCR; empty driver is stored as unassigned.
@@ -1887,6 +1888,18 @@
     return Boolean(values[0] || (values[1] && values[2]));
   }
 
+  // P114.19: Warning-only duplicate detection. Preserve every source row;
+  // differences in vehicle or persons are distinct passenger bookings.
+  // This fingerprint never participates in the storage/re-import merge (GE-67 remains open).
+  function planPreviewDuplicateFingerprint(ride) {
+    return [
+      cellText(ride.date), cellText(ride.time), cleanKey(ride.pickup),
+      cleanKey(ride.destination), cleanKey(ride.driver),
+      cellText(ride.flightNumber).toUpperCase(),
+      cleanKey(ride.vehicle), cellText(ride.persons)
+    ].join('|');
+  }
+
   function validate(rides) {
     const issues = [];
     const fingerprints = new Set();
@@ -2283,7 +2296,7 @@
         });
       }
 
-      const fingerprint = [ride.time, cleanKey(ride.pickup), cleanKey(ride.destination), cleanKey(ride.driver), ride.flightNumber].join('|');
+      const fingerprint = planPreviewDuplicateFingerprint(ride);
       if (fingerprints.has(fingerprint)) issues.push({ level: 'warning', row, text: 'Mögliche doppelte Fahrt erkannt' });
       fingerprints.add(fingerprint);
     });
@@ -12485,7 +12498,9 @@
         <td>${escapeHtml(ride.destination || '–')}</td>
         <td>${escapeHtml(ride.flightNumber || '–')}</td>
         <td>${escapeHtml(ride.flightLocation || '–')}</td>
-        <td>${escapeHtml(typeLabels[ride.rideType] || ride.rideType)}</td>
+        <td>${escapeHtml(typeLabels[ride.rideType] || ride.rideType || '–')}</td>
+        <td>${escapeHtml(ride.vehicle || '–')}</td>
+        <td>${escapeHtml(ride.persons === null || ride.persons === undefined || ride.persons === '' ? '–' : String(ride.persons))}</td>
         <td>${ride.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
         <td><span class="plan-status ${status === 'OK' ? 'ok' : status === 'Fehler' ? 'error' : 'warning'}">${status}</span></td>
       </tr>`;
