@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11424 – importfreie Anzeige der offiziellen Airport-Erstquellen-Fehlercodes, keine Flug-/Fahrtdatenmutation.
 // CORE-007D8A1F1D8P11422 · 09.10.2026: Native flight verification in import-free preview, isolated diagnostics and generation/identity staleness guards; no writes to staged or persistent rides.
 // CORE-007D8A1F1D8P11420 · 09.10.2026: DRIVER IDENTITY OCR FAIL-CLOSED REVIEW; no hardcoded names, safe blank driver, no silent replacement, manual row-only confirmation.
 // CORE-007D8A1F1D8P11419 · 09.10.2026: Preview displays true Wg/Fahrzeug and Pers; warning-only duplicate recognition distinguishes them; no re-import/storage mutation.
@@ -15886,7 +15887,7 @@
   }
 
   // CORE-007D8A1F1D8P11423: strict source evidence and diagnostic-only rejection codes.
-  function makePreviewFlightDiagnostic(previewRides, checked, technicalFailures, firstTechnicalError, routeProbe = null, boardProbe = null, singleProbe = null) {
+  function makePreviewFlightDiagnostic(previewRides, checked, technicalFailures, firstTechnicalError, routeProbe = null, boardProbe = null, singleProbe = null, officialSummary = null) {
     const groups = new Map();
     for (const ride of previewRides) {
       const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
@@ -15945,7 +15946,20 @@
         && String(item?.airportIata || '').toUpperCase() === group.airportIata
         && String(item?.direction || '').toLowerCase() === group.direction);
       const conflict = Boolean(hit?.conflict) || routeConflict || boardConflict;
+      // P114.24: read-only, exact-identity official-airport rejection diagnostic.
+      // A provider's missing/partial identity must never be attributed to another ride.
+      const officialRows = officialAirportDiagnosticSummary(officialSummary).rows;
+      const matchingOfficial = officialRows.find(item =>
+        item.flightNumber === group.flightNumber
+        && item.airportEventDate === group.date
+        && item.airportIata === group.airportIata
+        && item.direction === group.direction);
+      const officialEvidence = hit?.officialAirportEvidence === true;
+      const firstSourceCode = matchingOfficial
+        ? cellText(matchingOfficial.reason).replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80)
+        : (!officialEvidence ? 'kein_eindeutiger_tagesbeleg' : '');
       const sourceReasons = [
+        firstSourceCode && `Airport:${firstSourceCode}`,
         matchingBoard && `Board:${cellText(matchingBoard.reason).slice(0,80)}`,
         matchingBoard && Array.isArray(matchingBoard.segmentReasons) && matchingBoard.segmentReasons.length
           && `Boardfenster:${matchingBoard.segmentReasons.slice(0,4).map(value => cellText(value).split(':').slice(0,2).join(':')).join(',')}`,
@@ -15971,6 +15985,9 @@
       open: entries.filter(x => x.status !== 'verified').length,
       technicalFailures: Number(technicalFailures || 0),
       firstTechnicalError: cellText(firstTechnicalError).slice(0, 150),
+      // Informational only. Provider counts cannot qualify flights as verified.
+      officialAttempted: Math.max(0, Number(officialSummary?.attempted || 0)),
+      officialMatched: Math.max(0, Number(officialSummary?.matched || 0)),
       entries
     };
   }
@@ -15991,6 +16008,7 @@
     }).join('');
     panel.innerHTML = `<strong>✈ Importfreie Flugprüfung · ${report.verified}/${report.total} streng bestätigt · ${report.open} offen</strong>`
       + `<div>Nur Diagnose: keine Fahrten geändert, keine Übernahme möglich. Geprüft: ${escapeHtml(report.checkedAt)}</div>`
+      + `<div>Offizielle Airport-Erstquelle: ${Number(report.officialMatched || 0)} Treffer von ${Number(report.officialAttempted || 0)} geprüften Flugkontexten. Airport:kein_eindeutiger_tagesbeleg ist ein ATMS-Diagnosecode, keine Fehlermeldung des Providers.</div>`
       + (report.technicalFailures ? `<div>Technische Quellenfehler: ${report.technicalFailures} · ${escapeHtml(report.firstTechnicalError)}</div>` : '')
       + `<ul>${rows}</ul>`;
   }
@@ -16043,7 +16061,7 @@
       if (!current()) return { ok: false, stale: true };
       const technicalFailures = (Array.isArray(officialSummary?.failures) ? officialSummary.failures : [])
         .filter(x => ['technical', 'provider_unavailable'].includes(String(x?.reason || '').toLowerCase()));
-      const report = makePreviewFlightDiagnostic(snapshotRides, checked, technicalFailures.length, technicalFailures[0]?.message, routeProbe, boardProbe, singleProbe);
+      const report = makePreviewFlightDiagnostic(snapshotRides, checked, technicalFailures.length, technicalFailures[0]?.message, routeProbe, boardProbe, singleProbe, officialSummary);
       if (!current()) return { ok: false, stale: true };
       state.previewFlightDiagnostic = report;
       renderPreviewFlightDiagnostic(report);
