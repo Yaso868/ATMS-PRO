@@ -317,13 +317,18 @@ tasks.register('datePreviewOnlyP11421', Exec) {
     commandLine 'node', 'tools/date-preview-only-selftest-p11421.js'
 }
 
-tasks.register('runtimeAssetAlignmentP11422', Exec) {
+tasks.register('runtimeAssetAlignmentP11423', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11422.js'
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11423.js'
 }
 tasks.register('safeFlightPreviewP11422', Exec) {
     workingDir rootProject.projectDir
     commandLine 'node', 'tools/safe-flight-preview-selftest-p11422.js'
+}
+
+tasks.register('safeFlightEvidenceP11423', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/safe-flight-evidence-selftest-p11423.js'
 }
 
 tasks.named('preBuild').configure {
@@ -342,8 +347,9 @@ tasks.named('preBuild').configure {
     // Version-specific runtime alignment: only the currently active P114.22 gate may block preBuild.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP11422')
+    dependsOn tasks.named('runtimeAssetAlignmentP11423')
     dependsOn tasks.named('safeFlightPreviewP11422')
+    dependsOn tasks.named('safeFlightEvidenceP11423')
     dependsOn tasks.named('driverIdentityOcrP11420')
     dependsOn tasks.named('datePreviewOnlyP11421')
     dependsOn tasks.named('previewVehiclePersonsP11419')

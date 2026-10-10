@@ -15157,7 +15157,8 @@
         if (!exactDate || exactDate !== targetDate) continue;
         exactDateRows++;
         const rawUrl = cellText(flight?.url);
-        let identityOk = true;
+        // P114.23: an unlabelled other-days row must not create a hard route conflict.
+        let identityOk = Boolean(parts && rawUrl);
         let operatorAlias = false;
         let urlPath = '';
         let trackerCarrier = '';
@@ -15185,7 +15186,7 @@
             } else if (!url.pathname.toUpperCase().includes(`/FLIGHT-TRACKER/${parts.carrier}/${parts.number}`)) {
               identityOk = false;
             }
-          } catch (_) {}
+          } catch (_) { identityOk = false; }
         }
         const originIata = nativeSecondSourceIata(flight?.departureAirport);
         const destinationIata = nativeSecondSourceIata(flight?.arrivalAirport);
@@ -15239,7 +15240,12 @@
     }
     if (resolvedRoutes.length !== 1) return { reachable: true, exactDateFound: true, airportConflict: false, reason: 'ambiguous_routes', routes: resolvedRoutes, ...diagnosticBase };
     const route = resolvedRoutes[0];
-    const includesExpectedAirport = route.originIata === airportIata || route.destinationIata === airportIata;
+    // P114.23: direction is part of the expected route, not merely airport membership.
+    // The other-days probe remains diagnostic-only; no ride fields are ever rewritten.
+    const expectedDirection = String(item?.direction || '').toLowerCase();
+    const includesExpectedAirport = expectedDirection === 'departure'
+      ? route.originIata === airportIata
+      : expectedDirection === 'arrival' ? route.destinationIata === airportIata : false;
     return {
       reachable: true,
       exactDateFound: true,
@@ -15458,7 +15464,8 @@
           }
           const parsed = parseNativeSecondSourceBoardSegment(payload);
           if (!parsed.ok) {
-            group.segmentsReachable++;
+            // P114.23: parseable transport JSON with missing data.flights is NOT
+            // a usable board segment and must not suppress safe per-flight fallback.
             group.segmentReasons.push(`${hour}:${parsed.reason}`);
             continue;
           }
@@ -15482,7 +15489,13 @@
         const flightNumber = normalizeFlightForCurrentCheck(item?.flightNumber);
         const matches = group.flights.filter(row => boardFlightIdentity(row) === flightNumber);
         if (!matches.length) {
-          rows.push({ flightNumber, reachable: group.segmentsReachable > 0, routeMatch: false, reason: group.segmentsReachable > 0 ? 'flight_not_found_on_board' : 'board_unreachable' });
+          // P114.23: board no-hit is absence of evidence, not a route conflict.
+          // A strict single-flight query may now try to fill this gap, but its own
+          // date/identity/direction checks still independently gate verification.
+          const reason = group.segmentsReachable > 0 ? 'flight_not_found_on_board' : 'board_unreachable';
+          rows.push({ flightNumber, reachable: group.segmentsReachable > 0, routeMatch: false,
+            reason, airportIata: group.airportIata, airportEventDate: group.date, direction: group.direction,
+            segmentReasons: group.segmentReasons.slice(0, 4) });
           continue;
         }
         const expectedOrigin = String(item?.officialOriginIata || '').trim().toUpperCase();
@@ -15623,9 +15636,12 @@
     const direction = String(item?.direction || '').trim().toLowerCase();
     const targetDate = cellText(item?.airportEventDate || item?.date);
     const eventDate = p67FlightStatsEventDate(item, payload);
-    const identityMatch = Boolean(parts)
-      && (!reportedCarrier || reportedCarrier === parts.carrier)
-      && (!reportedNumber || reportedNumber === parts.number);
+    // P114.23: the requested URL cannot serve as independent evidence of
+    // the flight identity. Both carrier and flight number must be returned by
+    // FlightStats itself and match exactly.
+    const identityPresent = Boolean(reportedCarrier && reportedNumber);
+    const identityMatch = Boolean(parts && identityPresent
+      && reportedCarrier === parts.carrier && reportedNumber === parts.number);
     const airportAnchored = direction === 'arrival'
       ? destinationIata === airportIata
       : direction === 'departure' ? originIata === airportIata : false;
@@ -15634,6 +15650,7 @@
       && originIata === expectedOrigin && destinationIata === expectedDestination);
     let reason = routeMatch ? 'route_match' : 'route_or_date_mismatch';
     if (!originIata || !destinationIata) reason = 'route_missing';
+    else if (!identityPresent) reason = 'flight_identity_missing';
     else if (!identityMatch) reason = 'flight_identity_mismatch';
     else if (!eventDate) reason = 'event_date_missing';
     else if (eventDate !== targetDate) reason = 'event_date_mismatch';
@@ -15658,10 +15675,13 @@
       if (!flightNumber || !/^[A-Z]{3}$/.test(airportIata) || !/^\d{4}-\d{2}-\d{2}$/.test(airportEventDate)
         || !['arrival','departure'].includes(direction) || !/^[A-Z]{3}$/.test(expectedOrigin) || !/^[A-Z]{3}$/.test(expectedDestination)) return false;
       return boardRows.some(row => normalizeFlightForCurrentCheck(row?.flightNumber) === flightNumber
-        && cellText(row?.reason) === 'board_unreachable');
+        && ['board_unreachable','flight_not_found_on_board'].includes(cellText(row?.reason))
+        && (!row?.airportIata || String(row.airportIata).toUpperCase() === airportIata)
+        && (!row?.airportEventDate || cellText(row.airportEventDate) === airportEventDate)
+        && (!row?.direction || String(row.direction).toLowerCase() === direction));
     });
     const rows = [];
-    if (!eligible.length) return { attempted: 0, reachable: 0, routeMatches: 0, rows, unavailable: false, text: '0 geprüft · kein board_unreachable-Fallback erforderlich' };
+    if (!eligible.length) return { attempted: 0, reachable: 0, routeMatches: 0, rows, unavailable: false, text: '0 geprüft · kein sicherer Board-Fehlstellen-Fallback erforderlich' };
     if (!bridge) {
       for (const item of eligible) rows.push({ flightNumber: normalizeFlightForCurrentCheck(item?.flightNumber), reachable: false, routeMatch: false, reason: 'native_bridge_unavailable' });
       return { attempted: eligible.length, reachable: 0, routeMatches: 0, rows, unavailable: true, text: `${eligible.length} geprüft · Native Bridge nicht verfügbar` };
@@ -15865,7 +15885,8 @@
     return hosts;
   }
 
-  function makePreviewFlightDiagnostic(previewRides, checked, technicalFailures, firstTechnicalError, routeProbe = null, boardProbe = null) {
+  // CORE-007D8A1F1D8P11423: strict source evidence and diagnostic-only rejection codes.
+  function makePreviewFlightDiagnostic(previewRides, checked, technicalFailures, firstTechnicalError, routeProbe = null, boardProbe = null, singleProbe = null) {
     const groups = new Map();
     for (const ride of previewRides) {
       const flightNumber = normalizeFlightForCurrentCheck(ride?.flightNumber || ride?.arrivalFlight || ride?.departureFlight);
@@ -15906,7 +15927,31 @@
         && cellText(item?.airportEventDate) === group.date
         && String(item?.airportIata || '').toUpperCase() === group.airportIata
         && String(item?.direction || '').toLowerCase() === group.direction);
+      // P114.23: expose source-specific reasons in a purely diagnostic panel.
+      // Do not expose request contents, cookies or credentials.
+      const matchingBoard = (Array.isArray(boardProbe?.rows) ? boardProbe.rows : []).find(item =>
+        normalizeFlightForCurrentCheck(item?.flightNumber) === group.flightNumber
+        && (!item?.airportEventDate || cellText(item?.airportEventDate) === group.date)
+        && (!item?.airportIata || String(item.airportIata).toUpperCase() === group.airportIata)
+        && (!item?.direction || String(item.direction).toLowerCase() === group.direction));
+      const matchingSingle = (Array.isArray(singleProbe?.rows) ? singleProbe.rows : []).find(item =>
+        normalizeFlightForCurrentCheck(item?.flightNumber) === group.flightNumber
+        && cellText(item?.airportEventDate) === group.date
+        && String(item?.airportIata || '').toUpperCase() === group.airportIata
+        && String(item?.direction || '').toLowerCase() === group.direction);
+      const matchingOpposite = (Array.isArray(routeProbe?.rows) ? routeProbe.rows : []).find(item =>
+        normalizeFlightForCurrentCheck(item?.flightNumber) === group.flightNumber
+        && cellText(item?.airportEventDate) === group.date
+        && String(item?.airportIata || '').toUpperCase() === group.airportIata
+        && String(item?.direction || '').toLowerCase() === group.direction);
       const conflict = Boolean(hit?.conflict) || routeConflict || boardConflict;
+      const sourceReasons = [
+        matchingBoard && `Board:${cellText(matchingBoard.reason).slice(0,80)}`,
+        matchingBoard && Array.isArray(matchingBoard.segmentReasons) && matchingBoard.segmentReasons.length
+          && `Boardfenster:${matchingBoard.segmentReasons.slice(0,4).map(value => cellText(value).split(':').slice(0,2).join(':')).join(',')}`,
+        matchingSingle && `Einzelflug:${cellText(matchingSingle.reason).slice(0,80)}`,
+        matchingOpposite && `Gegenroute:${cellText(matchingOpposite.reason).slice(0,80)}`
+      ].filter(Boolean);
       const singleSource = !verified && !conflict && hit?.officialAirportEvidence === true && hostCount >= 1;
       return {
         flightNumber: group.flightNumber, date: group.date, direction: group.direction,
@@ -15914,7 +15959,8 @@
         status: verified && !conflict ? 'verified' : (conflict ? 'conflict' : (singleSource ? 'single_source' : 'open')),
         location: verified && !conflict ? normalizeFlightLocation(hit?.flightLocation || hit?.relevantLocation) : '',
         iata: verified && !conflict ? routeIata : '',
-        sourceCount: verified && !conflict ? hostCount : (singleSource ? 1 : 0)
+        sourceCount: verified && !conflict ? hostCount : (singleSource ? 1 : 0),
+        sourceReasons
       };
     });
     return {
@@ -15939,7 +15985,9 @@
         : item.status === 'single_source' ? 'Nur eine Quelle – offen'
         : 'Nicht streng bestätigt – offen';
       const origin = item.direction === 'departure' ? `${item.airportIata} →` : `→ ${item.airportIata}`;
-      return `<li>${escapeHtml(item.flightNumber)} · ${escapeHtml(item.date)} · ${escapeHtml(origin)} · ${escapeHtml(label)}</li>`;
+      const reasonText = Array.isArray(item.sourceReasons) && item.sourceReasons.length
+        ? ` · Prüfcodes: ${item.sourceReasons.map(value => escapeHtml(value)).join(' | ')}` : '';
+      return `<li>${escapeHtml(item.flightNumber)} · ${escapeHtml(item.date)} · ${escapeHtml(origin)} · ${escapeHtml(label)}${reasonText}</li>`;
     }).join('');
     panel.innerHTML = `<strong>✈ Importfreie Flugprüfung · ${report.verified}/${report.total} streng bestätigt · ${report.open} offen</strong>`
       + `<div>Nur Diagnose: keine Fahrten geändert, keine Übernahme möglich. Geprüft: ${escapeHtml(report.checkedAt)}</div>`
@@ -15995,7 +16043,7 @@
       if (!current()) return { ok: false, stale: true };
       const technicalFailures = (Array.isArray(officialSummary?.failures) ? officialSummary.failures : [])
         .filter(x => ['technical', 'provider_unavailable'].includes(String(x?.reason || '').toLowerCase()));
-      const report = makePreviewFlightDiagnostic(snapshotRides, checked, technicalFailures.length, technicalFailures[0]?.message, routeProbe, boardProbe);
+      const report = makePreviewFlightDiagnostic(snapshotRides, checked, technicalFailures.length, technicalFailures[0]?.message, routeProbe, boardProbe, singleProbe);
       if (!current()) return { ok: false, stale: true };
       state.previewFlightDiagnostic = report;
       renderPreviewFlightDiagnostic(report);
@@ -16420,6 +16468,12 @@
   // P114.22 selftest hooks never grant import rights.
   try { window.ATMSP11422FlightRegression = Object.freeze({
     runPreviewOnlyFlightCheck, resetPreviewFlightDiagnostic, syncPreviewFlightCheckControl,
+    // Pure parsers are exposed only to the existing local regression mode.
+    ...(window.__ATMS_P11423_REGRESSION__ === true ? {
+      parseNativeUnresolvedFlightOtherDays, parseNativeSecondSourceBoardSegment,
+      runNativeSecondSourceBoardProbe, parseNativeSecondSourceSingleFallback,
+      runNativeSecondSourceSingleFallback, renderPreviewFlightDiagnostic
+    } : {}),
     makePreviewFlightDiagnostic, readState: () => state
   }); } catch (_) {}
 
