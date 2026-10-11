@@ -1,0 +1,185 @@
+# ATMS PRO - one-time manual creation authorized by user; DO NOT RUN WITHOUT SEPARATE APPROVAL
+# Four frozen tarball SHA-512-SRI anchors copied from independently published NPM lockfiles.
+# Real NPM archives, exact file set, 12 SHA-256 and GitHub runner execution are still NOT verified.
+# Never bypass the existing patch installer. No code, APK or data mutation.
+name: ATMS PRO Tesseract Integrity Audit (Manual Only)
+'on':
+  workflow_dispatch:
+    inputs:
+      bestaetigung:
+        description: 'Zum Start exakt RUN_HASH_AUDIT eingeben (kein APK/Import/Commit)'
+        type: string
+        required: true
+        default: 'NICHT_STARTEN'
+permissions:
+  contents: read
+concurrency:
+  group: atms-tesseract-integrity-audit
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      ATMS_AUDIT_CONFIRM: ${{ inputs.bestaetigung }}
+      # Pinned from published NPM lockfiles (REFERENCE VALUES, not yet verified archive bytes).
+      # Runner must ALSO compare these pins to official NPM metadata and actual tarball SHA-512.
+      TESSERACT_JS_SRI: "sha512-lzVl/Ar3P3zhpUT31NjqeCo1f+D5+YfpZ5J62eo2S14QNVOmHBTtbchHm/YAbOOOzCegFnKf4B3Qih9LuldcYQ=="
+      TESSERACT_CORE_SRI: "sha512-KX3bYSU5iGcO1XJa+QGPbi+Zjo2qq6eBhNjSGR5E5q0JtzkoipJKOUQD7ph8kFyteCEfEQ0maWLu8MCXtvX5uQ=="
+      ENG_MODEL_SRI: "sha512-mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg=="
+      DEU_MODEL_SRI: "sha512-3ter1p2gFAiCd5CMC+PodZ9YY2UDomkKj+ytlKeeZqOUmhLx1SDnYPf5zog0g5MBbxYveW+8omI3PUflqHfZ4Q=="
+    steps:
+      - name: Verify pinned Tesseract archives and list 12 file hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'ATMS_READONLY_AUDIT_PY'
+          import base64
+          import hashlib
+          import io
+          import json
+          import os
+          import pathlib
+          import re
+          import sys
+          import tarfile
+          import urllib.request
+
+          # Audit-only: no shell execution, no installs, no checkout, no repo mutation.
+          # Frozen public lockfile SRI references; compare official NPM metadata and bytes on runner.
+          PACKAGES = (
+              ('tesseract.js', '5.1.1', 'tesseract.js/-/tesseract.js-5.1.1.tgz', 'TESSERACT_JS_SRI',
+               ('dist/tesseract.min.js', 'dist/worker.min.js')),
+              ('tesseract.js-core', '5.1.1', 'tesseract.js-core/-/tesseract.js-core-5.1.1.tgz', 'TESSERACT_CORE_SRI',
+               tuple('tesseract-core' + suffix + ending for suffix in ('', '-simd', '-lstm', '-simd-lstm') for ending in ('.wasm.js', '.wasm'))),
+              ('@tesseract.js-data/eng', '1.0.0', '@tesseract.js-data/eng/-/eng-1.0.0.tgz', 'ENG_MODEL_SRI',
+               ('4.0.0_best_int/eng.traineddata.gz',)),
+              ('@tesseract.js-data/deu', '1.0.0', '@tesseract.js-data/deu/-/deu-1.0.0.tgz', 'DEU_MODEL_SRI',
+               ('4.0.0_best_int/deu.traineddata.gz',)),
+          )
+          MAX_DOWNLOAD = 220 * 1024 * 1024
+          MAX_UNPACKED = 500 * 1024 * 1024
+          MAX_SINGLE = 160 * 1024 * 1024
+
+          class NoRedirects(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise ValueError('Redirect denied for pinned registry endpoint')
+
+          OPENER = urllib.request.build_opener(NoRedirects())
+
+          def read_pinned_registry(url, max_bytes):
+              if not url.startswith('https://registry.npmjs.org/'):
+                  raise ValueError('Non-official registry URL')
+              req = urllib.request.Request(url, headers={'User-Agent':'ATMS-ReadOnly-Tesseract-Integrity-Audit/1'})
+              with OPENER.open(req, timeout=35) as resp:
+                  data = resp.read(max_bytes + 1)
+              if len(data) > max_bytes or not data:
+                  raise ValueError('Missing/oversize package response')
+              return data
+
+          def expected_digest(pin):
+              if not re.fullmatch(r'sha512-[A-Za-z0-9+/]+={0,2}', pin):
+                  raise ValueError('Missing independently verified pinned SHA-512 SRI')
+              raw = base64.b64decode(pin[7:], validate=True)
+              if len(raw) != 64:
+                  raise ValueError('Invalid pinned SHA-512 SRI length')
+              return raw
+
+          def safe_members(blob, required):
+              found = {}
+              seen = set()
+              total = 0
+              with tarfile.open(fileobj=io.BytesIO(blob), mode='r|gz') as arc:
+                  count = 0
+                  for m in arc:
+                      count += 1
+                      if count > 2000:
+                          raise ValueError('Unexpected number of archive entries')
+                      path = pathlib.PurePosixPath(m.name)
+                      raw_parts = m.name.rstrip('/').split('/')
+                      if m.name == 'package' and m.isdir():
+                          continue
+                      if (not m.name.startswith('package/') or path.is_absolute() or
+                          len(m.name) > 300 or '\\' in m.name or any(part in ('', '.', '..') for part in raw_parts) or
+                          m.issym() or m.islnk() or m.isdev() or m.isfifo()):
+                          raise ValueError('Unsafe NPM archive entry: ' + m.name[:100])
+                      if not (m.isfile() or m.isdir()):
+                          raise ValueError('Unsupported archive entry type')
+                      if m.name in seen:
+                          raise ValueError('Duplicate archive member name')
+                      seen.add(m.name)
+                      if m.isfile():
+                          total += m.size
+                          if m.size > MAX_SINGLE or total > MAX_UNPACKED:
+                              raise ValueError('Archive size threshold exceeded')
+                          sub = m.name[len('package/'):]
+                          if sub in required or sub == 'package.json':
+                              raw = arc.extractfile(m).read(MAX_SINGLE + 1)
+                              if len(raw) != m.size:
+                                  raise ValueError('Truncated archive member')
+                              found[sub] = raw
+              if not set(required).issubset(found) or 'package.json' not in found:
+                  raise ValueError('Required archive file missing')
+              return found
+
+          def main():
+              if os.environ.get('ATMS_AUDIT_CONFIRM') != 'RUN_HASH_AUDIT':
+                  raise ValueError('Missing deliberate manual audit confirmation')
+              # Fail before any network request if even one SRI has not been independently pinned.
+              pins = {key: expected_digest(os.environ.get(key, '')) for _, _, _, key, _ in PACKAGES}
+              report = []
+              for name, version, path, key, required in PACKAGES:
+                  # Name/version/tarball location fixed in source; no URL from server metadata executed.
+                  registry_url = 'https://registry.npmjs.org/' + name.replace('/', '%2f') + '/' + version
+                  metadata = json.loads(read_pinned_registry(registry_url, 2 * 1024 * 1024))
+                  expected_tarball = 'https://registry.npmjs.org/' + path
+                  registry_sri = metadata.get('dist', {}).get('integrity')
+                  if metadata.get('name') != name or metadata.get('version') != version:
+                      raise ValueError('Registry name/version mismatch')
+                  if metadata.get('dist', {}).get('tarball') != expected_tarball:
+                      raise ValueError('Registry tarball URL mismatch')
+                  if expected_digest(registry_sri or '') != pins[key]:
+                      raise ValueError('Registry SRI differs from independently pinned SRI')
+                  tarblob = read_pinned_registry(expected_tarball, MAX_DOWNLOAD)
+                  actual = hashlib.sha512(tarblob).digest()
+                  if actual != pins[key]:
+                      raise ValueError('Downloaded tarball SHA-512 mismatch')
+                  found = safe_members(tarblob, required)
+                  package = json.loads(found['package.json'])
+                  if package.get('name') != name or package.get('version') != version:
+                      raise ValueError('Inside tarball package.json mismatch')
+                  files = []
+                  for relpath in required:
+                      data = found[relpath]
+                      files.append({'path':relpath,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+                  report.append({'package':name,'version':version,'tarball_sha256':hashlib.sha256(tarblob).hexdigest(),
+                                 'tarball_sha512_sri':registry_sri,'files':files})
+              count = sum(len(p['files']) for p in report)
+              if count != 12:
+                  raise ValueError('Wrong candidate file count')
+              print('ATMS TESSERACT PACKAGE HASH AUDIT: PASS 12/12 (not an APK or OCR test)')
+              for p in report:
+                  print('PACKAGE',p['package'],p['version'],'TARBALL_SHA256',p['tarball_sha256'])
+                  for f in p['files']:
+                      print('FILE', p['package'], f['path'], 'BYTES',f['bytes'],'SHA256',f['sha256'])
+              # The job summary is private to this GitHub Actions run; no plan images included.
+              summary = os.environ.get('GITHUB_STEP_SUMMARY')
+              if summary:
+                  with open(summary, 'a', encoding='utf8') as out:
+                      out.write('## Tesseract packet integrity audit (read-only)\n\n')
+                      out.write('**12/12 candidates checked against frozen published lockfile SRI pins and official NPM tarball bytes.**\n\n')
+                      out.write('**Not evidence of offline OCR, Golden73 tests, or production readiness.**\n\n')
+                      out.write('| Package | File | Bytes | SHA-256 |\n|---|---|---:|---|\n')
+                      for p in report:
+                          for f in p['files']:
+                              out.write('| `%s@%s` | `%s` | %d | `%s` |\n' %
+                                        (p['package'],p['version'],f['path'],f['bytes'],f['sha256']))
+
+          try:
+              main()
+          except Exception as exc:
+              print('AUDIT FAIL (no partial verification accepted):', type(exc).__name__, str(exc), file=sys.stderr)
+              sys.exit(1)
+          ATMS_READONLY_AUDIT_PY
