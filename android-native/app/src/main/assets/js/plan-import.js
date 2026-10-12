@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11426 – source-aligned safe OCR reviews, price evidence and uncertainty preservation.
 // CORE-007D8A1F1D8P11424 – importfreie Anzeige der offiziellen Airport-Erstquellen-Fehlercodes, keine Flug-/Fahrtdatenmutation.
 // CORE-007D8A1F1D8P11422 · 09.10.2026: Native flight verification in import-free preview, isolated diagnostics and generation/identity staleness guards; no writes to staged or persistent rides.
 // CORE-007D8A1F1D8P11420 · 09.10.2026: DRIVER IDENTITY OCR FAIL-CLOSED REVIEW; no hardcoded names, safe blank driver, no silent replacement, manual row-only confirmation.
@@ -1593,7 +1594,15 @@
 
 
 
+  // P114.26: an OCR-split pair of numeric glyph groups ('35 00 €')
+  // has no trustworthy decimal separator. Keep it unresolved instead of
+  // reinterpreting it as 3500 (or guessing it means 35.00).
+  function imagePriceHasLostSeparator(value) {
+    return /^\s*\d{1,4}[ \u00a0]+\d{2}\s*(?:€|EUR)?\s*$/iu.test(cellText(value));
+  }
+
   function findPriceValue(row, mapping, options = {}) {
+    if (options.imageOcr && imagePriceHasLostSeparator(valueAt(row, mapping, 'price'))) return 0;
     const mapped = parseNumber(valueAt(row, mapping, 'price'));
     if (mapped > 0) return mapped;
 
@@ -1726,6 +1735,15 @@
     }
 
     const flightNumber = arrivalFlight || departureFlight || recoveredFlight;
+    // P114.26: '-' in the opposite flight column is truthy, but it is never
+    // the original text of the selected flight. Preserve genuine glyph
+    // normalizations (e.g. 0S164 -> OS164), suppress invented '- -> EW...'.
+    const selectedFlightRawOcr = arrivalFlight ? arrivalFlightRawOcr
+      : departureFlight ? departureFlightRawOcr : '';
+    const selectedFlightCompact = cellText(selectedFlightRawOcr).toUpperCase().replace(/\s+/g, '');
+    const reportedFlightNormalization = Boolean(
+      selectedFlightCompact && flightNumber && selectedFlightCompact !== flightNumber
+    );
     const rideType = classifyRide(pickup, destination, arrivalFlight, departureFlight);
 
     // CORE-005D: Disponenten tragen mangels Bemerkungsspalte vereinzelt eine
@@ -1773,6 +1791,10 @@
       dispo_time: dispoTime,
       timeMirror: mirroredDispoTime,
       flightTime: listedFlightTime,
+      // P114.26: keep machine-parseable HH:MM distinct from the user's
+      // original question-mark uncertainty; do not silently claim confirmed.
+      flightTimeRawSource: options.imageOcr && /\?\s*$/.test(rawListedFlightTime) ? rawListedFlightTime : '',
+      flightTimeUncertain: Boolean(options.imageOcr && /\?\s*$/.test(rawListedFlightTime)),
       timeSemanticSource: 'dispo+mirror+listed-flight-time',
       pickup,
       destination,
@@ -1788,15 +1810,8 @@
       arrivalFlight,
       departureFlight,
       flightNumber,
-      flightNumberRawOcr: (() => {
-        const raw = arrivalFlightRawOcr || departureFlightRawOcr;
-        const compact = cellText(raw).toUpperCase().replace(/\s+/g, '');
-        return compact && flightNumber && compact !== flightNumber ? raw : '';
-      })(),
-      flightNormalizedFromRaw: Boolean((arrivalFlightRawOcr || departureFlightRawOcr) && (() => {
-        const raw = cellText(arrivalFlightRawOcr || departureFlightRawOcr).toUpperCase().replace(/\s+/g, '');
-        return raw && flightNumber && raw !== flightNumber;
-      })()),
+      flightNumberRawOcr: reportedFlightNormalization ? selectedFlightRawOcr : '',
+      flightNormalizedFromRaw: reportedFlightNormalization,
       flightDirection: arrivalFlight ? 'arrival' : departureFlight ? 'departure' : '',
       flightLocation,
       dispatcherTime,
@@ -1812,6 +1827,8 @@
       vehicleRecoveredFromBoundaryNoise: vehicleBoundaryCleaned,
       persons: getPersonsValue(row, mapping, options),
       price: findPriceValue(row, mapping, options),
+      priceRawSource: options.imageOcr ? cellText(valueAt(row, mapping, 'price')) : '',
+      priceSeparatorUncertain: Boolean(options.imageOcr && imagePriceHasLostSeparator(valueAt(row, mapping, 'price'))),
       priceRequired: !(options.imageOcr && mapping.price === undefined),
       priceMissingFromSource: Boolean(options.imageOcr && mapping.price === undefined),
       sourceImageOcr: Boolean(options.imageOcr),
@@ -1948,6 +1965,8 @@
       }
       if(ride.timeBorderAutoCorrected)issues.push({level:'info',kind:'ocr_recovery',row,text:`OCR-Tabellenkante aus Uhrzeit „${cellText(ride.timeBorderOriginal)}“ entfernt; eindeutig ${cellText(ride.time)} erkannt`});
       if(ride.flightTimeBorderAutoCorrected)issues.push({level:'info',kind:'ocr_recovery',row,text:`OCR-Tabellenkante aus Flugzeit „${cellText(ride.flightTimeBorderOriginal)}“ entfernt; eindeutig ${cellText(ride.flightTime)} erkannt`});
+      if (ride.flightTimeUncertain) issues.push({ level: 'warning', kind: 'flight_time_uncertain', row,
+        text: `Flugzeit „${cellText(ride.flightTimeRawSource) || (cellText(ride.flightTime) + '?')}“ trägt im Original ein Fragezeichen – ${cellText(ride.flightTime)} ist nicht als bestätigte Flugzeit zu behandeln` });
       if(ride.flightTimeRecoveredFromExactImageCell)issues.push({level:'info',kind:'ocr_recovery',row,text:`Flugzeit ${cellText(ride.flightTime)} aus exakt zugeordneter geometrischer Flugzeitzelle wiederhergestellt`});
       const integrityConflicts = Array.isArray(ride.importIntegrityConflicts) ? ride.importIntegrityConflicts : [];
       integrityConflicts.forEach(conflict => issues.push({
@@ -2310,7 +2329,7 @@
 
       const priceCheck = pricePlausibility(ride.price);
       const priceDecision = state.priceDecisions[String(ride.id || row)] || '';
-      if (ride.priceRequired !== false && priceCheck.suspicious && !priceDecision) {
+      if (ride.priceRequired !== false && (priceCheck.suspicious || ride.priceSeparatorUncertain) && !priceDecision) {
         const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
         const suggestionText = priceCheck.suggestion !== null
           ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
@@ -2324,7 +2343,9 @@
           originalPrice: Number(ride.price) || 0,
           suggestedPrice: priceCheck.suggestion,
           text: priceCheck.missing
-            ? 'Preis fehlt oder wurde beim OCR nicht sicher erkannt – bitte mit der Original-Planliste prüfen. Keine automatische Preiskorrektur.'
+            ? (ride.priceSeparatorUncertain
+              ? `Preiszelle „${cellText(ride.priceRawSource)}“ hat kein erkennbares Dezimalzeichen – Originalpreis manuell bestätigen; keine automatische Schätzung.`
+              : 'Preis fehlt oder wurde beim OCR nicht sicher erkannt – bitte mit der Original-Planliste prüfen. Keine automatische Preiskorrektur.')
             : `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
         });
       }
@@ -6634,6 +6655,36 @@
       firstWordLeft: Number(firstWord.x0), matrixLeft: left };
   }
 
+
+  // P114.26: With one independently matching source-route peer, reject a
+  // secondary reading only when the missing first word is *physically* cut
+  // by the matrix boundary, confidently read by full-image OCR, and the
+  // secondary text is the exact remaining full-token suffix. Different
+  // place names and contradictory local readings still block import.
+  function provenStrongOnePeerLeftClip(original, candidate, imageMeta, rowMeta, left, right, rides, ride, field, localCandidates = []) {
+    const full = routeOcrText(original).split(/\s+/).filter(Boolean);
+    const clipped = routeOcrText(candidate).split(/\s+/).filter(Boolean);
+    if (full.length < 3 || clipped.length < 2 || full.length !== clipped.length + 1 || full[0].length < 4) return null;
+    if (clipped.join(' ').toLocaleLowerCase('de-DE') !== full.slice(1).join(' ').toLocaleLowerCase('de-DE')) return null;
+    if (![left, right, Number(rowMeta?.y0), Number(rowMeta?.y1)].every(Number.isFinite) || right <= left) return null;
+    if (localCandidates.some(v => v && routeOcrText(v) !== routeOcrText(original) && routeOcrText(v) !== routeOcrText(candidate))) return null;
+    const crossing = (imageMeta?.rawOcrWords || []).find(w =>
+      cellText(w?.text).toLocaleLowerCase('de-DE') === full[0].toLocaleLowerCase('de-DE') &&
+      Number(w.x0) <= left - 15 && Number(w.x1) > left && Number(w.x1) < right &&
+      Number(w.y1) > Number(rowMeta.y0) && Number(w.y0) < Number(rowMeta.y1) &&
+      Number(w.confidence ?? w.conf ?? -1) >= 92
+    );
+    if (!crossing) return null;
+    const opposite = field === 'pickup' ? 'destination' : 'pickup';
+    const peerCount = (Array.isArray(rides) ? rides : []).filter(other => other !== ride &&
+      routeOcrBase(other?.[field]) === routeOcrBase(original) &&
+      routeOcrBase(other?.[opposite]) === routeOcrBase(ride?.[opposite])).length;
+    if (peerCount < 1) return null;
+    return {reason:'high_confidence_geometric_left_clip_with_one_route_peer',
+      peers:peerCount, primaryFirstWordConfidence:Number(crossing.confidence ?? crossing.conf),
+      firstWordLeft:Number(crossing.x0), matrixLeft:left};
+  }
+
   async function recoverRouteDiacriticsTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const boundaries = imageMeta.boundaries || [];
@@ -6821,7 +6872,9 @@
           }
 
           const provenClip = provenRouteLeftClipAtMatrixBoundary(original, candidate, imageMeta,
-            rowMetaForRoute, left, right, out, ride, descriptor.field, localCandidates);
+            rowMetaForRoute, left, right, out, ride, descriptor.field, localCandidates) ||
+            provenStrongOnePeerLeftClip(original, candidate, imageMeta,
+              rowMetaForRoute, left, right, out, ride, descriptor.field, localCandidates);
           if (provenClip) {
             ride[`${descriptor.field}OcrSecondaryLeftEdgeNoiseIgnored`] = true;
             ride[`${descriptor.field}OcrSecondaryLeftEdgeNoiseCandidate`] = candidate;
@@ -8290,6 +8343,7 @@
       if (status) status.textContent = `Preiszelle Zeile ${ride.sourceRow} wird lokal nachgelesen …`;
       const votes = new Map();
       const attempts = [];
+      const rawAttempts = [];
 
       try {
         // P60: Die drei bestehenden OCR-Crops derselben unveränderten Preiszelle
@@ -8298,7 +8352,15 @@
         const regionResults = await Promise.allSettled(regions.map(async ([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
           const second = await p109SharedOcrRecognize('price_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `price-cell-${scale}x` });
-          return priceCandidatesFromOcrResult(second);
+          return {
+            candidates: priceCandidatesFromOcrResult(second),
+            rawText: cellText(second?.data?.text).slice(0, 256),
+            words: (second?.data?.words || []).slice(0, 24).map(w => ({
+              text: cellText(w?.text).slice(0, 50),
+              x0: Number(w?.bbox?.x0 ?? w?.x0), x1: Number(w?.bbox?.x1 ?? w?.x1),
+              confidence: Number(w?.confidence)
+            }))
+          };
         }));
 
         let regionFailed = false;
@@ -8307,8 +8369,9 @@
             regionFailed = true;
             break;
           }
-          const candidates = Array.isArray(result.value) ? result.value : [];
+          const candidates = Array.isArray(result.value?.candidates) ? result.value.candidates : [];
           attempts.push(candidates.slice());
+          rawAttempts.push({ rawText: result.value?.rawText || '', words: result.value?.words || [] });
           if (candidates.length !== 1) continue;
           const candidate = Number(candidates[0]);
           const key = candidate.toFixed(2);
@@ -8316,14 +8379,17 @@
         }
         if (regionFailed) {
           ride.priceTargetedOcrAttempts = attempts;
+          ride.priceTargetedOcrRawAttempts = rawAttempts;
           continue;
         }
       } catch (_) {
         ride.priceTargetedOcrAttempts = attempts;
+        ride.priceTargetedOcrRawAttempts = rawAttempts;
         continue;
       }
 
       ride.priceTargetedOcrAttempts = attempts;
+      ride.priceTargetedOcrRawAttempts = rawAttempts;
       const ranked = [...votes.entries()]
         .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
 
@@ -10572,7 +10638,9 @@
     const matrixIndex = Number(ride?.sourceRow || 0) - 1;
     const rowMeta = imageMeta?.rowMetaByMatrixIndex?.[matrixIndex];
     if (!rowMeta) return {};
-    const fields = ['time','timeMirror','pickup','destination','customer','company','arrivalFlight','departureFlight','vehicle','persons','flightTime','flightLocation','driver'];
+    // P114.26: price must receive the same unchanged raw-word geometry and
+    // confidence evidence as every other critical image cell.
+    const fields = ['price','time','timeMirror','pickup','destination','customer','company','arrivalFlight','departureFlight','vehicle','persons','flightTime','flightLocation','driver'];
     const evidence = {};
     const boundaries = imageMeta?.boundaries || [];
     fields.forEach(field => {

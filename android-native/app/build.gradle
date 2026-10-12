@@ -340,6 +340,16 @@ tasks.register('airportFirstSourceReasonsP11424', Exec) {
     commandLine 'node', 'tools/airport-first-source-selftest-p11424.js'
 }
 
+// P114.26: source-aligned test gate for safe price and flight OCR data corrections.
+tasks.register('accuracyRegressionsP11426', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/accuracy-regressions-p11426.js'
+}
+tasks.register('runtimeAssetAlignmentP11426', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11426.js'
+}
+
 tasks.named('preBuild').configure {
     dependsOn tasks.named('ocrIntegrityRegression')
     dependsOn tasks.named('planImportRuntimeSmoke')
@@ -353,10 +363,11 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('companyBoundaryRealstateP1143')
     dependsOn tasks.named('companyBoundaryDeterministicP1145')
     dependsOn tasks.named('companyConflictPostConsensusP1146')
-    // Version-specific runtime alignment: only the currently active P114.22 gate may block preBuild.
+    // Version-specific runtime alignment: only P114.26 may gate this build.
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
-    dependsOn tasks.named('runtimeAssetAlignmentP11424')
+    dependsOn tasks.named('accuracyRegressionsP11426')
+    dependsOn tasks.named('runtimeAssetAlignmentP11426')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
     dependsOn tasks.named('safeFlightPreviewP11422')
     dependsOn tasks.named('safeFlightEvidenceP11423')
