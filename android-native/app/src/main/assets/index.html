@@ -50,7 +50,35 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
     <div id="planProfileInfo" class="plan-profile-info"><b>Importprofil wird erkannt …</b></div>
     <div class="plan-stats plan-stats-extended"><div><b id="planRideCount">0</b><span>Fahrten</span></div><div><b id="planDriverCount">0</b><span>Fahrer</span></div><div><b id="planFlightCount">0</b><span>Flüge</span></div><div><b id="planWarningCount">0</b><span>Hinweise</span></div><div><b id="planErrorCount">0</b><span>Fehler</span></div><div><b id="planSheetName">–</b><span>Tabellenblatt</span></div></div>
     <div id="planIssues" class="plan-issues"></div>
-    <div class="plan-preview-wrap"><table class="plan-preview"><thead><tr><th>Zeit</th><th>Fahrer</th><th>Abholung</th><th>Ziel</th><th>Flug</th><th>Flugort</th><th>Typ</th><th>Fahrzeug</th><th>Personen</th><th>Preis</th><th>Zeilenprüfung</th></tr></thead><tbody id="planPreviewBody"></tbody></table></div>
+    <label style="display:flex;align-items:center;gap:9px;margin:12px 0;font-size:14px"><input id="ap01ReviewConfirm" type="checkbox" style="width:22px;height:22px"> Ich habe alle erkannten Fahrten und offenen Hinweise anhand der Original-Planliste geprüft.</label>
+    <div class="plan-preview-wrap"><table class="plan-preview"><thead><tr><th>Zeit</th><th>Fahrer</th><th>Abholung</th><th>Ziel</th><th>Flug</th><th>Flugort</th><th>Typ</th><th>Fahrzeug</th><th>Personen</th><th>Preis</th><th>Zeilenprüfung</th><th>Bearbeiten</th></tr></thead><tbody id="planPreviewBody"></tbody></table></div>
+  </div>
+  <div id="ap01RideEditor" role="dialog" aria-modal="true" aria-labelledby="ap01EditorHeading" hidden style="position:fixed;z-index:99999;inset:0;background:rgba(0,0,0,.86);overflow-y:auto;padding:12px">
+    <div style="max-width:620px;margin:15px auto;background:#142739;color:#fff;border:1px solid #5c9fc7;padding:16px;border-radius:14px">
+      <h3 id="ap01EditorHeading">Fahrt bearbeiten</h3>
+      <p id="ap01EditorEvidence" style="font-size:13px;white-space:pre-line;max-height:190px;overflow-y:auto"></p>
+      <div id="ap01EditorFields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px"></div>
+      <div id="ap01ConflictReview" hidden style="border-top:1px solid #688;margin-top:14px;padding-top:14px">
+        <label for="ap01ConflictReason">OCR-Konfliktentscheidung dokumentieren – keine Importfreigabe</label>
+        <textarea id="ap01ConflictReason" rows="3" maxlength="1000" style="box-sizing:border-box;width:100%;padding:10px;border-radius:8px"></textarea>
+        <button type="button" id="ap01ConflictRecord" style="min-height:44px;padding:10px">Entscheidung dokumentieren</button>
+      </div>
+      <p id="ap01EditorAudit" style="font-size:13px"></p>
+      <p id="ap01EditorError" role="alert" style="color:#ffb9b9"></p>
+      <div id="ap01DiscardConfirm" role="alertdialog" aria-modal="true" aria-labelledby="ap01DiscardHeading" hidden style="position:relative;z-index:1;border:2px solid #ffcf85;background:#253647;padding:14px;border-radius:10px;margin:14px 0">
+        <h4 id="ap01DiscardHeading" style="margin:0 0 8px">Ungespeicherte Änderungen</h4>
+        <p style="margin:0 0 12px">Möchtest du die Eingaben speichern, verwerfen oder weiter bearbeiten? Die App bleibt in der Planliste.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="ap01KeepEditing" style="min-height:48px;flex:1">Weiterbearbeiten</button>
+          <button type="button" id="ap01DiscardChanges" style="min-height:48px;flex:1">Änderungen verwerfen</button>
+          <button type="button" id="ap01SaveAndClose" style="min-height:48px;flex:1">In Vorschau speichern</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <button type="button" id="ap01EditorCancel" style="min-height:48px;flex:1">Abbrechen</button>
+        <button type="button" id="ap01EditorSave" style="min-height:48px;flex:1">Änderungen in Vorschau speichern</button>
+      </div>
+    </div>
   </div>
   <button id="previewOnlyPlanBtn" type="button" class="act dark" disabled style="width:100%;margin:8px 0 10px;background:#164869;border:1px solid #53a8ec">🔍 Nur Testanalyse – garantiert ohne Fahrtenimport</button><div class="actions2"><button id="analyzePlanBtn" class="act blue" disabled>Planliste analysieren</button><button id="importPlanBtn" class="act green" disabled>Geprüfte Fahrten übernehmen</button></div>
   <p id="importStatus" class="sub">Noch keine Planliste ausgewählt.</p>
@@ -130,7 +158,7 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
   <div class="info-slogan">Smart Dispatch. Simple Workflow.</div>
 </div>
 <div class="info-details">
-  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11426</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11427</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Stable Native-App · V1.4.0 Final</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">♙</div><div><div class="info-detail-label">Entwickelt von</div><div class="info-detail-value">Yaser Tatli</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">✓</div><div><div class="info-detail-label">Status</div><div class="info-detail-value status">● Produktiv</div></div></div>
@@ -143,8 +171,8 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
 <div id="driverDialog" class="overlay hidden" role="dialog" aria-modal="true"><div class="sheet" id="driverSheet"><div class="row"><h2>Fahrten anzeigen</h2><button id="closeDrivers" class="icon x" type="button">×</button></div><div id="driverChoices"></div></div></div>
 <div id="atmsToast" class="atms-toast" role="status" aria-live="polite"></div><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="./js/ocr-integrity-core.js?v=P11426" defer></script>
-<script src="./js/plan-import.js?v=P11426" defer></script>
+<script src="./js/ocr-integrity-core.js?v=P11427" defer></script>
+<script src="./js/plan-import.js?v=P11427" defer></script>
 <script src="./js/app.js?v=P1121" defer></script>
-<script src="./js/pwa.js?v=P11426" defer></script>
+<script src="./js/pwa.js?v=P11427" defer></script>
 </body></html>

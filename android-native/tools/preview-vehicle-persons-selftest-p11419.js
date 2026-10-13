@@ -32,7 +32,7 @@ assert(src.includes('if (fingerprints.has(fingerprint)) issues.push')&&src.inclu
 assert(src.includes('const fingerprint = planPreviewDuplicateFingerprint(ride);'),'validator calls corrected pure warning identity');
 
 // Render actual production preview mapping, not a parallel hand-written implementation.
-const marker="    $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {";
+const marker="    $('planPreviewBody').innerHTML = rides.map(ride => {";
 const from=src.indexOf(marker);
 const to=src.indexOf("    }).join('');",from);
 assert(from>0&&to>from,'production preview renderer exists');
@@ -47,6 +47,9 @@ assert.match(node.innerHTML,/<td>Pkw<\/td>\s*<td>1<\/td>/,'first ride shows vehi
 assert.match(node.innerHTML,/<td>Van<\/td>\s*<td>7<\/td>/,'second ride shows vehicle Van + 7 passengers');
 assert.equal((node.innerHTML.match(/<td>Transfer<\/td>/g)||[]).length,2,'ride type remains separate');
 assert.equal((node.innerHTML.match(/class="plan-status ok"/g)||[]).length,2,'no spurious warning for two distinct source rows');
+render(Array.from({length:85},(_,i)=>({...a,id:'ap01-'+i,sourceRow:i+2})),[],()=>node,escapeHtml,v=>v,Intl);
+assert.equal((node.innerHTML.match(/<tr>/g)||[]).length,85,'AP01 renders every one of 85 recognized rides');
+assert.equal((node.innerHTML.match(/class="ap01-edit-btn"/g)||[]).length,85,'85 edit buttons in actual rendered preview');
 render([{...a,vehicle:'<Van>&',persons:2}],[],()=>node,escapeHtml,v=>v,Intl);
 assert(node.innerHTML.includes('&lt;Van&gt;&amp;'),'vehicle safely HTML-escaped');
 render([a,{...a,sourceRow:32}], [{row:32,level:'warning',text:'Mögliche doppelte Fahrt erkannt'}],()=>node,escapeHtml,v=>v,Intl);

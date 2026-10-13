@@ -1,0 +1,52 @@
+'use strict';
+// LOCAL QUARANTINE ONLY. Synthetic input tests; never connect to providers or persist.
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+const src = fs.readFileSync(path.resolve(__dirname, '../app/src/main/assets/js/plan-import.js'), 'utf8');
+const marker = "  document.addEventListener('DOMContentLoaded', init);\n})();";
+assert(src.includes(marker));
+// Regression-only in-memory instrumentation: not inserted into the application file.
+const instrumented = src.replace(marker, `  render = function(){};
+  window.__localNativeApply = checked => applyGeminiResultsToStagedPlan(checked, new Date().toISOString(), AP01_NATIVE_RECHECK_TOKEN);
+  document.addEventListener('DOMContentLoaded', init);
+})();`);
+const elements = {};
+const el = id => elements[id] || (elements[id] = {id, hidden:false, classList:{add(){},remove(){},contains(){return false}},textContent:'',style:{},querySelectorAll(){return []}});
+const window = {__ATMS_AP01_REGRESSION__:true,addEventListener(){}};
+const document = {getElementById:el,addEventListener(){},currentScript:{src:'https://test.example/js/plan-import.js'}};
+const ctx = {window,document,Date,Intl,URL,Promise,Number,Map,Set,Math,console,location:{protocol:'file:',href:'file:///android_asset/index.html'},performance:{now(){return 0}}};
+vm.createContext(ctx); vm.runInContext(instrumented,ctx,{timeout:12000});
+const hooks = window.ATMSAP01Regression, state=hooks.readState();
+assert.equal(typeof hooks.assessNativeProof,'function');
+let count=0;
+function check(name, fn){fn();count++; console.log(`PASS ${count} ${name}`);}
+const now=Date.now();
+const ride = ()=>({id:'new-ride',sourceRow:17,date:'2026-10-13',time:'07:20',driver:'Lana',pickup:'Marriott Seestern DUS',destination:'DUS Airport',company:'Get-E',vehicle:'Pkw',persons:1,price:35,flightNumber:'EW9752',arrivalFlight:'',departureFlight:'EW9752',flightDirection:'departure',flightLocation:'Wien',flightTime:'',sourceImageOcr:true,flightCheckConfidence:'uncertain',flightNeedsManualCheck:true,ap01FlightRecheckRequired:true,ap01FlightContextChangedAt:new Date(now-30000).toISOString(),importIntegrityConflicts:[]});
+const proof = ()=>({flightNumber:'EW9752',date:'2026-10-13',airportEventDate:'2026-10-13',direction:'departure',airportIata:'DUS',flightLocation:'Wien',relevantLocation:'Wien',iata:'VIE',relevantIata:'VIE',flightTime:'',confidence:'high',status:'verified',conflict:false,officialAirportEvidence:true,nativeSecondSourceEvidence:true,officialOriginIata:'DUS',officialDestinationIata:'VIE',sources:[{name:'Airport',url:'https://www.dus.com/flug'}, {name:'FlightStats',url:'https://www.flightstats.com/v2/flight'}],sourceCount:2,explicitSourceCount:2,nativeSecondSourceCheckedAt:new Date(now).toISOString()});
+check('two independent native flight sources can qualify only exact context',()=>assert.equal(hooks.assessNativeProof(ride(), proof()).ok, true));
+check('one source not enough',()=>{const p=proof();p.sources=p.sources.slice(0,1);p.sourceCount=1;p.explicitSourceCount=1;assert.equal(hooks.assessNativeProof(ride(),p).ok,false)});
+check('two URL paths on same provider are not independent',()=>{const p=proof();p.sources[1].url='https://www.dus.com/flug2';assert.equal(hooks.assessNativeProof(ride(),p).ok,false)});
+check('bare declared two sources never qualify',()=>{const p=proof();delete p.sources;assert.equal(hooks.assessNativeProof(ride(),p).ok,false)});
+check('wrong date, direction, airport and flight code refused',()=>{for (const [field,bad] of [['date','2026-10-14'],['direction','arrival'],['airportIata','CGN'],['flightNumber','EW9753'],['airportEventDate','2026-10-14']]){const p=proof();p[field]=bad;assert.equal(hooks.assessNativeProof(ride(),p).ok,false,field)}});
+check('source route mismatch refused',()=>{for(const [field,bad] of [['officialOriginIata','CGN'],['officialDestinationIata','LHR'],['relevantIata','LHR']]){const p=proof();p[field]=bad;assert.equal(hooks.assessNativeProof(ride(),p).ok,false,field)}});
+check('manual flight location mismatch refused',()=>{const r=ride();r.flightLocation='London';assert.equal(hooks.assessNativeProof(r,proof()).ok,false)});
+check('unverified board or official source refused',()=>{for (const field of ['nativeSecondSourceEvidence','officialAirportEvidence']){const p=proof();p[field]=false;assert.equal(hooks.assessNativeProof(ride(),p).ok,false)}});
+check('flightTime must be exact if present',()=>{const r=ride();r.flightTime='08:55';assert.equal(hooks.assessNativeProof(r,proof()).ok,false);const p=proof();p.flightTime='08:55';assert.equal(hooks.assessNativeProof(r,p).ok,true)});
+check('older source check refused',()=>{const p=proof();p.nativeSecondSourceCheckedAt=new Date(now-120000).toISOString();assert.equal(hooks.assessNativeProof(ride(),p).ok,false)});
+check('bad or non-HTTPS source URLs refused',()=>{for(const url of ['http://flightstats.com/v2','ftp://flightstats.com/v2','evil', 'https://u:pw@flightstats.com']){const p=proof();p.sources[1].url=url;assert.equal(hooks.assessNativeProof(ride(),p).ok,false,url)}});
+check('external/global callback cannot release edited flight',()=>{const r=ride();state.rides=[r];window.ATMSPlanImportApplyGeminiFlightResults([proof()]);assert.equal(r.ap01FlightRecheckRequired,true);assert.equal(state.rides[0].ap01FlightRecheckRequired,true);assert.equal(state.rides[0].flightNeedsManualCheck,true);assert.equal(state.rides[0].flightCheckConfidence,'uncertain')});
+check('trusted internal native result releases only matching flight',()=>{state.rides=[ride()];const res=window.__localNativeApply([proof()]);assert.equal(res.verifiedRides,1);assert.equal(state.rides[0].ap01FlightRecheckRequired,false);assert.equal(state.rides[0].ap01FlightRecheckEvidence.airportIata,'DUS');assert.equal(state.rides[0].flightNeedsManualCheck,false)});
+check('later context mutation invalidates verified proof',()=>{state.rides[0].flightNumber='EW9753';state.ap01ReviewConfirmed=true;assert(hooks.importBlockers().some(s=>s.includes('Flugkontext')))});
+check('G06 company conflict remains blocked after qualified flight',()=>{const r=ride();r.importIntegrityStatus='blocked';r.importIntegrityConflicts=[{code:'company_conflict'}];state.rides=[r];window.__localNativeApply([proof()]);state.ap01ReviewConfirmed=true;assert(hooks.importBlockers().some(s=>s.includes('OCR')));assert.equal(state.rides[0].importIntegrityConflicts.length,1)});
+check('native recheck cannot release empty flight number',()=>{const r=ride();r.flightNumber='';r.arrivalFlight='';r.departureFlight='';assert.equal(hooks.assessNativeProof(r,proof()).ok,false)});
+check('recheck never modifies staged ride if no match',()=>{const r=ride();state.rides=[r];const p=proof();p.flightNumber='EW0001';window.__localNativeApply([p]);assert.equal(state.rides[0].ap01FlightRecheckRequired,true);assert.equal(state.rides[0].flightLocation,'Wien')});
+check('G06 company-only opposition blocks import even without global conflict records',()=>{
+ const r=ride();r.ap01FlightRecheckRequired=false;r.companyOcrConflict=true;r.companyOcrConflictCandidate='GetE';
+ r.importIntegrityConflicts=[];r.importIntegrityStatus='ok';state.rides=[r];state.ap01EditorOpenId=null;state.ap01ReviewConfirmed=true;
+ assert(hooks.importBlockers().some(x=>x.includes('OCR')));
+ assert.equal(hooks.openEditor(r.id),true);
+ assert(el('ap01EditorEvidence').textContent.includes('GetE'));
+ assert(el('ap01EditorEvidence').textContent.includes('Get-E'));
+ state.ap01EditorOpenId=null;
+});
+console.log(`AP01 independent flight recheck ${count}/${count} PASS (VM / synthetic evidence; not Android, network or actual airport verification)`);

@@ -2094,6 +2094,13 @@ function atmsPrimaryCloseDriverDialog({selected=false}={}){
 // ein zweiter Android-System-Zurück-Impuls innerhalb eines kurzen Zeitfensters
 // die Activity. Der sichtbare Fahrten-Zurück-Button beendet die App weiterhin nie.
 function atmsPrimaryBack(options={}){
+  // AP-01.05A: a modal editor must consume Android Back before history or exit.
+  // Never trust an open overlay alone: fail closed on any handler error.
+  if($('ap01RideEditor')?.hidden===false){
+    atmsRootNativeBackArmedAt=0;
+    try{window.ATMSAP01HandleBack?.()}catch(_){ }
+    return;
+  }
   const nativeBack=Boolean(options&&options.native);
   if($('atmsArchiveViewer')){atmsRootNativeBackArmedAt=0;closeStorageV2ArchiveViewer();return}
   if(!$('driverDialog')?.classList.contains('hidden')){atmsRootNativeBackArmedAt=0;atmsPrimaryCloseDriverDialog();return}
@@ -4548,18 +4555,22 @@ function mergePlanImportByIdentity(current,incoming){
     if(legacyCore){if(!legacyCoreBuckets.has(legacyCore))legacyCoreBuckets.set(legacyCore,[]);legacyCoreBuckets.get(legacyCore).push(r)}
   });
   const used=new Set(),merged=[];let matched=0,deduped=0;
+  // AP-01.04 P0: once completed, the original ride is immutable during a
+  // later plan upload; edits to completed rides belong to the explicit ride UI.
+  const keepCompleted=(prior,next)=>done.has(String(prior?.id))?prior:next;
   (incoming||[]).forEach(r=>{
     const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r),sourceRow=planImportSourceRowIdentity(r);
     const sourceCandidates=sourceRow?(sourceRowBuckets.get(sourceRow)||[]).filter(x=>!used.has(String(x.id))):[];
     if(sourceCandidates.length){
-      const preferred=sourceCandidates.find(x=>planImportRideIdentity(x)===exact&&!x?._planCarryover&&!x?._planMissingFromLatest)
+      const preferred=sourceCandidates.find(x=>done.has(String(x.id)))
+        || sourceCandidates.find(x=>planImportRideIdentity(x)===exact&&!x?._planCarryover&&!x?._planMissingFromLatest)
         || sourceCandidates.find(x=>planImportRideIdentity(x)===exact)
         || sourceCandidates.find(x=>!x?._planCarryover&&!x?._planMissingFromLatest)
         || sourceCandidates[0];
       sourceCandidates.forEach(x=>used.add(String(x.id)));
       deduped+=Math.max(0,sourceCandidates.length-1);
       const sameExact=planImportRideIdentity(preferred)===exact;
-      merged.push(sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r));
+      merged.push(keepCompleted(preferred,sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r)));
       matched++;
       return;
     }
@@ -4567,11 +4578,18 @@ function mergePlanImportByIdentity(current,incoming){
     if(exactCandidates.length===1){
       const preferred=exactCandidates[0];
       const sameStable=(stableBuckets.get(stable)||[]).filter(x=>!used.has(String(x.id)));
+      // P0: an identical pickup/route/time does not prove the SAME ride if the
+      // driver/stable identity differs. Never swallow a new parallel ride just
+      // because a previously completed ride has the same weak exact key.
+      if(done.has(String(preferred.id)) && !sameStable.some(x=>String(x.id)===String(preferred.id))){
+        merged.push(r);
+        return;
+      }
       if(sameStable.some(x=>String(x.id)===String(preferred.id))){
         sameStable.forEach(x=>used.add(String(x.id)));
         deduped+=Math.max(0,sameStable.length-1);
       }else used.add(String(preferred.id));
-      merged.push(planImportPreserveMetadata(preferred,r));
+      merged.push(keepCompleted(preferred,planImportPreserveMetadata(preferred,r)));
       matched++;
       return;
     }
@@ -4586,7 +4604,7 @@ function mergePlanImportByIdentity(current,incoming){
       stableCandidates.forEach(x=>used.add(String(x.id)));
       deduped+=Math.max(0,stableCandidates.length-1);
       const sameExact=planImportRideIdentity(preferred)===exact;
-      merged.push(sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r));
+      merged.push(keepCompleted(preferred,sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r)));
       matched++;
       return;
     }
@@ -4609,8 +4627,12 @@ function mergePlanImportByIdentity(current,incoming){
     used.add(String(candidates[0].id));
     deduped++;
   });
-  const carry=(current||[]).filter(r=>!used.has(String(r.id))&&!done.has(r.id)).map(r=>({...r,_planCarryover:true,_planMissingFromLatest:true}));
-  return{rides:[...merged,...carry],matched,carryover:carry.length,deduped,incomingCount:(incoming||[]).length};
+  const carry=(current||[]).filter(r=>!used.has(String(r.id))&&!done.has(String(r.id))).map(r=>({...r,_planCarryover:true,_planMissingFromLatest:true}));
+  // Do not mutate completed trips or their status; preserve even duplicate
+  // legacy completed IDs encountered in a source/stable matching bucket.
+  const keptIds=new Set(merged.map(r=>String(r.id)));
+  const completedCarry=(current||[]).filter(r=>done.has(String(r.id))&&!keptIds.has(String(r.id)));
+  return{rides:[...merged,...carry,...completedCarry],matched,carryover:carry.length+completedCarry.length,deduped,incomingCount:(incoming||[]).length};
 }
 function beginPlanImportSession(incoming,mergeInfo){
   const now=new Date().toISOString(),id=planImportSessionId();
@@ -5068,6 +5090,17 @@ async function applyImportedRides(newRides){
     restoreCurrentRidesAfterBlockedImport();
     throw Error('Sicherheitsblock: Planimport wurde nicht durch „Geprüfte Fahrten übernehmen“ oder „JSON laden“ gestartet.');
   }
+  // AP-01.04: two different incoming entries claiming one explicit source
+  // file/row/plan-date are ambiguous. Never arbitrarily discard either.
+  const incomingSourceKeys=new Set();
+  for(const ride of newRides){
+    const key=planImportSourceRowIdentity(ride);
+    if(!key)continue;
+    if(incomingSourceKeys.has(key)){
+      throw Error('Import blockiert: doppelte Quellzeile innerhalb derselben Planliste. Bitte Quelle prüfen.');
+    }
+    incomingSourceKeys.add(key);
+  }
   persistAudit('plan_import_started',{
     source:importAuthorization.source,
     incomingCount:newRides.length
@@ -5140,8 +5173,15 @@ async function applyImportedRides(newRides){
     if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'durable-write'});
     throw Error('Import abgebrochen: IndexedDB-Sicherung fehlgeschlagen. Vorheriger Bestand wurde erneut gespeichert; bitte Backup pruefen.');
   }
-  // Storage V2 ist noch kein Freigabe-Gate: nur paralleles Spiegeln + Verifikation.
-  void syncStorageV2Phase1('after-plan-import-verified');
+  // AP-01.04: Still NOT a commit gate or source-of-truth; await the mirror
+  // result so the UI cannot claim fully synchronized storage prematurely.
+  // Storage V2 remains a non-gating mirror. A stalled IndexedDB request
+  // must not strand the UI after the primary+durable writes have committed.
+  const v2Mirror=await Promise.race([
+    syncStorageV2Phase1('after-plan-import-verified'),
+    new Promise(resolve=>setTimeout(()=>resolve({ok:false,pending:true}),5000))
+  ]);
+  const v2Verified=Boolean(v2Mirror?.ok && storageV2Diagnosis().exactMatch);
   capturePersistenceSafety('after-plan-import');
   let addressCandidateResult={changed:false,added:0,open:0};
   try{addressCandidateResult=collectAddressBookCandidates(normalizedIncoming,'address-candidates-plan-import')}
@@ -5163,6 +5203,10 @@ async function applyImportedRides(newRides){
     restoredVerifiedFlights:restored.verifiedRestored,
     restoredManualChecks:restored.manualRestored,
     newAddressCandidates:addressCandidateResult.added,
+    storageV2Synced:v2Verified,
+    storageV2Status:v2Mirror?.pending===true?'pending':storageV2Diagnosis().status,
+    pendingFlightChecks:normalizedIncoming.filter(r=>r?.flightNeedsManualCheck===true ||
+      (r?.flightNumber && !['verified','high'].includes(String(r?.flightCheckConfidence||'').toLowerCase()))).length,
     openAddressCandidates:addressCandidateResult.open
   };
 }
@@ -6696,7 +6740,10 @@ function initApp(){
       const status=safeEl('importStatus');
       if(status)status.textContent='ATMS-JSON geladen. Jetzt „JSON laden“ tippen.';
     });
-    bindClick('loadBtn',async()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=await applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}safeEl('importStatus').textContent=!result.historySaved?`Fahrten gesichert (${result.count}), aber Planlistenhistorie nicht vollstaendig gespeichert. Bitte Backup erstellen.`:result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;showToast(!result.historySaved?'Fahrten gesichert, Historie nicht gespeichert':result.mode==='merge'?`${result.count} Fahrten zusammengeführt`:`${result.count} Fahrten importiert`,result.historySaved?'ok':'warn');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message;showToast('Import wurde nicht als erfolgreich bestaetigt','warn')}});
+    bindClick('loadBtn',async()=>{try{const incoming=parse(safeEl('jsonInput').value);const result=await applyImportedRides(incoming);if(result.cancelled){safeEl('importStatus').textContent='Import abgebrochen. Die aktuelle Planliste bleibt erhalten.';return}const pending=Number(result.pendingFlightChecks||0),v2Ok=result.storageV2Synced===true;
+      const base=!result.historySaved?`Fahrten lokal gesichert (${result.count}), aber Planlistenhistorie nicht vollständig gespeichert. Bitte Backup erstellen.`:result.mode==='merge'?`Planlisten zusammengeführt: ${result.count} Fahrten.`:`Planliste ersetzt: ${result.count} Fahrten geladen.`;
+      safeEl('importStatus').textContent=base+(pending?` ${pending} Flugprüfung(en) offen (NICHT verifiziert).`:'')+(v2Ok?' Storage V2 synchron bestätigt.':' WARNUNG: Storage V2 nicht bestätigt – Sicherheitskopie prüfen.');
+      showToast(result.historySaved && v2Ok && !pending?`${result.count} Fahrten importiert`:'Fahrten lokal übernommen – offene Flug-/Speicherprüfung beachten',result.historySaved && v2Ok && !pending?'ok':'warn');mode='rides';render()}catch(e){safeEl('importStatus').textContent='Fehler: '+e.message;showToast('Import wurde nicht als erfolgreich bestaetigt','warn')}});
     bindClick('clearBtn',()=>{safeEl('jsonInput').value='';rides=[];done.clear();save();safeEl('importStatus').textContent='Liste geleert.'});
     document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{const n=b.dataset.nav;if(n!=='all')atmsPrimaryVisit(n);if(n==='settings'){document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));atmsSettingsOpenHubFromPrimaryNav();safeEl('cockpitDispatcherSelect')?.addEventListener('change',e=>setCurrentDispatcher(e.target.value));
     safeEl('cockpitDriverSelect')?.addEventListener('change',renderDriverControls);

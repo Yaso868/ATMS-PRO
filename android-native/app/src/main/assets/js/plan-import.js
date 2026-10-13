@@ -188,7 +188,7 @@
   // CORE-007D8A1F1D8P1062 · 02.10.2026: IMAGE HEADER SCHEMA + OCR PERFORMANCE GUARD – toleriert genau eine OCR-Abweichung in der Kopfzeile "Uhrzeit" (z. B. "Uhrzett"), damit echte 14-Spalten-Preislisten mit mittlerer Spiegelzeit nicht irrtümlich als 13-Spalten-Schema rekonstruiert werden. Zusätzlich bricht eine klar verschobene rechte Tabellenhälfte vor teurer Zell-Nach-OCR fail-closed ab. Keine Lockerung von OCR-/Flug-/Import-Sicherheitsregeln.
   // CORE-007D8A1F1D8P106 · 02.10.2026: MULTI-IMAGE + DRIVER OCR/COLOR INTEGRITY PACK – erlaubt mehrere Bildteile derselben Planliste in einem Analyse-Lauf, verbindet Fortsetzungsbilder ohne eigene Kopfzeile vor der OCR sicher mit dem Kopfzeilenbild, erweitert den Fahrer-Spaltenkonsens um genau eine eindeutig fehlende Buchstabenposition (z. B. Selm→Selim) und prüft Fahrerzellfarben auf fehlende/inkonsistente Erkennung. Keine Flug-, Routing-, Preis-, Dedupe- oder Speicherlogik wird aufgeweicht.
   const PROFILE_KEY = 'atms_import_profile_v1';
-  const state = { file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', manualPlanDate: false, filenamePlanDate: '', headerPlanDate: '', dateSourceConflict: false, priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, previewOnlyAnalysis: false, pipelineGeneration: 0, autoFlightSummary: null, previewFlightRunId: 0, previewFlightCheckInProgress: false, previewFlightDiagnostic: null };
+  const state = { ap01ReviewConfirmed: false, ap01EditorOpenId: null, file: null, files: [], matrix: [], rides: [], cancelledRows: [], issues: [], meta: {}, mapping: null, planDate: '', manualPlanDate: false, filenamePlanDate: '', headerPlanDate: '', dateSourceConflict: false, priceDecisions: {}, dateBoundaryDecision: '', dateInfo: {}, ocrCellDiagnostics: [], ocrDiagnosticSelfCheck: null, ocrPerformanceDiagnostic: null, autoImportCompleted: false, autoPipelineInProgress: false, analysisRunInProgress: false, previewOnlyAnalysis: false, pipelineGeneration: 0, autoFlightSummary: null, previewFlightRunId: 0, previewFlightCheckInProgress: false, previewFlightDiagnostic: null };
   const $ = id => document.getElementById(id);
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const cleanKey = value => String(value || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
@@ -11935,7 +11935,7 @@
     return Boolean(state.rides.length && $('planAnalysis') && !$('planAnalysis').classList.contains('hidden'));
   }
 
-  function applyGeminiResultsToStagedPlan(checked, appliedAt = new Date().toISOString()) {
+  function applyGeminiResultsToStagedPlan(checked, appliedAt = new Date().toISOString(), ap01Token = null) {
     if (!Array.isArray(checked) || !checked.length || !state.rides.length) {
       return { matchedRides: 0, verifiedRides: 0, sourceConfirmedRides: 0, uncertainRides: 0 };
     }
@@ -11980,14 +11980,23 @@
         if (sourceConfirmed) sourceConfirmedRides++;
       }
       const mayFillFromOfficial = sourceConfirmed && (!existingLocation || existingLocation === 'Flugort prüfen' || existingLocation === 'Flugort nicht verfügbar');
+      const pendingAp01Recheck = ride.ap01FlightRecheckRequired === true;
+      const ap01Recheck = pendingAp01Recheck && ap01Token === AP01_NATIVE_RECHECK_TOKEN && verified
+        ? ap01AssessIndependentFlightRecheck(ride, hit) : {ok:false,reason:'not_trusted_native_recheck'};
+      // A normal sync or external result callback can update diagnostics, but can
+      // neither overwrite a manually entered location nor clear a pending AP-01 veto.
+      const ap01RecheckCleared = pendingAp01Recheck && ap01Recheck.ok === true;
       return {
         ...ride,
         // Eine einzelne offizielle Airportquelle darf nur einen LEEREN Flugort vorbefuellen.
         // Sie entfernt bewusst NICHT den manuellen FLIGHT-008-Hinweis.
-        flightLocation: verified ? normalizeFlightLocation(location) : (mayFillFromOfficial ? normalizeFlightLocation(location) : ride.flightLocation),
-        iata: (verified || mayFillFromOfficial) && /^[A-Z]{3}$/.test(iata) ? iata : (ride.iata || ''),
-        flightCheckConfidence: verified ? 'verified' : (sourceConfirmed ? 'source_confirmed' : 'uncertain'),
-        flightNeedsManualCheck: !verified,
+        flightLocation: pendingAp01Recheck ? ride.flightLocation : (verified ? normalizeFlightLocation(location) : (mayFillFromOfficial ? normalizeFlightLocation(location) : ride.flightLocation)),
+        iata: (verified && (!pendingAp01Recheck || ap01RecheckCleared) || mayFillFromOfficial && !pendingAp01Recheck) && /^[A-Z]{3}$/.test(iata) ? iata : (ride.iata || ''),
+        flightCheckConfidence: pendingAp01Recheck && !ap01RecheckCleared ? 'uncertain' : (verified ? 'verified' : (sourceConfirmed ? 'source_confirmed' : 'uncertain')),
+        flightNeedsManualCheck: pendingAp01Recheck && !ap01RecheckCleared ? true : !verified,
+        ap01FlightRecheckRequired: pendingAp01Recheck && !ap01RecheckCleared,
+        ap01FlightRecheckEvidence: ap01RecheckCleared ? ap01Recheck.evidence : ride.ap01FlightRecheckEvidence,
+        ap01RecheckLastReason: pendingAp01Recheck ? (ap01RecheckCleared ? 'verified_by_native_dual_source' : ap01Recheck.reason) : ride.ap01RecheckLastReason,
         flightSourceConfirmed: Boolean(sourceConfirmed),
         flightCheckSourceNote: cellText(hit?.sourceNote) || ride.flightCheckSourceNote || '',
         flightCheckedAt: appliedAt,
@@ -12133,6 +12142,376 @@
     }
     return {patch:'CORE-007D8A1F1D8P11411',diagnosticOnly:true,noMutation:true,
       conflicts:reports, conflictCount:reports.length};
+  }
+
+  // G06-01 QUARANTINE DIAGNOSTIC ONLY. Explicit opt-in AND preview-only are
+  // mandatory. Capture snapshots in memory, never storage/network/import.
+  // No OCR rule, consensus, validation, or ride value is modified by this code.
+  function g06QuarantineCapture(stage, rides, issues = null) {
+    if (window.__ATMS_G06_01_LOCAL_TEST_TRACE__ !== true || state.previewOnlyAnalysis !== true) return null;
+    try {
+      const prior = Array.isArray(state.g06QuarantineTrace) ? state.g06QuarantineTrace : [];
+      const observedRows = new Set(prior.flatMap(entry => (entry.rides || []).map(ride => Number(ride.sourceRow))));
+      const selected = (Array.isArray(rides) ? rides : []).filter(ride =>
+        ride && (ride.companyOcrConflict === true ||
+          ride.companyOcrConflictResolvedAfterRepeatedConsistency === true ||
+          observedRows.has(Number(ride.sourceRow))));
+      const records = selected.map(ride => {
+        const evidence = ride?.imageCellEvidence?.company || null;
+        const rawRecord = {
+          sourceRow: ride.sourceRow ?? null,
+          company: ride.company ?? null,
+          companyOcrConflict: ride.companyOcrConflict === true,
+          companyOcrConflictCandidate: ride.companyOcrConflictCandidate ?? null,
+          companyOcrConflictResolvedAfterRepeatedConsistency: ride.companyOcrConflictResolvedAfterRepeatedConsistency === true,
+          companyOcrEvidence: ride.companyOcrEvidence ?? null,
+          companyOcrSecondaryEdgeNoiseEvidence: ride.companyOcrSecondaryEdgeNoiseEvidence ?? null,
+          companyOcrSecondaryEdgeNoiseCandidate: ride.companyOcrSecondaryEdgeNoiseCandidate ?? null,
+          repeatedTextConsistency: ride.repeatedTextConsistency?.company ?? null,
+          companyTargetedOcrAttempts: ride.companyTargetedOcrAttempts ?? null,
+          // Keep every original attempt and all metadata, including source row/column,
+          // view bounds, transforms, crop-quality and the primary birth record.
+          imageCellEvidenceCompany: evidence,
+          importIntegrityStatus: ride.importIntegrityStatus ?? null,
+          importIntegrityConflicts: ride.importIntegrityConflicts ?? null,
+          validationIssues: Array.isArray(issues) ? issues.filter(item => Number(item?.row) === Number(ride.sourceRow)) : null
+        };
+        // Detached deep snapshot: a later P114.11 mutation cannot rewrite 'before'.
+        return JSON.parse(JSON.stringify(rawRecord));
+      });
+      const record = {
+        diagnostic: 'G06-01 LOCAL QUARANTINE',
+        stage, generation: state.pipelineGeneration,
+        previewOnly: true,
+        importButtonDisabled: $('importPlanBtn')?.disabled === true,
+        rides: records
+      };
+      state.g06QuarantineTrace = [...prior, record];
+      return record;
+    } catch (error) {
+      // Diagnostic failures must not alter fail-closed production decisions.
+      state.g06QuarantineTraceFailure = String(error?.message || error);
+      return null;
+    }
+  }
+
+  // AP-01.01: edit staged rides only. Never touch persisted rides, OCR provenance,
+  // imported status, or release a source-integrity veto by accepting a text note.
+  const AP01_FIELDS = Object.freeze([
+    ['date', 'Fahrtdatum', 'date'], ['time', 'Abholzeit', 'time'],
+    ['driver', 'Name (Fahrer)', 'text'], ['pickup', 'Von (Abholort)', 'text'],
+    ['destination', 'Nach (Zielort)', 'text'], ['flightNumber', 'Flugnummer', 'text'],
+    ['flightLocation', 'Flugort', 'text'], ['flightTime', 'Flugzeit', 'time'],
+    ['company', 'Firma', 'text'], ['vehicle', 'Wg (Fahrzeug)', 'text'],
+    ['persons', 'Pers (Personen)', 'number'], ['price', 'Preis EUR', 'text']
+  ]);
+  const AP01_KEYS = AP01_FIELDS.map(entry => entry[0]);
+  const AP01_FLIGHT_CONTEXT = new Set(['date', 'time', 'pickup', 'destination', 'flightNumber', 'flightLocation', 'flightTime']);
+  // Only the native provider invocation inside this module holds this token.
+  // A globally exposed diagnostic/result callback must NEVER clear the editor's veto.
+  const AP01_NATIVE_RECHECK_TOKEN = Symbol('AP01 native independent flight recheck');
+  function ap01FlightContextKey(ride) {
+    // All material inputs must match the post-edit source context, including event date.
+    return JSON.stringify([
+      cellText(ride?.date), cellText(ride?.time), cellText(ride?.pickup), cellText(ride?.destination),
+      normalizeFlightForCurrentCheck(ride?.flightNumber), cellText(ride?.flightLocation),
+      normalizeTime(ride?.flightTime) || '', stagedFlightDirection(ride),
+      stagedAirportEventDateContext(ride).airportEventDate, stagedAirportIata(ride)
+    ]);
+  }
+  function ap01AssessIndependentFlightRecheck(ride, hit) {
+    if (!ride?.ap01FlightRecheckRequired) return {ok:false, reason:'not_required'};
+    if (!hit || hit.conflict === true || hit.officialAirportEvidence !== true
+        || hit.nativeSecondSourceEvidence !== true || hit.status !== 'verified'
+        || !['verified','high'].includes(cellText(hit.confidence).toLowerCase()))
+      return {ok:false, reason:'missing_strict_native_evidence'};
+    const eventDate = stagedAirportEventDateContext(ride).airportEventDate;
+    const direction = stagedFlightDirection(ride);
+    const airportIata = stagedAirportIata(ride);
+    const relevantIata = cellText(hit.relevantIata || hit.iata).toUpperCase();
+    const origin = cellText(hit.officialOriginIata).toUpperCase();
+    const destination = cellText(hit.officialDestinationIata).toUpperCase();
+    if (!normalizeFlightForCurrentCheck(ride.flightNumber)
+        || normalizeFlightForCurrentCheck(hit.flightNumber) !== normalizeFlightForCurrentCheck(ride.flightNumber)
+        || cellText(hit.date) !== cellText(ride.date)
+        || cellText(hit.airportEventDate) !== eventDate
+        || !['arrival','departure'].includes(direction) || cellText(hit.direction) !== direction
+        || !/^[A-Z]{3}$/.test(airportIata) || cellText(hit.airportIata).toUpperCase() !== airportIata
+        || !/^[A-Z]{3}$/.test(relevantIata) || !/^[A-Z]{3}$/.test(origin) || !/^[A-Z]{3}$/.test(destination)
+        || (direction === 'arrival' ? (origin !== relevantIata || destination !== airportIata)
+          : (origin !== airportIata || destination !== relevantIata)))
+      return {ok:false, reason:'flight_context_mismatch'};
+    // The original provider did not supply exact flight time. Never silently use a
+    // time-less flight response to clear a manually edited time or ambiguous flight.
+    if (normalizeTime(ride.flightTime) && normalizeTime(hit.flightTime) !== normalizeTime(ride.flightTime))
+      return {ok:false, reason:'flight_time_unproven'};
+    if (!cellText(hit.flightLocation || hit.relevantLocation)
+        || !cellText(ride.flightLocation)
+        || cleanKey(normalizeFlightLocation(hit.flightLocation || hit.relevantLocation))
+          !== cleanKey(normalizeFlightLocation(ride.flightLocation)))
+      return {ok:false, reason:'manually_selected_location_not_confirmed'};
+    const urls = (Array.isArray(hit.sources) ? hit.sources : []).map(src => cellText(src?.url));
+    const hosts = new Set();
+    for (const url of urls) {
+      let parsed;
+      try { parsed = new URL(url); } catch (_) {return {ok:false,reason:'invalid_source_url'};}
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return {ok:false,reason:'untrusted_source_url'};
+      hosts.add(parsed.hostname.replace(/^www\./i,'').toLowerCase());
+    }
+    if (hosts.size < 2 || checkedSourceCount(hit) < 2) return {ok:false,reason:'independent_sources_missing'};
+    const checkAt = Date.parse(cellText(hit.nativeSecondSourceCheckedAt));
+    const editAt = Date.parse(cellText(ride.ap01FlightContextChangedAt));
+    if (!Number.isFinite(checkAt) || !Number.isFinite(editAt) || checkAt < editAt)
+      return {ok:false,reason:'proof_older_than_edit'};
+    return {ok:true, evidence:{ contextKey:ap01FlightContextKey(ride), at:hit.nativeSecondSourceCheckedAt,
+      flightNumber:normalizeFlightForCurrentCheck(hit.flightNumber), airportEventDate:eventDate,
+      airportIata, direction, relevantIata, sourceUrls:urls }};
+  }
+  function ap01RideById(id) {
+    return state.rides.find(ride => String(ride.id) === String(id));
+  }
+  function ap01ValidateDraft(draft) {
+    const output = {};
+    const hhmm = value => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+    for (const [key] of AP01_FIELDS) {
+      const raw = String(draft[key] ?? '').trim();
+      if (raw.length > 200 || /[\u0000-\u001f\u007f]/.test(raw)) return { ok: false, error: `Ungültige Eingabe: ${key}` };
+      output[key] = raw;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(output.date) || !Number.isFinite(Date.parse(output.date+'T12:00:00Z')) || new Date(output.date+'T12:00:00Z').toISOString().slice(0,10) !== output.date)
+      return {ok:false,error:'Fahrtdatum muss ein gültiger Kalendertag sein.'};
+    if (!hhmm(output.time) || (output.flightTime && !hhmm(output.flightTime)))
+      return {ok:false,error:'Zeit im Format HH:MM eingeben.'};
+    if (!output.pickup || !output.destination || !output.vehicle)
+      return {ok:false,error:'Von, Nach und Fahrzeug dürfen nicht leer sein.'};
+    if (output.driver && (!looksLikeDriverName(output.driver) || output.driver.length > 80))
+      return {ok:false,error:'Fahrernamen exakt aus der Originalzelle eingeben.'};
+    if (output.flightNumber && (!looksLikeFlight(normalizeFlightNumber(output.flightNumber)) || diagnosticFlightPrefixLength(normalizeFlightNumber(output.flightNumber)) >= 3))
+      return {ok:false,error:'Flugnummer ist nicht plausibel.'};
+    if (!/^\d{1,2}$/.test(output.persons) || Number(output.persons) > 99)
+      return {ok:false,error:'Pers muss zwischen 0 und 99 liegen.'};
+    const price = output.price.replace(/\s+/g,'').replace(',','.');
+    if (!/^(?:\d{1,6})(?:\.\d{1,2})?$/.test(price) || Number(price) > 100000)
+      return {ok:false,error:'Preis als Zahl mit maximal zwei Nachkommastellen eingeben.'};
+    output.persons = Number(output.persons);
+    output.price = Number(price);
+    output.flightNumber = output.flightNumber ? normalizeFlightNumber(output.flightNumber) : '';
+    return {ok:true, values:output};
+  }
+  // AP-01.05A: preview-editor navigation guard. Captures only local input values;
+  // no data, import authorization, storage or OCR rule is changed on Back/Cancel.
+  let ap01EditorOpeningDraft = null;
+  function ap01CurrentEditorDraft() {
+    const fields = $('ap01EditorFields');
+    return JSON.stringify({
+      fields: Array.from(fields?.querySelectorAll('.ap01-field') || [], input =>
+        [input.dataset.field, input.value]),
+      conflictReason: String($('ap01ConflictReason')?.value || '')
+    });
+  }
+  function ap01EditorIsOpen() {
+    return state.ap01EditorOpenId !== null && $('ap01RideEditor')?.hidden === false;
+  }
+  function ap01EditorIsDirty() {
+    return ap01EditorOpeningDraft !== null && ap01CurrentEditorDraft() !== ap01EditorOpeningDraft;
+  }
+  function ap01DismissCloseQuestion() {
+    const question = $('ap01DiscardConfirm');
+    if (question) question.hidden = true;
+  }
+  function ap01CloseEditor() {
+    const previousId = state.ap01EditorOpenId;
+    ap01DismissCloseQuestion();
+    const modal = $('ap01RideEditor');
+    if (modal) modal.hidden = true;
+    state.ap01EditorOpenId = null;
+    ap01EditorOpeningDraft = null;
+    // Every new import requires the user to approve the updated preview again.
+    state.ap01ReviewConfirmed = false;
+    render();
+    try {
+      Array.from(document.querySelectorAll('.ap01-edit-btn')).find(btn =>
+        String(btn.dataset.rideId) === String(previousId))?.focus();
+    } catch (_) { /* focus is optional; never impede closing */ }
+  }
+  function ap01RequestCloseEditor() {
+    if (!ap01EditorIsOpen()) return false;
+    if (!ap01EditorIsDirty()) { ap01CloseEditor(); return true; }
+    const question = $('ap01DiscardConfirm');
+    if (!question) return true; // Fail closed if the safety UI is unavailable.
+    question.hidden = false;
+    $('ap01KeepEditing')?.focus();
+    return true; // Consume Android Back: never navigate the underlying app.
+  }
+  function ap01KeepEditing() {
+    ap01DismissCloseQuestion();
+    $('ap01EditorFields')?.querySelector('.ap01-field')?.focus();
+  }
+  // app.js owns Android Back; use one narrow, no-side-effect callback.
+  window.ATMSAP01HandleBack = () => {
+    if (!ap01EditorIsOpen()) return false;
+    if ($('ap01DiscardConfirm')?.hidden === false) {
+      ap01KeepEditing();
+    } else {
+      ap01RequestCloseEditor();
+    }
+    return true;
+  };
+  function ap01ConflictEvidenceList(ride) {
+    const found = Array.isArray(ride?.importIntegrityConflicts)
+      ? ride.importIntegrityConflicts.map(item => ({code:cellText(item?.code),text:cellText(item?.text)})) : [];
+    for (const [field,label] of [['company','Firma'],['customer','Kunde'],['flightLocation','Flugort']]) {
+      if (ride?.[`${field}OcrConflict`] === true) found.push({code:`${field}_ocr_opposition`,
+        text:`${label}: ${cellText(ride[field])} ↔ ${cellText(ride[`${field}OcrConflictCandidate`])} (sekundäre OCR)`});
+    }
+    if (ride?.flightTimeCellConflict === true) found.push({code:'flight_time_cell_conflict',
+      text:`Flugzeit: ${cellText(ride.flightTime)} ↔ ${cellText(ride.flightTimeCellConflictCandidate)} (geometrische Originalzelle)`});
+    return found;
+  }
+  function ap01OpenEditor(id) {
+    const ride = ap01RideById(id);
+    const modal = $('ap01RideEditor');
+    if (!ride || !modal) return false;
+    state.ap01ReviewConfirmed = false;
+    state.ap01EditorOpenId = String(id);
+    const inputHtml = AP01_FIELDS.map(([key, label, type]) => {
+      const v = ride[key] == null ? '' : String(ride[key]);
+      // No input value is interpreted as HTML; only an explicitly authored field name is inserted.
+      return `<label style="display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:700">${escapeHtml(label)}<input class="ap01-field" data-field="${key}" type="${type}" value="${escapeHtml(v)}" ${type==='number'?'min="0" max="99" step="1"':''} style="min-height:42px;padding:9px;border-radius:8px;box-sizing:border-box;max-width:100%"></label>`;
+    }).join('');
+    const conflicts = ap01ConflictEvidenceList(ride);
+    $('ap01EditorHeading').textContent = `Fahrt Zeile ${ride.sourceRow ?? '–'} bearbeiten`;
+    $('ap01EditorFields').innerHTML = inputHtml;
+    // Read the original OCR opposition visibly, rather than showing only its count.
+    // TextContent prevents original-image strings from becoming executable markup.
+    const conflictLines = conflicts.map(item => `${cellText(item?.code) || 'Quellkonflikt'}: ${cellText(item?.text) || 'Originalzelle gegen sekundäre OCR prüfen'}`);
+    $('ap01EditorEvidence').textContent = conflicts.length
+      ? `${conflicts.length} offene(r) OCR-/Integritätskonflikt(e).\n${conflictLines.join('\n')}\nNachricht und Bearbeitung sind kein unabhängiger Originalbeweis. Import bleibt gesperrt.`
+      : 'Ursprüngliche OCR-Daten bleiben unverändert. Änderungen sind bis zur Freigabe nur in der Vorschau.';
+    const audit = Array.isArray(ride.ap01EditAudit) ? ride.ap01EditAudit : [];
+    $('ap01EditorAudit').textContent = audit.length ? `${audit.length} bisherige Bearbeitung(en) dokumentiert.` : 'Noch keine Bearbeitung.';
+    $('ap01ConflictReview').hidden = !conflicts.length;
+    $('ap01EditorError').textContent = '';
+    $('ap01ConflictReason').value = '';
+    ap01DismissCloseQuestion();
+    ap01EditorOpeningDraft = ap01CurrentEditorDraft();
+    modal.hidden = false;
+    return true;
+  }
+  function ap01SaveEditor() {
+    const id=state.ap01EditorOpenId;
+    const ride=ap01RideById(id);
+    if (!ride) return false;
+    const draft={};
+    $('ap01EditorFields').querySelectorAll('.ap01-field').forEach(node => {draft[node.dataset.field]=node.value;});
+    const validated=ap01ValidateDraft(draft);
+    if (!validated.ok) {$('ap01EditorError').textContent=validated.error;return false;}
+    const updates=AP01_KEYS.filter(key=>String(ride[key] ?? '')!==String(validated.values[key]));
+    if (updates.length) {
+      if (!ride.ap01OriginalOcr) ride.ap01OriginalOcr = {
+        fields:Object.fromEntries(AP01_KEYS.map(key=>[key,ride[key]??''])),
+        sourceRow:ride.sourceRow,
+        companyRawOcr:ride.companyRawOcr||'',
+        flightNumberRawOcr:ride.flightNumberRawOcr||'',
+        priceRawSource:ride.priceRawSource||'',
+        importIntegrityConflicts:JSON.parse(JSON.stringify(ride.importIntegrityConflicts||[]))
+      };
+      const changes=updates.map(field=>({field,from:ride[field]??'',to:validated.values[field]}));
+      const oldCompany=ride.company;
+      const oldRideType=ride.rideType;
+      const oldPlanTime=ride.planTime;
+      for (const key of updates) ride[key]=validated.values[key];
+      if (updates.includes('time')) {
+        // PLAN is the planned pickup time; DISPO and LIVE remain distinct.
+        // app.js norm() gives planTime priority over time on import.
+        ride.planTime=ride.time;
+        if(String(oldPlanTime??'')!==String(ride.planTime))
+          changes.push({field:'planTime',from:oldPlanTime??'',to:ride.planTime,derived:true});
+      }
+      if (updates.includes('company') && !ride.customer && ride.partner === oldCompany) ride.partner=ride.company;
+      if (updates.includes('flightNumber')) {
+        // Never leave the previous flight number in a stale directional column.
+        const originalDirection = stagedFlightDirection({...ride, flightNumber: changes.find(c=>c.field==='flightNumber').from,
+          arrivalFlight:ride.arrivalFlight,departureFlight:ride.departureFlight});
+        ride.arrivalFlight=originalDirection === 'arrival' ? ride.flightNumber : '';
+        ride.departureFlight=originalDirection === 'departure' ? ride.flightNumber : '';
+        ride.flightDirection=originalDirection;
+      }
+      if (updates.includes('pickup') || updates.includes('destination') || updates.includes('flightNumber')) {
+        ride.rideType=classifyRide(ride.pickup,ride.destination,ride.arrivalFlight,ride.departureFlight);
+        if (oldRideType !== ride.rideType) changes.push({field:'rideType',from:oldRideType||'',to:ride.rideType,derived:true});
+      }
+      ride.ap01EditAudit=Array.isArray(ride.ap01EditAudit)?ride.ap01EditAudit:[];
+      ride.ap01EditAudit.push({at:new Date().toISOString(), changes, source:'manual_preview'});
+      if (updates.includes('driver')) {
+        if (!ride.driver) ride.driverBlankCellConfirmed=false; // Never fabricate an OCR-confirmed empty cell.
+        else ride.driverManualOcrCorrection={from:changes.find(c=>c.field==='driver').from,to:ride.driver,confirmed:true,at:new Date().toISOString()};
+      }
+      if (updates.includes('price')) state.priceDecisions[String(ride.id||ride.sourceRow)]= 'manual';
+      if (updates.some(key=>AP01_FLIGHT_CONTEXT.has(key))) {
+        // Even deleting a flight number needs separate source review. Invalidate ALL
+        // stale status channels, not just the confidence label in the preview.
+        ride.flightNeedsManualCheck=true;
+        ride.flightCheckConfidence='uncertain';
+        ride.flightVerified=false;
+        ride.flightVerificationStatus='needs_manual_check';
+        ride.flightVerification=null;
+        ride.flightCheckedAt='';
+        ride.flightSourceConfirmed=false;
+        ride.ap01FlightRecheckRequired=true;
+        ride.ap01FlightContextChangedAt=new Date().toISOString();
+        ride.ap01FlightRecheckEvidence=null;
+        ride.ap01RecheckLastReason='new_manual_flight_context';
+      }
+      state.autoFlightSummary=null;
+      resetPreviewFlightDiagnostic();
+    }
+    state.ap01ReviewConfirmed=false;
+    ap01CloseEditor();
+    return true;
+  }
+  function ap01RecordConflictReview() {
+    const ride=ap01RideById(state.ap01EditorOpenId);
+    const reason=String($('ap01ConflictReason')?.value||'').trim();
+    if (!ride || !ap01ConflictEvidenceList(ride).length || reason.length < 12 || reason.length > 1000) {
+      $('ap01EditorError').textContent='Bitte 12–1000 Zeichen Begründung zum Originalbeleg eingeben.';
+      return false;
+    }
+    ride.ap01ConflictReviews=Array.isArray(ride.ap01ConflictReviews)?ride.ap01ConflictReviews:[];
+    ride.ap01ConflictReviews.push({at:new Date().toISOString(),sourceRow:ride.sourceRow,
+      decision:'review_documented_not_released', reason, proofStatus:'independent_cell_source_unverified',
+      originalPlanFilename:cellText(state.file?.name || state.files?.[0]?.name),
+      currentCompany:cellText(ride.company), originalCompanyRaw:cellText(ride.companyRawOcr),
+      secondaryCompanyOcr:cellText(ride.companyOcrConflictCandidate),
+      cellEvidenceFields:Object.keys(ride.imageCellEvidence || {}).sort(),
+      originalConflicts:JSON.parse(JSON.stringify(ap01ConflictEvidenceList(ride)))});
+    // Critically: Do not mutate importIntegrityConflicts, importIntegrityStatus,
+    // companyOcrConflict or any other validation/veto input.
+    $('ap01EditorAudit').textContent=`${ride.ap01ConflictReviews.length} Konfliktentscheidung(en) dokumentiert. Import bleibt gesperrt.`;
+    $('ap01EditorError').textContent='Konflikt dokumentiert. Zur Freigabe fehlt ein unabhängiger Nachweis.';
+    state.ap01ReviewConfirmed=false;
+    return true;
+  }
+  function ap01ImportBlockers() {
+    if (state.ap01EditorOpenId !== null) return ['Bearbeitungsdialog noch offen'];
+    const incomingKeys=new Set();
+    for (const ride of state.rides) {
+      const file=cellText(ride?.sourceFile).trim().toLowerCase();
+      const row=Number(ride?.sourceRow||0);
+      const day=cellText(ride?.planDate||ride?.plan_date).trim();
+      if (!file || !Number.isInteger(row) || row<=0 || !/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+      const key=JSON.stringify([file,row,day]);
+      if (incomingKeys.has(key)) return ['Doppelte Quellzeile in der Planliste – Original prüfen'];
+      incomingKeys.add(key);
+    }
+    if (!state.ap01ReviewConfirmed) return ['Vorschau noch nicht ausdrücklich bestätigt'];
+    if (state.rides.some(ride=>ride.ap01FlightRecheckRequired)) return ['Nach Bearbeitung Flug-/Routen-Neuverifikation erforderlich'];
+    if (state.rides.some(ride => ride.ap01FlightRecheckEvidence &&
+        ride.ap01FlightRecheckEvidence.contextKey !== ap01FlightContextKey(ride)))
+      return ['Flugkontext seit der unabhängigen Prüfung verändert'];
+    if (state.rides.some(ride=>ride.importIntegrityStatus === 'blocked' || ap01ConflictEvidenceList(ride).length)) return ['Ungeklärte OCR-/Integritätskonflikte'];
+    if (state.rides.some(ride=>ride.flightNeedsManualCheck && ride.ap01EditAudit?.some(e=>e.changes.some(c=>AP01_FLIGHT_CONTEXT.has(c.field))))) return ['Manuelle Flug-/Routenänderung ungeprüft'];
+    return [];
   }
 
   function render() {
@@ -12651,7 +13030,7 @@
       });
     });
 
-    $('planPreviewBody').innerHTML = rides.slice(0, 80).map(ride => {
+    $('planPreviewBody').innerHTML = rides.map(ride => {
       const rowIssues = ocrActionableIssues.filter(issue => Array.isArray(issue.rows) ? issue.rows.includes(ride.sourceRow) : issue.row === ride.sourceRow);
       // P76/P1078: reine Info-/Recovery-Einträge sind bereits gelöst und bleiben oberhalb
       // transparent sichtbar. Die Zeilenprüfung zeigt nur ungelöste OCR-/Datenwarnungen
@@ -12670,11 +13049,14 @@
         <td>${escapeHtml(ride.vehicle || '–')}</td>
         <td>${escapeHtml(ride.persons === null || ride.persons === undefined || ride.persons === '' ? '–' : String(ride.persons))}</td>
         <td>${ride.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
-        <td><span class="plan-status ${status === 'OK' ? 'ok' : status === 'Fehler' ? 'error' : 'warning'}">${status}</span></td>
+        <td><span class="plan-status ${status === 'OK' ? 'ok' : status === 'Fehler' ? 'error' : 'warning'}">${status}</span>${ride.ap01EditAudit?.length ? '<small style="display:block">Bearbeitet</small>' : ''}</td>
+        <td><button type="button" class="ap01-edit-btn" data-ride-id="${escapeHtml(String(ride.id))}" style="padding:8px;border-radius:8px;min-height:40px">Bearbeiten</button></td>
       </tr>`;
     }).join('');
 
-    $('importPlanBtn').disabled = state.previewOnlyAnalysis || rides.length === 0 || blockingErrors > 0 || actionableIssues.some(issue => issue.kind === 'price');
+    const ap01Blocked = ap01ImportBlockers();
+    $('importPlanBtn').disabled = state.previewOnlyAnalysis || rides.length === 0 || blockingErrors > 0 || dateBatchPending > 0 || actionableIssues.some(issue => issue.kind === 'price') || ap01Blocked.length > 0;
+    if ($('ap01ReviewConfirm')) $('ap01ReviewConfirm').checked = Boolean(state.ap01ReviewConfirmed);
     const unresolvedPriceIssues = actionableIssues.filter(issue => issue.kind === 'price').length;
     const cancelledSuffix = cancelledRows.length
       ? ` ${cancelledRows.length} Storno-Zeile${cancelledRows.length === 1 ? '' : 'n'} sicher ausgeschlossen.`
@@ -12691,6 +13073,7 @@
           ? `${rides.length} Fahrten erkannt und OCR-geprüft. ${flightChecks.length} Flugprüfung(en) offen. Bereit zur Übernahme.`
           : `${rides.length} Fahrten erkannt und OCR-geprüft. Bereit zur Übernahme.`) + cancelledSuffix;
     if (state.previewOnlyAnalysis) $('importStatus').textContent = `TESTANALYSE · ${rides.length} Fahrten geprüft · kein Import möglich. ` + $('importStatus').textContent.replace(/Bereit zur Übernahme\./g, 'Nur Vorschau, keine Übernahme.');
+    else if (ap01Blocked.length) $('importStatus').textContent += ` AP-01: ${ap01Blocked.join(' · ')}.`;
 
   }
 
@@ -12716,6 +13099,7 @@
   }
 
   async function analyze() {
+    state.ap01ReviewConfirmed=false;
     if (!state.file || state.analysisRunInProgress || state.autoPipelineInProgress) return;
     // Explicit click handlers set previewOnlyAnalysis; the analysis call never grants import permission.
     if (state.previewOnlyAnalysis) {
@@ -12738,6 +13122,10 @@
       p54AnalyzeStages.push({ name, ms: performance.now() - started });
       return value;
     };
+    if (window.__ATMS_G06_01_LOCAL_TEST_TRACE__ === true && state.previewOnlyAnalysis === true) {
+      state.g06QuarantineTrace = [];
+      state.g06QuarantineTraceFailure = null;
+    }
     state.ocrPerformanceDiagnostic = null;
     try { window.ATMSP54ReadImageTiming = null; } catch (_) {}
     state.analysisRunInProgress = true;
@@ -13000,7 +13388,9 @@
           mappingInfo.mapping
         ));
         preparedRides = p54MeasureSync('repeated_text_consistency', () => applyRepeatedTextConsistency(preparedRides));
+        g06QuarantineCapture('before_p11411_reconciliation', preparedRides);
         preparedRides = p54MeasureSync('company_conflict_post_consensus', () => reconcileCompanyConflictAfterRepeatedConsistency(preparedRides));
+        g06QuarantineCapture('after_p11411_reconciliation', preparedRides);
         preparedRides = p54MeasureSync('zero_silent_error_gate', () => markZeroSilentErrorIntegrity(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));
@@ -13049,10 +13439,12 @@
       state.mapping = mappingInfo.mapping;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
+      g06QuarantineCapture('after_final_validation', state.rides, state.issues);
       writeCurrentAnalysisJsonPreview(state.rides);
       if (!state.previewOnlyAnalysis) localStorage.setItem(PROFILE_KEY, JSON.stringify({ profile: mappingInfo.profile, mapping: mappingInfo.mapping, headers: headers.map(header => header.label), savedAt: new Date().toISOString() }));
       renderMapping(headers, mappingInfo);
       render();
+      g06QuarantineCapture('after_import_gate_render', state.rides, state.issues);
       pipelineStarted = maybeAutoImportCleanPlan();
       if (!pipelineStarted) releaseAnalysisRunGuard(generation);
     } catch (error) {
@@ -13070,6 +13462,9 @@
     state.files = files;
     state.matrix = [];
     state.rides = [];
+    state.ap01ReviewConfirmed = false;
+    state.ap01EditorOpenId = null;
+    if ($('ap01RideEditor')) $('ap01RideEditor').hidden = true;
     state.cancelledRows = [];
     state.ocrCellDiagnostics = [];
     state.ocrDiagnosticSelfCheck = null;
@@ -13143,9 +13538,14 @@
   }
 
   async function importRides(options = {}) {
-    // P114.21: irreversible, backend-level refusal for preview-only analyses.
+    // P114.21: preserve preview-only error status and hard data isolation.
     if (state.previewOnlyAnalysis) {
       if ($('importStatus')) $('importStatus').textContent = 'TESTANALYSE · Keine Fahrten übernommen. Für einen echten Import normal erneut analysieren.';
+      return false;
+    }
+    // AP-01.01: enforce manual review at the import entrypoint, not only in UI.
+    if (options?.auto === true || ap01ImportBlockers().length || state.rides.some(ride=>ride.ap01FlightRecheckRequired)) {
+      if ($('importStatus')) $('importStatus').textContent='AP-01: Automatische oder ungeprüfte Übernahme ist gesperrt.';
       return false;
     }
     if (!state.rides.length) return false;
@@ -13169,14 +13569,22 @@
         return true;
       }
       $('jsonInput').value = JSON.stringify({ rides: normalized }, null, 2);
-      $('importStatus').textContent = auto
-        ? `${result.count} Fahrten automatisch übernommen · Morgen-Modus aktiv.`
-        : (result.mode === 'merge' ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`);
+      const flightPending=Number(result.pendingFlightChecks||0);
+      const flightNotice=flightPending>0 ? ` ${flightPending} Flugprüfung(en) weiterhin offen (NICHT verifiziert).` : '';
+      const v2Notice=result.storageV2Synced===true
+        ? ' Storage V2 synchron bestätigt.'
+        : ' WARNUNG: Storage V2 nicht bestätigt – lokale Fahrten gesichert, Sicherheitskopie prüfen.';
+      $('importStatus').textContent=(result.mode === 'merge'
+        ? `${result.count} Fahrten zusammengeführt.` : `${result.count} Fahrten übernommen.`)+flightNotice+v2Notice;
       if (auto && $('importPlanBtn')) {
         $('importPlanBtn').disabled = true;
         $('importPlanBtn').textContent = '✓ Fahrten automatisch übernommen';
       }
-      if (typeof window.showToast === 'function') window.showToast(auto ? `${result.count} Fahrten automatisch übernommen` : `${result.count} Fahrten importiert`, 'ok');
+      if (typeof window.showToast === 'function') window.showToast(
+        result.storageV2Synced===true && !flightPending
+          ? `${result.count} Fahrten importiert`
+          : 'Fahrten lokal übernommen – offene Flug-/Speicherprüfung beachten',
+        result.storageV2Synced===true && !flightPending ? 'ok' : 'warn');
       if (typeof window.render === 'function') window.render();
       return true;
     } catch (error) {
@@ -13264,6 +13672,9 @@
   }
 
   function maybeAutoImportCleanPlan() {
+    // PRODUCT-FIRST: no automatic import, even when OCR reports zero issues.
+    return false;
+    /* Historical Morgen-Modus kept for source comparison, permanently unreachable in AP-01.01.
     if (state.previewOnlyAnalysis) return false;
     // A file/header date conflict must never silently enter Morgen-Modus,
     // even if the OCR data are otherwise clean. Manual review/import only.
@@ -13285,6 +13696,7 @@
     const generation = state.pipelineGeneration;
     void runCleanPlanAutoPipeline(generation);
     return true;
+    */
   }
 
   async function ensureAutoFlightService() {
@@ -16147,6 +16559,8 @@
 
   async function runAutomaticFlightCheck(options = {}) {
     if (!state.rides.length) return;
+    const ap01RunSignature = JSON.stringify(state.rides);
+    const ap01RunGeneration = state.pipelineGeneration;
     const status = $('importStatus');
     const button = $('copyFlightCheckBtn');
     const fallbackButton = $('copyFlightCheckFallbackBtn');
@@ -16172,6 +16586,8 @@
         }
       });
       if (expectedGeneration !== null && expectedGeneration !== state.pipelineGeneration) return { ok: false, stale: true, technicalFailureCount: 0 };
+      if (state.pipelineGeneration !== ap01RunGeneration || JSON.stringify(state.rides) !== ap01RunSignature)
+        return {ok:false,stale:true,reason:'edited_during_official_recheck'};
       const officialChecked = Array.isArray(officialSummary?.checked) ? officialSummary.checked : [];
       const officialDiagnostic = officialAirportDiagnosticSummary(officialSummary);
       try {
@@ -16203,6 +16619,8 @@
         location.protocol === 'file:' ||
         (location.protocol === 'https:' && location.hostname === 'appassets.androidplatform.net')
       );
+      // A native recheck must finish on the exact unchanged staged dataset.
+      // Results returned after user edits, date switches or a new analysis are stale.
       if (nativeOfficialOnly) {
         const secondSourceProbe = await runNativeSecondSourceBoardProbe(officialChecked, {
           onProgress: progress => {
@@ -16265,7 +16683,9 @@
           };
         } catch (_) {}
         const appliedAt = new Date().toISOString();
-        const applied = applyGeminiResultsToStagedPlan(dualSource.checked, appliedAt);
+        if (state.pipelineGeneration !== ap01RunGeneration || JSON.stringify(state.rides) !== ap01RunSignature)
+          return {ok:false,stale:true,reason:'edited_while_native_rechecking'};
+        const applied = applyGeminiResultsToStagedPlan(dualSource.checked, appliedAt, AP01_NATIVE_RECHECK_TOKEN);
         const airportConflictApplied = applyNativeAirportConflictWarningsToStagedPlan(unresolvedFlightRouteProbe, appliedAt);
         const openRideCount = unresolvedFlightRideCount();
         if (fallbackButton) fallbackButton.style.display = '';
@@ -16515,6 +16935,30 @@
     $('previewOnlyPlanBtn')?.addEventListener('click', () => { state.previewOnlyAnalysis = true; void analyze(); });
     $('previewFlightCheckBtn')?.addEventListener('click', () => { void runPreviewOnlyFlightCheck(); });
     $('importPlanBtn')?.addEventListener('click', importRides);
+    $('planPreviewBody')?.addEventListener('click', event => {
+      const btn=event.target?.closest?.('.ap01-edit-btn');
+      if (btn) ap01OpenEditor(btn.dataset.rideId);
+    });
+    $('ap01ReviewConfirm')?.addEventListener('change', event => {
+      state.ap01ReviewConfirmed=Boolean(event.target.checked);
+      render();
+    });
+    $('ap01EditorSave')?.addEventListener('click', ap01SaveEditor);
+    $('ap01EditorCancel')?.addEventListener('click', ap01RequestCloseEditor);
+    $('ap01KeepEditing')?.addEventListener('click', ap01KeepEditing);
+    $('ap01DiscardChanges')?.addEventListener('click', () => {
+      if (ap01EditorIsOpen()) ap01CloseEditor();
+    });
+    $('ap01SaveAndClose')?.addEventListener('click', () => {
+      if (ap01EditorIsOpen()) ap01SaveEditor(); // Invalid inputs keep both dialogs open.
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape' || !ap01EditorIsOpen()) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.ATMSAP01HandleBack();
+    }, true);
+    $('ap01ConflictRecord')?.addEventListener('click', ap01RecordConflictReview);
     $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
     $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
     if (drop) {
@@ -16561,6 +17005,15 @@
       runNativeSecondSourceSingleFallback, renderPreviewFlightDiagnostic
     } : {}),
     makePreviewFlightDiagnostic, readState: () => state
+  }); } catch (_) {}
+
+  // AP-01.01 hooks are strictly staging/test-only; no import or persistent mutation.
+  try { window.ATMSAP01Regression = Object.freeze({
+    validateDraft: ap01ValidateDraft, openEditor: ap01OpenEditor,
+    saveEditor: ap01SaveEditor, recordConflictReview: ap01RecordConflictReview,
+    importBlockers: ap01ImportBlockers, readState: () => state,
+    ...(window.__ATMS_AP01_REGRESSION__ === true ? {assessNativeProof:ap01AssessIndependentFlightRecheck,
+      contextKey:ap01FlightContextKey} : {})
   }); } catch (_) {}
 
   // P114.21 test hooks, no import/storage side effects from hook exposure.

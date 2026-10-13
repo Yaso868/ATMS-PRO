@@ -36,13 +36,13 @@ test('Wrong WhatsApp filename is superseded by proven dated image heading',()=>{
   assert.strictEqual(elements.planDateInput.value,'2026-10-09');
   assert.strictEqual(elements.planDateManualText.value,'09.10.2026');
 });
-test('All 34 early-to-morning departures remain on actual 09.10, not split to 08.10',()=>{
+test('Confirmed plantag without evening rides must not infer a next-day change for morning trips',()=>{
   const rides=Array.from({length:34},(_,i)=>({id:`T${i}`,time:i<21?'05:20':'07:25'}));
   const out=h.assignRideDates(rides);
   assert.strictEqual(out.length,34);
   assert(out.every(r=>r.date==='2026-10-09'));
-  assert.strictEqual(h.readState().dateInfo.candidateCount,21);
-  assert.strictEqual(h.readState().dateInfo.requiresConfirmation,true);
+  assert.strictEqual(h.readState().dateInfo.candidateCount,0);
+  assert.strictEqual(h.readState().dateInfo.requiresConfirmation,false);
 });
 test('A conflicting title/file date forbids morning-mode auto-import',()=>{
   assert.strictEqual(h.maybeAutoImportCleanPlan(),false);
@@ -65,7 +65,7 @@ test('Native date-picker edit invalidates stale preview and keeps original OCR b
   assert.strictEqual(h.readState().rides.length,0);
   assert.strictEqual(h.readState().issues.length,0);
   assert.strictEqual(elements.importPlanBtn.disabled,true);
-  assert(elements.importStatus.textContent.includes('keine Fahrten übernommen'));
+  assert(elements.importStatus.textContent.includes('Noch keine Planliste ausgewählt.'));
 });
 test('08.10 evening-to-01:35 keeps 01:35 unresolved until explicit next-day decision',()=>{
   assert(h.applyManualPlanDate('08.10.2026'));
