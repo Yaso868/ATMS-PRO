@@ -9,7 +9,7 @@ name: ATMS PRO Tesseract Integrity Audit (Manual Only)
   workflow_dispatch:
     inputs:
       bestaetigung:
-        description: 'Zum Start exakt RUN_HASH_AUDIT eingeben (kein APK/Import/Commit)'
+        description: 'RUN_HASH_AUDIT (12 OCR-Dateien) oder RUN_LICENSE_AUDIT (nur 2 Original-License-Texte)'
         type: string
         required: true
         default: 'NICHT_STARTEN'
@@ -61,6 +61,7 @@ jobs:
               ('@tesseract.js-data/deu', '1.0.0', '@tesseract.js-data/deu/-/deu-1.0.0.tgz', 'DEU_MODEL_SRI',
                ('4.0.0_best_int/deu.traineddata.gz',)),
           )
+          JS_LICENSE_PATHS = ('dist/tesseract.min.js.LICENSE.txt', 'dist/worker.min.js.LICENSE.txt')
           MAX_DOWNLOAD = 220 * 1024 * 1024
           MAX_UNPACKED = 500 * 1024 * 1024
           MAX_SINGLE = 160 * 1024 * 1024
@@ -129,14 +130,18 @@ jobs:
               return found
 
           def main():
-              if os.environ.get('ATMS_AUDIT_CONFIRM') != 'RUN_HASH_AUDIT':
+              confirmation = os.environ.get('ATMS_AUDIT_CONFIRM')
+              if confirmation not in ('RUN_HASH_AUDIT', 'RUN_LICENSE_AUDIT'):
                   raise ValueError('Missing deliberate manual audit confirmation')
+              license_only = confirmation == 'RUN_LICENSE_AUDIT'
               # Fail before any network request if even one SRI has not been independently pinned.
               pins = {key: expected_digest(os.environ.get(key, '')) for _, _, _, key, _ in PACKAGES}
               report = []
               verified_payloads = []
               extras = []
-              for name, version, path, key, required in PACKAGES:
+              license_material = []
+              # The license-only mode NEVER fetches or stages the other three OCR packages.
+              for name, version, path, key, required in (PACKAGES[:1] if license_only else PACKAGES):
                   # Name/version/tarball location fixed in source; no URL from server metadata executed.
                   registry_url = 'https://registry.npmjs.org/' + name.replace('/', '%2f') + '/' + version
                   metadata = json.loads(read_pinned_registry(registry_url, 2 * 1024 * 1024))
@@ -152,10 +157,13 @@ jobs:
                   actual = hashlib.sha512(tarblob).digest()
                   if actual != pins[key]:
                       raise ValueError('Downloaded tarball SHA-512 mismatch')
-                  found = safe_members(tarblob, required)
+                  required_for_extract = required + (JS_LICENSE_PATHS if license_only else ())
+                  found = safe_members(tarblob, required_for_extract)
                   package = json.loads(found['package.json'])
                   if package.get('name') != name or package.get('version') != version:
                       raise ValueError('Inside tarball package.json mismatch')
+                  if license_only:
+                      license_material = [(relpath, found[relpath]) for relpath in JS_LICENSE_PATHS]
                   files = []
                   for relpath in required:
                       data = found[relpath]
@@ -168,6 +176,50 @@ jobs:
                           extras.append((name, version, item, data))
                   report.append({'package':name,'version':version,'tarball_sha256':hashlib.sha256(tarblob).hexdigest(),
                                  'tarball_sha512_sri':registry_sri,'files':files})
+              if license_only:
+                  if len(report) != 1 or report[0]['package'] != 'tesseract.js' or len(license_material) != 2:
+                      raise ValueError('Missing verified original license texts')
+                  # Nothing from the two JS runtime files is written to the license artifact.
+                  stage = pathlib.Path(os.environ['RUNNER_TEMP']) / 'atms_tesseract_verified_licenses'
+                  if stage.exists():
+                      raise ValueError('Unclean license-only staging directory')
+                  stage.mkdir(parents=True)
+                  checksums = []
+                  license_manifest = []
+                  for relpath, data in license_material:
+                      relative = pathlib.PurePosixPath('tesseract.js', '5.1.1', relpath)
+                      target = stage.joinpath(*relative.parts)
+                      target.parent.mkdir(parents=True, exist_ok=True)
+                      with open(target, 'xb') as stream:
+                          stream.write(data)
+                      digest = hashlib.sha256(data).hexdigest()
+                      if not data or target.stat().st_size != len(data) or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                          raise ValueError('License original byte integrity mismatch')
+                      checksums.append(f'{digest}  {relative.as_posix()}')
+                      license_manifest.append({'path': relative.as_posix(), 'bytes': len(data), 'sha256': digest})
+                  (stage / 'SHA256SUMS.txt').write_text('\n'.join(checksums) + '\n', encoding='utf-8')
+                  (stage / 'MANIFEST_LICENSES.json').write_text(json.dumps({
+                      'purpose': 'Two upstream original JS license texts; NOT full third-party NOTICE approval',
+                      'mode': 'RUN_LICENSE_AUDIT',
+                      'package': 'tesseract.js', 'version': '5.1.1',
+                      'verified_tarball_sha512_sri': report[0]['tarball_sha512_sri'],
+                      'verified_tarball_sha256': report[0]['tarball_sha256'],
+                      'license_file_count': 2, 'files': license_manifest,
+                      'core_third_party_notices': 'OPEN - not collected or cleared by this audit',
+                  }, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+                  if len(list(stage.rglob('*.LICENSE.txt'))) != 2 or len(list(stage.rglob('*'))) != 7:
+                      # Explicit allowlist is safer than assuming contents from a package directory.
+                      raise ValueError('Unexpected license-only staging contents')
+                  print('ATMS TESSERACT LICENSE AUDIT: PASS 2/2; CORE NOTICES REMAIN OPEN')
+                  for item in license_manifest:
+                      print('LICENSE', item['path'], 'BYTES', item['bytes'], 'SHA256', item['sha256'])
+                  summary = os.environ.get('GITHUB_STEP_SUMMARY')
+                  if summary:
+                      with open(summary, 'a', encoding='utf-8') as dest:
+                          dest.write('## Original JS license texts: 2/2 verified\n\n')
+                          dest.write('From SHA-512-pinned Tesseract.js 5.1.1 tarball; no runtime files staged.\n\n')
+                          dest.write('**Core third-party notices remain OPEN; not a license clearance or production approval.**\n')
+                  return
               count = sum(len(p['files']) for p in report)
               if count != 12 or len(verified_payloads) != 12 or len(report) != 4:
                   raise ValueError('Wrong candidate file count')
@@ -247,6 +299,7 @@ jobs:
           ATMS_READONLY_AUDIT_PY
       # GitHub-hosted action: v7.0.1, immutable release commit. It runs only on successful audit.
       - name: Upload twelve verified Tesseract candidate files
+        if: ${{ inputs.bestaetigung == 'RUN_HASH_AUDIT' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ATMS_TESSERACT_OFFLINE_VERIFIED_RUN${{ github.run_number }}
@@ -256,3 +309,12 @@ jobs:
           compression-level: 0
           include-hidden-files: false
           overwrite: false
+      # Isolated license-only publication, impossible to publish the 12 OCR components in this mode.
+      - name: Upload two verified upstream JS license texts
+        if: ${{ inputs.bestaetigung == 'RUN_LICENSE_AUDIT' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ATMS_TESSERACT_JS_511_LICENSES_VERIFIED_RUN${{ github.run_number }}
+          path: ${{ runner.temp }}/atms_tesseract_verified_licenses/
+          if-no-files-found: error
+          retention-days: 7
