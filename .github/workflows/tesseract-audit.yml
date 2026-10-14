@@ -1,6 +1,8 @@
-# ATMS PRO - one-time manual creation authorized by user; DO NOT RUN WITHOUT SEPARATE APPROVAL
+# ATMS PRO - local preparation only; upload and execution require separate explicit approvals
+# Existing audit #1 had PASS 12/12, but archived candidate files were not preserved.
+# Proposed new run needs a separate user authorization and must re-check archives.
 # Four frozen tarball SHA-512-SRI anchors copied from independently published NPM lockfiles.
-# Real NPM archives, exact file set, 12 SHA-256 and GitHub runner execution are still NOT verified.
+# Audit #1 succeeded in GitHub Actions; new artifact materialization not yet tested.
 # Never bypass the existing patch installer. No code, APK or data mutation.
 name: ATMS PRO Tesseract Integrity Audit (Manual Only)
 'on':
@@ -31,7 +33,7 @@ jobs:
       ENG_MODEL_SRI: "sha512-mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg=="
       DEU_MODEL_SRI: "sha512-3ter1p2gFAiCd5CMC+PodZ9YY2UDomkKj+ytlKeeZqOUmhLx1SDnYPf5zog0g5MBbxYveW+8omI3PUflqHfZ4Q=="
     steps:
-      - name: Verify pinned Tesseract archives and list 12 file hashes
+      - name: Verify pinned Tesseract archives and stage 12 authenticated files
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +49,7 @@ jobs:
           import tarfile
           import urllib.request
 
-          # Audit-only: no shell execution, no installs, no checkout, no repo mutation.
+          # Audit-only: no downloaded code execution, no installs, no checkout, no repo mutation.
           # Frozen public lockfile SRI references; compare official NPM metadata and bytes on runner.
           PACKAGES = (
               ('tesseract.js', '5.1.1', 'tesseract.js/-/tesseract.js-5.1.1.tgz', 'TESSERACT_JS_SRI',
@@ -91,6 +93,8 @@ jobs:
               found = {}
               seen = set()
               total = 0
+              license_names = ('LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'LICENCE.md',
+                               'NOTICE', 'NOTICE.md', 'LICENSE-MIT', 'LICENSE-APACHE')
               with tarfile.open(fileobj=io.BytesIO(blob), mode='r|gz') as arc:
                   count = 0
                   for m in arc:
@@ -115,7 +119,7 @@ jobs:
                           if m.size > MAX_SINGLE or total > MAX_UNPACKED:
                               raise ValueError('Archive size threshold exceeded')
                           sub = m.name[len('package/'):]
-                          if sub in required or sub == 'package.json':
+                          if sub in required or sub == 'package.json' or sub in license_names:
                               raw = arc.extractfile(m).read(MAX_SINGLE + 1)
                               if len(raw) != m.size:
                                   raise ValueError('Truncated archive member')
@@ -130,6 +134,8 @@ jobs:
               # Fail before any network request if even one SRI has not been independently pinned.
               pins = {key: expected_digest(os.environ.get(key, '')) for _, _, _, key, _ in PACKAGES}
               report = []
+              verified_payloads = []
+              extras = []
               for name, version, path, key, required in PACKAGES:
                   # Name/version/tarball location fixed in source; no URL from server metadata executed.
                   registry_url = 'https://registry.npmjs.org/' + name.replace('/', '%2f') + '/' + version
@@ -154,17 +160,73 @@ jobs:
                   for relpath in required:
                       data = found[relpath]
                       files.append({'path':relpath,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+                      verified_payloads.append((name, version, relpath, data))
+                  # Retain package manifest and any top-level license notices if supplied.
+                  # Absence of such files is NOT proof that redistributor notices are complete.
+                  for item, data in found.items():
+                      if item == 'package.json' or item.startswith(('LICENSE', 'LICENCE', 'NOTICE')):
+                          extras.append((name, version, item, data))
                   report.append({'package':name,'version':version,'tarball_sha256':hashlib.sha256(tarblob).hexdigest(),
                                  'tarball_sha512_sri':registry_sri,'files':files})
               count = sum(len(p['files']) for p in report)
-              if count != 12:
+              if count != 12 or len(verified_payloads) != 12 or len(report) != 4:
                   raise ValueError('Wrong candidate file count')
+              # Stage only AFTER all four official archives passed metadata/SRI/content checks.
+              # Never install, execute, or copy these bytes into Android production assets.
+              stage = pathlib.Path(os.environ['RUNNER_TEMP']) / 'atms_tesseract_verified'
+              if stage.exists():
+                  raise ValueError('Unclean audit staging directory')
+              stage.mkdir(parents=True)
+              def stage_file(package, version, relpath, data):
+                  # Generate path strictly from the hardcoded PACKAGES list, never archive paths.
+                  key = package.replace('@', '').replace('/', '__')
+                  relative = pathlib.PurePosixPath(key, version, relpath)
+                  if '..' in relative.parts or relative.is_absolute():
+                      raise ValueError('Unexpected staged path')
+                  target = stage.joinpath(*relative.parts)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  with open(target, 'xb') as outf:
+                      outf.write(data)
+                  if hashlib.sha256(target.read_bytes()).digest() != hashlib.sha256(data).digest():
+                      raise ValueError('Write integrity mismatch')
+                  return relative.as_posix()
+              checksums = []
+              manifest_files = []
+              for name, version, relpath, data in verified_payloads:
+                  newpath = stage_file(name, version, relpath, data)
+                  sha = hashlib.sha256(data).hexdigest()
+                  checksums.append(f'{sha}  {newpath}')
+                  manifest_files.append({'package':name,'version':version,'path':newpath,
+                                         'bytes':len(data),'sha256':sha})
+              for name, version, relpath, data in extras:
+                  stage_file(name, version, relpath, data)
+              (stage / 'SHA256SUMS.txt').write_text('\n'.join(sorted(checksums))+'\n', encoding='utf-8')
+              (stage / 'MANIFEST.json').write_text(json.dumps({
+                  'purpose':'verified package files only; not an APK or offline OCR proof',
+                  'sha512_verified_tarballs':report,
+                  'file_count':12,'files':manifest_files}, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+              (stage / 'README_NOT_PRODUCTION.txt').write_text(
+                  'ATMS PRO SHA-512 VERIFIED TESSERACT CANDIDATE FILES\n'
+                  'These files are audit artifacts, NOT production assets or an APK.\n'
+                  'The 12 SHA-256 sums in SHA256SUMS.txt must be rechecked after download.\n'
+                  'Bundled package.json and available upstream license/notice texts are included.\n'
+                  'License completeness and correct offline core/worker/model loading need review.\n'
+                  'Golden73, Storage V2, ML Kit and offline operation were NOT tested.\n',
+                  encoding='utf-8')
+              # Assert staged manifest hashes before allowing upload-artifact action to run.
+              for item in manifest_files:
+                  file_path = stage.joinpath(*pathlib.PurePosixPath(item['path']).parts)
+                  if file_path.stat().st_size != item['bytes'] or hashlib.sha256(file_path.read_bytes()).hexdigest() != item['sha256']:
+                      raise ValueError('Staged file verification failed')
+              if len(manifest_files) != 12 or len(list(stage.rglob('*.traineddata.gz'))) != 2:
+                  raise ValueError('Staged package count mismatch')
               print('ATMS TESSERACT PACKAGE HASH AUDIT: PASS 12/12 (not an APK or OCR test)')
+              print('ATMS VERIFIED ARTIFACT STAGING READY: 12/12')
               for p in report:
                   print('PACKAGE',p['package'],p['version'],'TARBALL_SHA256',p['tarball_sha256'])
                   for f in p['files']:
                       print('FILE', p['package'], f['path'], 'BYTES',f['bytes'],'SHA256',f['sha256'])
-              # The job summary is private to this GitHub Actions run; no plan images included.
+              # Public-repository job summaries are publicly readable; no images or secrets included.
               summary = os.environ.get('GITHUB_STEP_SUMMARY')
               if summary:
                   with open(summary, 'a', encoding='utf8') as out:
@@ -183,3 +245,14 @@ jobs:
               print('AUDIT FAIL (no partial verification accepted):', type(exc).__name__, str(exc), file=sys.stderr)
               sys.exit(1)
           ATMS_READONLY_AUDIT_PY
+      # GitHub-hosted action: v7.0.1, immutable release commit. It runs only on successful audit.
+      - name: Upload twelve verified Tesseract candidate files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ATMS_TESSERACT_OFFLINE_VERIFIED_RUN${{ github.run_number }}
+          path: ${{ runner.temp }}/atms_tesseract_verified/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          include-hidden-files: false
+          overwrite: false
