@@ -879,6 +879,50 @@
     return found.size === 1 ? [...found][0] : '';
   }
 
+  // H24 LOCAL REVIEW ONLY: read only ORIGINAL primary OCR word geometry above
+  // the recognized column-header row, before the H19 10-column import veto.
+  // A date bbox may TOUCH the header line by <=2px while its CENTER remains
+  // above that line (WA0024). This is an OCR CANDIDATE, never verified date.
+  function imageHeaderDateReviewEvidence(meta) {
+    const top=Number(meta?.headerLineMeta?.y0);
+    if(meta?.safeHeaderDetected!==true || !Number.isFinite(top)||top<=4||
+       !Array.isArray(meta.rawOcrWords)||meta.rawOcrWords.length>6000)return null;
+    const boxes=meta.rawOcrWords.filter(w=>
+      typeof w?.text==='string'&&w.text.length<=120&&
+      [w.x0,w.x1,w.y0,w.y1].every(v=>typeof v==='number'&&Number.isFinite(v))&&
+      w.x0>=0&&w.x1>w.x0&&w.y0>=0&&w.y1>w.y0&&
+      w.y1<=top+2&&(w.y0+w.y1)/2<top);
+    const candidates=[];
+    for(const anchor of boxes){
+      if(!/^liste\b/i.test(anchor.text.trim())||anchor.y1>top)continue;
+      const center=(anchor.y0+anchor.y1)/2;
+      const line=boxes.filter(w=>Math.abs((w.y0+w.y1)/2-center)<=
+           Math.max(9,(anchor.y1-anchor.y0)*0.85)&&w.x0>=anchor.x0)
+        .sort((a,b)=>a.x0-b.x0);
+      const joined=line.map(w=>w.text.trim()).join(' ');
+      const compact=line.map(w=>w.text.trim()).join('');
+      const dates=[...new Set([...extractPlanDateCandidates(joined),
+                                     ...extractPlanDateCandidates(compact)])];
+      // Reject ambiguities and date-only tokens without a physical LISTE anchor.
+      if(dates.length===1&&line.length>=2&&line.length<=12){
+        const dateBoxes=line.filter(w=>extractPlanDateCandidates(w.text).includes(dates[0]));
+        // Multi-token dates need the same line; the single date OCR box is
+        // preferred for strict provenance (never invent a bbox).
+        if(dateBoxes.length!==1||dateBoxes[0].x0<=anchor.x0)continue;
+        const dateBox=dateBoxes[0];
+        candidates.push({date:dates[0],anchorY0:anchor.y0,anchorY1:anchor.y1,
+          dateY0:dateBox.y0,dateY1:dateBox.y1,headerTop:top});
+      }
+    }
+    if(candidates.length!==1)return null;
+    const c=candidates[0];
+    return Object.freeze({version:'H24_ORIGINAL_HEADER_OCR_CANDIDATE',
+      status:'header_ocr_candidate_unverified',date:c.date,
+      anchorY0:c.anchorY0,anchorY1:c.anchorY1,
+      dateY0:c.dateY0,dateY1:c.dateY1,headerTop:c.headerTop,
+      primaryImageWords:true,dateVerified:false,mayImport:false,canPersist:false});
+  }
+
   // P114.21: single source of truth for selected file + current Plantag.
   // This is a file-selection prompt, never overwrites the post-OCR summary.
   function updateSelectedPlanFileStatus() {
@@ -917,6 +961,19 @@
     if (status) status.textContent = `Aktiver Plantag: ${formatPlanDate(iso)} · manuell bestätigt (Vorrang)`;
     if ($('planDateManualText')) $('planDateManualText').value = formatPlanDate(iso);
     if (!state.rides.length) updateSelectedPlanFileStatus();
+    // H23: a blocked 14+1 review contains NO state.rides. The old invalidation
+    // depended on rides.length and silently kept manual cell confirmations
+    // after a Plantag change. Invalidate the entire transient source context.
+    if(changed && state.h13BlockedRowReviewPending===true){
+      try { window.ATMSH13Review?.clear(); } catch (_) {}
+      state.pipelineGeneration+=1;
+      state.dateInfo={};state.dateBoundaryDecision='';
+      state.ap01ReviewConfirmed=false;
+      if($('importPlanBtn'))$('importPlanBtn').disabled=true;
+      if($('importStatus'))$('importStatus').textContent=
+        'Plantag geändert – bisherige Zellbestätigungen verworfen. Originalbild erneut analysieren. Import gesperrt.';
+      // Keep the VETO true; only a fresh source analysis can create new evidence.
+    }
     if (changed && state.rides.length) {
       // Invalidate old OCR/flight review and import authorization instead of
       // accidentally dropping evidence-backed blocking issues via validate().
@@ -1829,7 +1886,9 @@
       price: findPriceValue(row, mapping, options),
       priceRawSource: options.imageOcr ? cellText(valueAt(row, mapping, 'price')) : '',
       priceSeparatorUncertain: Boolean(options.imageOcr && imagePriceHasLostSeparator(valueAt(row, mapping, 'price'))),
-      priceRequired: !(options.imageOcr && mapping.price === undefined),
+      // PRICE-GATE: an unrecognized column does NOT prove that the fare is optional.
+      // Keep a genuinely free ride possible only via an explicit 0.00 EUR review.
+      priceRequired: true,
       priceMissingFromSource: Boolean(options.imageOcr && mapping.price === undefined),
       sourceImageOcr: Boolean(options.imageOcr),
       timeBorderAutoCorrected,
@@ -1939,6 +1998,24 @@
       cellText(ride.flightNumber).toUpperCase(),
       cleanKey(ride.vehicle), cellText(ride.persons)
     ].join('|');
+  }
+
+  // PRICE-GATE P0: one deterministic decision for the preview AND the import entrypoint.
+  // This only checks staged values; it never guesses a price or accesses storage.
+  function priceReviewStatus(ride) {
+    const price = Number(ride?.price);
+    const key = String(ride?.id || ride?.sourceRow || '');
+    const decision = state.priceDecisions[key] || '';
+    const missing = !Number.isFinite(price) || price <= 0;
+    const noSourceColumn = ride?.priceMissingFromSource === true;
+    const suspicious = !missing && (pricePlausibility(price).suspicious
+      || ride?.priceSeparatorUncertain === true || noSourceColumn);
+    // Zero may ONLY be accepted via its own explicit 0-EUR confirmation.
+    const approved = missing
+      ? price === 0 && decision === 'zero'
+      : (!suspicious || (['manual', 'suggestion', 'original'].includes(decision)
+          && !(noSourceColumn && decision === 'original')));
+    return { pending: !approved, missing, noSourceColumn, price, decision };
   }
 
   function validate(rides) {
@@ -2328,8 +2405,8 @@
       if (ride.persons < 0) issues.push({ level: 'warning', row, text: 'Personenzahl ist ungültig' });
 
       const priceCheck = pricePlausibility(ride.price);
-      const priceDecision = state.priceDecisions[String(ride.id || row)] || '';
-      if (ride.priceRequired !== false && (priceCheck.suspicious || ride.priceSeparatorUncertain) && !priceDecision) {
+      const priceReview = priceReviewStatus(ride);
+      if (priceReview.pending) {
         const shownPrice = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price);
         const suggestionText = priceCheck.suggestion !== null
           ? ` Möglicher OCR-/Dezimalfehler: eventuell ${new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(priceCheck.suggestion)}.`
@@ -2337,16 +2414,18 @@
         issues.push({
           level: 'warning',
           kind: 'price',
-          missingPrice: Boolean(priceCheck.missing),
+          missingPrice: Boolean(priceReview.missing || priceReview.noSourceColumn),
           row,
           rideId: String(ride.id || row),
           originalPrice: Number(ride.price) || 0,
           suggestedPrice: priceCheck.suggestion,
-          text: priceCheck.missing
-            ? (ride.priceSeparatorUncertain
-              ? `Preiszelle „${cellText(ride.priceRawSource)}“ hat kein erkennbares Dezimalzeichen – Originalpreis manuell bestätigen; keine automatische Schätzung.`
-              : 'Preis fehlt oder wurde beim OCR nicht sicher erkannt – bitte mit der Original-Planliste prüfen. Keine automatische Preiskorrektur.')
-            : `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
+          text: priceReview.noSourceColumn
+            ? 'Preisspalte konnte nicht sicher zugeordnet werden – Original-Planliste prüfen und Preis ausdrücklich eintragen oder 0,00 € bestätigen. Keine automatische Schätzung.'
+            : priceReview.missing
+              ? (ride.priceSeparatorUncertain
+                ? `Preiszelle „${cellText(ride.priceRawSource)}“ hat kein erkennbares Dezimalzeichen – Originalpreis manuell bestätigen; keine automatische Schätzung.`
+                : 'Preis fehlt oder wurde beim OCR nicht sicher erkannt – bitte mit der Original-Planliste prüfen. Keine automatische Preiskorrektur.')
+              : `Preis ${shownPrice} ist auffällig – bitte mit der Original-Planliste prüfen.${suggestionText} Keine automatische Preiskorrektur.`
         });
       }
 
@@ -3902,6 +3981,278 @@
     return augmented;
   }
 
+  // H8 LOCAL ONLY: pixel grid evidence; no write to productive matrix or ride storage.
+  // H8 local only; image geometry cannot verify semantic text or approve imports.
+  function h8HeaderGrid({data,width,height,channels=4}) {
+    if (!data || !Number.isInteger(width) || !Number.isInteger(height) || width<500 || height<100 || ![3,4].includes(channels) || data.length!==width*height*channels)
+      return {accepted:false,reason:'invalid_image'};
+    const scan=Math.min(height,155), midCount=new Uint16Array(scan);
+    for(let y=0;y<scan;y++) for(let x=0;x<width;x++){
+      const i=(y*width+x)*channels, r=data[i], g=data[i+1],b=data[i+2];
+      const lum=(r+g+b)/3, chrom=Math.max(r,g,b)-Math.min(r,g,b);
+      if(chrom<16 && lum>100 && lum<240) midCount[y]++;
+    }
+    const runs=[];let current=[];
+    for(let y=0;y<scan;y++){
+      if(midCount[y]/width>.52) current.push(y);
+      else if(current.length){ runs.push(current);current=[]; }
+    }
+    if(current.length) runs.push(current);
+    const selected=runs.filter(r=>r.length>=19&&r.length<=55&&r[0]<=85).sort((a,b)=>b.length-a.length)[0];
+    if(!selected) return {accepted:false,reason:'header_band_unavailable'};
+    const lo=selected[0]+3, hi=selected[selected.length-1]-4;
+    if(hi-lo<12) return {accepted:false,reason:'header_band_short'};
+    const topCount=new Uint16Array(width), allCount=new Uint16Array(width), topRows=Math.max(3,Math.floor((hi-lo)/4));
+    for(let y=lo;y<hi;y++) for(let x=0;x<width;x++){
+      const i=(y*width+x)*channels,r=data[i],g=data[i+1],b=data[i+2],lum=(r+g+b)/3,chrom=Math.max(r,g,b)-Math.min(r,g,b);
+      if(lum<160 && chrom<45){ allCount[x]++;if(y-lo<topRows) topCount[x]++; }
+    }
+    const good=[];
+    for(let x=0;x<width;x++) if(topCount[x]/topRows>=.6 && allCount[x]/(hi-lo)>=.69)good.push(x);
+    const clusters=[];let cluster=[];
+    for(const x of good){ if(cluster.length && x>cluster[cluster.length-1]+1){clusters.push(cluster);cluster=[];} cluster.push(x); }
+    if(cluster.length)clusters.push(cluster);
+    const boundaries=clusters.map(c=>{
+      const mean=c.reduce((a,b)=>a+b,0)/c.length;
+      return c.reduce((best,x)=>{
+        const s=allCount[x]/(hi-lo)+topCount[x]/topRows;
+        const prev=allCount[best]/(hi-lo)+topCount[best]/topRows;
+        return s>prev || (s===prev && Math.abs(x-mean)<Math.abs(best-mean)) ? x:best;
+      },c[0]);
+    });
+    if(boundaries.length!==14)return {accepted:false,reason:'ambiguous_header_separator_count',found:boundaries.length};
+    if(boundaries[0]>2||boundaries[13]<width-3)return {accepted:false,reason:'outer_separator_invalid'};
+    if(boundaries.slice(1).some((x,i)=>x-boundaries[i]<34))return {accepted:false,reason:'narrow_column'};
+    return {accepted:true,boundaries,headerBand:[selected[0],selected[selected.length-1]],pixelEvidenceOnly:true};
+  }
+  function h8BodyGrid(input,header){
+    if(!header || !header.accepted)return {accepted:false,reason:'header_not_accepted'};
+    const {data,width,height,channels=4}=input;
+    const b=header.boundaries||[];
+    if(b.length!==14||height<header.headerBand[1]+95)return {accepted:false,reason:'insufficient_body_geometry'};
+    const y0=header.headerBand[1]+7,y1=height-4;
+    if(y1-y0<80)return {accepted:false,reason:'insufficient_body_rows'};
+    const getLum=(x,y)=>{const i=(y*width+x)*channels;return .299*data[i]+.587*data[i+1]+.114*data[i+2];};
+    const median3=(a,b,c)=>a+b+c-Math.min(a,b,c)-Math.max(a,b,c);
+    let supported=0;const fractions=[];
+    for(const x of b.slice(1,-1)){
+      if(x<9||x>width-9)return {accepted:false,reason:'separator_outside_image'};
+      let hits=0;
+      for(let y=y0;y<y1;y++){
+        const left=median3(getLum(x-8,y),getLum(x-7,y),getLum(x-6,y));
+        const right=median3(getLum(x+5,y),getLum(x+6,y),getLum(x+7,y));
+        const center=Math.min(getLum(x-1,y),getLum(x,y),getLum(x+1,y));
+        if((left+right)*.5-center>18)hits++;
+      }
+      const fraction=hits/(y1-y0);fractions.push(fraction);if(fraction>=.65)supported++;
+    }
+    return {accepted:supported>=10,supportedDividers:supported,testedDividers:12,reason:supported>=10?'':'header_body_grid_inconsistent',pixelEvidenceOnly:true,noRideApproval:true};
+  }
+  function h8GridEvidence(input){
+    const header=h8HeaderGrid(input);
+    const body=h8BodyGrid(input,header);
+    return {accepted:!!(header.accepted&&body.accepted),boundaries:header.accepted?header.boundaries:null,header,body,noRideApproval:true};
+  }
+
+  // H9 LOCAL DIAGNOSTIC ONLY. Never normalize ride data, flight IDs or companies.
+  // Only an edge-position table rule is ignored for A/B comparison; interior
+  // punctuation remains meaningful. The result is NOT independent OCR evidence.
+  function h9EdgeRuleComparisonValue(value) {
+    return cellText(value)
+      .replace(/^\s*[|¦│]+\s*/gu, '')
+      .replace(/\s*[|¦│]+\s*$/gu, '')
+      .trim().replace(/\s+/gu, ' ');
+  }
+
+  // H10 read-only full-color horizontal geometry evidence. No row insertion.
+// READ-ONLY / fail-closed. RGB image pixel evidence; this module never emits rides or inserts rows.
+// User original pictures and OCR texts must not be bundled with this module.
+function medianSorted(a) { const b=[...a].sort((x,y)=>x-y);return b.length? (b[Math.floor((b.length-1)/2)]+b[Math.floor(b.length/2)])/2:NaN; }
+function h10HorizontalContrastGrid(img,hints={}) {
+  const reject=(reason,extras={})=>({accepted:false,reason,lines:[],bands:[],...extras});
+  const {width:w,height:h,channels:ch,data}=img||{};
+  if(!Number.isInteger(w)||!Number.isInteger(h)||w<250||h<110||![3,4].includes(ch)||!data||data.length<w*h*ch) return reject('invalid_pixels');
+  const headerCy=Number(hints.headerCy),headerEnd=Number(hints.headerEnd);
+  if(!Number.isFinite(headerCy)||!Number.isFinite(headerEnd)||headerCy<8||headerEnd>=h) return reject('header_not_proven');
+  const rowCenters=Array.isArray(hints.rowCenters)?hints.rowCenters.filter(Number.isFinite).sort((a,b)=>a-b):[];
+  const adjacentGaps=rowCenters.slice(1).map((a,i)=>a-rowCenters[i]).filter(v=>v>=12&&v<=h*.1);
+  const hintGap=medianSorted(adjacentGaps);
+  if(!Number.isFinite(hintGap)||hintGap<12||hintGap>h*.15) return reject('ocr_row_pitch_unavailable');
+  // Pixel sampling offset derives only from the median *observed* OCR row pitch.
+  const off=Math.max(2,Math.round(hintGap*.13));
+  const sampleStep=Math.max(3,Math.round(w/300));
+  const x0=Math.floor(w*.06), x1=Math.ceil(w*.96), sampled=Math.ceil((x1-x0)/sampleStep);
+  if(sampled<140) return reject('insufficient_width');
+  const candidates=[];
+  for(let y=Math.max(off,Math.floor(headerCy-hintGap*.9));y<h-off;y++) {
+    const values=[]; let positive=0;
+    for(let x=x0;x<x1;x+=sampleStep){
+      const i=(y*w+x)*ch,ip=((y-off)*w+x)*ch,iq=((y+off)*w+x)*ch;
+      const c=(data[i]+data[i+1]+data[i+2])/3;
+      const a=(data[ip]+data[ip+1]+data[ip+2])/3;
+      const b=(data[iq]+data[iq+1]+data[iq+2])/3;
+      const dip=(a+b)*.5-c;
+      values.push(dip);
+      if(dip>8)positive++;
+    }
+    const med=medianSorted(values);
+    if(med>12 && positive/values.length>.73) candidates.push({y,med});
+  }
+  if(candidates.length<4) return reject('too_few_line_candidates');
+  const clusters=[];
+  candidates.forEach(point=>{
+    const last=clusters[clusters.length-1];
+    if(!last||point.y>last[last.length-1].y+2) clusters.push([point]); else last.push(point);
+  });
+  const lines=clusters.map(cluster=>cluster.slice().sort((a,b)=>b.med-a.med||a.y-b.y)[0].y).sort((a,b)=>a-b);
+  // The header OCR box may spill into the first data row. In that narrow case
+  // locate the actual header baseline using an OBSERVED raster line and the
+  // independently measured first OCR data-row center. Never infer a new line.
+  let close=lines.filter(y=>Math.abs(y-headerEnd)<=Math.max(3,hintGap*.29) && y>headerCy+hintGap*.20 && y<headerCy+hintGap*.80);
+  if(close.length!==1) {
+    const firstDataCy=rowCenters[0];
+    const headerOverlapsFirstData=Number.isFinite(firstDataCy) &&
+      headerEnd>firstDataCy && headerEnd-firstDataCy<=hintGap*.60;
+    const predictedTop=firstDataCy-hintGap*.5;
+    const physicalCandidates=lines.filter(y=>
+      Math.abs(y-predictedTop)<=Math.max(3,hintGap*.22) &&
+      y>headerCy+hintGap*.16 && y<headerCy+hintGap*.72 &&
+      firstDataCy-y>hintGap*.25 && firstDataCy-y<hintGap*.75 &&
+      headerEnd-y>0 && headerEnd-y<=hintGap*1.05);
+    if(!headerOverlapsFirstData||physicalCandidates.length!==1)
+      return reject('header_bottom_not_unique',{lineCount:lines.length});
+    close=physicalCandidates;
+  }
+  const first=close[0], gridLines=lines.filter(y=>y>=first);
+  const gaps=gridLines.slice(1).map((y,i)=>y-gridLines[i]);
+  if(gaps.length<2||gaps.length>60) return reject('implausible_rule_count',{lineCount:gridLines.length});
+  const pitch=medianSorted(gaps);
+  if(pitch<16||pitch>h*.25||Math.abs(pitch-hintGap)>Math.max(4,hintGap*.18)) return reject('pitch_mismatch',{lineCount:gridLines.length});
+  // One missing or fake rule is NOT interpolated: the whole candidate fails.
+  if(gaps.some(g=>Math.abs(g-pitch)>Math.max(2,pitch*.10))) return reject('irregular_physical_grid',{lineCount:gridLines.length});
+  // A sustained one-way 3px body displacement is not a globally stable grid.
+  // A single locally offset line with compensating next/previous gap is allowed.
+  const phaseShift=Math.max(2.4,pitch*.08);
+  if(gaps.some((g,i)=>g>pitch+phaseShift &&
+      !gaps.slice(Math.max(0,i-2),Math.min(gaps.length,i+3)).some(other=>other<pitch-phaseShift)))
+    return reject('uncompensated_grid_phase_shift',{lineCount:gridLines.length});
+  const bands=gridLines.slice(1).map((stop,i)=>({y0:gridLines[i],y1:stop,center:(gridLines[i]+stop)/2,fullyBounded:true}));
+  // An OCR-bearing final row cut at image bottom can be a candidate only, never an approved full band.
+  const remaining=h-gridLines[gridLines.length-1];
+  const trailingOpen=remaining>pitch*.6&&remaining<pitch*1.24;
+  if(remaining>pitch*1.24) return reject('unbounded_tail_gap',{lineCount:gridLines.length});
+  return {accepted:true,reason:'geometry_only',lines:gridLines,bands,pitch,trailingOpen,
+    openTail:trailingOpen?{y0:gridLines[gridLines.length-1],y1:h,fullyBounded:false}:null,
+    noRideApproval:true,originalRowsUnchanged:true};
+}
+// Matches OCR row geometry against actual pixel-bounded physical bands.
+// Emits ONLY aggregate correspondence. It cannot create records, text, or imports.
+function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
+ const reject=reason=>({accepted:false,reason,noRideApproval:true});
+ if(!grid?.accepted||!Array.isArray(rowCenters)||!Number.isFinite(scaleY)||scaleY<=0) return reject('grid_or_rows_unavailable');
+ const bands=grid.bands.concat(grid.openTail?[{...grid.openTail,center:(grid.openTail.y0+grid.openTail.y1)/2}]:[]);
+ const matched=new Set(),duplicates=[],unmapped=[];
+ for(let i=0;i<rowCenters.length;i++) {
+   const cy=Number(rowCenters[i])*scaleY;
+   if(!Number.isFinite(cy)) return reject('unmeasured_ocr_row');
+   let closest=-1,delta=Infinity;
+   for(let j=0;j<bands.length;j++) {
+     const dist=Math.abs(cy-bands[j].center);
+     if(dist<delta){delta=dist;closest=j;}
+   }
+   if(delta>grid.pitch*.34){unmapped.push(i);continue;}
+   if(matched.has(closest))duplicates.push(i);
+   matched.add(closest);
+ }
+ if(duplicates.length||unmapped.length) return {accepted:false,reason:'row_collision_or_unmapped',duplicateCount:duplicates.length,unmappedCount:unmapped.length,noRideApproval:true};
+ const uncovered=bands.map((b,j)=>({j,fullyBounded:b.fullyBounded})).filter(b=>!matched.has(b.j));
+ return {accepted:true,reason:'row_geometry_only',sourceRows:rowCenters.length,
+   physicalBandCandidates:bands.length,fullyBoundedUnmatched:uncovered.filter(b=>b.fullyBounded).length,
+   unboundedUnmatched:uncovered.filter(b=>!b.fullyBounded).length,unmatchedBandIndices:uncovered.map(b=>b.j),
+   noRideApproval:true,noMatrixMutation:true};
+}
+
+    // H10 LOCAL FAIL-CLOSED CHECK: evidence can only block incomplete original
+  // tables, never fabricate rows or authorize an imported ride.
+  function h10RequireCompleteGridRows(matrix) {
+    const evidence = matrix?._atmsImageMeta?.h10RowIntegrityShadow;
+    if (!evidence?.accepted) return matrix; // Existing V6 safety gates still apply.
+    const bounded = evidence.fullyBoundedUnmatched;
+    const unbounded = evidence.unboundedUnmatched;
+    // A negative/invalid count must never cancel a real missing row.
+    if (!Number.isSafeInteger(bounded) || bounded < 0 ||
+        !Number.isSafeInteger(unbounded) || unbounded < 0)
+      throw new Error('H10 Tabellenzeilenpruefung ungueltig. Kein Import.');
+    const missing = bounded + unbounded;
+    if (!Number.isSafeInteger(missing)) throw new Error('H10 Tabellenzeilenpruefung ungueltig. Kein Import.');
+    if (missing > 0) {
+      // H12 LOCAL SAFETY: describe an unbounded physical candidate distinctly.
+      // No guessed OCR cell values, no ride creation, no change to the existing block.
+      const suffix = unbounded > 0
+        ? ` Offener unterer Bildrand: ${unbounded} nicht zugeordnete(r) Zeilenkandidat(en); Zellpruefung erforderlich.`
+        : '';
+      const issue = new Error('H10 Bildraster zeigt nicht erkannte Tabellenzeilen. Kein unvollstaendiger Planlistenimport.' + suffix);
+      issue.atmsRowIntegrityReview = Object.freeze({
+        version: 'H12_LOCAL_REVIEW_BLOCK',
+        boundedMissing: bounded,
+        openTailMissing: unbounded,
+        requiresExplicitReview: true,
+        mayImport: false,
+        verifiedCellValues: 0,
+        // H14 local-only: transient raw OCR matrix for a blocked review. The
+        // images/rows are never placed into diagnostics, storage, or import
+        // state. The source OCR strings are NOT verified rides or corrections.
+        // Any incomplete or malformed matrix yields no row preview at all.
+        reviewRows: unbounded === 1 && bounded === 0 &&
+          Array.isArray(matrix) && matrix.length > 1 && matrix.length <= 101 &&
+          matrix.every(row => Array.isArray(row) && row.length === 13 &&
+            row.every(cell => typeof cell === 'string' && cell.length <= 300))
+          ? Object.freeze(matrix.slice(1).map(row => Object.freeze(row.slice()))) : null,
+        // Verified pixel-only bounds, if available. Never call it a ride.
+        reviewGeometry: unbounded === 1 ? (evidence.reviewGeometry || null) : null,
+        // Candidate-only OCR bbox -> original pixel band relationship. Not proof
+        // of source semantics, accurate text, driver, ride or import approval.
+        reviewBandCandidates: unbounded === 1 && bounded === 0
+          ? (evidence.reviewBandCandidates || null) : null,
+        // H18: original OCR row-meta ambiguity, diagnostic only. Never grants import.
+        reviewRowMetaAudit: unbounded === 1 && bounded === 0
+          ? (evidence.reviewRowMetaAudit || null) : null,
+        // H26: source-only evidence for bounded missing and synthetic OCR rows;
+        // strictly diagnostic, no guessed ride texts or new source rows.
+        reviewMissingBands: evidence.reviewMissingBands || null,
+        reviewSourceCells: evidence.reviewSourceCells || null
+      });
+      throw issue;
+    }
+    return matrix;
+  }
+
+  function h9ShadowCellDiffStats(primary, shadow) {
+    if (!Array.isArray(primary) || !Array.isArray(shadow) ||
+        primary.length !== shadow.length || !primary.length ||
+        primary[0]?.length !== shadow[0]?.length) return {comparable:false};
+    const result = {comparable:true, rawChangedCells:0, edgeRuleOnlyCandidateCells:0,
+      contentDifferentCells:0, rawBlankToValue:0, rawValueToBlank:0,
+      candidateClassificationOnly:true, noRideApproval:true};
+    for (let i=1; i<primary.length; i++) {
+      if (!Array.isArray(primary[i]) || !Array.isArray(shadow[i]) ||
+          primary[i].length !== primary[0].length || shadow[i].length !== primary[0].length)
+        return {comparable:false};
+      for (let j=0; j<primary[0].length; j++) {
+        const oldCell = cellText(primary[i][j]);
+        const newCell = cellText(shadow[i][j]);
+        if (oldCell === newCell) continue;
+        result.rawChangedCells++;
+        if (!oldCell && newCell) result.rawBlankToValue++;
+        if (oldCell && !newCell) result.rawValueToBlank++;
+        if (h9EdgeRuleComparisonValue(oldCell) === h9EdgeRuleComparisonValue(newCell))
+          result.edgeRuleOnlyCandidateCells++;
+        else result.contentDifferentCells++;
+      }
+    }
+    return result;
+  }
+
   function imageWordsToMatrix(words, width, options = {}) {
     const forceRowAlignedRideTime = Boolean(options?.forceRowAlignedRideTime);
     const lines = groupOcrLines(words);
@@ -4008,7 +4359,15 @@
       ? anchorsToBoundaries(completed.anchors, width)
       : { sorted: headerlessLayout.anchors, boundaries: headerlessLayout.boundaries };
     const anchors = layout.sorted;
-    const boundaries = layout.boundaries;
+    // H8 uses alternative boundaries ONLY in the isolated shadow replay.
+    // Normal import and H4/H5 recovery always retain the existing boundaries.
+    const tentativeGrid = options?.h8ReadOnlyShadow && Array.isArray(options?.h8GridBoundaries)
+      ? options.h8GridBoundaries : null;
+    const h8GridAllowed = Boolean(hasSafeHeader && !headerlessLayout &&
+      anchors.length === 13 && tentativeGrid?.length === anchors.length + 1 &&
+      tentativeGrid.every((x,i) => Number.isFinite(x) && x >= 0 && x <= width &&
+        (i === 0 || x > tentativeGrid[i - 1] + 2)));
+    const boundaries = h8GridAllowed ? tentativeGrid.slice() : layout.boundaries;
     const semantic = imageSemanticColumns(anchors);
     const headerRow = anchors.map(anchor => anchor.label);
     const rows = [headerRow];
@@ -4697,6 +5056,70 @@
     return out;
   }
 
+  // H4 (lokaler Kandidat, nicht deployt): ein OCR-Zeilen-Kandidat darf nur
+  // mit nachweisbaren Pflichtzellen als wiederhergestellt gelten.
+  // Kein Fahrer-Raten: die Fahrerzelle darf tatsaechlich leer sein.
+  function syntheticRowHasRequiredCore(row, semantic) {
+    if (!Array.isArray(row) || !semantic) return false;
+    const required = ['rideTime', 'pickup', 'destination', 'vehicle', 'persons'];
+    const indices = required.map(field => semantic[field]);
+    if (indices.some(index => !Number.isInteger(index) || index < 0 || index >= row.length)) return false;
+    if (new Set(indices).size !== indices.length) return false;
+
+    const clock = cellText(row[semantic.rideTime]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
+    const clockBoundary = clockBoundaryNoiseInfo(clock);
+    const normalizedClock = clockBoundary?.value || (/^\d{3,4}$/.test(clock)
+      ? `${clock.padStart(4, '0').slice(0, 2)}:${clock.padStart(4, '0').slice(2)}`
+      : clock.replace('.', ':'));
+    // Only known table-rule glyphs may be stripped. A mixed price/time cell is rejected.
+    if (!/^(?:[01]?\d|2[0-3]):[0-5]\d$/.test(normalizedClock)) return false;
+
+    const pickup = cellText(row[semantic.pickup]);
+    const destination = cellText(row[semantic.destination]);
+    if (!headerlessTextLike(pickup) || !headerlessTextLike(destination)) return false;
+
+    const vehicle = normalizeVehicleBoundaryOcrNoise(row[semantic.vehicle]);
+    if (!headerlessTextLike(vehicle) || /\d/.test(vehicle)) return false;
+
+    const persons = cellText(row[semantic.persons]).replace(/^[|¦│=~]+\s*|\s*[|¦│=~]+$/gu, '');
+    if (!/^[1-9]\d?$/.test(persons)) return false;
+
+    const identityColumns = [semantic.customer, semantic.company]
+      .filter(index => Number.isInteger(index) && index >= 0 && index < row.length);
+    if (!identityColumns.length || !identityColumns.some(index => headerlessTextLike(row[index]))) return false;
+
+    if (semantic.price !== undefined) {
+      if (!Number.isInteger(semantic.price) || semantic.price < 0 || semantic.price >= row.length) return false;
+      if (!cellText(row[semantic.price]) || !(parseNumber(row[semantic.price]) > 0)) return false;
+    }
+    // A literal dash marks an empty opposite flight column, not a second flight.
+    // Other unverified glyphs remain substantive and block two-column ambiguity.
+    const actualFlightCell = value => {
+      const raw = cellText(value);
+      return Boolean(raw && !/^[-–—]+$/u.test(raw));
+    };
+    if (Number.isInteger(semantic.arrivalFlight) && Number.isInteger(semantic.departureFlight) &&
+        actualFlightCell(row[semantic.arrivalFlight]) && actualFlightCell(row[semantic.departureFlight])) return false;
+    return true;
+  }
+
+  function ensureSyntheticImageRowsComplete(matrix) {
+    const meta = matrix?._atmsImageMeta;
+    if (!meta) return matrix;
+    const rowMeta = meta.rowMetaByMatrixIndex || {};
+    const unresolved = Object.keys(rowMeta).filter(key =>
+      Number(key) >= 1 && rowMeta[key]?.syntheticGap && !rowMeta[key]?.syntheticGapRecovered
+    );
+    meta.syntheticRowRecoveryGate = {
+      version: 'H4_LOCAL_ONLY', accepted: unresolved.length === 0,
+      unresolvedCount: unresolved.length, noImportOnFailure: true
+    };
+    if (unresolved.length) {
+      throw new Error('Mindestens eine physische Tabellenzeile konnte nicht vollstaendig und sicher wiederhergestellt werden. Kein Import.');
+    }
+    return matrix;
+  }
+
   async function recoverSyntheticImageRowsTargeted(matrix, imageCanvas, imageMeta) {
     if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) return matrix;
     const boundaries = imageMeta.boundaries || [];
@@ -4709,6 +5132,8 @@
     for (let matrixIndex = 1; matrixIndex < out.length; matrixIndex++) {
       const meta = metaByIndex[matrixIndex];
       if (!meta?.syntheticGap) continue;
+      // Keine alte Wiederherstellungs-Markierung ohne aktuelle Zellpruefung vertrauen.
+      meta.syntheticGapRecovered = false;
 
       const x0 = Number(boundaries[0]);
       const x1 = Number(boundaries[boundaries.length - 1]);
@@ -4720,6 +5145,8 @@
 
       let bestRow = null;
       let bestScore = -1;
+      // H5 local candidate: collect ALL OCR views, including partial second reads.
+      const observedViews = [];
 
       for (const scale of [1, 2]) {
         try {
@@ -4759,26 +5186,45 @@
             .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
           const score = nonEmpty + (rideTimeValid ? 8 : 0) + routeScore * 2 + identityScore;
 
-          if (score > bestScore) {
-            bestScore = score;
-            bestRow = candidate;
+          observedViews.push(candidate);
+          if (syntheticRowHasRequiredCore(candidate, semantic)) {
+            if (score > bestScore) {
+              bestScore = score;
+              bestRow = candidate;
+            }
           }
-
-          if (rideTimeValid && nonEmpty >= 5 && routeScore >= 1) break;
+          // H5: Always evaluate the second view, even when the first is complete.
         } catch (_) {
           // Nur Sicherheitsnetz; der naechste Versuch darf weiterlaufen.
         }
       }
 
       if (!bestRow) continue;
+      // These are two transformations of ONE image, not independent sources.
+      // A partial OCR view can contradict a complete view, too: compare every
+      // overlapping nonempty cell. Missing cells are NOT silently filled.
+      if (observedViews.length > 1) {
+        const reference = observedViews[0];
+        const conflict = observedViews.slice(1).some(view =>
+          view.length !== reference.length || view.some((value, index) => {
+            const a = cellText(value);
+            const b = cellText(reference[index]);
+            return Boolean(a && b && a !== b);
+          })
+        );
+        if (conflict) {
+          meta.syntheticGapConflict = true;
+          continue;
+        }
+      }
       const semantic = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
       const rideTimeIndex = semantic.rideTime;
       const rideTime = rideTimeIndex === undefined ? '' : cellText(bestRow[rideTimeIndex]).replace(/[Oo]/g, '0').replace(/[Il]/g, '1');
       const rideTimeValid = looksLikeTime(rideTime) || /^\d{3,4}$/.test(rideTime.replace(/\D/g, ''));
       const nonEmpty = bestRow.filter(Boolean).length;
 
-      // Nur eine wirklich plausibel erneut gelesene Fahrtzeile aktivieren.
-      if (rideTimeValid && nonEmpty >= 4) {
+      // H4: nie einen Teiltreffer als vollstaendig wiederhergestellte Fahrt deklarieren.
+      if (syntheticRowHasRequiredCore(bestRow, semantic)) {
         bestRow[rideTimeIndex] = rideTime;
         out[matrixIndex] = bestRow;
         meta.syntheticGapRecovered = true;
@@ -8388,6 +8834,78 @@
         continue;
       }
 
+      // 17.10 source-photo case: horizontal grid borders in a full-height price
+      // crop can suppress OCR. Only when the existing three price-cell views
+      // have NO 2-vote consensus, try two *interior* views bounded by the two
+      // immediate NEIGHBORING row centers. This uses observed OCR geometry,
+      // never a fixed row number/price/date, and never reads adjacent rows.
+      // Missing, inconsistent or widely spaced row centers => no fallback.
+      let interiorConsensus = false;
+      if (![...votes.values()].some(n => n >= 2)) {
+        const previous = imageMeta.rowMetaByMatrixIndex?.[matrixIndex - 1];
+        const following = imageMeta.rowMetaByMatrixIndex?.[matrixIndex + 1];
+        const before = Number(previous?.cy);
+        const center = Number(rowMeta?.cy);
+        const after = Number(following?.cy);
+        const gapBefore = center - before;
+        const gapAfter = after - center;
+        const centersValid = previous && following &&
+          [before, center, after].every(Number.isFinite) &&
+          gapBefore >= 16 && gapAfter >= 16 &&
+          gapBefore <= 90 && gapAfter <= 90 &&
+          Math.max(gapBefore, gapAfter) / Math.min(gapBefore, gapAfter) <= 1.6;
+        if (centersValid) {
+          const top = (before + center) / 2;
+          const bottom = (center + after) / 2;
+          const insetY = Math.max(2, Math.min(5, (bottom - top) * 0.12));
+          const insetX = Math.max(2, Math.min(9, cellWidth * 0.07));
+          if (bottom - top - 2 * insetY >= 14 &&
+              left + insetX < right - insetX &&
+              top + insetY >= 0 && bottom - insetY <= imageCanvas.height) {
+            const inside = [2, 3].map(scale =>
+              [left + insetX, top + insetY, right - insetX, bottom - insetY, scale]);
+            ride.priceInteriorOcrAttempted = true;
+            const observed = await Promise.allSettled(inside.map(async ([x0, y0, x1, y1, scale]) => {
+              const crop = cropCanvasRegion(imageCanvas, x0, y0, x1, y1, scale);
+              const second = await p109SharedOcrRecognize(
+                'price_targeted_ocr', 'eng', crop, undefined,
+                { sourceRow: Number(ride.sourceRow || 0), mode: `price-interior-${scale}x` });
+              return {
+                candidates: priceCandidatesFromOcrResult(second),
+                rawText: cellText(second?.data?.text).slice(0, 256),
+                words: (second?.data?.words || []).slice(0, 24).map(w => ({
+                  text: cellText(w?.text).slice(0, 50),
+                  x0: Number(w?.bbox?.x0 ?? w?.x0),
+                  x1: Number(w?.bbox?.x1 ?? w?.x1),
+                  confidence: Number(w?.confidence)
+                }))
+              };
+            }));
+            observed.forEach(result => {
+              if (result.status === 'fulfilled') {
+                attempts.push(result.value.candidates.slice());
+                rawAttempts.push({rawText: result.value.rawText, words: result.value.words});
+              } else {
+                attempts.push([]);
+                rawAttempts.push({rawText: '', words: [], failed: true});
+              }
+            });
+            // Fail closed on contradictory candidates from *any* original view.
+            if (observed.every(item => item.status === 'fulfilled' &&
+                item.value.candidates.length === 1)) {
+              const candidate = Number(observed[0].value.candidates[0]);
+              const key = candidate.toFixed(2);
+              const agreeing = Number(observed[1].value.candidates[0]).toFixed(2) === key;
+              const contradicted = [...votes.keys()].some(existing => existing !== key);
+              if (agreeing && !contradicted && !pricePlausibility(candidate).suspicious) {
+                votes.set(key, (votes.get(key) || 0) + 2);
+                interiorConsensus = true;
+              }
+            }
+          }
+        }
+      }
+
       ride.priceTargetedOcrAttempts = attempts;
       ride.priceTargetedOcrRawAttempts = rawAttempts;
       const ranked = [...votes.entries()]
@@ -8404,7 +8922,7 @@
       ride.priceOcrInitial = Number(ride.price) || 0;
       ride.price = recovered;
       ride.priceRecoveredFromTargetedOcr = true;
-      ride.priceRecoverySource = 'targeted_price_cell_consensus';
+      ride.priceRecoverySource = interiorConsensus ? 'targeted_price_cell_consensus_interior' : 'targeted_price_cell_consensus';
     }
 
     return out;
@@ -11566,6 +12084,219 @@
       const p75h = meta?.firstPostHeaderRecovery ? ` P75H: Aktiv=${meta.firstPostHeaderRecovery.applicable ? 'ja' : 'nein'} · Akzeptiert=${meta.firstPostHeaderRecovery.accepted ? 'ja' : 'nein'} · Grund=${cellText(meta.firstPostHeaderRecovery.reason) || 'unknown'} · Kandidaten=${Number(meta.firstPostHeaderRecovery.candidateCount || 0)}.` : '';
       throw new Error(`Im Bild wurden keine sicheren Fahrten erkannt. Bitte ein scharfes, vollständiges Querformat-Bild verwenden.${p75c}${p75d}${p75e}${p75f}${p75h}${p75b}`);
     }
+    // H8 LOCAL ONLY: compute a SHADOW mapping using observed original-picture
+    // grid. This never replaces the matrix and never approves an OCR cell/ride.
+    // It is deliberately fail-closed for partial/multi-image/non-13-column grids.
+    if (matrix?._atmsImageMeta) {
+      const report = {version:'H8_LOCAL_SHADOW',accepted:false,noRideApproval:true,
+        noMatrixMutation:true,reason:'not_checked'};
+      try {
+        const source = await loadImage(file);
+        const nativeWidth = Number(source.naturalWidth || source.width);
+        const nativeHeight = Number(source.naturalHeight || source.height);
+        const sameSchema = matrix._atmsImageMeta.safeHeaderDetected &&
+          !matrix._atmsImageMeta.headerlessAtms && matrix[0]?.length === 13;
+        // H19: the observed 10-column OCR schema may still contain 13 independent
+        // physical pixel columns. Only expose as blocked review, never as parser data.
+        const pixelReviewSchema = matrix._atmsImageMeta.safeHeaderDetected &&
+          !matrix._atmsImageMeta.headerlessAtms && matrix[0]?.length === 10;
+        if ((!sameSchema && !pixelReviewSchema) || !Number.isInteger(nativeWidth) || !Number.isInteger(nativeHeight) ||
+            nativeWidth > 2200 || nativeHeight > 3600) {
+          report.reason = 'not_supported_layout_or_dimensions';
+        } else {
+          const pixelCanvas = document.createElement('canvas');
+          pixelCanvas.width = nativeWidth; pixelCanvas.height = nativeHeight;
+          const ctx = pixelCanvas.getContext('2d', {willReadFrequently:true});
+          ctx.drawImage(source,0,0,nativeWidth,nativeHeight);
+          const imageData = ctx.getImageData(0,0,nativeWidth,nativeHeight);
+          // H10: independent horizontal pixel evidence. Never changes matrix/rows/import.
+          let h13RowGrid = null, h13RowMatch = null;
+          try {
+            const meta = matrix._atmsImageMeta;
+            const yScale = nativeHeight / canvas.height;
+            const centers = Object.entries(meta.rowMetaByMatrixIndex || {})
+              .filter(([key,value]) => Number(key)>=1 && Number.isFinite(Number(value?.cy)))
+              .sort((a,b) => Number(a[0])-Number(b[0]))
+              .map(([,value])=>Number(value.cy));
+            const rowGrid = h10HorizontalContrastGrid(
+              {data:imageData.data,width:nativeWidth,height:nativeHeight,channels:4},
+              {headerCy:Number(meta.headerLineMeta?.cy)*yScale,
+                headerEnd:Number(meta.headerLineMeta?.y1)*yScale,
+                rowCenters:centers.map(cy=>cy*yScale)});
+            const rowMatch = h10CompareMatrixRows(rowGrid,centers,yScale);
+            h13RowGrid = rowGrid; h13RowMatch = rowMatch;
+            const observedRowIndexes=Object.keys(meta.rowMetaByMatrixIndex || {}).map(Number).sort((a,b)=>a-b);
+            const orderedObserved=observedRowIndexes.length===matrix.length-1 &&
+              observedRowIndexes.every((v,i)=>v===i+1)
+              ? observedRowIndexes.map(i=>meta.rowMetaByMatrixIndex[i]) : [];
+            const h17Candidate=rowMatch.accepted && rowMatch.fullyBoundedUnmatched===0 &&
+              rowMatch.unboundedUnmatched===1
+              ? window.ATMSH17Geometry?.align?.(rowGrid,orderedObserved,yScale) : null;
+            const h18MetaAudit=rowGrid.accepted && rowMatch.accepted && orderedObserved.length
+              ? window.ATMSH17Geometry?.audit?.(rowGrid,orderedObserved,yScale,matrix[0]?.length) : null;
+            // H26: wordbox centers and original matrix row provenance, NOT OCR
+            // value verification. Fail closed if original row origins conflict.
+            const h26BandAudit=rowGrid.accepted && orderedObserved.length === matrix.length-1
+              ? window.ATMSH26SourceBands?.audit?.({grid:rowGrid,
+                  rows:orderedObserved,words:Array.isArray(result?.data?.words)?result.data.words:[],
+                  sourceWidth:nativeWidth,sourceHeight:nativeHeight,
+                  ocrWidth:canvas.width,ocrHeight:canvas.height}) : null;
+            meta.h10RowIntegrityShadow = {
+              version:'H10_LOCAL_GEOMETRY_ONLY', accepted: Boolean(rowGrid.accepted && rowMatch.accepted),
+              reason:!rowGrid.accepted?rowGrid.reason:rowMatch.reason,
+              physicalBandCandidates:Number(rowMatch.physicalBandCandidates || 0),
+              fullyBoundedUnmatched:Number(rowMatch.fullyBoundedUnmatched || 0),
+              unboundedUnmatched:Number(rowMatch.unboundedUnmatched || 0),
+              sourceRows:Number(rowMatch.sourceRows || 0),
+              trailingOpen:Boolean(rowGrid.trailingOpen),
+              reviewBandCandidates:h17Candidate,
+              reviewRowMetaAudit:h18MetaAudit,
+              reviewMissingBands:h26BandAudit,
+              noRideApproval:true,noMatrixMutation:true,noImportAuthority:true
+            };
+          } catch (_) {
+            matrix._atmsImageMeta.h10RowIntegrityShadow = {
+              version:'H10_LOCAL_GEOMETRY_ONLY',accepted:false,
+              reason:'diagnostic_failed',noRideApproval:true,noMatrixMutation:true,noImportAuthority:true};
+          }
+          const grid = h8GridEvidence({data:imageData.data,width:nativeWidth,height:nativeHeight,channels:4});
+          // H27: for already blocked H26 source conflicts, show only OCR words
+          // entirely contained inside one independently observed 13-column cell.
+          // No matrix replacement, no synthetic row creation and no ride approval.
+          const h26Review = matrix._atmsImageMeta?.h10RowIntegrityShadow?.reviewMissingBands;
+          if(h26Review?.version==='H26_ORIGINAL_SOURCE_BAND_AUDIT_ONLY' &&
+             h26Review.requiresExplicitReview===true && grid?.accepted && h13RowGrid?.accepted){
+            const rawPixelCells=window.ATMSH19PixelReview?.build?.({
+              rowGrid:h13RowGrid,columnGrid:grid,
+              words:Array.isArray(result?.data?.words)?result.data.words:[],
+              sourceWidth:nativeWidth,sourceHeight:nativeHeight,
+              ocrWidth:canvas.width,ocrHeight:canvas.height});
+            const focus=window.ATMSH27SourceCells?.build?.({
+              sourceAudit:h26Review,pixelEvidence:rawPixelCells});
+            if(focus)matrix._atmsImageMeta.h10RowIntegrityShadow.reviewSourceCells=focus;
+          }
+          // H19: REVIEW ONLY on the actual 10-column failure. All pixel bands and
+          // dividers must be independently supported; OCR words must be fully
+          // contained in one observed cell. Do NOT mutate the 10-column matrix.
+          if (pixelReviewSchema && h13RowGrid?.accepted && grid?.accepted &&
+              h13RowGrid.openTail?.fullyBounded === false &&
+              h13RowGrid.bands?.length === matrix.length-1 &&
+              h13RowGrid.bands.length === 14) {
+            const evidence = window.ATMSH19PixelReview?.build?.({
+              rowGrid:h13RowGrid,columnGrid:grid,
+              words:Array.isArray(result?.data?.words)?result.data.words:[],
+              sourceWidth:nativeWidth,sourceHeight:nativeHeight,
+              ocrWidth:canvas.width,ocrHeight:canvas.height
+            });
+            if (evidence?.version==='H19_PIXEL_WORD_REVIEW_ONLY' &&
+                evidence.mayImport===false && evidence.verifiedTextCells===0 &&
+                evidence.reviewRows?.length===h13RowGrid.bands.length) {
+              const open=h13RowGrid.openTail;
+              matrix._atmsImageMeta.h19BlockedReview=Object.freeze({
+                version:'H12_LOCAL_REVIEW_BLOCK',boundedMissing:0,openTailMissing:1,
+                requiresExplicitReview:true,mayImport:false,verifiedCellValues:0,
+                reviewRows:evidence.reviewRows,
+                reviewGeometry:Object.freeze({sourceWidth:nativeWidth,sourceHeight:nativeHeight,
+                  top:open.y0,bottom:open.y1,fullyBounded:false,
+                  boundaries:Object.freeze(grid.boundaries.slice()),verifiedTextCells:0,
+                  pixelGeometryOnly:true}),
+                reviewPixelFallback:Object.freeze({version:evidence.version,
+                  sourceMatrixColumns:matrix[0].length,assignedWords:evidence.assignedWords,
+                  excludedWords:evidence.excludedWords,observedCells:evidence.observedCells,
+                  excludedByReason:evidence.excludedByReason,
+                  attentionRows:evidence.attentionRows,
+                  reviewBands:evidence.pixelBands,
+                  physicalMappingVerified:false,mayImport:false,canPersist:false,
+                  verifiedTextCells:0})
+              });
+            }
+          }
+          // H13 LOCAL-ONLY: allow a visual *blocked* review only when both
+          // existing independent geometry detectors agree on the source pixels.
+          // No OCR text, guesses or import permission enter these metadata.
+          if (h13RowGrid?.accepted && h13RowMatch?.accepted && h13RowMatch.unboundedUnmatched === 1 &&
+              h13RowGrid.openTail?.fullyBounded === false && grid?.accepted &&
+              Array.isArray(grid.boundaries) && grid.boundaries.length === 14) {
+            const open = h13RowGrid.openTail;
+            matrix._atmsImageMeta.h10RowIntegrityShadow.reviewGeometry = Object.freeze({
+              sourceWidth: nativeWidth, sourceHeight: nativeHeight,
+              top: open.y0, bottom: open.y1, fullyBounded: false,
+              boundaries: Object.freeze(grid.boundaries.slice()),
+              verifiedTextCells: 0, pixelGeometryOnly: true
+            });
+          }
+          report.headerAccepted = Boolean(grid.header.accepted);
+          report.bodyAccepted = Boolean(grid.body.accepted);
+          report.bodySupportedDividers = Number(grid.body.supportedDividers || 0);
+          if (!grid.accepted) {
+            report.reason = String(grid.body.reason || grid.header.reason || 'grid_not_accepted');
+          } else {
+            const factor = canvas.width/nativeWidth;
+            const scaled = grid.boundaries.map(x=>x*factor);
+            const shadow = imageWordsToMatrix(words,canvas.width,
+              {h8ReadOnlyShadow:true,h8GridBoundaries:scaled});
+            const oldMeta = matrix._atmsImageMeta.rowMetaByMatrixIndex || {};
+            const newMeta = shadow?._atmsImageMeta?.rowMetaByMatrixIndex || {};
+            const comparable = shadow.length === matrix.length &&
+              shadow[0]?.length === 13 &&
+              matrix.slice(1).every((row,i) =>
+                Math.abs(Number(oldMeta[i+1]?.cy || 0)-Number(newMeta[i+1]?.cy || 0)) < 3);
+            if (!comparable) {
+              report.reason = 'shadow_row_alignment_unproven';
+            } else {
+              const delta = h9ShadowCellDiffStats(matrix, shadow);
+              if (!delta.comparable) {
+                report.reason = 'shadow_matrix_cell_shape_unproven';
+              } else {
+                Object.assign(report,{accepted:true,reason:'shadow_only_not_verified',
+                  rowsCompared:matrix.length-1,columnsCompared:13,
+                  changedCells:delta.rawChangedCells,
+                  blankToValue:delta.rawBlankToValue,
+                  valueToBlank:delta.rawValueToBlank,
+                  edgeRuleOnlyCandidateCells:delta.edgeRuleOnlyCandidateCells,
+                  contentDifferentCells:delta.contentDifferentCells,
+                  diagnosticOnly:true,
+                  noRideApproval:true});
+              }
+            }
+          }
+        }
+      } catch(error) {
+        report.reason = 'shadow_diagnostic_failed';
+      }
+      // Only aggregate counters are stored; never put OCR text into the report.
+      matrix._atmsImageMeta.h8ShadowGridDiagnostic = report;
+    }
+    // H19: a distinct strict 10-column-source / 13-pixel-column review case.
+    // The raw matrix remains untouched and is NEVER sent to ride parsing/import.
+    const h19Blocked=matrix?._atmsImageMeta?.h19BlockedReview;
+    if(h19Blocked?.version==='H12_LOCAL_REVIEW_BLOCK' && h19Blocked.mayImport===false){
+      const issue=new Error('OCR-Matrix hat nicht die 13 belegten Bildspalten. Nur zellweise Originalbild-Pruefung, kein Import.');
+      // H24: pass a tiny geometry-bound header OCR date CANDIDATE only into
+      // the already blocked review. No date is added to state or source matrix.
+      const heading=imageHeaderDateReviewEvidence(matrix._atmsImageMeta);
+      issue.atmsRowIntegrityReview=heading
+        ? {...h19Blocked,headerDateEvidence:heading} : h19Blocked;
+      throw issue;
+    }
+    // H10 never approves any row. Verified MISSING row geometry blocks silent
+    // loss before existing H4/H5 recovery and all product-import operations.
+    matrix = h10RequireCompleteGridRows(matrix);
+    // H26: equal source/physical row counts can conceal synthetic placeholders.
+    // On accepted real pixel geometry, do not let synthetic rows become rides.
+    const h26Origin = matrix?._atmsImageMeta?.h10RowIntegrityShadow?.reviewMissingBands;
+    if(h26Origin?.version==='H26_ORIGINAL_SOURCE_BAND_AUDIT_ONLY' &&
+       h26Origin.requiresExplicitReview===true && h26Origin.mayImport===false &&
+       (h26Origin.syntheticSourceRows>0 || h26Origin.missingBoundedBandsWithWordCenters>0)) {
+      const issue=new Error('H26 Originalbild-/OCR-Zeilenherkunft ungeklärt. Kein Import.');
+      issue.atmsRowIntegrityReview=Object.freeze({version:'H12_LOCAL_REVIEW_BLOCK',
+        boundedMissing:h26Origin.missingBoundedBandsWithWordCenters,
+        openTailMissing:0,requiresExplicitReview:true,mayImport:false,
+        verifiedCellValues:0,reviewMissingBands:h26Origin,
+        reviewSourceCells:matrix?._atmsImageMeta?.h10RowIntegrityShadow?.reviewSourceCells || null,
+        reviewRows:null});
+      throw issue;
+    }
     if (matrix._atmsImageMeta) {
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
       if (matrix._atmsImageMeta?.headerlessAtms) {
@@ -11594,6 +12325,7 @@
         }
       }
     }
+    ensureSyntheticImageRowsComplete(matrix);
     await measureAsync('plan_row_color_detection', () => attachImageRowColors(file, matrix, canvas.width, canvas.height));
     try {
       window.ATMSP54ReadImageTiming = {
@@ -12546,12 +13278,13 @@
     // P107.5: Blockierende Fehler duerfen nie hinter vielen Info-/Recovery-Zeilen
     // verschwinden. Zuerst alle Errors, danach Warnings, danach reine Infos.
     // Der 20er-Cap bleibt fuer nicht-blockierende Diagnoseflut bestehen.
-    const issuePriority = issue => issue?.level === 'error' ? 0 : issue?.level === 'warning' ? 1 : 2;
+    const issuePriority = issue => issue?.level === 'error' ? 0 : issue?.kind === 'price' ? 1 : issue?.level === 'warning' ? 2 : 3;
     const visibleActionableIssues = actionableIssues
       .map((issue, index) => ({ issue, index }))
       .sort((a, b) => issuePriority(a.issue) - issuePriority(b.issue) || a.index - b.index)
       .map(entry => entry.issue);
-    const visibleIssueLimit = Math.max(20, visibleActionableIssues.filter(issue => issue.level === 'error').length);
+    // Keep EVERY unresolved price decision visible even if other warnings exceed the cap.
+    const visibleIssueLimit = Math.max(20, visibleActionableIssues.filter(issue => issue.level === 'error' || issue.kind === 'price').length);
     const actionableHtml = visibleActionableIssues.length
       ? visibleActionableIssues.slice(0, visibleIssueLimit).map(issue => {
           const rows = Array.isArray(issue.rows) && issue.rows.length ? issue.rows : [issue.row];
@@ -13048,7 +13781,7 @@
         <td>${escapeHtml(typeLabels[ride.rideType] || ride.rideType || '–')}</td>
         <td>${escapeHtml(ride.vehicle || '–')}</td>
         <td>${escapeHtml(ride.persons === null || ride.persons === undefined || ride.persons === '' ? '–' : String(ride.persons))}</td>
-        <td>${ride.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
+        <td>${ride.price || (Number(ride.price) === 0 && state.priceDecisions[String(ride.id || ride.sourceRow)] === 'zero') ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(ride.price) : '–'}</td>
         <td><span class="plan-status ${status === 'OK' ? 'ok' : status === 'Fehler' ? 'error' : 'warning'}">${status}</span>${ride.ap01EditAudit?.length ? '<small style="display:block">Bearbeitet</small>' : ''}</td>
         <td><button type="button" class="ap01-edit-btn" data-ride-id="${escapeHtml(String(ride.id))}" style="padding:8px;border-radius:8px;min-height:40px">Bearbeiten</button></td>
       </tr>`;
@@ -13099,6 +13832,9 @@
   }
 
   async function analyze() {
+    // A new analysis invalidates old blocked-row review and all manual edits.
+    state.h13BlockedRowReviewPending = false;
+    try { window.ATMSH13Review?.clear(); } catch (_) {}
     state.ap01ReviewConfirmed=false;
     if (!state.file || state.analysisRunInProgress || state.autoPipelineInProgress) return;
     // Explicit click handlers set previewOnlyAnalysis; the analysis call never grants import permission.
@@ -13451,11 +14187,31 @@
       $('importStatus').textContent = `Fehler: ${error.message}`;
       $('planAnalysis').classList.add('hidden');
       $('importPlanBtn').disabled = true;
+      const issue = error?.atmsRowIntegrityReview;
+      if (issue?.requiresExplicitReview === true && issue.mayImport === false) {
+        // The H12 block remains authoritative even if the review UI fails.
+        state.h13BlockedRowReviewPending = true;
+        state.rides = []; // no partial list may be staged after a row failure
+        state.matrix = [];
+        try {
+          window.ATMSH13Review?.show({
+            root: $('h13ReviewPanel'), file: state.files?.length === 1 ? state.file : null,
+            issue,
+            dateContext:{selectedDate:state.planDate||'',manualPlanDate:state.manualPlanDate===true,
+              filenameDate:state.filenamePlanDate||'',
+              headerDate:issue.headerDateEvidence?.date||state.headerPlanDate||'',
+              headerEvidence:issue.headerDateEvidence||null,
+              dateSourceConflict:state.dateSourceConflict===true}
+          });
+        } catch (_) {} // UI is optional; fail-closed import is mandatory.
+      }
       releaseAnalysisRunGuard(generation);
     }
   }
 
   function selectFiles(fileList) {
+    state.h13BlockedRowReviewPending = false;
+    try { window.ATMSH13Review?.clear(); } catch (_) {}
     const files = Array.from(fileList || []).filter(Boolean);
     const file = files[0] || null;
     state.file = file;
@@ -13538,6 +14294,12 @@
   }
 
   async function importRides(options = {}) {
+    // H13 additional entrypoint veto: displaying/reviewing a missing physical
+    // row can NEVER authorize a partial or automatic import.
+    if (state.h13BlockedRowReviewPending) {
+      if ($('importStatus')) $('importStatus').textContent = 'H13: Unvollstaendige Bildzeile – Fahrtenimport gesperrt.';
+      return false;
+    }
     // P114.21: preserve preview-only error status and hard data isolation.
     if (state.previewOnlyAnalysis) {
       if ($('importStatus')) $('importStatus').textContent = 'TESTANALYSE · Keine Fahrten übernommen. Für einen echten Import normal erneut analysieren.';
@@ -13549,6 +14311,12 @@
       return false;
     }
     if (!state.rides.length) return false;
+    // PRICE-GATE: do not rely on button state, stale state.issues or warning level.
+    // Recheck EVERY staged ride at the real import entrypoint, including 0-EUR rides.
+    if (state.rides.some(ride => priceReviewStatus(ride).pending)) {
+      if ($('importStatus')) $('importStatus').textContent = 'Import blockiert: Fehlender oder unsicherer Preis – Original prüfen und Preis bzw. 0,00 € ausdrücklich bestätigen.';
+      return false;
+    }
     // P114.20 safety gate: button state is not authorization. Never persist
     // a staged list with a still-unresolved driver OCR identity.
     if (blockingNonFlightIssues(validate(state.rides)).length) {
@@ -13558,6 +14326,12 @@
     const auto = Boolean(options && options.auto);
     try {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
+      // The app's generic normalizer is NOT allowed to silently change a checked
+      // price between the staged review and the storage call.
+      if (normalized.some((ride, index) => !Number.isFinite(Number(ride?.price))
+          || Number(ride.price) !== Number(state.rides[index]?.price))) {
+        throw new Error('Import blockiert: Preis wurde bei der Normalisierung verändert – bitte Original erneut prüfen.');
+      }
       if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
       // P96/S1: NIEMALS Bestandsfahrten/Erledigt-Status vor dem
       // nachweislich erfolgreichen Zwei-Speicher-Import loeschen.

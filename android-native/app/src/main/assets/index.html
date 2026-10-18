@@ -53,6 +53,8 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
     <label style="display:flex;align-items:center;gap:9px;margin:12px 0;font-size:14px"><input id="ap01ReviewConfirm" type="checkbox" style="width:22px;height:22px"> Ich habe alle erkannten Fahrten und offenen Hinweise anhand der Original-Planliste geprüft.</label>
     <div class="plan-preview-wrap"><table class="plan-preview"><thead><tr><th>Zeit</th><th>Fahrer</th><th>Abholung</th><th>Ziel</th><th>Flug</th><th>Flugort</th><th>Typ</th><th>Fahrzeug</th><th>Personen</th><th>Preis</th><th>Zeilenprüfung</th><th>Bearbeiten</th></tr></thead><tbody id="planPreviewBody"></tbody></table></div>
   </div>
+  <!-- H13 LOCAL QA ONLY: isolated blocked-row preview; never authorizes a ride import. -->
+  <div id="h13ReviewPanel" hidden role="region" aria-label="Fehlende Tabellenzeile prüfen"></div>
   <div id="ap01RideEditor" role="dialog" aria-modal="true" aria-labelledby="ap01EditorHeading" hidden style="position:fixed;z-index:99999;inset:0;background:rgba(0,0,0,.86);overflow-y:auto;padding:12px">
     <div style="max-width:620px;margin:15px auto;background:#142739;color:#fff;border:1px solid #5c9fc7;padding:16px;border-radius:14px">
       <h3 id="ap01EditorHeading">Fahrt bearbeiten</h3>
@@ -158,7 +160,7 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
   <div class="info-slogan">Smart Dispatch. Simple Workflow.</div>
 </div>
 <div class="info-details">
-  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11427</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11429</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">Stable Native-App · V1.4.0 Final</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">♙</div><div><div class="info-detail-label">Entwickelt von</div><div class="info-detail-value">Yaser Tatli</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">✓</div><div><div class="info-detail-label">Status</div><div class="info-detail-value status">● Produktiv</div></div></div>
@@ -171,8 +173,14 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
 <div id="driverDialog" class="overlay hidden" role="dialog" aria-modal="true"><div class="sheet" id="driverSheet"><div class="row"><h2>Fahrten anzeigen</h2><button id="closeDrivers" class="icon x" type="button">×</button></div><div id="driverChoices"></div></div></div>
 <div id="atmsToast" class="atms-toast" role="status" aria-live="polite"></div><script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="./js/ocr-integrity-core.js?v=P11427" defer></script>
-<script src="./js/plan-import.js?v=P11427" defer></script>
+<script src="./js/ocr-integrity-core.js?v=P11429" defer></script>
+<script src="./js/h17-geometry-candidates.js?v=H17_LOCAL_REVIEW" defer></script>
+<script src="./js/h26-source-band-audit.js?v=H26_LOCAL_REVIEW" defer></script>
+<script src="./js/h27-source-cell-focus.js?v=H27_LOCAL_REVIEW" defer></script>
+  <script src="./js/h19-pixel-review.js?v=H19_LOCAL_REVIEW" defer></script>
+<script src="./js/h15-ride-drafts.js?v=H15_LOCAL_REVIEW" defer></script>
+<script src="./js/h13-review-only.js?v=H13_LOCAL_ONLY" defer></script>
+<script src="./js/plan-import.js?v=P11429" defer></script>
 <script src="./js/app.js?v=P1121" defer></script>
-<script src="./js/pwa.js?v=P11427" defer></script>
+<script src="./js/pwa.js?v=P11429" defer></script>
 </body></html>
