@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName '1.4.0-ap01-p11429-price-test'
+        versionCode 7
+        versionName '1.4.0-ap01-p11430-price-ocr-test'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -367,7 +367,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11429')
+    dependsOn tasks.named('runtimeAssetAlignmentP11430')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
     dependsOn tasks.named('safeFlightPreviewP11422')
     dependsOn tasks.named('safeFlightEvidenceP11423')
@@ -389,9 +389,9 @@ tasks.named('preBuild').configure {
 
 // AP-01.07: mandatory product-first release gates. Fail CLOSED if browser QA
 // dependencies, assertions or mock-storage integration fail. No real storage.
-tasks.register('runtimeAssetAlignmentP11429', Exec) {
+tasks.register('runtimeAssetAlignmentP11430', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11429.js'
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11430.js'
 }
 tasks.register('ap01EditorSafety', Exec) {
     workingDir rootProject.projectDir
@@ -413,13 +413,13 @@ tasks.register('priceP11429Gate', Exec) {
     workingDir rootProject.projectDir
     commandLine 'node', 'tools/atms-price-gate-p11429.cjs'
 }
-tasks.register('priceP11429Interior', Exec) {
+tasks.register('priceP11430Interior', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/atms-price-interior-p11429.cjs'
+    commandLine 'node', 'tools/atms-price-interior-p11430.cjs'
 }
 tasks.named('preBuild').configure {
     dependsOn tasks.named('priceP11429Gate')
-    dependsOn tasks.named('priceP11429Interior')
+    dependsOn tasks.named('priceP11430Interior')
     dependsOn tasks.named('ap01EditorSafety')
     dependsOn tasks.named('ap01FlightRecheckSafety')
     dependsOn tasks.named('g06TraceFailClosed')

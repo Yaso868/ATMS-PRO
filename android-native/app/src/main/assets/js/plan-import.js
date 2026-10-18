@@ -8751,6 +8751,32 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     return [...found].map(Number);
   }
 
+  // P11429 price hotfix (LOCAL ONLY): flight-time OCR uses a shared worker with
+  // a whitelist excluding commas. Price OCR MUST set its own decimal-safe
+  // parameters while holding the same worker queue, then clear them so following
+  // route/text OCR never inherits a price-only whitelist.
+  async function p11429RecognizePriceCell(crop, sourceRow, mode) {
+    return p109SharedOcrWithWorker('eng', async worker => {
+      if (!worker || typeof worker.setParameters !== 'function')
+        throw new Error('price_ocr_set_parameters_unavailable');
+      const detail = { sourceRow: Number(sourceRow || 0), mode };
+      await p109PerfWorkerSetParameters(worker, 'price_targeted_ocr', {
+        tessedit_pageseg_mode: '7',
+        tessedit_char_whitelist: '0123456789,.€'
+      }, { ...detail, mode: 'price-decimal-parameters' });
+      try {
+        return await p109PerfWorkerRecognize(worker, 'price_targeted_ocr', crop, detail);
+      } finally {
+        // Explicitly clear both price-specific settings before another phase.
+        // Fail closed if the worker cannot be reset.
+        await p109PerfWorkerSetParameters(worker, 'price_targeted_ocr', {
+          tessedit_pageseg_mode: '3',
+          tessedit_char_whitelist: ''
+        }, { ...detail, mode: 'price-parameters-clear' });
+      }
+    });
+  }
+
   async function recoverSuspiciousPricesTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const priceCol = mapping?.price;
@@ -8772,7 +8798,11 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
 
       const matrixIndex = Number(ride.sourceRow || 0) - 1;
       const rowMeta = imageMeta.rowMetaByMatrixIndex?.[matrixIndex];
-      if (!rowMeta) continue;
+      if (!rowMeta) {
+        ride.priceTargetedOcrDecision = 'row_geometry_missing';
+        continue;
+      }
+      ride.priceTargetedOcrDecision = 'unresolved';
 
       const y0 = Number(rowMeta.y0 || 0);
       const y1 = Number(rowMeta.y1 || 0);
@@ -8790,6 +8820,8 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       const votes = new Map();
       const attempts = [];
       const rawAttempts = [];
+      const viewNames = ['price-cell-1x', 'price-cell-2x-a', 'price-cell-2x-b', 'price-interior-2x', 'price-interior-3x'];
+      let interiorDecision = 'not_needed';
 
       try {
         // P60: Die drei bestehenden OCR-Crops derselben unveränderten Preiszelle
@@ -8797,7 +8829,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         // Auswertung, Stimmen, Mindestkonsens und Sicherheitsregeln bleiben identisch.
         const regionResults = await Promise.allSettled(regions.map(async ([x0, cy0, x1, cy1, scale]) => {
           const crop = cropCanvasRegion(imageCanvas, x0, cy0, x1, cy1, scale);
-          const second = await p109SharedOcrRecognize('price_targeted_ocr', 'eng', crop, undefined, { sourceRow: Number(ride.sourceRow || 0), mode: `price-cell-${scale}x` });
+          const second = await p11429RecognizePriceCell(crop, ride.sourceRow, `price-cell-${scale}x`);
           return {
             candidates: priceCandidatesFromOcrResult(second),
             rawText: cellText(second?.data?.text).slice(0, 256),
@@ -8810,27 +8842,33 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         }));
 
         let regionFailed = false;
-        for (const result of regionResults) {
+        regionResults.forEach((result, index) => {
           if (result.status !== 'fulfilled') {
             regionFailed = true;
-            break;
+            attempts.push([]);
+            rawAttempts.push({ mode: viewNames[index], rawText: '', words: [], failed: true,
+              error: cellText(result.reason?.message || 'ocr_call_failed').slice(0, 120) });
+            return;
           }
           const candidates = Array.isArray(result.value?.candidates) ? result.value.candidates : [];
           attempts.push(candidates.slice());
-          rawAttempts.push({ rawText: result.value?.rawText || '', words: result.value?.words || [] });
-          if (candidates.length !== 1) continue;
+          rawAttempts.push({ mode: viewNames[index], rawText: result.value?.rawText || '', words: result.value?.words || [] });
+          if (candidates.length !== 1) return;
           const candidate = Number(candidates[0]);
           const key = candidate.toFixed(2);
           votes.set(key, (votes.get(key) || 0) + 1);
-        }
+        });
         if (regionFailed) {
           ride.priceTargetedOcrAttempts = attempts;
           ride.priceTargetedOcrRawAttempts = rawAttempts;
+          ride.priceTargetedOcrDecision = 'ocr_execution_failed';
           continue;
         }
-      } catch (_) {
+      } catch (error) {
         ride.priceTargetedOcrAttempts = attempts;
         ride.priceTargetedOcrRawAttempts = rawAttempts;
+        ride.priceTargetedOcrDecision = 'ocr_execution_failed';
+        ride.priceTargetedOcrError = cellText(error?.message || 'unknown').slice(0, 120);
         continue;
       }
 
@@ -8842,6 +8880,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       // Missing, inconsistent or widely spaced row centers => no fallback.
       let interiorConsensus = false;
       if (![...votes.values()].some(n => n >= 2)) {
+        interiorDecision = 'geometry_unavailable';
         const previous = imageMeta.rowMetaByMatrixIndex?.[matrixIndex - 1];
         const following = imageMeta.rowMetaByMatrixIndex?.[matrixIndex + 1];
         const before = Number(previous?.cy);
@@ -8865,11 +8904,10 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
             const inside = [2, 3].map(scale =>
               [left + insetX, top + insetY, right - insetX, bottom - insetY, scale]);
             ride.priceInteriorOcrAttempted = true;
+            interiorDecision = 'no_two_view_consensus';
             const observed = await Promise.allSettled(inside.map(async ([x0, y0, x1, y1, scale]) => {
               const crop = cropCanvasRegion(imageCanvas, x0, y0, x1, y1, scale);
-              const second = await p109SharedOcrRecognize(
-                'price_targeted_ocr', 'eng', crop, undefined,
-                { sourceRow: Number(ride.sourceRow || 0), mode: `price-interior-${scale}x` });
+              const second = await p11429RecognizePriceCell(crop, ride.sourceRow, `price-interior-${scale}x`);
               return {
                 candidates: priceCandidatesFromOcrResult(second),
                 rawText: cellText(second?.data?.text).slice(0, 256),
@@ -8884,10 +8922,12 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
             observed.forEach(result => {
               if (result.status === 'fulfilled') {
                 attempts.push(result.value.candidates.slice());
-                rawAttempts.push({rawText: result.value.rawText, words: result.value.words});
+                rawAttempts.push({mode: viewNames[rawAttempts.length], rawText: result.value.rawText, words: result.value.words});
               } else {
                 attempts.push([]);
-                rawAttempts.push({rawText: '', words: [], failed: true});
+                rawAttempts.push({mode: viewNames[rawAttempts.length], rawText: '', words: [], failed: true,
+                  error: cellText(result.reason?.message || 'ocr_call_failed').slice(0, 120)});
+                interiorDecision = 'interior_ocr_execution_failed';
               }
             });
             // Fail closed on contradictory candidates from *any* original view.
@@ -8900,6 +8940,13 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
               if (agreeing && !contradicted && !pricePlausibility(candidate).suspicious) {
                 votes.set(key, (votes.get(key) || 0) + 2);
                 interiorConsensus = true;
+                interiorDecision = 'two_view_consensus';
+              } else if (!agreeing) {
+                interiorDecision = 'interior_views_disagree';
+              } else if (contradicted) {
+                interiorDecision = 'conflicts_with_original_view';
+              } else {
+                interiorDecision = 'implausible_candidate';
               }
             }
           }
@@ -8908,16 +8955,31 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
 
       ride.priceTargetedOcrAttempts = attempts;
       ride.priceTargetedOcrRawAttempts = rawAttempts;
+      ride.priceTargetedOcrInteriorDecision = interiorDecision;
       const ranked = [...votes.entries()]
         .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
 
       // Sicherheitsregel: mindestens zwei gezielte OCR-Crops muessen denselben
       // plausiblen Preis liefern. Bei Gleichstand oder Einzel-Treffer bleibt CORE-004K aktiv.
-      if (!ranked.length || ranked[0][1] < 2) continue;
-      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) continue;
+      if (!ranked.length) {
+        ride.priceTargetedOcrDecision = 'no_valid_decimal_candidate';
+        continue;
+      }
+      if (ranked[0][1] < 2) {
+        ride.priceTargetedOcrDecision = 'fewer_than_two_matching_votes';
+        continue;
+      }
+      if (ranked.length > 1 && ranked[0][1] === ranked[1][1]) {
+        ride.priceTargetedOcrDecision = 'tied_conflicting_votes';
+        continue;
+      }
 
       const recovered = Number(ranked[0][0]);
-      if (pricePlausibility(recovered).suspicious) continue;
+      if (pricePlausibility(recovered).suspicious) {
+        ride.priceTargetedOcrDecision = 'implausible_consensus';
+        continue;
+      }
+      ride.priceTargetedOcrDecision = 'accepted_two_or_more_votes';
 
       ride.priceOcrInitial = Number(ride.price) || 0;
       ride.price = recovered;
@@ -13395,6 +13457,29 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           }).join('<br>') : escapeHtml('Keine Rohdiagnose-Einträge erzeugt – technischen Grund im Diagnose-Selbstcheck oben prüfen.')}</div>
         </div>`;
 
+    // P11429 PRICE TRACE (LOCAL ONLY): show the ACTUAL OCR responses from each
+    // image-cell read, not guessed prices. Render only still-unresolved image rows;
+    // all OCR strings are HTML-escaped and no storage/import state is modified.
+    const pendingPriceTraces = rides.filter(ride => ride.sourceImageOcr && priceReviewStatus(ride).pending);
+    const priceTraceHtml = pendingPriceTraces.length ? `<div class="plan-issue" style="margin-top:10px;border-color:rgba(255,191,74,.65);background:rgba(52,29,9,.35)">
+      <div><b>🧪 Preis-OCR-Rohversuche · offene Preisentscheidungen</b></div>
+      <div style="font-size:12px;opacity:.85;margin-top:5px">Nur Diagnose aus dieser Bildanalyse: keine Übernahme, keine Preisvorgabe.</div>
+      <div style="font-size:11px;line-height:1.6;word-break:break-word;margin-top:7px">${pendingPriceTraces.map(ride => {
+        const names = ['preis-zelle-1x','preis-zelle-2x-a','preis-zelle-2x-b','preis-innen-2x','preis-innen-3x'];
+        const raw = Array.isArray(ride.priceTargetedOcrRawAttempts) ? ride.priceTargetedOcrRawAttempts : [];
+        const candidates = Array.isArray(ride.priceTargetedOcrAttempts) ? ride.priceTargetedOcrAttempts : [];
+        const attemptsText = names.map((name, index) => {
+          const source = raw[index];
+          const value = source ? (source.failed ? `FEHLER: ${cellText(source.error || 'OCR-Aufruf')}` : (cellText(source.rawText) || '∅')) : 'NICHT AUSGEFÜHRT';
+          const candidatesText = Array.isArray(candidates[index]) && candidates[index].length ? candidates[index].join(', ') : '∅';
+          return `${index + 1}. ${name}: Roh="${value}" Kandidaten=[${candidatesText}]`;
+        }).join(' | ');
+        const reason = ride.priceTargetedOcrDecision || (ride.priceMissingFromSource ? 'price_column_missing' : 'no_attempt_data');
+        const interior = ride.priceTargetedOcrInteriorDecision || 'not_started';
+        return escapeHtml(`Zeile ${Number(ride.sourceRow) || '?'} · ${cellText(ride.time)} · ${cellText(ride.driver)} · ${cellText(ride.flightNumber)} · ${attemptsText} · ENTSCHEIDUNG=${reason} · INNEN=${interior}`);
+      }).join('<br>')}</div>
+    </div>` : '';
+
     const airportDiag = (() => {
       try { return window.ATMSOfficialAirportLastDiagnostic || null; } catch (_) { return null; }
     })();
@@ -13686,7 +13771,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         + `<button type="button" id="copyP11410DiagBtn" style="padding:10px;border-radius:8px;font-weight:700">📋 Diagnose kopieren</button>`
         + `<pre style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:460px;overflow:auto">${escapeHtml(JSON.stringify(companyDiagP11410,null,2))}</pre></details>`
       : '';
-    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag || p42CurrentSchemaTimeDiag || p43FlickArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${secondSourceSingleFallbackDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${p42CurrentSchemaTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
+    const diagnosticHtml = `<details ${p39LiveDiag || p39ArrivalTimeDiag || p41BoardArrivalTimeDiag || p42CurrentSchemaTimeDiag || p43FlickArrivalTimeDiag ? 'open' : ''} style="margin-top:10px"><summary style="cursor:pointer;font-weight:800;padding:9px 0">🛠 Technik / Diagnose</summary>${selfCheckHtml}${priceTraceHtml}${rawDiagnosticHtml}${airportDiagHtml}${secondSourceDiagHtml}${secondSourceBoardDiagHtml}${secondSourceSingleFallbackDiagHtml}${p39LiveDiagHtml}${p39ArrivalTimeDiagHtml}${p41BoardArrivalTimeDiagHtml}${p42CurrentSchemaTimeDiagHtml}${unresolvedFlightRouteDiagHtml}</details>`;
     $('planIssues').innerHTML = actionableHtml + cancelledHtml + flightCheckHtml + p11410Html + diagnosticHtml;
     $('copyP11410DiagBtn')?.addEventListener('click', async () => {
       const payload = JSON.stringify(state.ocrCompanyConflictReportP11410,null,2);
