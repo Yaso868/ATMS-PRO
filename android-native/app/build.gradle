@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 9
-        versionName '1.4.0-ap01-p11432-inn-inr-evidence-test'
+        versionCode 10
+        versionName '1.4.0-ap01-p11433-v126-integrated-image-test'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -367,7 +367,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11432')
+    dependsOn tasks.named('runtimeAssetAlignmentP11433')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
     dependsOn tasks.named('safeFlightPreviewP11422')
     dependsOn tasks.named('safeFlightEvidenceP11423')
@@ -389,9 +389,9 @@ tasks.named('preBuild').configure {
 
 // AP-01.07: mandatory product-first release gates. Fail CLOSED if browser QA
 // dependencies, assertions or mock-storage integration fail. No real storage.
-tasks.register('runtimeAssetAlignmentP11432', Exec) {
+tasks.register('runtimeAssetAlignmentP11433', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11432.js'
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11433.js'
 }
 tasks.register('ap01EditorSafety', Exec) {
     workingDir rootProject.projectDir
@@ -440,4 +440,14 @@ tasks.register('routeG4FinalIntegrityP11431', Exec) {
 tasks.named('preBuild').configure {
     dependsOn tasks.named('routeG4SemanticIntegrityP11431')
     dependsOn tasks.named('routeG4FinalIntegrityP11431')
+}
+
+// V1.26: enforce integrated price/route/company negative source tests before test-only APK build.
+// This DOES NOT constitute original-image OCR or offline provenance approval.
+tasks.register('v126GeneralEvidenceP11433', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/v126-general-evidence-regression.cjs', 'app/src/main/assets/js/plan-import.js'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('v126GeneralEvidenceP11433')
 }

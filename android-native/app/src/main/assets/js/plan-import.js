@@ -7133,7 +7133,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
 
   // G4 local-only: gate CONTENT changes, not spelling similarity or number of OCR modes.
   // All OCR modes here read the same photograph; their agreement is not independent truth.
-  function routeG4SemanticDecision(previous, next, primaryCellEvidence) {
+  function routeG4SemanticDecision(previous, next, primaryCellEvidence, corroboration = null) {
     const oldValue = routeOcrText(previous);
     const newValue = routeOcrText(next);
     if (!oldValue || !newValue) return { allow: false, reason: 'missing_route_value' };
@@ -7153,6 +7153,27 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     // Secondary OCR consensus on its own is NEVER sufficient.
     if (complete && raw && routeOcrBase(raw) === routeOcrBase(newValue)) {
       return { allow: true, reason: 'complete_strong_primary_cell_matches_candidate' };
+    }
+    // V126: one demonstrably weak original image word may be corrected only
+    // after agreement of two column and TWO distinct local-cell OCR modes.
+    // The raw word must be inside this source cell, not inferred from other
+    // flights/routes/rows. Higher confidence originals remain protected by G4.
+    const q = primaryCellEvidence?.cropQuality || {};
+    const lowConf = primaryCellEvidence?.verificationSource === 'primary_full_image_cell_assignment' &&
+      primaryCellEvidence?.geometryConfidence === 'high' &&
+      Number.isFinite(primaryCellEvidence?.confidence) &&
+      Number(primaryCellEvidence.confidence) < 60 &&
+      q.fullCellIncluded === true && q.leftEdgeClipped === false &&
+      q.rightEdgeClipped === false && q.neighborColumnIncluded === false;
+    if (lowConf && corroboration?.columnVotes >= 2 &&
+        corroboration?.localCandidates?.length === 2 &&
+        corroboration.localCandidates.every(c => routeOcrBase(c) === routeOcrBase(newValue)) &&
+        corroboration?.changedRawWordInCell === true &&
+        corroboration?.changedRawWordConfidence !== null &&
+        Number.isFinite(corroboration.changedRawWordConfidence) &&
+        corroboration.changedRawWordConfidence < 60 &&
+        raw && routeOcrBase(raw) === routeOcrBase(oldValue)) {
+      return { allow: true, reason: 'weak_original_word_four_cell_views_agree' };
     }
     return {
       allow: false,
@@ -7500,7 +7521,18 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
 
         // G4 control point A: fail closed on unproven semantic substitutions,
         // including weak, missing, internal-glyph and four-vote disagreements.
-        const g4Decision = routeG4SemanticDecision(original, candidate, primaryCellEvidence);
+        const matchingPrimaryWords = rowMetaForRoute
+          ? rawRouteEvidenceItemsForCell(imageMeta, rowMetaForRoute, left, right)
+            .filter(w => w.key === routeOcrBase(original) &&
+              w.x0 > left + 1 && w.x1 < right - 1 &&
+              w.y0 >= rowMetaForRoute.y0 && w.y1 <= rowMetaForRoute.y1)
+          : [];
+        const g4Decision = routeG4SemanticDecision(original, candidate, primaryCellEvidence, {
+          columnVotes: winner[1], localCandidates,
+          changedRawWordInCell: matchingPrimaryWords.length === 1,
+          changedRawWordConfidence: matchingPrimaryWords.length === 1
+            ? matchingPrimaryWords[0].confidence : null
+        });
         if (!g4Decision.allow) {
           ride[`${descriptor.field}OcrConflict`] = true;
           ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
@@ -9049,9 +9081,20 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           gapBefore >= 16 && gapAfter >= 16 &&
           gapBefore <= 90 && gapAfter <= 90 &&
           Math.max(gapBefore, gapAfter) / Math.min(gapBefore, gapAfter) <= 1.6;
-        if (centersValid) {
-          const top = (before + center) / 2;
-          const bottom = (center + after) / 2;
+        // V126: The first/last physical ride has no preceding/following ride.
+        // Its own geometric cell bounds are independently available. Crop INSIDE
+        // that proven cell, never inside an inferred neighbor or header. Use the
+        // same option on internal rows when neighbors are geometrically unstable.
+        const ownCellValid = rowMeta?.y0 !== undefined && rowMeta?.y1 !== undefined &&
+          Number.isFinite(y0) && Number.isFinite(y1) && y1 - y0 >= 22 &&
+          y0 >= 0 && y1 <= imageCanvas.height &&
+          ride?.imageCellEvidence?.price?.cropQuality?.fullCellIncluded === true &&
+          ride?.imageCellEvidence?.price?.cropQuality?.leftEdgeClipped === false &&
+          ride?.imageCellEvidence?.price?.cropQuality?.rightEdgeClipped === false &&
+          ride?.imageCellEvidence?.price?.cropQuality?.neighborColumnIncluded === false;
+        if (centersValid || ownCellValid) {
+          const top = centersValid ? (before + center) / 2 : y0;
+          const bottom = centersValid ? (center + after) / 2 : y1;
           const insetY = Math.max(2, Math.min(5, (bottom - top) * 0.12));
           const insetX = Math.max(2, Math.min(9, cellWidth * 0.07));
           if (bottom - top - 2 * insetY >= 14 &&
@@ -9086,8 +9129,38 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
                 interiorDecision = 'interior_ocr_execution_failed';
               }
             });
+            // V126: a full-cell 1x view and a differently bounded 3x inner
+            // view may BOTH read an explicit decimal separator correctly, even
+            // when the 2x OCR inserts duplicate punctuation (e.g. 47.,60).
+            // Such corrupt tokens remain INVALID and are not votes. They can
+            // corroborate only the DIGIT SEQUENCE of two CLEAN decimal views.
+            // This never divides 3500 by 100 and never guesses a missing comma.
+            const fullClean = attempts[0]?.length === 1 ? Number(attempts[0][0]) : NaN;
+            const innerClean = attempts[4]?.length === 1 ? Number(attempts[4][0]) : NaN;
+            const cleanDecimalText = text => /^\s*\d{1,4}[.,]\d{2}\s*€?\s*$/u.test(text);
+            const consistentValue = Number.isFinite(fullClean) && Number.isFinite(innerClean) &&
+              fullClean === innerClean && !pricePlausibility(fullClean).suspicious;
+            const allCleanAgree = attempts.every(values => values.every(n => Number(n) === fullClean));
+            const cleanOriginalAndInterior = consistentValue &&
+              cleanDecimalText(rawAttempts[0]?.rawText || '') &&
+              cleanDecimalText(rawAttempts[4]?.rawText || '');
+            const digitSequence = String(Math.round(fullClean * 100));
+            const malformedOnlySameDigits = rawAttempts.slice(1, 4).every((item, i) => {
+              if (attempts[i + 1]?.length) return true;
+              const raw = cellText(item?.rawText || '');
+              return /^(?:\d+[.,]{2}\d{2})\s*€?$/u.test(raw) &&
+                raw.replace(/\D/g, '') === digitSequence;
+            });
+            const distinctCleanViewProof = ownCellValid && cleanOriginalAndInterior &&
+              allCleanAgree && malformedOnlySameDigits &&
+              observed.every(item => item.status === 'fulfilled');
+            if (distinctCleanViewProof) {
+              votes.set(fullClean.toFixed(2), Math.max(2, votes.get(fullClean.toFixed(2)) || 0));
+              interiorConsensus = true;
+              interiorDecision = 'full_cell_plus_inner_cell_clean_decimal_consensus';
+            }
             // Fail closed on contradictory candidates from *any* original view.
-            if (observed.every(item => item.status === 'fulfilled' &&
+            if (!interiorConsensus && observed.every(item => item.status === 'fulfilled' &&
                 item.value.candidates.length === 1)) {
               const candidate = Number(observed[0].value.candidates[0]);
               const key = candidate.toFixed(2);
