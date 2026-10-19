@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 11
-        versionName '1.4.0-ap01-p11434-v126-integrated-source-evidence-test'
+        versionCode 12
+        versionName '1.4.0-ap01-p11435-v126-company-original-pixel-grayscale-test'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -367,7 +367,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11434')
+    dependsOn tasks.named('runtimeAssetAlignmentP11435')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
     dependsOn tasks.named('safeFlightPreviewP11422')
     dependsOn tasks.named('safeFlightEvidenceP11423')
@@ -389,9 +389,9 @@ tasks.named('preBuild').configure {
 
 // AP-01.07: mandatory product-first release gates. Fail CLOSED if browser QA
 // dependencies, assertions or mock-storage integration fail. No real storage.
-tasks.register('runtimeAssetAlignmentP11434', Exec) {
+tasks.register('runtimeAssetAlignmentP11435', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11434.js'
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11435.js'
 }
 tasks.register('ap01EditorSafety', Exec) {
     workingDir rootProject.projectDir
@@ -450,6 +450,7 @@ tasks.register('v126GeneralEvidenceP11434', Exec) {
 }
 tasks.named('preBuild').configure {
     dependsOn tasks.named('v126GeneralEvidenceP11434')
+    dependsOn tasks.named('p11435CompanyPixelSafetyGate')
     dependsOn tasks.named('p11434EvidenceHandoffGate')
 }
 
@@ -457,4 +458,10 @@ tasks.named('preBuild').configure {
 tasks.register('p11434EvidenceHandoffGate', Exec) {
     workingDir file('..')
     commandLine 'node', 'tools/p11434-evidence-handoff-regression.cjs', 'app/src/main/assets/js/plan-import.js'
+}
+
+// P11435: preserve company source-pixel path and the independent opposition gates.
+tasks.register('p11435CompanyPixelSafetyGate', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/p11435-company-source-pixel-selftest.cjs'
 }

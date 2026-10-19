@@ -8109,6 +8109,28 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     return attempts;
   }
 
+  // P11435 – COMPANY SOURCE-PIXEL OCR: grayscale only the ORIGINAL bounded
+  // company crop; do not modify recognized text or recover punctuation from
+  // repeated values. On canvas read failure return the unmodified old crop,
+  // preserving the existing fail-closed company-opposition/identity gates.
+  function cropCompanySourceEvidenceGrayscale(source, left, top, right, bottom) {
+    const crop = cropCanvasRegion(source, left, top, right, bottom, 1);
+    try {
+      const ctx = crop.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return crop;
+      const image = ctx.getImageData(0, 0, crop.width, crop.height);
+      const px = image.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const gray = Math.round(0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2]);
+        px[i] = gray;
+        px[i + 1] = gray;
+        px[i + 2] = gray;
+      }
+      ctx.putImageData(image, 0, 0);
+    } catch (_) { /* Original unmodified crop, no permission to infer text. */ }
+    return crop;
+  }
+
   async function sourceTruthFullCellTextOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker) {
     if (!descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
     const source = sourceTruthCanvas || processedCanvas;
@@ -8132,7 +8154,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     for (const variant of variants) {
       let candidate = '';
       try {
-        const crop = cropCanvasRegion(source, left, top, right, bottom, 1);
+        const crop = field === 'company'
+          ? cropCompanySourceEvidenceGrayscale(source, left, top, right, bottom)
+          : cropCanvasRegion(source, left, top, right, bottom, 1);
         let result;
         const params = { tessedit_pageseg_mode: variant.psm };
         if (worker && typeof worker.recognize === 'function') {
@@ -8224,7 +8248,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     for (const mode of modes) {
       let candidate='';
       try {
-        const crop=cropCanvasRegion(source,left,top,right,bottom,1);
+        const crop=cropCompanySourceEvidenceGrayscale(source,left,top,right,bottom);
         const params={tessedit_pageseg_mode:mode.psm};
         const output=worker&&typeof worker.recognize==='function'
           ? (typeof worker.setParameters==='function'
