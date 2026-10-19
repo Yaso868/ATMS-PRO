@@ -2,7 +2,7 @@
 'use strict';
 const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
 const source=fs.readFileSync(process.argv[2],'utf8');
-const functions=['routeOcrText','routeOcrBase','routeOcrDistance','routeG4SemanticDecision','markZeroSilentErrorIntegrity'];
+const functions=['routeOcrText','routeOcrBase','routeOcrDistance','routeG4SemanticDecision','routeG4VerifiedFinalHandoff','markZeroSilentErrorIntegrity'];
 function code(name){const a=source.indexOf('  function '+name+'(');if(a<0)throw Error('missing '+name);const b=source.indexOf('\n  }\n',a);if(b<0)throw Error('function end '+name);return source.slice(a,b+5)}
 const context={
  cellText:v=>String(v??'').trim(),

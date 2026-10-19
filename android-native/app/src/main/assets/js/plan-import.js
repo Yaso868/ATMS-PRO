@@ -7184,6 +7184,27 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     };
   }
 
+  // P11434: verifiable handoff from first OCR-source decision to final
+  // integrity gate. No generic approval flag and no new source votes.
+  function routeG4VerifiedFinalHandoff(ride, field, originalCell, sourceRaw, finalValue) {
+    const proof = ride?.[`${field}G4SourceDecisionProof`];
+    if (!proof || !Number.isInteger(Number(ride?.sourceRow)) || Number(ride.sourceRow) <= 0 ||
+        !Number.isInteger(Number(originalCell?.sourceColumn)) ||
+        Number(proof.sourceRow) !== Number(ride.sourceRow) ||
+        Number(proof.sourceColumn) !== Number(originalCell.sourceColumn) ||
+        routeOcrText(proof.originalValue) !== routeOcrText(sourceRaw) ||
+        routeOcrText(proof.approvedValue) !== routeOcrText(finalValue) ||
+        Number(proof.columnVotes) !== 2 ||
+        !Array.isArray(proof.localCandidates) || proof.localCandidates.length !== 2) return false;
+    const replay = routeG4SemanticDecision(sourceRaw, finalValue, originalCell, {
+      columnVotes: proof.columnVotes,
+      localCandidates: proof.localCandidates,
+      changedRawWordInCell: proof.changedRawWordInCell === true,
+      changedRawWordConfidence: proof.changedRawWordConfidence
+    });
+    return replay.allow === true && replay.reason === 'weak_original_word_four_cell_views_agree';
+  }
+
   // P11432 local-only: a narrow primary-image proof for the observed terminal
   // Inn/Inr OCR glyph confusion. This is not a hotel/route name allowlist.
   // Same-photo secondary OCR passes cannot outvote a geometrically complete,
@@ -7542,6 +7563,24 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           };
           ride[`${descriptor.field}G4SemanticAutochangeRejected`] = g4Decision.reason;
           continue;
+        }
+        // P11434: retain only a previously APPROVED four-view weak-cell proof.
+        // Never elevate unproven OCR candidates or attach a generic bypass flag.
+        if (g4Decision.reason === 'weak_original_word_four_cell_views_agree' &&
+            routeOcrBase(primaryCellEvidence?.rawOcr || '') === routeOcrBase(original) &&
+            Number.isInteger(Number(ride.sourceRow)) && Number(ride.sourceRow) > 0 &&
+            Number.isInteger(Number(primaryCellEvidence?.sourceColumn)) &&
+            Number(primaryCellEvidence.sourceColumn) === Number(column)) {
+          ride[`${descriptor.field}G4SourceDecisionProof`] = {
+            sourceRow: Number(ride.sourceRow),
+            sourceColumn: Number(column),
+            originalValue: original, approvedValue: candidate,
+            columnVotes: winner[1],
+            localCandidates: [...localCandidates],
+            changedRawWordInCell: matchingPrimaryWords.length === 1,
+            changedRawWordConfidence: matchingPrimaryWords.length === 1
+              ? matchingPrimaryWords[0].confidence : null
+          };
         }
         ride[`${descriptor.field}RawOcr`] = original;
         ride[descriptor.field] = candidate;
@@ -8104,7 +8143,8 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         }
         candidate = textIntegrityCellCandidate(result?.data?.text || '', field);
       } catch (_) {}
-      attempts.push({ scope: 'source_truth_full_cell', mode: variant.mode, candidate, sourceRow, field, viewRegion: 'full_cell', cropQuality: { ...cropQuality } });
+      attempts.push({ scope: 'source_truth_full_cell', mode: variant.mode, candidate, sourceRow,
+        sourceColumn: Number(descriptor.column), field, viewRegion: 'full_cell', cropQuality: { ...cropQuality } });
     }
     return attempts;
   }
@@ -11074,7 +11114,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
   // Full source family and adaptive family must BOTH agree, with no grounded
   // counterevidence from other complete/exact or confirmed neighbor-safe crops.
   function verifiedCompanySourceReconciliation(ride, original, alternative, peers, attempts) {
-    if (!singleInternalCompanyDelimiterLoss(original, alternative) || Number(peers) < 3) return null;
+    if (!singleInternalCompanyDelimiterLoss(original, alternative)) return null;
     const evidence=ride?.imageCellEvidence?.company;
     const birth=evidence?.primarySourceEvidence;
     const sourceRow=Number(ride?.sourceRow), sourceColumn=Number(evidence?.sourceColumn);
@@ -11088,7 +11128,17 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         birth.confidence==null || !Number.isFinite(Number(birth.confidence)) || Number(birth.confidence)<80 ||
         q.fullCellIncluded!==true || q.leftEdgeClipped!==false || q.rightEdgeClipped!==false ||
         q.neighborColumnIncluded!==false) return null;
-    const full=sourceTruthFullCellConsensus(attempts);
+    // Only same-row, same-column, strictly bounded full-cell readings qualify.
+    // Do not inherit votes from loose crops or another source row.
+    const qualifiedFull=(Array.isArray(attempts)?attempts:[]).filter(a=>{
+      const q=a?.cropQuality||{};
+      return a?.scope==='source_truth_full_cell' &&
+        Number(a.sourceRow)===sourceRow && Number(a.sourceColumn)===sourceColumn &&
+        q.fullCellIncluded===true && q.neighborColumnIncluded===false &&
+        q.leftEdgeClipped===false && q.rightEdgeClipped===false &&
+        q.targetCellGeometryConfirmed===true;
+    });
+    const full=sourceTruthFullCellConsensus(qualifiedFull);
     const adaptive=adaptiveCompanyTailConsensus(attempts,sourceRow,sourceColumn);
     if (!full || !adaptive || Number(full.votes)<2 || Number(full.modes)<2 ||
         Number(adaptive.votes)<2 || full.candidate.toLocaleLowerCase('de-DE')!==key ||
@@ -11137,7 +11187,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
   // conflict stale. Reconcile only geometry-only table-rule noise or exactly one
   // internal delimiter loss that the existing repeated-text stage itself resolved.
   function reconcileCompanyConflictAfterRepeatedConsistency(rides) {
-    if (!Array.isArray(rides) || rides.length < 3) return rides;
+    if (!Array.isArray(rides) || !rides.length) return rides;
     const out = rides.map(ride => ({ ...ride }));
     out.forEach((ride, index) => {
       if (!ride?.companyOcrConflict) return;
@@ -11150,10 +11200,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         if (peerIndex === index) return false;
         return cellText(other?.company).normalize('NFC').trim().toLocaleLowerCase('de-DE') === currentKey;
       }).length;
-      if (peerCount < 2) return;
-
       let reason = '';
       if (edgeTableGlyphNoise(current, candidate)) {
+        if (peerCount < 2) return; // preserve existing table-edge safeguard
         reason = 'post_consensus_company_table_rule_noise';
       } else if (singleInternalCompanyDelimiterLoss(current, candidate)) {
         const consensus = ride?.repeatedTextConsistency?.company;
@@ -11174,6 +11223,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         const expandedCell = sourceTruthExpandedCellConsensus(attempts);
         if (groundedCompanySourceOpposition(attempts,current)) return;
         const qualifiedSourceProof=verifiedCompanySourceReconciliation(ride,current,candidate,peerCount,attempts);
+        // Without strict full-cell AND adaptive original-image proof, retain
+        // the prior peer threshold and all pre-existing vetoes.
+        if (peerCount < 2 && !qualifiedSourceProof) return;
         // An expanded crop with uncertain neighbor containment is not a valid
         // veto against TWO independent, clean source-cell families. Every
         // other case keeps the legacy fail-closed reconciliation unchanged.
@@ -11703,6 +11755,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         if (routeOcrBase(sourceRaw) === routeOcrBase(finalValue)) return;
         const sourceDecision = routeG4SemanticDecision(sourceRaw, finalValue, originalCell);
         if (sourceDecision.allow) return;
+        if (routeG4VerifiedFinalHandoff(ride, field, originalCell, sourceRaw, finalValue)) return;
         // A previously-empty geometric cell can have a separately guarded,
         // same-cell + raw-word recovery; it must not be rewritten here.
         const missingSource = ride[`${field}MissingTargetedOcrSource`];
@@ -11823,6 +11876,28 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           ...raw
         });
       });
+
+      // P11434: purely observational review of prices and company delimiter;
+      // never use this report as a vote or import authorization.
+      for (const field of ['price', 'company']) {
+        const col = mapping?.[field];
+        const needsReview = field === 'price'
+          ? Boolean(ride?.priceTargetedOcrDecision || ride?.priceMissingFromSource || ride?.priceRecoveredFromTargetedOcr)
+          : Boolean(ride?.companyOcrConflict || ride?.companyOcrConflictResolvedAfterRepeatedConsistency);
+        if (!needsReview || col === undefined || col === null) continue;
+        const raw = rawWordsForDiagnosticCell(imageMeta, rowMeta, col);
+        if (!raw) continue;
+        diagnostics.push({
+          kind: field, sourceRow: Number(ride.sourceRow || 0),
+          time: cellText(ride.dispoTime || ride.time), field,
+          value: field === 'price' ? String(ride.price ?? '') : cellText(ride.company),
+          reviewDecision: field === 'price' ? cellText(ride.priceTargetedOcrDecision) :
+            (ride.companyOcrConflict ? 'unresolved_company_conflict' : 'qualified_source_reconciliation'),
+          rawAttempts: field === 'price' ? (ride.priceTargetedOcrRawAttempts || []) :
+            (ride.imageCellEvidence?.company?.verificationAttempts || []),
+          ...raw
+        });
+      }
 
       const flight = normalizeFlightNumber(ride?.flightNumber || ride?.flightRejectedSuspiciousOcrInitial);
       // Drei oder mehr Buchstaben vor dem Zahlenteil sind fuer ATMS auffaellig genug,
@@ -13732,8 +13807,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           <div><b>🧪 CORE-007D8A OCR-Rohdiagnose</b></div>
           <div style="font-size:12px;opacity:.84;margin-top:5px">Nur Diagnose: Primär-OCR-Wörter und aktuelle Zellgrenzen. Keine Korrektur, keine Änderung der Importentscheidung.</div>
           <div style="font-size:11px;line-height:1.55;margin-top:7px;word-break:break-word">${rawDiagnostics.length ? rawDiagnostics.map(item => {
-            const label = item.kind === 'flight' ? 'Flug' : item.field === 'pickup' ? 'Von' : 'Nach';
-            return escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''} · ${label}="${item.value || '–'}" · X=${Math.round(item.left)}-${Math.round(item.right)} · IN=[${item.inCell}] · L=[${item.leftSpill}] · R=[${item.rightSpill}]`);
+            const label = item.kind === 'flight' ? 'Flug' : item.kind === 'price' ? 'Preis' :
+              item.kind === 'company' ? 'Firma' : item.field === 'pickup' ? 'Von' : 'Nach';
+            return escapeHtml(`Zeile ${item.sourceRow}${item.time ? ` · ${item.time}` : ''} · ${label}="${item.value || '–'}"${item.reviewDecision ? ` · Prüfung=${item.reviewDecision}` : ''} · X=${Math.round(item.left)}-${Math.round(item.right)} · IN=[${item.inCell}] · L=[${item.leftSpill}] · R=[${item.rightSpill}]`);
           }).join('<br>') : escapeHtml('Keine Rohdiagnose-Einträge erzeugt – technischen Grund im Diagnose-Selbstcheck oben prüfen.')}</div>
         </div>`;
 

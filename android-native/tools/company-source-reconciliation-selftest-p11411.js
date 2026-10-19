@@ -18,7 +18,7 @@ assert(target,'original existing Golden Error remains; no duplicate case');
 assert.equal(fixture.sourceSha256,'f0b44c22cbd06afb0594920aed04e2c4eb6333c312054451af0988333526673d');
 assert.equal(fixture.attempts.length,9); // actual recorded Android attempts
 const base=fixture.attempts.map(a=>({...a,cropQuality:a.cropQuality?{...a.cropQuality}:undefined}));
-for(const a of base){if(a.scope==='source_truth_adaptive_company'){a.sourceRow=fixture.sourceRow;a.sourceColumn=fixture.sourceColumn;a.field='company';}}
+for(const a of base){if(a.scope==='source_truth_adaptive_company'||a.scope==='source_truth_full_cell'){a.sourceRow=fixture.sourceRow;a.sourceColumn=fixture.sourceColumn;a.field='company';}}
 const sourcePrimary={...fixture.primarySourceEvidence,sourceRow:fixture.sourceRow,sourceColumn:fixture.sourceColumn,cropQuality:{...fixture.primarySourceEvidence.cropQuality}};
 function build({attempts=base, primary=sourcePrimary, current=fixture.originalValue, secondary=fixture.secondaryValue, peers=fixture.peerCount, sourceColumn=fixture.sourceColumn, row=fixture.sourceRow, flagged=true}={}){
  const first={sourceRow:row,sourceImageOcr:true,company:current,companyOcrConflict:flagged,companyOcrConflictCandidate:secondary,customer:'Real device test',imageCellEvidence:{company:{sourceColumn,verificationSource:fixture.verificationSource,verificationAttempts:attempts,primarySourceEvidence:primary,manualCheckRequired:true}}};
@@ -43,13 +43,19 @@ blocked('only one adaptive view',{attempts:base.filter(a=>a.mode!=='adaptive-com
 blocked('only one full view',{attempts:base.filter(a=>a.mode!=='source-truth-full-cell-psm7')});
 blocked('foreign adaptive row',{attempts:base.map(a=>a.scope==='source_truth_adaptive_company'?{...a,sourceRow:a.sourceRow+1}:a)});
 blocked('foreign adaptive column',{attempts:base.map(a=>a.scope==='source_truth_adaptive_company'?{...a,sourceColumn:a.sourceColumn+1}:a)});
+
+blocked('foreign full-cell row',{attempts:base.map(a=>a.scope==='source_truth_full_cell'?{...a,sourceRow:a.sourceRow+1}:a)});
+blocked('foreign full-cell column',{attempts:base.map(a=>a.scope==='source_truth_full_cell'?{...a,sourceColumn:a.sourceColumn+1}:a)});
+blocked('all full-cell provenance missing',{attempts:base.map(a=>{const b={...a};if(a.scope==='source_truth_full_cell'){delete b.sourceRow;delete b.sourceColumn;}return b;})});
+
 blocked('wrong primary provenance',{primary:{...sourcePrimary,verificationSource:'independent_text'}});
 blocked('wrong primary raw',{primary:{...sourcePrimary,rawOcr:fixture.secondaryValue}});
 blocked('primary confidence too low',{primary:{...sourcePrimary,confidence:78}});
 blocked('missing primary confidence',{primary:{...sourcePrimary,confidence:null}});
 blocked('primary clipped',{primary:{...sourcePrimary,cropQuality:{...sourcePrimary.cropQuality,rightEdgeClipped:true}}});
 blocked('primary foreign source-column',{primary:{...sourcePrimary,sourceColumn:sourcePrimary.sourceColumn+1}});
-blocked('insufficient same plan peers',{peers:2});
+permitted('independent full and adaptive cell proof without same-plan peers',{peers:2});
+blocked('no sufficient peers AND missing independent full-cell proof',{peers:2,attempts:base.filter(a=>a.scope!=='source_truth_full_cell')});
 blocked('semantic alternative',{secondary:'Get-A'});
 blocked('strong neighbor-safe expanded OCR counterevidence',{attempts:base.map(a=>a.scope==='source_truth_edge_expanded'?{...a,cropQuality:{...a.cropQuality,neighborColumnIncluded:false}}:a)});
 blocked('competing two exact cell views',{attempts:base.concat([{scope:'cell_view',candidate:fixture.secondaryValue,mode:'plain'},{scope:'cell_view',candidate:fixture.secondaryValue,mode:'contrast'}])});

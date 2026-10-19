@@ -18,7 +18,7 @@ function check(name,fn){fn();checks++;console.log('PASS',name);}
 const raw=JSON.parse(fs.readFileSync(path.join(root,'tools/fixtures/golden-regression/P11410_REALGERAET_FIRMENKONFLIKT_DIAGNOSE.json'),'utf8'));
 assert.equal(raw.attempts.length,9);
 const attempts=raw.attempts.map(a=>({...a,cropQuality:a.cropQuality?{...a.cropQuality}:undefined}));
-for(const a of attempts){if(a.scope==='source_truth_adaptive_company') {a.sourceRow=raw.sourceRow;a.sourceColumn=raw.sourceColumn;a.field='company';}}
+for(const a of attempts){if(a.scope==='source_truth_adaptive_company'||a.scope==='source_truth_full_cell') {a.sourceRow=raw.sourceRow;a.sourceColumn=raw.sourceColumn;a.field='company';}}
 const primary={...raw.primarySourceEvidence,sourceRow:raw.sourceRow,sourceColumn:raw.sourceColumn,cropQuality:{...raw.primarySourceEvidence.cropQuality}};
 function prepared(list=attempts) {
  const ride={sourceRow:raw.sourceRow,sourceImageOcr:true,company:raw.originalValue,companyOcrConflict:true,
@@ -56,7 +56,7 @@ const broken=prepared(attempts.map(a=>{const c={...a}; if(c.scope==='source_trut
 api.state.g06QuarantineTrace=[]; const blocked=flow(broken);
 check('missing adaptive provenance remains blocked',()=>{assert.strictEqual(blocked.gated[0].companyOcrConflict,true);assert(blocked.issues.some(x=>x.level==='error'&&/Firma/.test(x.text)))});
 check('blocked final validation is visible in full trace',()=>{const final=api.state.g06QuarantineTrace.find(x=>x.stage==='after_final_validation').rides[0];assert.strictEqual(final.companyOcrConflict,true);assert(final.validationIssues.some(x=>x.level==='error'&&/Firma/.test(x.text)))});
-const oppose=prepared(attempts.concat([{scope:'source_truth_full_cell',mode:'independent',candidate:raw.secondaryValue,cropQuality:attempts.find(x=>x.scope==='source_truth_full_cell').cropQuality}]));
+const oppose=prepared(attempts.concat([{scope:'source_truth_full_cell',mode:'independent',candidate:raw.secondaryValue,sourceRow:raw.sourceRow,sourceColumn:raw.sourceColumn,field:'company',cropQuality:attempts.find(x=>x.scope==='source_truth_full_cell').cropQuality}]));
 api.state.g06QuarantineTrace=[];const refused=flow(oppose);
 check('trusted independent opposition remains blocked',()=>{assert.strictEqual(refused.gated[0].companyOcrConflict,true);assert(refused.issues.some(x=>x.level==='error'&&/Firma/.test(x.text)))});
 check('no storage/import/network interfaces called',()=>{assert.strictEqual(storageCalls,0);assert.strictEqual(importCalls,0);assert.strictEqual(networkCalls,0)});
@@ -68,4 +68,29 @@ check('instrumentation is wired before/after reconciliation and final validation
  const v=source.indexOf("g06QuarantineCapture('after_final_validation', state.rides, state.issues)");
  assert(i>=0&&i<j&&j<k&&k<v);
 });
+
+// P11434 local adapter regressions: strict provenance on the same nine recorded OCR attempts.
+function clonedAttempts() { return attempts.map(a=>({...a,cropQuality:a.cropQuality?{...a.cropQuality}:undefined})); }
+function mustBlock(label,make) {
+  const probe=prepared(make(clonedAttempts()));
+  const r=flow(probe);
+  check(label,()=>{assert.strictEqual(r.gated[0].companyOcrConflict,true);assert(r.issues.some(x=>x.level==='error'&&/Firma/.test(x.text)));});
+}
+check('all qualified full-cell source views are explicitly bound to original cell',()=>{
+ assert.equal(attempts.filter(a=>a.scope==='source_truth_full_cell'&&a.sourceRow===raw.sourceRow&&a.sourceColumn===raw.sourceColumn&&a.field==='company').length,2);
+});
+mustBlock('P11434 full-cell source row missing blocks',a=>a.map(x=>{if(x.scope==='source_truth_full_cell')delete x.sourceRow;return x;}));
+mustBlock('P11434 full-cell source column missing blocks',a=>a.map(x=>{if(x.scope==='source_truth_full_cell')delete x.sourceColumn;return x;}));
+mustBlock('P11434 full-cell source row mismatch blocks',a=>a.map(x=>x.scope==='source_truth_full_cell'?{...x,sourceRow:raw.sourceRow+1}:x));
+mustBlock('P11434 full-cell source column mismatch blocks',a=>a.map(x=>x.scope==='source_truth_full_cell'?{...x,sourceColumn:raw.sourceColumn+1}:x));
+mustBlock('P11434 full-cell clipped glyph blocks',a=>a.map(x=>x.scope==='source_truth_full_cell'?{...x,cropQuality:{...x.cropQuality,rightEdgeClipped:true}}:x));
+mustBlock('P11434 full-cell neighbor bleed blocks',a=>a.map(x=>x.scope==='source_truth_full_cell'?{...x,cropQuality:{...x.cropQuality,neighborColumnIncluded:true}}:x));
+mustBlock('P11434 full-cell geometry uncertainty blocks',a=>a.map(x=>x.scope==='source_truth_full_cell'?{...x,cropQuality:{...x.cropQuality,targetCellGeometryConfirmed:false}}:x));
+mustBlock('P11434 qualified opposing cell blocks',a=>a.concat([{...a.find(x=>x.scope==='source_truth_full_cell'),mode:'independent-counterproof',candidate:raw.secondaryValue}]));
+check('P11434 original OCR truth and all nine candidates unchanged',()=>{
+ assert.strictEqual(raw.attempts.length,9);
+ assert.strictEqual(attempts.length,9);
+ for(let i=0;i<9;i++)assert.strictEqual(attempts[i].candidate,raw.attempts[i].candidate);
+});
+check('P11434 all traces remain read-only after repeated negative regressions',()=>{assert.strictEqual(storageCalls,0);assert.strictEqual(importCalls,0);assert.strictEqual(networkCalls,0)});
 console.log('G06-01 LOCAL TRACE:',checks+'/'+checks,'PASS; storage='+storageCalls+', import='+importCalls+', network='+networkCalls);
