@@ -7131,6 +7131,38 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       firstWordLeft:Number(crossing.x0), matrixLeft:left};
   }
 
+  // G4 local-only: gate CONTENT changes, not spelling similarity or number of OCR modes.
+  // All OCR modes here read the same photograph; their agreement is not independent truth.
+  function routeG4SemanticDecision(previous, next, primaryCellEvidence) {
+    const oldValue = routeOcrText(previous);
+    const newValue = routeOcrText(next);
+    if (!oldValue || !newValue) return { allow: false, reason: 'missing_route_value' };
+    if (routeOcrBase(oldValue) === routeOcrBase(newValue)) {
+      return { allow: true, reason: 'same_route_or_diacritic_equivalent' };
+    }
+    const raw = routeOcrText(primaryCellEvidence?.rawOcr || '');
+    const quality = primaryCellEvidence?.cropQuality || {};
+    const complete = primaryCellEvidence?.verificationSource === 'primary_full_image_cell_assignment' &&
+      primaryCellEvidence?.geometryConfidence === 'high' &&
+      Number.isFinite(primaryCellEvidence?.confidence) &&
+      Number(primaryCellEvidence?.confidence) >= 85 &&
+      quality.fullCellIncluded === true &&
+      quality.leftEdgeClipped === false && quality.rightEdgeClipped === false &&
+      quality.neighborColumnIncluded === false;
+    // Real independent primary image-cell geometry agrees with the correction.
+    // Secondary OCR consensus on its own is NEVER sufficient.
+    if (complete && raw && routeOcrBase(raw) === routeOcrBase(newValue)) {
+      return { allow: true, reason: 'complete_strong_primary_cell_matches_candidate' };
+    }
+    return {
+      allow: false,
+      reason: raw ? 'semantic_change_without_matching_source_cell' : 'semantic_change_without_primary_cell',
+      primaryRaw: raw,
+      primaryCellConfidence: Number.isFinite(primaryCellEvidence?.confidence)
+        ? Number(primaryCellEvidence.confidence) : null
+    };
+  }
+
   async function recoverRouteDiacriticsTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const boundaries = imageMeta.boundaries || [];
@@ -7291,6 +7323,54 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
             const targetKey = routeOcrBase(candidate);
             const localConfirmed = localCandidates.length === 2 && localCandidates.every(value => routeOcrBase(value) === targetKey);
             if (localConfirmed) {
+              // P11430 local guard: four agreeing secondary OCR reads are not
+              // independent source truth if they all change the SAME terminal
+              // glyph against a complete, strong primary image-cell reading.
+              // Preserve primary and block for manual resolution; NEVER guess
+              // which glyph is correct. This rule is generic, not a hotel name.
+              const primaryRaw = routeOcrText(primaryCellEvidence?.rawOcr || '');
+              const quality = primaryCellEvidence?.cropQuality || {};
+              const originalTokens = original.split(/\s+/);
+              const candidateTokens = candidate.split(/\s+/);
+              const last = originalTokens.length - 1;
+              const strongPrimaryCell = originalTokens.length >= 2 &&
+                routeOcrBase(primaryRaw) === routeOcrBase(original) &&
+                primaryCellEvidence?.verificationSource === 'primary_full_image_cell_assignment' &&
+                primaryCellEvidence?.geometryConfidence === 'high' &&
+                Number(primaryCellEvidence?.confidence) >= 85 &&
+                Number(primaryCellEvidence?.wordCount) >= 2 &&
+                quality.fullCellIncluded === true &&
+                quality.leftEdgeClipped === false &&
+                quality.rightEdgeClipped === false &&
+                quality.neighborColumnIncluded === false;
+              const originalEnd = originalTokens[last] || '';
+              const secondaryEnd = candidateTokens[last] || '';
+              const terminalSubstitution = strongPrimaryCell &&
+                candidateTokens.length === originalTokens.length &&
+                originalTokens.slice(0, last).every((value, index) => value === candidateTokens[index]) &&
+                originalEnd.length >= 3 && originalEnd.length === secondaryEnd.length &&
+                originalEnd.slice(0, -1) === secondaryEnd.slice(0, -1) &&
+                originalEnd.slice(-1) !== secondaryEnd.slice(-1) &&
+                /^[A-Za-zÄÖÜäöüßÀ-ÿ]$/.test(originalEnd.slice(-1)) &&
+                /^[A-Za-zÄÖÜäöüßÀ-ÿ]$/.test(secondaryEnd.slice(-1));
+              const changedWordPrimaryConfidence = terminalSubstitution
+                ? routeChangedTokenPrimaryConfidence(original, candidate, imageMeta, rowMetaForRoute, left, right)
+                : null;
+              if (terminalSubstitution && Number.isFinite(changedWordPrimaryConfidence) &&
+                  changedWordPrimaryConfidence >= 85) {
+                ride[`${descriptor.field}OcrConflict`] = true;
+                ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
+                ride[`${descriptor.field}OcrConflictEvidence`] = {
+                  reason: 'strong_primary_terminal_glyph_vs_four_secondary_reads',
+                  columnVotes: winner[1],
+                  localCandidates: [...localCandidates],
+                  primaryCellConfidence: Number(primaryCellEvidence.confidence),
+                  primaryChangedWordConfidence: changedWordPrimaryConfidence
+                };
+                ride[`${descriptor.field}TargetedOcrConsensusRejected`] =
+                  'strong_primary_terminal_glyph_conflict';
+                continue;
+              }
               safe = true;
               recoverySource = 'targeted_route_dual_column_plus_dual_local_consensus';
             }
@@ -7355,6 +7435,19 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           continue;
         }
 
+        // G4 control point A: fail closed on unproven semantic substitutions,
+        // including weak, missing, internal-glyph and four-vote disagreements.
+        const g4Decision = routeG4SemanticDecision(original, candidate, primaryCellEvidence);
+        if (!g4Decision.allow) {
+          ride[`${descriptor.field}OcrConflict`] = true;
+          ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
+          ride[`${descriptor.field}OcrConflictEvidence`] = {
+            ...g4Decision, columnVotes: winner[1], localCandidates: [...localCandidates],
+            primaryValue: original, candidate
+          };
+          ride[`${descriptor.field}G4SemanticAutochangeRejected`] = g4Decision.reason;
+          continue;
+        }
         ride[`${descriptor.field}RawOcr`] = original;
         ride[descriptor.field] = candidate;
         ride[`${descriptor.field}RecoveredFromTargetedOcr`] = true;
@@ -11460,6 +11553,57 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         if (!record || typeof record !== 'object' || !record.manualCheckRequired) return;
         if (ride[`${field}OcrConflict`]) return;
         add(`cell_evidence_unresolved_${field}`, `${field}: exakte Zell-Evidenz blieb widersprüchlich und erfordert manuelle Prüfung`);
+      });
+
+      // G4 control point B: after all list-consistency and other recovery stages,
+      // compare final routes with source-cell evidence, never with peer popularity.
+      // Exact geometric edge repairs and separately guarded empty-cell recoveries
+      // remain on their own established source-provenance paths.
+      ['pickup', 'destination'].forEach(field => {
+        const originalCell = evidence[field];
+        const sourceRaw = routeOcrText(originalCell?.rawOcr || '');
+        const finalValue = routeOcrText(ride[field]);
+        if (!sourceRaw || !finalValue) return; // absence is handled by existing field gates
+        if (routeOcrBase(sourceRaw) === routeOcrBase(finalValue)) return;
+        const sourceDecision = routeG4SemanticDecision(sourceRaw, finalValue, originalCell);
+        if (sourceDecision.allow) return;
+        // A previously-empty geometric cell can have a separately guarded,
+        // same-cell + raw-word recovery; it must not be rewritten here.
+        const missingSource = ride[`${field}MissingTargetedOcrSource`];
+        const missingRawItems = Array.isArray(ride[`${field}MissingTargetedOcrRawEvidence`])
+          ? ride[`${field}MissingTargetedOcrRawEvidence`] : [];
+        const exactRawWord = missingRawItems.some(item =>
+          routeOcrBase(item?.candidate) === routeOcrBase(finalValue));
+        const nearRawWord = missingRawItems.length === 1 && missingRawItems.every(item => {
+          const left = routeOcrBase(item?.candidate).replace(/[^a-z0-9]/g, '');
+          const right = routeOcrBase(finalValue).replace(/[^a-z0-9]/g, '');
+          return left.length >= 7 && right.length >= 7 &&
+            routeOcrDistance(left, right) <= 1;
+        });
+        const missingRecovery = ride[`${field}RecoveredFromMissingTargetedOcr`] === true &&
+          Number(ride[`${field}MissingTargetedOcrEvidence`]) >= 2 &&
+          ((exactRawWord && (
+            missingSource === 'targeted_route_cell_consensus_plus_primary_raw' ||
+            missingSource === 'targeted_raw_word_bbox_consensus_plus_primary_raw')) ||
+           (nearRawWord && missingSource ===
+            'p95_unanimous_cell_crops_plus_near_primary_raw_plus_exact_sibling'));
+        // Historical right-boundary spillover requires >=2 distinct row
+        // confirmations and the recorded added token, never just a majority vote.
+        const boundaryRecovered = ride[`${field}RecoveredFromBoundaryOcr`] === true &&
+          ride[`${field}BoundaryRecoverySource`] === 'repeated_right_boundary_overlap' &&
+          Number(ride[`${field}BoundaryRecoveryEvidence`]) >= 2 &&
+          routeOcrBase(`${sourceRaw} ${routeOcrText(ride[`${field}BoundaryRecoveryToken`])}`) === routeOcrBase(finalValue);
+        if (missingRecovery || boundaryRecovered) return;
+        ride.routeG4FinalIntegrity = {
+          ...(ride.routeG4FinalIntegrity || {}),
+          [field]: { reason: 'unverified_final_route_vs_original_cell', primaryRaw: sourceRaw,
+            finalValue, sourceConfidence: Number.isFinite(originalCell?.confidence)
+              ? Number(originalCell.confidence) : null,
+            recoverySource: ride[`${field}RecoverySource`] || '',
+            consistency: ride.routeTextConsistency?.[field] || null }
+        };
+        add(`route_semantic_unverified_${field}`,
+          `${field}: finale Route „${finalValue}“ widerspricht der ursprünglichen Bildzelle „${sourceRaw}“ ohne ausreichenden Originalbild-Nachweis`);
       });
 
       ride.importIntegrityConflicts = conflicts;
