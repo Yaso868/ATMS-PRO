@@ -7163,6 +7163,57 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     };
   }
 
+  // P11432 local-only: a narrow primary-image proof for the observed terminal
+  // Inn/Inr OCR glyph confusion. This is not a hotel/route name allowlist.
+  // Same-photo secondary OCR passes cannot outvote a geometrically complete,
+  // exceptionally clear ORIGINAL final word; contradictory original words,
+  // prior manual conflicts, or weaker/boundary evidence stay fail-closed.
+  function provenOriginalInnAgainstSecondaryInr(originalValue, secondaryValue,
+      primaryCellEvidence, imageMeta, rowMeta, left, right, ride, field) {
+    const original = routeOcrText(originalValue);
+    const candidate = routeOcrText(secondaryValue);
+    const originalWords = original.split(/\s+/);
+    const secondaryWords = candidate.split(/\s+/);
+    if (originalWords.length < 2 || originalWords.length !== secondaryWords.length) return null;
+    const finalIndex = originalWords.length - 1;
+    if (!originalWords.slice(0, finalIndex).every((word, i) => word === secondaryWords[i])) return null;
+    // One established OCR glyph pair, not arbitrary semantic substitutions.
+    if (originalWords[finalIndex].toLocaleLowerCase('de-DE') !== 'inn' ||
+        secondaryWords[finalIndex].toLocaleLowerCase('de-DE') !== 'inr') return null;
+    if (ride?.[`${field}OcrConflict`] === true ||
+        primaryCellEvidence?.manualCheckRequired === true) return null;
+    const q = primaryCellEvidence?.cropQuality || {};
+    const conf = primaryCellEvidence?.confidence;
+    const wordCount = primaryCellEvidence?.wordCount;
+    if (routeOcrBase(primaryCellEvidence?.rawOcr || '') !== routeOcrBase(original) ||
+        primaryCellEvidence?.verificationSource !== 'primary_full_image_cell_assignment' ||
+        primaryCellEvidence?.geometryConfidence !== 'high' ||
+        typeof conf !== 'number' || !Number.isFinite(conf) || conf < 90 ||
+        !Number.isInteger(wordCount) || wordCount < originalWords.length ||
+        q.fullCellIncluded !== true || q.leftEdgeClipped !== false ||
+        q.rightEdgeClipped !== false || q.neighborColumnIncluded !== false) return null;
+    if (![left, right, rowMeta?.y0, rowMeta?.y1].every(Number.isFinite) ||
+        right <= left || rowMeta.y1 <= rowMeta.y0) return null;
+    const words = rawRouteEvidenceItemsForCell(imageMeta, rowMeta, left, right);
+    const originalWord = words.filter(item => item.key === 'inn');
+    // Reject competing original-image readings even if they are less confident.
+    if (words.some(item => item.key === 'inr') || originalWord.length !== 1) return null;
+    const w = originalWord[0];
+    if (!Number.isFinite(w.confidence) || w.confidence < 95 ||
+        w.x0 <= left + 1 || w.x1 >= right - 1 ||
+        w.y0 < rowMeta.y0 || w.y1 > rowMeta.y1) return null;
+    return {
+      reason: 'original_image_strong_inn_terminal_glyph_secondary_inr_noise',
+      originalRaw: original,
+      secondaryCandidate: candidate,
+      primaryCellConfidence: conf,
+      primaryWordConfidence: w.confidence,
+      sourceRow: Number(ride?.sourceRow || 0),
+      field,
+      verifiedOriginalWordBounds: { x0:w.x0, x1:w.x1, y0:w.y0, y1:w.y1 }
+    };
+  }
+
   async function recoverRouteDiacriticsTargeted(rides, imageCanvas, imageMeta, mapping) {
     if (!imageCanvas || !imageMeta || !window.Tesseract) return rides;
     const boundaries = imageMeta.boundaries || [];
@@ -7358,6 +7409,18 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
                 : null;
               if (terminalSubstitution && Number.isFinite(changedWordPrimaryConfidence) &&
                   changedWordPrimaryConfidence >= 85) {
+                const originalProof = provenOriginalInnAgainstSecondaryInr(
+                  original, candidate, primaryCellEvidence, imageMeta,
+                  rowMetaForRoute, left, right, ride, descriptor.field);
+                if (originalProof) {
+                  // Keep the original source word and record what was ignored.
+                  // NO unresolved conflict flag or import-blocking repair is created.
+                  ride[`${descriptor.field}OcrSecondaryTerminalGlyphNoiseIgnored`] = true;
+                  ride[`${descriptor.field}OcrSecondaryTerminalGlyphNoiseEvidence`] = originalProof;
+                  ride[`${descriptor.field}TargetedOcrConsensusRejected`] =
+                    'strong_original_inn_secondary_inr_noise';
+                  continue;
+                }
                 ride[`${descriptor.field}OcrConflict`] = true;
                 ride[`${descriptor.field}OcrConflictCandidate`] = candidate;
                 ride[`${descriptor.field}OcrConflictEvidence`] = {

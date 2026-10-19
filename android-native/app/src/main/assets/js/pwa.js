@@ -12,7 +12,7 @@
   updateOnline();
   if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
-      navigator.serviceWorker.register('./service-worker.js?v=P11431', {updateViaCache:'none'}).catch(function(err){
+      navigator.serviceWorker.register('./service-worker.js?v=P11432', {updateViaCache:'none'}).catch(function(err){
         console.warn('Service Worker konnte nicht registriert werden:', err);
       });
     });

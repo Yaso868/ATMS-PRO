@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 8
-        versionName '1.4.0-ap01-p11431-g4-route-test'
+        versionCode 9
+        versionName '1.4.0-ap01-p11432-inn-inr-evidence-test'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -367,7 +367,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11431')
+    dependsOn tasks.named('runtimeAssetAlignmentP11432')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
     dependsOn tasks.named('safeFlightPreviewP11422')
     dependsOn tasks.named('safeFlightEvidenceP11423')
@@ -389,9 +389,9 @@ tasks.named('preBuild').configure {
 
 // AP-01.07: mandatory product-first release gates. Fail CLOSED if browser QA
 // dependencies, assertions or mock-storage integration fail. No real storage.
-tasks.register('runtimeAssetAlignmentP11431', Exec) {
+tasks.register('runtimeAssetAlignmentP11432', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11431.js'
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11432.js'
 }
 tasks.register('ap01EditorSafety', Exec) {
     workingDir rootProject.projectDir
