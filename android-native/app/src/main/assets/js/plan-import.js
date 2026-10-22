@@ -5166,7 +5166,8 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       reason: cellText(rowMeta[matrixIndex]?.syntheticGapFailureReason) || 'recovery_not_confirmed',
       conflict: Boolean(rowMeta[matrixIndex]?.syntheticGapConflict),
       imageBand: [Number(rowMeta[matrixIndex]?.y0), Number(rowMeta[matrixIndex]?.y1)]
-        .map(value => Number.isFinite(value) ? Math.round(value) : null)
+        .map(value => Number.isFinite(value) ? Math.round(value) : null),
+      ocrReadback: rowMeta[matrixIndex]?.syntheticGapOcrReadback || null
     }));
     meta.syntheticRowRecoveryGate = {
       version: 'P11439_LOCAL_DIAGNOSTIC', accepted: unresolvedRows.length === 0,
@@ -5183,7 +5184,24 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         conflicting_ocr_views: 'widerspruechliche OCR-Nachlesungen',
         recovery_not_confirmed: 'Wiederherstellung nicht bestaetigt'
       }[first.reason] || 'Wiederherstellung nicht bestaetigt';
-      const issue = new Error(`Tabellenzeile bei Pruefposition ${first.matrixIndex}${extra} nicht sicher erkannt (${reasonLabel}). Kein Import.`);
+      // All unresolved MATRIX positions, not guessed original row numbers.
+      // Render as plain text in importStatus (never as HTML).
+      const descriptions = unresolvedRows.slice(0,8).map(row => {
+        const band = row.imageBand.every(Number.isFinite)
+          ? `, Bild-Y ${row.imageBand[0]}-${row.imageBand[1]}` : '';
+        const diffs = (row.ocrReadback?.disagreements || []).slice(0,5);
+        let detail = diffs.length
+          ? diffs.map(d=>`${d.field}: OCR 1 „${d.ocr1}“ / OCR 2 „${d.ocr2}“`).join('; ')
+          : '';
+        if (!detail && row.ocrReadback?.views?.length) {
+          detail = row.ocrReadback.views.slice(0,2).map((view,i)=>
+            `OCR ${i+1} (${view.scale}x): ${view.cells.slice(0,4).map(c=>`${c.field} „${c.text}“`).join(', ') || 'keine sicheren Texte'}`
+          ).join('; ');
+        }
+        return `Pruefposition ${row.matrixIndex}${band}: ${row.reason}${detail ? ' · '+detail : ''}`;
+      });
+      if (unresolvedRows.length > 8) descriptions.push(`+${unresolvedRows.length-8} weitere Pruefpositionen`);
+      const issue = new Error(`Tabellenzeile bei Pruefposition ${first.matrixIndex}${extra} nicht sicher erkannt (${reasonLabel}). Einzelheiten (Pruefposition ist NICHT zwingend Originalzeile): ${descriptions.join(' | ')}. Kein Import.`);
       issue.atmsRowIntegrityReview = Object.freeze({
         version: 'P11439_LOCAL_DIAGNOSTIC', unresolvedRows,
         noImportOnFailure: true, mayImport: false, noMutation: true
@@ -5239,6 +5257,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       let bestScore = -1;
       // H5 local candidate: collect ALL OCR views, including partial second reads.
       const observedViews = [];
+      const observedScales = [];
 
       for (const scale of [1, 2]) {
         try {
@@ -5279,6 +5298,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           const score = nonEmpty + (rideTimeValid ? 8 : 0) + routeScore * 2 + identityScore;
 
           observedViews.push(candidate);
+          observedScales.push(scale);
           if (syntheticRowHasRequiredCore(candidate, semantic)) {
             if (score > bestScore) {
               bestScore = score;
@@ -5290,6 +5310,42 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           // Nur Sicherheitsnetz; der naechste Versuch darf weiterlaufen.
         }
       }
+
+      // P11440: preserve a small, bounded read-only comparison for EVERY
+      // synthetic position. These OCR observations are not confirmed facts.
+      // Empty cells are shown as missing, not manufactured or copied.
+      const semanticForEvidence = imageMeta.semantic || imageSemanticColumns(imageMeta.anchors || []);
+      const aliases = { price:'Preis', rideTime:'Dispozeit', pickup:'Von', destination:'Nach',
+        customer:'Kunde', company:'Firma', arrivalFlight:'Flug ang.', departureFlight:'Flug ausg.',
+        vehicle:'Fahrzeug', persons:'Personen', flightTime:'Flugzeit',
+        flightLocation:'Flugort', driver:'Fahrer' };
+      const fieldName = column => {
+        const match = Object.keys(aliases).find(name => semanticForEvidence[name] === column);
+        return match ? aliases[match] : `Spalte ${column + 1}`;
+      };
+      const safeText = value => cellText(value).replace(/[\r\n\t\x00-\x1f\x7f]/gu,' ').slice(0,72);
+      const disagreements = [];
+      if (observedViews.length > 1) {
+        const left = observedViews[0] || [];
+        const right = observedViews[1] || [];
+        for (let col = 0; col < Math.max(left.length,right.length); col++) {
+          const a = cellText(left[col]);
+          const b = cellText(right[col]);
+          if (a && b && a !== b) disagreements.push({
+            column: col + 1, field: fieldName(col), ocr1: safeText(a), ocr2: safeText(b)
+          });
+        }
+      }
+      meta.syntheticGapOcrReadback = {
+        viewCount: observedViews.length,
+        views: observedViews.slice(0,2).map((view,i)=>({
+          scale:observedScales[i],
+          cells:view.map((value,col)=>({column:col+1,field:fieldName(col),text:safeText(value)}))
+            .filter(value=>Boolean(value.text)).slice(0,14)
+        })),
+        disagreements: disagreements.slice(0,14),
+        independentSources: false, noMutation: true, noImportOnFailure: true
+      };
 
       if (!bestRow) {
         meta.syntheticGapFailureReason = 'no_complete_ocr_view';

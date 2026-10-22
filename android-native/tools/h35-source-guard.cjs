@@ -26,8 +26,8 @@ for(const name of order){
  previous=position;
 }
 // P11439: preserve H35 helper hashes/order; assert the current diagnostic import bundle loads after them.
-const planScript='<script src="./js/plan-import.js?v=P11439" defer></script>';
-assert.equal(index.split(planScript).length,2,'current P11439 plan-import script missing or repeated');
+const planScript='<script src="./js/plan-import.js?v=P11440" defer></script>';
+assert.equal(index.split(planScript).length,2,'current P11440 plan-import script missing or repeated');
 assert(previous<index.indexOf(planScript),'blocked-row helpers must load before import JS');
 for(const name of ['h13-review-only.js','h15-ride-drafts.js','h17-geometry-candidates.js','h19-pixel-review.js','h26-source-band-audit.js','h27-source-cell-focus.js']){
  const t=fs.readFileSync(path.join(assets,'js',name),'utf8');
