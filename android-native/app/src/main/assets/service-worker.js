@@ -29,83 +29,69 @@
 // CORE-007D8A1F1D8P111 · 06.10.2026: cache refresh for production Live-Cockpit target promotion; OCR/flight/import semantics unchanged.
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
-const CACHE_NAME = "atms-pro-pwa-2026-10-13-p11435-ap01-company-grayscale";
-// CORE-006E · 09.09.2026:
-// Lokale JS-Dateien werden online bewusst ohne HTTP-/Browser-Zwischencache geladen.
-// Dadurch greifen neue ATMS-Patches sofort, auch wenn index.html noch ältere ?v=-Werte
-// verwendet. Die erfolgreiche Antwort wird weiterhin im PWA-Cache gespeichert,
-// sodass der Offline-Fallback erhalten bleibt.
-//
-// CORE-004E · 05.09.2026:
-// Asset-Fehler erhalten nie mehr index.html als JS/CSS-Ersatz. Offline-Fallback auf
-// index.html gilt ausschließlich für Navigation.
+// R59 QUELLSICHERHEITS-KANDIDAT; LOKALER QA-STAND, NICHT ZUR AUSLIEFERUNG.
+const CACHE_NAME = "atms-pro-pwa-2026-10-22-p11436-daily-ui-r1-qa-only-h35-modules-integrated";
+const CACHE_PREFIX = "atms-pro-pwa-";
 const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./manifest.webmanifest",
-  "./css/main.css",
-  "./js/app.js?v=P1121",
-  "./js/flight-engine.js?v=CORE-004C",
-  "./js/ocr-integrity-core.js?v=P11435",
-  "./js/plan-import.js?v=P11435",
-  "./js/pwa.js?v=P11435",
+  "./", "./index.html", "./manifest.webmanifest", "./css/main.css",
+  "./js/app.js?v=P1121", "./js/atms-daily-plan.js?v=P11436D1", "./js/flight-engine.js?v=CORE-004C",
+  "./js/ocr-integrity-core.js?v=P11436",
+  "./js/plan-import.js?v=P11436", "./js/pwa.js?v=P11436",
+  "./js/h17-geometry-candidates.js?v=P11436H35",
+  "./js/h26-source-band-audit.js?v=P11436H35",
+  "./js/h27-source-cell-focus.js?v=P11436H35",
+  "./js/h19-pixel-review.js?v=P11436H35",
+  "./js/h15-ride-drafts.js?v=P11436H35",
+  "./js/h13-review-only.js?v=P11436H35",
   "./js/firebase-ai.js?v=CORE-004D",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./js/atms-offline-tesseract.js",
+  "./vendor/sheetjs/0.20.3/dist/xlsx.full.min.js",
+  "./vendor/tesseract/5.1.1/tesseract.min.js",
+  "./icons/icon-192.png", "./icons/icon-512.png"
 ];
 
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    // Missing runtime asset prevents activation; NO index.html substitute.
+    await cache.addAll(APP_SHELL);
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key)))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE_NAME).map(k => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  const scope = new URL(self.registration.scope);
+  // Do not cache or re-route external flight queries or unrelated URLs.
+  if (url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
 
   event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const localJs = /\/js\/[^/]+\.js$/.test(url.pathname);
+    const largeOcrAsset = /\/vendor\/(?:tesseract-core|tessdata)\//.test(url.pathname);
     try {
-      const url = new URL(event.request.url);
-      const localJs = url.origin === self.location.origin && /\/js\/[^/]+\.js$/.test(url.pathname);
-
-      // CORE-006E: Bei lokalem JS Browser-/HTTP-Cache umgehen.
-      // Der Service-Worker-Cache bleibt ausschließlich als Offline-Fallback bestehen.
-      const networkRequest = localJs
-        ? new Request(event.request, { cache: "no-store" })
-        : event.request;
-
-      const response = await fetch(networkRequest);
-
-      if (response && response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+      const request = localJs ? new Request(event.request, {cache: "no-store"}) : event.request;
+      const response = await fetch(request);
+      if (response && response.ok && !largeOcrAsset) {
+        // Cache writes may fail due to quota; keep the primary asset response.
+        cache.put(event.request, response.clone()).catch(() => {});
       }
-
       return response;
     } catch (_) {
-      const cached = await caches.match(event.request);
+      // Never read previous cache generations or silently swap import JS.
+      const cached = await cache.match(event.request);
       if (cached) return cached;
-
-      // Kompatibilitäts-Fallback: Falls index.html noch die alte Query-Version
-      // anfordert, kann offline die vorab gecachte CORE-006D-Datei verwendet werden.
-      try {
-        const url = new URL(event.request.url);
-        if (url.origin === self.location.origin && /\/js\/plan-import\.js$/.test(url.pathname)) {
-          const freshPlanImport = await caches.match("./js/plan-import.js?v=P11435");
-          if (freshPlanImport) return freshPlanImport;
-        }
-      } catch (_) {}
-
       if (event.request.mode === "navigate") {
-        return (await caches.match("./index.html")) || Response.error();
+        return (await cache.match("./index.html")) || Response.error();
       }
       return Response.error();
     }

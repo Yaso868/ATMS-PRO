@@ -126,7 +126,7 @@ const ATMS_MESSAGES_KEY='atms_messages_v1';
 const ATMS_LIVE_LAST_CHECK_META='atms_live_last_check_meta_v1';
 const P77_LEGACY_DEDUPE_MIGRATION_KEY='atms_p77a_legacy_dedupe_migration_v2';
 const P77_LEGACY_DEDUPE_ROLLBACK_KEY='atms_p77a_legacy_dedupe_compact_rollback_v2';
-const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1',PLAN_KEEP_PINNED='atms_plan_keep_pinned_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;const ARCHIVE_RESTORE_PREFLIGHT='atms_archive_restore_preflight_v1',ARCHIVE_RESTORE_LAST='atms_archive_restore_last_v1';let storageV2ArchiveBusy=false,storageV2ArchiveReadBusy=false;let p105ArchiveRestoreContext=null,p105ArchiveRestoreBusy=false,p105ArchiveRestoreReadyManifest=null,p105ArchiveRestoreStatusMessage='',p105ArchiveRestoreStatusType='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const KEY='atms_beta_14_3_1_rides',DONE='atms_beta_14_3_1_done',DONE_OPEN='atms_beta_14_3_1_done_open',WA_SETTINGS='atms_beta_14_3_1_whatsapp',DISP_SETTINGS='atms_dispatchers_v1',DRIVER_SETTINGS='atms_driver_contacts_v1',BACKUP_META='atms_backup_meta_v1',LIVE_SETTINGS='atms_live_disposition_v1',LIVE_LOG='atms_live_disposition_log_v1',DRIVER_SESSION='atms_driver_session_v1',INFO_CHAT_SETTINGS='atms_info_chat_v1',FLIGHT_CACHE='atms_flight_cache_v1',FLIGHT_CACHE_BACKUP='atms_flight_cache_verified_v1',FLIGHT_CACHE_BACKUP_V2='atms_flight_cache_verified_v2',FLIGHT_CACHE_V2_OVERFLOW='atms_flight_cache_v2_overflow',RIDE_OVERRIDE_KEY='atms_ride_overrides_v1',PLAN_IMPORT_HISTORY='atms_plan_import_history_v1',PLAN_IMPORT_CURRENT='atms_plan_import_current_v1',PLAN_KEEP_PINNED='atms_plan_keep_pinned_v1';const ADDRESS_BOOK='atms_address_book_v1',ADDRESS_CANDIDATES='atms_address_candidates_v1';const DRIVER_COLOR_KEY='atms_driver_color_map_v1',DRIVER_PLAN_COLOR_KEY='atms_driver_plan_color_map_v1',DRIVER_COLOR_MANUAL_KEY='atms_driver_color_manual_v1',DRIVER_COLOR_MANUAL_MIGRATION_KEY='atms_driver_color_manual_migrated_p75_v1';const PERSIST_SAFETY_KEY='ATMSPRO_PERSISTENCE_SAFETY_V1',PERSIST_AUDIT_KEY='ATMSPRO_PERSISTENCE_AUDIT_V1',PERSIST_SCHEMA=1;const PERSIST_DURABLE_DB='ATMSPRO_PERSISTENCE_DURABLE_V1',PERSIST_DURABLE_STORE='critical',PERSIST_DURABLE_RECORD='latest';let persistenceDurableShadow=null,persistenceDurableReady=false,persistenceDurableError='';let persistenceDurableSyncQueue=Promise.resolve();const STORAGE_V2_DB='ATMSPRO_STORAGE_V2_PHASE1',STORAGE_V2_STORE='snapshots',STORAGE_V2_RECORD='latest',STORAGE_V2_SCHEMA=1;let storageV2State={ready:false,available:false,status:'initializing',error:'',latest:null,lastCheckedAt:'',lastReason:''};let storageV2SyncQueue=Promise.resolve();const STORAGE_V2_ARCHIVE_CATALOG='atms_storage_v2_archive_catalog_v1',STORAGE_V2_ARCHIVE_SCHEMA=1;const ARCHIVE_RESTORE_PREFLIGHT='atms_archive_restore_preflight_v1',ARCHIVE_RESTORE_LAST='atms_archive_restore_last_v1';let storageV2ArchiveBusy=false,storageV2ArchiveReadBusy=false;let p105ArchiveRestoreContext=null,p105ArchiveRestoreBusy=false,p105ArchiveRestoreReadyManifest=null,p105ArchiveRestoreStatusMessage='',p105ArchiveRestoreStatusType='';const $=id=>document.getElementById(id);let liveGeoWatchId=null;let liveFreshnessTimer=null;let rides=[];let done=new Set(JSON.parse(localStorage.getItem(DONE)||'[]'));let doneOpen=localStorage.getItem(DONE_OPEN)==='1';let mode='rides',driverFilter='',active=null;let driverColorMap={},driverPlanColorMap={},driverColorManualMap={};let rideListReturnState=null;const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const PLAN_KEEP_CLEANUP_PREFLIGHT='atms_current_plan_cleanup_preflight_v1',PLAN_KEEP_CLEANUP_LAST='atms_current_plan_cleanup_last_v1';let p103CleanupBusy=false,p103CleanupStatusMessage='',p103CleanupStatusType='';
 
 let atmsToastTimer=0;
@@ -221,6 +221,12 @@ function writePersistenceSafety(storage,reason='snapshot'){
   return payload;
 }
 function updatePersistenceSafetyKey(key,rawValue,reason='write'){
+  // R15: During a pending transaction the safety pre-image must stay untouched.
+  // The journal itself is the only authority until a verified commit/rollback.
+  if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null){
+    persistAudit('r15_safety_write_held',{key,reason:String(reason||'')});
+    return;
+  }
   try{
     const prev=readPersistenceSafety();
     const storage={...(prev?.storage||{})};
@@ -274,7 +280,7 @@ async function writePersistenceDurableShadow(storage,reason='sync'){
 }
 function mergedCriticalShadowFromCurrent(){
   const storage={...(persistenceDurableShadow?.storage||{})};
-  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED]){
+  for(const key of [KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,FLIGHT_CACHE_BACKUP_V2,FLIGHT_CACHE_V2_OVERFLOW,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED]){
     const raw=localStorage.getItem(key);
     if(typeof raw==='string'&&raw.length)storage[key]=raw;
   }
@@ -303,6 +309,12 @@ async function initPersistenceDurableShadow(){
     if(saved&&saved.storage&&typeof saved.storage==='object')persistenceDurableShadow=saved;
     persistenceDurableReady=true;
     persistenceDurableError='';
+    // R15: a process restart after a partial R7 transaction must NOT seed
+    // IndexedDB from tentative local rides or restore missing keys automatically.
+    if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null){
+      persistAudit('r15_pending_durable_startup_frozen',{durablePresent:Boolean(persistenceDurableShadow)});
+      return;
+    }
     const startupLocalRides=localStorage.getItem(KEY),startupDurableRides=persistenceDurableShadow?.storage?.[KEY];
     const startupRideConflict=startupLocalRides!==null&&typeof startupDurableRides==='string'&&startupLocalRides!==startupDurableRides;
     if(startupRideConflict)persistAudit('rides_startup_conflict',{localLength:startupLocalRides.length,durableLength:startupDurableRides.length});
@@ -471,6 +483,14 @@ function syncStorageV2Phase1(reason='sync'){
 async function initStorageV2Phase1(){
   try{
     const local=storageV2LocalSnapshot('startup'),latest=await readStorageV2Latest();
+    // R15: do not initialise/seed V2 with a potentially partial commit.
+    // Existing V2 snapshots are still read for diagnostics, never overwritten.
+    if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null){
+      storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=latest;
+      storageV2SetState('mismatch');
+      persistAudit('r15_pending_storage_v2_startup_frozen',{latestPresent:Boolean(latest)});
+      return {ok:false,blocked:'pending-import-journal',local,latest};
+    }
     storageV2State.ready=true;storageV2State.available=true;storageV2State.latest=latest;storageV2State.error='';storageV2State.lastReason='startup';
     if(!latest){
       const seeded=await syncStorageV2Phase1('startup-initial-seed');
@@ -871,6 +891,11 @@ function ensureStorageV2ArchiveCard(){
 }
 window.addEventListener('atms-native-file-export-ready',()=>{try{renderStorageV2ArchiveCard()}catch(_){}});
 function capturePersistenceSafety(reason='snapshot',syncDurable=true){
+  // R15: a pending import/restore is NOT a verified state. Retain last-good safety.
+  if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null){
+    persistAudit('r15_safety_snapshot_held',{reason:String(reason||'')});
+    return null;
+  }
   try{
     const previous=readPersistenceSafety();
     const storage={};
@@ -886,7 +911,7 @@ function capturePersistenceSafety(reason='snapshot',syncDurable=true){
     // localStorage gerade fehlt. Genau das hatte zuvor einen guten Safety-Snapshot
     // beim nächsten Startup mit einem "leeren" Snapshot überschrieben.
     // Ein absichtlicher kompletter ATMS-Reset löscht PERSIST_SAFETY_KEY separat.
-    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED];
+    const protectedCritical=[KEY,DONE,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,FLIGHT_CACHE_BACKUP_V2,FLIGHT_CACHE_V2_OVERFLOW,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED];
     const preserved=[];
     for(const key of protectedCritical){
       if(Object.prototype.hasOwnProperty.call(storage,key))continue;
@@ -913,7 +938,7 @@ function safePersistentSetItem(key,rawValue,reason='write'){
     const readBack=localStorage.getItem(key);
     if(readBack!==value)throw new Error('Write-Read-Check fehlgeschlagen');
     updatePersistenceSafetyKey(key,value,'verified-write:'+reason);
-    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED].includes(key)){
+    if([FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,FLIGHT_CACHE_BACKUP_V2,FLIGHT_CACHE_V2_OVERFLOW,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED].includes(key)){
       // Revisionssicher: keine unbestaetigten optimistischen Durable-Werte.
       void syncPersistenceDurableShadow('verified-write:'+reason);
     }
@@ -926,6 +951,12 @@ function safePersistentSetItem(key,rawValue,reason='write'){
   }
 }
 function restoreMissingCriticalPersistence(reason='auto-recovery'){
+  // R15: do not merge an older safety image into a half-committed import.
+  // Preserve every source for a verified, explicitly authorised recovery.
+  if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null){
+    persistAudit('r15_critical_recovery_held',{reason:String(reason||'')});
+    return {restored:0,keys:[],blocked:'pending-import-journal'};
+  }
   const snap=readPersistenceSafety();
   const critical=[FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,RIDE_OVERRIDE_KEY,ADDRESS_BOOK,ADDRESS_CANDIDATES,PLAN_KEEP_PINNED,...(persistenceDurableReady?[KEY,DONE]:[])];
   const restored=[];
@@ -974,7 +1005,7 @@ function persistenceDiagnosis(){
     safetySnapshot:{present:Boolean(snap),updatedAt:snap?.updatedAt||'',reason:snap?.reason||'',keys:snap?.storage?Object.keys(snap.storage).length:0},
     durableShadow:{present:Boolean(persistenceDurableShadow),ready:persistenceDurableReady,error:persistenceDurableError,updatedAt:persistenceDurableShadow?.updatedAt||'',reason:persistenceDurableShadow?.reason||'',keys:persistenceDurableShadow?.storage?Object.keys(persistenceDurableShadow.storage).length:0},
     storageV2:storageV2Diagnosis(),
-    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK),addressCandidates:inspect(ADDRESS_CANDIDATES),planKeepPinned:inspect(PLAN_KEEP_PINNED)},
+    critical:{rides:inspect(KEY),done:inspect(DONE),flightCache:inspect(FLIGHT_CACHE),verifiedFlightBackup:inspect(FLIGHT_CACHE_BACKUP),verifiedFlightBackupV2:inspect(FLIGHT_CACHE_BACKUP_V2),flightCacheV2Overflow:inspect(FLIGHT_CACHE_V2_OVERFLOW),rideOverrides:inspect(RIDE_OVERRIDE_KEY),addressBook:inspect(ADDRESS_BOOK),addressCandidates:inspect(ADDRESS_CANDIDATES),planKeepPinned:inspect(PLAN_KEEP_PINNED)},
     recentAudit:audit.slice(0,30)
   };
 }
@@ -989,7 +1020,7 @@ function ensurePersistenceSafetyPanel(){
     return true;
   }
   const panel=document.createElement('section');panel.id='atmsPersistenceSafetyPanel';panel.style.cssText='margin:16px 0 0;padding:14px;border:1px solid rgba(255,255,255,.18);border-radius:14px;background:rgba(255,255,255,.04)';
-  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
+  panel.innerHTML=`<div style="font-weight:800;margin-bottom:6px">🛡️ CORE-005V5 · Persistenz-Sicherheit</div><div style="font-size:13px;opacity:.82;margin-bottom:10px">Additive Schutzschicht: localStorage + unabhängiger IndexedDB-Durable-Shadow, Write-Read-Check, fehlende kritische Daten wiederherstellen und Diagnose. Keine Cloud.</div><button type="button" id="atmsPersistenceSelfTestBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800">🧪 Persistenz-Selbsttest</button><button type="button" id="atmsPersistenceCopyBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">📋 Persistenz-Diagnose kopieren</button><button type="button" id="atmsR16JournalDiagnosisBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">🧾 Abgebrochenen Import nur lesend prüfen</button><button type="button" id="atmsPersistenceRecoverBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Fehlende geschützte Daten wiederherstellen</button><button type="button" id="atmsRestorePreviousImportBtn" style="width:100%;padding:12px;border-radius:10px;font-weight:800;margin-top:8px">↩️ Letzten Planimport rückgängig machen</button><pre id="atmsPersistenceOutput" style="white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;width:100%;max-width:100%;box-sizing:border-box;max-height:42vh;overflow:auto;margin:10px 0 0;padding:10px;border-radius:10px;background:rgba(0,0,0,.22);font-size:12px;line-height:1.4">Bereit.</pre>`;
   // CORE-005V3: Das Live-Flugdaten-Panel ist auf Mobil bereits nachweislich sichtbar.
   // Deshalb wird die Persistenz-Sicherheit als Kind dieses Panels gemountet.
   // Fallbacks bleiben nur fuer den unwahrscheinlichen Fall, dass Live noch nicht existiert.
@@ -1006,7 +1037,21 @@ function ensurePersistenceSafetyPanel(){
   const paint=obj=>{const out=$('atmsPersistenceOutput');if(out)out.textContent=JSON.stringify(obj,null,2)};
   $('atmsPersistenceSelfTestBtn')?.addEventListener('click',()=>{const result=persistenceDiagnosis();paint(result);showToast(result.selfTest?.ok?'Persistenz-Selbsttest OK':'Persistenz-Selbsttest fehlgeschlagen',result.selfTest?.ok?'ok':'warn')});
   $('atmsPersistenceCopyBtn')?.addEventListener('click',async()=>{const text=JSON.stringify(persistenceDiagnosis(),null,2);paint(JSON.parse(text));try{await navigator.clipboard.writeText(text);showToast('Persistenz-Diagnose kopiert','ok')}catch(_){showToast('Diagnose wird angezeigt – bitte manuell kopieren','warn')}});
-  $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;const result=restoreMissingCriticalPersistence('manual');paint({recovery:result,diagnosis:persistenceDiagnosis()});showToast(result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn')});
+  $('atmsR16JournalDiagnosisBtn')?.addEventListener('click',()=>{
+    const result=atmsR16PendingJournalDiagnosis();
+    paint({journal:result,warning:result.pending?'KEINE automatische Wiederherstellung oder Freigabe. Journal und Fahrtbestände unverändert lassen.':'Kein offenes Import-Journal gefunden.'});
+    showToast(result.pending?'Offenes Journal: manuelle Datenprüfung erforderlich':'Kein offenes Import-Journal',result.pending?'warn':'ok');
+  });
+  $('atmsPersistenceRecoverBtn')?.addEventListener('click',()=>{
+    if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null){
+      paint({journal:atmsR16PendingJournalDiagnosis(),recovery:{blocked:'pending-import-journal'}});
+      showToast('Wiederherstellung wegen offenem Import-Journal gesperrt – nur Diagnose erlaubt','warn');return;
+    }
+    if(!confirm('Nur aktuell FEHLENDE kritische Persistenzdaten aus dem letzten lokalen Sicherheits-Snapshot wiederherstellen? Vorhandene aktuelle Werte werden nicht überschrieben.'))return;
+    const result=restoreMissingCriticalPersistence('manual');
+    paint({recovery:result,diagnosis:persistenceDiagnosis()});
+    showToast(result.blocked?'Wiederherstellung gesperrt – Sicherung pruefen':result.restored?`${result.restored} Bereich(e) wiederhergestellt`:'Keine fehlenden geschützten Daten gefunden',result.restored?'ok':'warn');
+  });
   $('atmsRestorePreviousImportBtn')?.addEventListener('click',restorePreviousPlanImport);
   return true;
 }
@@ -1270,8 +1315,10 @@ function p96RecoverPersistedBorderTimes(source){
   return {rides:out,changed};
 }
 function save(options={}){
-  const corrected=applyRideOverrides(rides);
-  rides=corrected.rides;
+  if(!options.skipRideOverrides){
+    const corrected=applyRideOverrides(rides);
+    rides=corrected.rides;
+  }
   const rideOk=safePersistentSetItem(KEY,JSON.stringify(rides),'rides');
   // Bei fehlgeschlagenen Fahrten niemals eine neue Erledigt-Liste als zusammenpassend speichern.
   if(!rideOk){
@@ -1667,7 +1714,48 @@ function atmsPastClockTick(){
   const signature=atmsPastListSignature();
   if(signature!==atmsPastLastSignature){const y=window.scrollY||0;render();requestAnimationFrame(()=>window.scrollTo(0,y));}
 }
-function render(options={}){const listWasHidden=Boolean($('listView')?.classList.contains('hidden'));if(listWasHidden)atmsPastOpen=false;showView('list');ensureDriverColorCss();ensureDriverColorAssignments(rides);const vr=visualRides(rides);const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
+// TEST-App Tagesansicht – Anzeigewechsel ohne Fahrtenloeschung oder Migrations-Write.
+function atmsDailyInstallControls(){
+  const api=window.ATMSDailyPlan, top=$('listView')?.querySelector('.top');
+  if(!api||!top)return;
+  let bar=$('atmsDailyBar');
+  if(!bar){
+    bar=document.createElement('div');bar.id='atmsDailyBar';
+    bar.style.cssText='display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:7px 0;padding:11px;border:1px solid #4c9bd1;background:#0d2c45;border-radius:12px;color:white';
+    bar.innerHTML='<label style="flex:1;min-width:130px;font-weight:700;font-size:13px">Plantag<input id="atmsDailyDate" type="date" aria-label="Plantag wählen" style="box-sizing:border-box;display:block;margin-top:4px;min-height:44px;width:100%;background:#071a2b;color:white;border:1px solid #89b4ce;border-radius:8px;padding:7px;color-scheme:dark"></label><button id="atmsDailyNext" type="button" style="min-height:44px;border:1px solid #76b4e6;border-radius:8px;background:#17456d;color:white;padding:8px;font-weight:800">📅 Neuen Tag beginnen</button><button id="atmsDailyImport" type="button" style="min-height:44px;border:1px solid #68ba9c;border-radius:8px;background:#14614e;color:white;padding:8px;font-weight:800">＋ Planliste</button><div id="atmsDailyNotice" role="status" style="flex-basis:100%;font-size:12px;line-height:1.4"></div>';
+    top.appendChild(bar);
+    $('atmsDailyDate').addEventListener('change',e=>{
+      if(!api.select(e.target.value)){showToast('Plantag konnte nicht sicher gespeichert werden.','warn');e.target.value=api.get();return;}
+      mode='rides';driverFilter='';render();
+    });
+    $('atmsDailyNext').addEventListener('click',()=>{
+      const next=api.next(api.get());
+      if(!next){showToast('Plantag ungültig – kein Tageswechsel.','warn');return;}
+      if(!window.confirm('Neuen Plantag '+next+' beginnen? Bisherige Fahrten werden NICHT gelöscht, sondern bleiben unter „Alle Fahrten“ erhalten.'))return;
+      if(!api.select(next)){showToast('Plantag nicht gespeichert – keine Änderung.','warn');return;}
+      mode='rides';driverFilter='';render();showView('import');
+    });
+    $('atmsDailyImport').addEventListener('click',()=>showView('import'));
+  }
+  $('atmsDailyDate').value=api.get();
+  bar.style.display=mode==='all'?'none':'flex';
+  const note=$('atmsDailyNotice');
+  if(note){
+    const thisDay=api.forDay(rides,api.get()).length;
+    const other=rides.filter(r=>api.rideDay(r) && api.rideDay(r)!==api.get()).length;
+    const undated=api.undated(rides).length;
+    note.textContent=`${thisDay} Fahrt(en) für diesen Plantag. ${other?other+' weitere Fahrt(en) anderer Tage unter „Alle Fahrten“. ':''}${undated?'⚠ '+undated+' Fahrt(en) ohne eindeutigen Plantag unter „Alle Fahrten“ prüfen.':''} Keine automatische Löschung.`;
+  }
+}
+function atmsDailyAdoptImportedDay(imported){
+  const api=window.ATMSDailyPlan;if(!api)return false;
+  const date=api.importDay(imported);
+  if(!date)return false;
+  if(!api.select(date)){showToast('Fahrten gespeichert, aber der Plantag konnte nicht gesetzt werden. Über „Alle Fahrten“ ansehen.','warn');return false;}
+  mode='rides';driverFilter='';return true;
+}
+window.ATMSDailyAdoptImportedDay=atmsDailyAdoptImportedDay;
+function render(options={}){const listWasHidden=Boolean($('listView')?.classList.contains('hidden'));if(listWasHidden)atmsPastOpen=false;showView('list');ensureDriverColorCss();ensureDriverColorAssignments(rides);atmsDailyInstallControls();const allVisual=visualRides(rides);const vr=(mode==='rides'&&window.ATMSDailyPlan)?allVisual.filter(r=>window.ATMSDailyPlan.rideDay(r)===window.ATMSDailyPlan.get()):allVisual;const isDone=r=>r._bundleMemberIds?r._bundleMemberIds.every(id=>done.has(id)):done.has(r.id);
   // CORE-006I: Fahrtenansicht folgt der Reihenfolge der importierten Planliste.
   const open=vr.filter(r=>!isDone(r)&&matches(r)&&!atmsPastRideDecision(r));
   const past=vr.filter(r=>!isDone(r)&&matches(r)&&atmsPastRideDecision(r));
@@ -1678,13 +1766,13 @@ $('summary').textContent=`${mode==='all'?open.length+fin.length+past.length:open
 const stats=$('dashboardStats');
 
 if(stats){
- const drivers=[...new Set(rides.map(r=>r.driver).filter(Boolean))];
- const flights=[...new Set(rides.map(r=>r.flightNumber).filter(Boolean))];
- const notices=rides.filter(flightNeedsManualReview).length;
+ const drivers=[...new Set(vr.map(r=>r.driver).filter(Boolean))];
+ const flights=[...new Set(vr.map(r=>r.flightNumber).filter(Boolean))];
+ const notices=vr.filter(flightNeedsManualReview).length;
 
  stats.innerHTML=`
  <div class="dashboard-stat">
- <b>${rides.length}</b>
+ <b>${vr.length}</b>
  <span>Fahrten</span>
  </div>
 
@@ -2803,9 +2891,45 @@ function getFlightCache(){
     return Array.isArray(list)?list:[];
   }catch(_){return[]}
 }
-function getVerifiedFlightCacheBackup(){
+// R73 QA ONLY: a storage-write failure must still disable cache trust for
+// the current session. Restart safety after complete storage failure is NOT
+// independently proven and stays a release blocker.
+let atmsR73V2RuntimeBlocked=false;
+// R74 QA ONLY: persisted localStorage cache and its V2 backup do not prove
+// completeness after storage failures or partial restore. No previously saved
+// proof can be elevated at startup. Fresh results checked in this JS runtime
+// are tracked separately; this ephemeral set intentionally resets on restart.
+const atmsR74FreshVerifiedProofs=new Map();
+// In-session paired snapshots detect corruption even if BOTH cache copies
+// lose the same contradictory entry after a successful checked result.
+let atmsR74FreshCacheSnapshot=null;
+function atmsR74FlightCacheWritesBlocked(){
+  if(atmsR73V2RuntimeBlocked)return true;
+  try{return localStorage.getItem(FLIGHT_CACHE_V2_OVERFLOW)==='1';}
+  catch(_){atmsR73V2RuntimeBlocked=true;return true;}
+}
+function atmsR74FlightCacheRawValid(){
+  // Never overwrite malformed/raw-partial original evidence with a fabricated
+  // empty array simply because JSON.parse failed in a read helper.
+  try{
+    for(const key of [FLIGHT_CACHE,FLIGHT_CACHE_BACKUP_V2]){
+      const raw=localStorage.getItem(key);
+      if(raw!==null&&!Array.isArray(JSON.parse(raw))){atmsR73V2RuntimeBlocked=true;return false;}
+    }
+    return true;
+  }catch(_){atmsR73V2RuntimeBlocked=true;return false;}
+}
+// R73 QA ONLY: historic v1 backups may already have dropped contradictory origins.
+// Preserve their original bytes for review; never silently upgrade them to trusted v2.
+function getLegacyVerifiedFlightCacheBackup(){
   try{
     const list=JSON.parse(localStorage.getItem(FLIGHT_CACHE_BACKUP)||'[]');
+    return Array.isArray(list)?list:[];
+  }catch(_){return[]}
+}
+function getVerifiedFlightCacheBackup(){
+  try{
+    const list=JSON.parse(localStorage.getItem(FLIGHT_CACHE_BACKUP_V2)||'[]');
     return Array.isArray(list)?list:[];
   }catch(_){return[]}
 }
@@ -2825,35 +2949,84 @@ function flightCacheTupleKey(x){
 function isVerifiedFlightCacheEntry(x){
   return x?.verified===true&&Boolean(String(x?.flightLocation||'').trim());
 }
+// Only evidence created through the current checked-result path can be reused.
+// A version number is a compatibility marker, not an assertion that old evidence
+// or a restored legacy backup was complete.
+function isR73TrustedFlightCacheEntry(x){
+  return x?.atmsCacheEvidenceSchema===2
+    && Boolean(flightCacheNumber(x?.flightNumber))
+    && /^\d{4}-\d{2}-\d{2}$/.test(String(x?.date||''))
+    && /^\d{4}-\d{2}-\d{2}$/.test(String(x?.airportEventDate||''))
+    && ['arrival','departure'].includes(String(x?.direction||'').trim().toLowerCase())
+    && Boolean(String(x?.airportIata||'').trim())
+    && /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(x?.flightTime||''))
+    && Boolean(String(x?.flightLocation||'').trim())
+    && Boolean(String(x?.iata||'').trim())
+    && Boolean(String(x?.checkedAt||'').trim());
+}
+// R72 QA ONLY: A cache tuple is NOT a verification-evidence identity.
+// Two checked flight origins (or different event airports) on the same date,
+// flight, direction and clock are distinct, potentially contradictory proofs.
+// Keep both in the backup; the existing R71 lookup then fails closed.
+function flightCacheEvidenceKey(entry){
+  return [
+    flightCacheTupleKey(entry),
+    String(entry?.airportIata||'').trim().toUpperCase(),
+    planImportNorm(entry?.flightLocation||''),
+    String(entry?.iata||'').trim().toUpperCase()
+  ].join('|');
+}
 function saveVerifiedFlightCacheBackup(list){
-  const verified=(Array.isArray(list)?list:[]).filter(isVerifiedFlightCacheEntry);
+  const verified=(Array.isArray(list)?list:[]).filter(x=>isVerifiedFlightCacheEntry(x)&&isR73TrustedFlightCacheEntry(x));
   const byTuple=new Map();
   verified
     .slice()
     .sort((a,b)=>new Date(b?.checkedAt||0)-new Date(a?.checkedAt||0))
-    .forEach(entry=>{const key=flightCacheTupleKey(entry);if(key&&!byTuple.has(key))byTuple.set(key,entry)});
-  safePersistentSetItem(FLIGHT_CACHE_BACKUP,JSON.stringify(Array.from(byTuple.values()).slice(0,400)),'verified-flight-backup');
+    .forEach(entry=>{const key=flightCacheEvidenceKey(entry);if(key&&!byTuple.has(key))byTuple.set(key,entry)});
+  // A truncated v2 copy can hide contradictory evidence: block all automatic reuse.
+  if(byTuple.size>400){
+    atmsR73V2RuntimeBlocked=true;
+    // The marker itself may fail to persist. Never assume it survived a restart.
+    safePersistentSetItem(FLIGHT_CACHE_V2_OVERFLOW,'1','flight-cache-v2-overflow');
+    return false;
+  }
+  const ok=safePersistentSetItem(FLIGHT_CACHE_BACKUP_V2,JSON.stringify(Array.from(byTuple.values())),'verified-flight-backup-v2');
+  if(!ok)atmsR73V2RuntimeBlocked=true;
+  return ok;
 }
 function saveFlightCache(list){
-  const safe=(Array.isArray(list)?list:[]).slice(0,400);
-  safePersistentSetItem(FLIGHT_CACHE,JSON.stringify(safe),'flight-cache');
+  if(atmsR74FlightCacheWritesBlocked()||!atmsR74FlightCacheRawValid())return false;
+  const source=Array.isArray(list)?list:[];
+  // Do not silently truncate even one unbacked record, including pending
+  // manual-check evidence. A failed durable marker must never restore trust.
+  if(source.length>400){
+    atmsR73V2RuntimeBlocked=true;
+    safePersistentSetItem(FLIGHT_CACHE_V2_OVERFLOW,'1','flight-cache-active-overflow');
+    return false;
+  }
+  const safe=source;
+  // Preflight the FULL union before changing the active cache; otherwise the
+  // overflow marker can be set only after old active bytes have been lost.
   const merged=[...getVerifiedFlightCacheBackup(),...safe.filter(isVerifiedFlightCacheEntry)];
-  saveVerifiedFlightCacheBackup(merged);
+  const distinctVerified=new Set(merged
+    .filter(x=>isVerifiedFlightCacheEntry(x)&&isR73TrustedFlightCacheEntry(x))
+    .map(flightCacheEvidenceKey));
+  if(distinctVerified.size>400){
+    atmsR73V2RuntimeBlocked=true;
+    safePersistentSetItem(FLIGHT_CACHE_V2_OVERFLOW,'1','flight-cache-union-overflow');
+    return false;
+  }
+  if(!safePersistentSetItem(FLIGHT_CACHE,JSON.stringify(safe),'flight-cache')){
+    atmsR73V2RuntimeBlocked=true;
+    return false;
+  }
+  return saveVerifiedFlightCacheBackup(merged);
 }
 function recoverVerifiedFlightCache(){
-  const backup=getVerifiedFlightCacheBackup();
-  if(!backup.length)return 0;
-  let cache=getFlightCache(),changed=0;
-  for(const entry of backup){
-    if(!isVerifiedFlightCacheEntry(entry))continue;
-    const key=flightCacheTupleKey(entry);
-    const already=cache.some(x=>flightCacheTupleKey(x)===key&&isVerifiedFlightCacheEntry(x));
-    if(!already){cache.unshift(entry);changed++;}
-  }
-  if(changed){
-    safePersistentSetItem(FLIGHT_CACHE,JSON.stringify(cache.slice(0,400)),'flight-cache-recovery');
-  }
-  return changed;
+  // A once-trusted backup may be incomplete or rolled back alongside active
+  // storage. Never replay it on startup or alter the raw saved evidence.
+  // It remains available for explicit, read-only manual audit.
+  return 0;
 }
 function upsertFlightCache(entries){
   if(!Array.isArray(entries)||!entries.length)return;
@@ -2883,7 +3056,25 @@ function upsertFlightCache(entries){
     });
     cache.unshift(entry);
   }
-  saveFlightCache(cache);
+  if(saveFlightCache(cache)){
+    // Only actual in-session checked results can authorize reuse. R73 backup
+    // bytes by themselves, even if tagged Schema 2, NEVER authorize reuse.
+    const active=getFlightCache(),backup=getVerifiedFlightCacheBackup();
+    const backupKeys=new Set(backup.filter(isR73TrustedFlightCacheEntry).map(flightCacheEvidenceKey));
+    for(const e of entries){
+      if(!isVerifiedFlightCacheEntry(e)||!isR73TrustedFlightCacheEntry(e))continue;
+      const k=flightCacheEvidenceKey(e),serialized=JSON.stringify(e);
+      if(backupKeys.has(k)&&active.some(x=>JSON.stringify(x)===serialized)){
+        atmsR74FreshVerifiedProofs.set(k,serialized);
+      }
+    }
+    try{
+      atmsR74FreshCacheSnapshot={
+        active:localStorage.getItem(FLIGHT_CACHE),
+        backup:localStorage.getItem(FLIGHT_CACHE_BACKUP_V2)
+      };
+    }catch(_){atmsR73V2RuntimeBlocked=true;atmsR74FreshCacheSnapshot=null;}
+  }
 }
 function flightCacheMatchTuple(r){
   const flight=flightCacheNumber(r?.flightNumber||r?.arrivalFlight||r?.departureFlight);
@@ -2900,8 +3091,32 @@ function findFlightCacheForRide(r){
   // CORE-005Q: Ohne konkreten Plantag wird bewusst KEIN persistenter Treffer angewendet.
   // Dadurch kann niemals eine Pruefung eines anderen Tages in einen neuen Import rutschen.
   if(!key.flight||!key.date)return null;
-  const candidates=getFlightCache().filter(x=>{
-    if(!x)return false;
+  // Tagged active records without their matching v2 backup are not sufficient
+  // after a partial restore: never silently promote such records to verified.
+  if(atmsR74FlightCacheWritesBlocked()||!atmsR74FreshVerifiedProofs.size||!atmsR74FreshCacheSnapshot)return null;
+  try{
+    if(localStorage.getItem(FLIGHT_CACHE)!==atmsR74FreshCacheSnapshot.active
+       ||localStorage.getItem(FLIGHT_CACHE_BACKUP_V2)!==atmsR74FreshCacheSnapshot.backup){
+      atmsR73V2RuntimeBlocked=true;
+      return null;
+    }
+  }catch(_){atmsR73V2RuntimeBlocked=true;return null;}
+  const backedEvidence=new Set(getVerifiedFlightCacheBackup()
+    .filter(x=>isVerifiedFlightCacheEntry(x)&&isR73TrustedFlightCacheEntry(x))
+    .map(flightCacheEvidenceKey));
+  const activeEvidence=getFlightCache();
+  const wantedTuple=flightCacheTupleKey({flightNumber:key.flight,date:key.date,airportEventDate:key.airportEventDate,direction:key.direction,flightTime:key.flightTime});
+  // Do not hide a contradictory old or unbacked record by filtering it first.
+  // Its missing provenance is itself a blocker for automatic verification.
+  if(activeEvidence.some(x=>flightCacheTupleKey(x)===wantedTuple
+    &&(x?.verified===true||x?.sourceConfirmed===true)
+    &&(!isR73TrustedFlightCacheEntry(x)
+       ||(x.verified===true&&!backedEvidence.has(flightCacheEvidenceKey(x))))))return null;
+  const candidates=activeEvidence.filter(x=>{
+    if(!x||!isR73TrustedFlightCacheEntry(x))return false;
+    // In-session evidence must match the exact currently stored record.
+    if(atmsR74FreshVerifiedProofs.get(flightCacheEvidenceKey(x))!==JSON.stringify(x))return false;
+    if(x.verified===true&&!backedEvidence.has(flightCacheEvidenceKey(x)))return false;
     const cacheFlight=flightCacheNumber(x.flightNumber);
     const cacheDate=String(x.date||'').trim();
     const cacheAirportEventDate=String(x.airportEventDate||cacheDate).trim();
@@ -2922,8 +3137,31 @@ function findFlightCacheForRide(r){
       && cacheDirection===key.direction
       && cacheFlightTime===key.flightTime;
   });
-  candidates.sort((a,b)=>new Date(b.checkedAt||0)-new Date(a.checkedAt||0));
-  return candidates[0]||null;
+  // R71 QA ONLY: The date/flight/direction/time tuple does not encode
+  // the flight *origin/destination place*. A verified entry for Hamburg
+  // must never overwrite an explicit Berlin plan place or BER code.
+  // Do not throw here: this function also runs during startup; throwing
+  // could trigger the legacy startup catch that clears the in-memory list.
+  // Instead decline enrichment and leave original ride bytes unchanged.
+  const place=v=>planImportNorm(v);
+  const validPlace=v=>Boolean(v)&&!['unknown','unbekannt','nicht verfügbar','nicht verfuegbar','flugort nicht verfügbar','flugort nicht verfuegbar','flugort prüfen','flugort pruefen'].includes(v);
+  const planPlaces=['flightLocation','flugort','ort','locationFromPlan']
+    .map(k=>place(r?.[k])).filter(validPlace);
+  if(new Set(planPlaces).size>1)return null;
+  const planPlace=planPlaces[0]||'';
+  const planIata=String(r?.iata||'').trim().toUpperCase();
+  const evidence=candidates.filter(x=>(x?.verified===true||x?.sourceConfirmed===true)&&validPlace(place(x?.flightLocation)));
+  if(new Set(evidence.map(x=>place(x.flightLocation))).size>1)return null;
+  if(new Set(evidence.map(x=>String(x?.iata||'').trim().toUpperCase()).filter(Boolean)).size>1)return null;
+  const compatible=candidates.filter(x=>{
+    const cachePlace=place(x?.flightLocation);
+    const cacheIata=String(x?.iata||'').trim().toUpperCase();
+    if(planPlace&&(!validPlace(cachePlace)||planPlace!==cachePlace))return false;
+    if(planIata&&(!cacheIata||planIata!==cacheIata))return false;
+    return true;
+  });
+  compatible.sort((a,b)=>new Date(b.checkedAt||0)-new Date(a.checkedAt||0));
+  return compatible[0]||null;
 }
 function applyFlightCacheToRides(source){
   let changed=0,verifiedRestored=0,manualRestored=0;
@@ -3338,6 +3576,7 @@ function applyGeminiFlightResult(){
 
       cacheEntries.push({
         rideId:String(r.id||''),
+        atmsCacheEvidenceSchema:2,
         fingerprint:flightRideFingerprint(r),
         flightNumber:flight,
         direction,
@@ -4327,7 +4566,10 @@ function planImportSourceRowIdentity(r){
   const sourceRow=Number(r?.sourceRow||0)||0;
   const planDate=String(r?.planDate||r?.plan_date||'').trim();
   if(!sourceFile||sourceRow<=0||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(planDate))return'';
-  return ['source-row',sourceFile,sourceRow,planDate].join('|');
+  // R46: within a workbook, identical row numbers on different sheets are
+  // NOT the same source cell. Missing legacy sheet identity remains unbound.
+  const sourceSheet=planImportNorm(r?.sourceSheetName);
+  return ['source-row',sourceFile,sourceSheet||'legacy-unbound-sheet',sourceRow,planDate].join('|');
 }
 // P99.1: extrem enger Fallback nur fuer bereits als fehlend markierte Carryover-Altvarianten.
 // Die fachliche Kernidentitaet ignoriert bewusst Datum/Flugmetadaten; die separaten Guards unten
@@ -4532,19 +4774,751 @@ function p77RunLegacyDedupeMigration(current){
 function p77LegacyDedupeStatus(){try{return JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_MIGRATION_KEY)||'null')}catch(_){return null}}
 function p77LegacyDedupeRollback(){try{return JSON.parse(localStorage.getItem(P77_LEGACY_DEDUPE_ROLLBACK_KEY)||'null')}catch(_){return null}}
 
+// R70 ISOLATED QA ONLY. Compare RAW incoming physical source fields BEFORE
+// P11436 fills empty canonical metadata from the previous verified ride.
+// A different nonempty `flugort`/`ort` must never be hidden by a carried-over
+// `flightLocation`, and contradictory explicit aliases must not silently win.
+function atmsR70AssertRawFlightPlace(oldRide,newRide){
+  const oldEvidence=oldRide?.flightVerified===true ||
+    ['verified','high'].includes(String(oldRide?.flightVerificationStatus||'').toLowerCase()) ||
+    ['verified','high'].includes(String(oldRide?.flightConfidence||'').toLowerCase()) ||
+    ['verified','high'].includes(String(oldRide?.flightCheckConfidence||'').toLowerCase()) ||
+    (Array.isArray(oldRide?.flightSources)&&oldRide.flightSources.length>0) ||
+    Boolean(oldRide?.flightCheckedAt)||Boolean(oldRide?.liveCheckedAt)||
+    oldRide?.liveManualConfirmed===true;
+  if(!oldEvidence)return;
+  const places=(r,fields)=>fields.map(k=>planImportNorm(r?.[k]))
+    .filter(Boolean).filter(v=>!['unbekannt','unknown','nicht verfügbar','nicht verfuegbar'].includes(v));
+  const oldPlaces=places(oldRide,['flightLocation','flugort','ort']);
+  const newPlaces=places(newRide,['flightLocation','flugort','ort','locationFromPlan']);
+  const oldKnown=oldPlaces[0]||'';
+  // Primary canonical flightLocation and IATA changes are already handled by
+  // R69. Only conflicting RAW aliases are the R70-specific additional gate.
+  const aliasPlaces=places(newRide,['flugort','ort','locationFromPlan']);
+  if((new Set(oldPlaces)).size>1 || (new Set(newPlaces)).size>1 ||
+     (oldKnown && aliasPlaces.some(v=>v!==oldKnown)))
+    throw Error('R70: Original-Flugort-Alias widerspricht vorhandenem Flugnachweis – Import gesperrt, Quelle neu pruefen.');
+}
+
+// R67 ISOLATED QA ONLY: protect an already-entered DISPO and manually-confirmed
+// LIVE snapshot against a later plan revision which omits those local values.
+// This is intentionally fail-closed if the flight/route/time context has changed:
+// a manual LIVE confirmation MUST NOT be inherited for another flight or route.
+function atmsR67PreserveOperatorState(oldRide,newRide) {
+  const out={...newRide};
+  const has=v=>v!==undefined&&v!==null&&v!=='';
+  const manualLive=oldRide?.liveManualConfirmed===true;
+  const hasOldDispo=has(oldRide?.dispoTime)||has(oldRide?.timeMirror);
+  // R69 QA ONLY: a new source reporting a different flight place invalidates
+  // all old flight verification and manually confirmed live evidence.
+  // Without re-verification, reject the revision before persistent writes.
+  const place=r=>planImportNorm(r?.flightLocation ?? r?.flugort);
+  const iata=r=>String(r?.iata??'').trim().toUpperCase();
+  const oldPlace=place(oldRide),newPlace=place(newRide);
+  const oldIata=iata(oldRide),newIata=iata(newRide);
+  const changedPlace=Boolean(oldPlace&&newPlace&&oldPlace!==newPlace);
+  const changedIata=Boolean(oldIata&&newIata&&oldIata!==newIata);
+  const verifiedOld=oldRide?.flightVerified===true ||
+    ['verified','high'].includes(String(oldRide?.flightVerificationStatus||'').toLowerCase()) ||
+    ['verified','high'].includes(String(oldRide?.flightConfidence||'').toLowerCase()) ||
+    ['verified','high'].includes(String(oldRide?.flightCheckConfidence||'').toLowerCase()) ||
+    (Array.isArray(oldRide?.flightSources)&&oldRide.flightSources.length>0) ||
+    Boolean(oldRide?.flightCheckedAt) || Boolean(oldRide?.liveCheckedAt) ||
+    oldRide?.liveManualConfirmed===true;
+  if((changedPlace||changedIata)&&verifiedOld)
+    throw Error('R69: widersprechender Flugort/IATA zu vorhandenem Flug-/LIVE-Pruefnachweis – Import gesperrt, Flug neu pruefen.');
+  // R68 ISOLATED QA ONLY: an operator-selected per-ride arrival buffer is
+  // independent of a corrected listed flight time. Do not silently discard it
+  // when P11436 uses the stable-ID (rather than exact-identity) revision path.
+  // Changes of day, flight, direction, route or planned pickup still fail closed.
+  const oldBuffer=oldRide?.liveBufferOverrideMinutes;
+  const newBuffer=out.liveBufferOverrideMinutes;
+  const bufferPresent=v=>v!==undefined&&v!==null&&String(v).trim()!=='';
+  if(bufferPresent(oldBuffer)){
+    const safeBuffer=v=>Number.isInteger(Number(v))&&Number(v)>=0&&Number(v)<=120;
+    if(!safeBuffer(oldBuffer)||(bufferPresent(newBuffer)&&!safeBuffer(newBuffer)))
+      throw Error('R68: ungueltiger manuell gesetzter Abholpuffer – Import gesperrt.');
+    const pickupScope=r=>JSON.stringify([
+      String(r?.date||''),String(r?.planDate||''),String(r?.flightNumber||'').toUpperCase(),
+      String(r?.flightDirection||''),String(r?.planTime||r?.time||''),
+      planImportNorm(r?.pickup),planImportNorm(r?.destination)
+    ]);
+    if(pickupScope(oldRide)!==pickupScope(newRide))
+      throw Error('R68: Abholpuffer betrifft geaenderten Flug-/Routenkontext – separat pruefen.');
+    if(!bufferPresent(newBuffer))out.liveBufferOverrideMinutes=oldBuffer;
+  }
+  if(!manualLive&&!hasOldDispo)return out;
+  const scope=r=>JSON.stringify([
+    String(r?.date||''),String(r?.planDate||''),String(r?.flightNumber||''),
+    String(r?.flightDirection||''),String(r?.flightTime||''),
+    String(r?.planTime||r?.time||''),
+    planImportNorm(r?.pickup),planImportNorm(r?.destination)
+  ]);
+  if(scope(oldRide)!==scope(newRide))throw Error(
+    'R67: manuelle DISPO-/LIVE-Daten und geaenderte Flug-/Routendaten – vor Reimport separat pruefen.');
+  // DISPO and its second-column mirror are a PAIR: an explicit change to
+  // either value must never resurrect the stale counterpart from the old plan.
+  if(!has(out.dispoTime)&&!has(out.timeMirror)){
+    if(has(oldRide?.dispoTime))out.dispoTime=oldRide.dispoTime;
+    if(has(oldRide?.timeMirror))out.timeMirror=oldRide.timeMirror;
+  }
+  if(manualLive){
+    if(has(oldRide.liveTime)&&has(out.liveTime)&&String(out.liveTime)!==String(oldRide.liveTime))
+      throw Error('R67: abweichende LIVE-Zeit widerspricht manuell bestaetigtem Bestand.');
+    if(!has(out.liveTime)&&has(oldRide.liveTime))out.liveTime=oldRide.liveTime;
+    if(out.liveManualConfirmed!==true)out.liveManualConfirmed=true;
+  }
+  return out;
+}
 function planImportPreserveMetadata(oldRide,newRide){
+  atmsR70AssertRawFlightPlace(oldRide,newRide);
   const preserve=['id','flightLocation','iata','flightVerified','flightVerificationStatus','flightConfidence','flightSources','flightSourceNote','flightSourceConflict','flightResolutionMode','flightPrioritySourceUrl','flightCheckedAt','liveTime','actualLandingTime','actualDepartureTime','flightStatus','liveCheckedAt','liveSources','liveSourceNote','liveSourceConflict','liveResolutionMode','livePrioritySourceUrl','liveManualConfirmed','liveBufferOverrideMinutes'];
   const out={...newRide};
   preserve.forEach(k=>{if((out[k]===undefined||out[k]===null||out[k]==='')&&oldRide?.[k]!==undefined)out[k]=oldRide[k]});
+  // R66 LOCAL QA ONLY: a plan revision with no new note must not erase the prior user note.
+  if((out.notes===undefined||out.notes===null||out.notes==='') && typeof oldRide?.notes==='string' && oldRide.notes.trim())out.notes=oldRide.notes;
   out.id=oldRide?.id??newRide?.id;
   out._planCarryover=false;out._planMissingFromLatest=false;
-  return out;
+  return atmsP11436RetainUncertainty(oldRide,atmsR67PreserveOperatorState(oldRide,out));
 }
 function planImportPreserveStableId(oldRide,newRide){
+  atmsR70AssertRawFlightPlace(oldRide,newRide);
   const out={...newRide,id:oldRide?.id??newRide?.id};
+  // R66 LOCAL QA ONLY: never silently drop an existing operator note on a same-ride revision.
+  if((out.notes===undefined||out.notes===null||out.notes==='') && typeof oldRide?.notes==='string' && oldRide.notes.trim())out.notes=oldRide.notes;
   out._planCarryover=false;out._planMissingFromLatest=false;
-  return out;
+  return atmsP11436RetainUncertainty(oldRide,atmsR67PreserveOperatorState(oldRide,out));
 }
+// P11436 LOCAL-ONLY: exact source is strongest; cross-source requires a unique
+// complete discriminator. A weak flight/route/time key is NEVER proof of identity.
+function atmsP11436Discriminator(ride) {
+  const txt = v => planImportNorm(v);
+  const persons = Number(ride?.persons ?? ride?.personen);
+  const price = Number(ride?.price ?? ride?.preis);
+  if (!Number.isInteger(persons) || persons < 0 || persons > 99 ||
+      !Number.isFinite(price) || price < 0 || !txt(ride?.driver ?? ride?.fahrer) ||
+      !txt(ride?.vehicle ?? ride?.fahrzeug) || !txt(ride?.pickup) ||
+      !txt(ride?.destination)) return '';
+  return JSON.stringify([
+    txt(ride?.driver ?? ride?.fahrer), txt(ride?.vehicle ?? ride?.fahrzeug),
+    persons, txt(ride?.company ?? ride?.firma),
+    txt(ride?.customer ?? ride?.kunde), txt(ride?.partner ?? ride?.airline),
+    price.toFixed(2), txt(ride?.currency ?? 'EUR')
+  ]);
+}
+function atmsP11436DifferentPhysicalRowInSameSource(a, b) {
+  const fileA=planImportNorm(a?.sourceFile), fileB=planImportNorm(b?.sourceFile);
+  const dayA=String(a?.planDate ?? a?.plan_date ?? '');
+  const dayB=String(b?.planDate ?? b?.plan_date ?? '');
+  const rowA=Number(a?.sourceRow || 0), rowB=Number(b?.sourceRow || 0);
+  return Boolean(fileA && fileA===fileB && dayA && dayA===dayB &&
+    Number.isInteger(rowA) && rowA>0 && Number.isInteger(rowB) && rowB>0 && rowA!==rowB);
+}
+function atmsP11436CrossSourceMatches(existing, incoming) {
+  // A complete discriminator still is NOT proof that different physical
+  // source rows or distinct photos depict the same actual booking.
+  const a=atmsP11436Discriminator(existing);
+  if (!a || a !== atmsP11436Discriminator(incoming)) return false;
+  if (atmsP11436DifferentPhysicalRowInSameSource(existing,incoming)) return false;
+  return false; // No trusted cross-photo ride-identity token exists in P11435-R2.
+}
+function atmsP11436StrictExceptPrice(ride) {
+  const txt = v => planImportNorm(v);
+  const persons = Number(ride?.persons ?? ride?.personen);
+  return JSON.stringify([txt(ride?.driver ?? ride?.fahrer),txt(ride?.vehicle ?? ride?.fahrzeug),
+    persons,txt(ride?.company ?? ride?.firma),txt(ride?.customer ?? ride?.kunde),
+    txt(ride?.partner ?? ride?.airline),txt(ride?.currency ?? 'EUR')]);
+}
+function atmsP11436RetainUncertainty(oldRide, newRide) {
+  if (!(oldRide?.flightTimeUncertain === true ||
+        String(oldRide?.flightTimeRawSource || '').includes('?'))) return newRide;
+  // An old question mark is evidence ONLY for the exact original flight context.
+  const scope = r => JSON.stringify([
+    String(r?.date ?? ''),String(r?.planDate ?? ''),String(r?.flightNumber ?? ''),
+    String(r?.flightDirection ?? ''),String(r?.flightTime ?? ''),
+    planImportNorm(r?.pickup),planImportNorm(r?.destination)
+  ]);
+  if (scope(oldRide) !== scope(newRide)) {
+    throw Error('P11436: unsichere Original-Flugzeit trifft geänderte Flug-/Routendaten – Import gesperrt, Quellzeile prüfen.');
+  }
+  const oldProvenance=planImportSourceRowIdentity(oldRide);
+  const newProvenance=planImportSourceRowIdentity(newRide);
+  const oldRaw=String(oldRide?.flightTimeRawSource || '').trim();
+  const newRaw=String(newRide?.flightTimeRawSource || '').trim();
+  // A previous click only applies to the SAME original image row and SAME
+  // unaltered OCR source evidence. A new photo or changed raw words need a
+  // NEW row-specific review, even when clock/flight/route are identical.
+  const preserveReview=Boolean(oldProvenance && newProvenance &&
+    oldProvenance===newProvenance && oldRaw && newRaw && oldRaw===newRaw &&
+    oldRide?.flightTimeUncertaintyReview==='confirmed_source');
+  return {
+    ...newRide,
+    flightTimeUncertain: true,
+    flightTimeRawSource: String(newRaw || oldRaw || ''),
+    flightTimeUncertaintyReview: preserveReview ? 'confirmed_source' : '',
+    flightTimeUncertaintyReviewedAt: preserveReview ? String(oldRide?.flightTimeUncertaintyReviewedAt || '') : ''
+  };
+}
+
+/* ATMS PRO — isolated, PURE read-only revision decision prototype.
+ * This file NEVER persists, calls native APIs, authorizes import or touches the UI.
+ * Not installed in the Android app. Do not treat as an import gate.
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.ATMSPlanRevisionDecision = factory();
+})(typeof globalThis === 'object' ? globalThis : this, function () {
+  'use strict';
+  const txt = v => String(v ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');
+  const norm = v => txt(v).toLocaleLowerCase('de-DE');
+  // R36: lexical shape alone accepts dates such as 2026-02-30.
+  const isoDay = d => {
+    const s=txt(d);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+    const year=Number(s.slice(0,4)),month=Number(s.slice(5,7)),day=Number(s.slice(8,10));
+    if(year<1||month<1||month>12||day<1)return false;
+    const calendar=new Date(0);calendar.setUTCFullYear(year,month,0);
+    const days=calendar.getUTCDate();
+    return day<=days;
+  };
+  const imageHash = r => txt(r?.sourceImageSha256 || r?.imageSha256).toLowerCase();
+  const sourceFileHash = r => txt(r?.sourceFileSha256).toLowerCase();
+  const hashOkay = h => /^[0-9a-f]{64}$/.test(h);
+  const isImageSource = f => /\.(?:png|jpe?g|webp|bmp)$/.test(f);
+  const isStructuredSource = f => /\.(?:xlsx|xls|json|csv|tsv)$/.test(f);
+  const day = r => txt(r?.planDate || r?.plan_date || r?.date);
+  const row = r => Number(r?.sourceRow || 0);
+  const file = r => norm(r?.sourceFile);
+  const id = r => txt(r?.id);
+  const sheet = r => txt(r?.sourceSheetName);
+  const physicalRow = r => r?.sourceSheetRow==null || r?.sourceSheetRow==='' ? null : Number(r.sourceSheetRow);
+  function provenance(r) {
+    const h = imageHash(r),sourceSha=sourceFileHash(r),f=file(r),sheetName=sheet(r),sheetRow=physicalRow(r);
+    if(sheetRow!==null && (!Number.isInteger(sheetRow)||sheetRow<1||!sheetName))return null;
+    if (!f || !isoDay(day(r)) || !Number.isInteger(row(r)) || row(r) <= 0) return null;
+    const second=txt(r?.imageSha256).toLowerCase(),first=txt(r?.sourceImageSha256).toLowerCase();
+    if(first && second && first!==second)return null;
+    // R37: no structured source can impersonate a photographed original.
+    // Require a non-image SHA tied to the actual selected File bytes in the
+    // import frontdoor. A mere user-supplied string is NEVER independent proof.
+    if (isImageSource(f)) {
+      if(!hashOkay(h) || sourceSha || sheetName || sheetRow!==null) return null;
+      return {file:f,day:day(r),row:row(r),hash:h,sourceType:'image'};
+    }
+    if (isStructuredSource(f)) {
+      if(h || !hashOkay(sourceSha) || (sheetName && !/\.xlsx?$/i.test(f)) || sheetName.length>31) return null;
+      return {file:f,day:day(r),row:row(r),hash:sourceSha,sourceType:'structured',sheetName,sheetRow};
+    }
+    return null;
+  }
+  const stableFields = Object.freeze(['date','planDate','sourceFile','sourceRow','sourceSheetName','sourceSheetRow','sourceImageSha256','imageSha256','sourceFileSha256','time','driver','vehicle','persons','pickup','destination','flightNumber','flightDirection','flightTime','flightTimeUncertain','flightTimeRawSource','price','company','customer','partner','currency','priceRawSource','companyRawOcr','flightCheckConfidence','flightVerified','flightNeedsManualCheck','importIntegrityStatus','rideType']);
+  function snapshot(r) {
+    return stableFields.map(k => [k, txt(r?.[k])]);
+  }
+  function binding(a, b) {
+    return JSON.stringify([id(a),id(b),snapshot(a),snapshot(b)]);
+  }
+  const rideDay = r => txt(r?.date || day(r));
+  const clk = r => txt(r?.time || r?.planTime);
+  const route = r => norm(r?.pickup)+'>'+norm(r?.destination);
+  const flight = r => norm(r?.flightNumber);
+  function maybeSameRide(a,b) {
+    const x=provenance(a), y=provenance(b);
+    // R13: Same physical original source row must not turn into a second
+    // booking solely because an erroneous ride date was corrected.
+    // A SHA-exact copy is equally source-bound when its planDate was fixed.
+    // This ONLY requests original-image manual review; NEVER auto-merges.
+    if (x && y && x.row===y.row &&
+        ((x.file===y.file && x.day===y.day) ||
+          (hashOkay(x.hash) && hashOkay(y.hash) && x.hash===y.hash))) return true;
+    if (rideDay(a) !== rideDay(b)) return false;
+    // A corrected OCR route must not turn an old booking into an automatic NEW booking.
+    // Same-day same-time plus ANY other partial overlap requires user review.
+    if (clk(a) && clk(a)===clk(b) && (route(a)===route(b) ||
+        norm(a?.driver)===norm(b?.driver) ||
+        norm(a?.pickup)===norm(b?.pickup) ||
+        (flight(a) && flight(a)===flight(b)))) return true;
+    if (route(a)===route(b) && flight(a) && flight(a)===flight(b)) return true;
+    return false;
+  }
+  function photoRelation(a,b) {
+    const x=provenance(a), y=provenance(b);
+    if (!x || !y) return 'invalid';
+    // Same workbook hash but two different sheets/unknown sheet bindings can
+    // never prove SAME physical Excel cell. Force review; never auto-merge.
+    if (/\.xlsx?$/i.test(x.file) && /\.xlsx?$/i.test(y.file) &&
+        x.hash===y.hash && x.row===y.row && x.sheetName!==y.sheetName)
+      return 'different_images';
+    if (x.file===y.file && x.day===y.day && x.row!==y.row &&
+        hashOkay(x.hash) && hashOkay(y.hash) && x.hash===y.hash) return 'distinct_rows';
+    if (x.file===y.file && x.day===y.day && x.row===y.row &&
+        hashOkay(x.hash) && hashOkay(y.hash) && x.hash===y.hash) return 'same_row';
+    if (hashOkay(x.hash)&&hashOkay(y.hash)) {
+      if(x.hash===y.hash && x.row===y.row) return 'same_pixels_row'; // R13: identical pixels/row, even when planDate was corrected
+      if(x.hash===y.hash && x.row!==y.row && x.day===y.day) return 'distinct_rows';
+      return 'different_images';
+    }
+    return 'unproven_photos';
+  }
+  function candidatesScope(candidates) {
+    return JSON.stringify(candidates.map(r=>[id(r),snapshot(r)])
+      .sort((a,b)=>a[0].localeCompare(b[0])));
+  }
+  function evaluate(oldRides, newRides, decisions=[], completedIds=[]) {
+    const old=Array.isArray(oldRides)?oldRides:[];
+    const fresh=Array.isArray(newRides)?newRides:[];
+    const ds=Array.isArray(decisions)?decisions:[];
+    const completed=new Set(completedIds.map(String));
+    const blockers=[], proposals=[], linkedOld=new Set(), seenFreshIds=new Set();
+    const oldIds=new Set(), oldOrigin=new Set(), newOrigin=new Set(), isolatedLegacy=[];
+    const crossDayCollision=(p,n)=>{
+      // A corrected wrong date must not create a second booking. Conservative:
+      // block strong ride signatures even if the stored plan day differs.
+      const sameRoute=route(p)&&route(p)===route(n);
+      const sameTime=clk(p)&&clk(p)===clk(n);
+      const sameFlight=flight(p)&&flight(p)===flight(n);
+      // R39: an old provenance-less entry must never be treated as a separate
+      // cross-day ride when its ORIGINAL FILE NAME and SOURCE ROW coincide.
+      // A date correction can alter both date and route, so route+time alone
+      // cannot establish distinct identity. Do not fabricate a missing hash.
+      const sameUnverifiedSourceRow = file(p) && file(p)===file(n) &&
+        Number.isInteger(row(p)) && row(p)>0 && row(p)===row(n);
+      return Boolean(sameUnverifiedSourceRow ||
+        (sameRoute && (sameTime || sameFlight)));
+    };
+    for (const r of old) {
+      if(!id(r)||oldIds.has(id(r))) blockers.push({code:'duplicate_or_missing_prior_id',oldId:id(r)});
+      oldIds.add(id(r));
+      if(!provenance(r)) {
+        // R37 isolated legacy policy: NEVER give an old record invented proof.
+        // Permit only different-day, non-colliding new imports; old ride stays
+        // immutable and is not eligible for an unproven revision or deletion.
+        const oldDay=rideDay(r);
+        const isolated=isoDay(oldDay) && fresh.every(n=>
+          isoDay(rideDay(n)) && rideDay(n)!==oldDay && !crossDayCollision(r,n));
+        if(!isolated)blockers.push({code:'untrusted_prior_provenance',oldId:id(r)});
+        else isolatedLegacy.push(id(r));
+      }
+      else {
+        // R36: a source row cannot be split into two rides by supplying two hashes.
+        const p=provenance(r),key=JSON.stringify([p.file,p.day,p.sheetName,p.row]);
+        if(oldOrigin.has(key)) blockers.push({code:'duplicate_prior_source_row',oldId:id(r)});
+        oldOrigin.add(key);
+      }
+    }
+    for (const r of fresh) {
+      if(!id(r)||seenFreshIds.has(id(r))) blockers.push({code:'duplicate_or_missing_incoming_id',incomingId:id(r)});
+      seenFreshIds.add(id(r));
+      const p=provenance(r);
+      if(!p) blockers.push({code:'untrusted_incoming_provenance',incomingId:id(r)});
+      else {
+        const key=JSON.stringify([p.file,p.day,p.sheetName,p.row]);
+        if(newOrigin.has(key)) blockers.push({code:'duplicate_incoming_source_row',incomingId:id(r)});
+        newOrigin.add(key);
+      }
+    }
+    const usedDecisions=new Set();
+    for (const n of fresh) {
+      const candidates=old.filter(o=>maybeSameRide(o,n));
+      const sameSource=candidates.filter(o=>['same_row','same_pixels_row'].includes(photoRelation(o,n)));
+      const distinctRowCandidates=candidates.filter(o=>photoRelation(o,n)==='distinct_rows');
+      // No candidate => isolated new row. Same-file different row => independent.
+      if (candidates.length===0 || candidates.length===distinctRowCandidates.length) {
+        if(oldIds.has(id(n))) {blockers.push({code:'incoming_id_reuse',incomingId:id(n)});continue;}
+        proposals.push({action:'insert',incomingId:id(n),note:'no_credible_identity_collision'});
+        continue;
+      }
+      const matched=ds.filter(d=>d && d.incomingId===id(n));
+      if(matched.length!==1){blockers.push({code:'revision_decision_missing_or_multiple',incomingId:id(n),possibleExistingIds:candidates.map(id)});continue;}
+      const d=matched[0], decisionKey=String(d.reviewKey||'');
+      const oldMatch=candidates.find(x=>id(x)===String(d.existingId||''));
+      if(!oldMatch) {blockers.push({code:'existing_ride_not_a_candidate',incomingId:id(n)});continue;}
+      if(usedDecisions.has(decisionKey)||decisionKey!==binding(oldMatch,n)) {blockers.push({code:'stale_or_reused_decision',incomingId:id(n)});continue;}
+      usedDecisions.add(decisionKey);
+      if (d.kind!=='same' && d.kind!=='new') {blockers.push({code:'unclear_decision',incomingId:id(n)});continue;}
+      if(d.confirmation!=='user_compared_original_source_cells' || txt(d.reason).length<12) {blockers.push({code:'insufficient_manual_original_review',incomingId:id(n)});continue;}
+      const relation=photoRelation(oldMatch,n);
+      if (relation==='invalid' || relation==='unproven_photos') {blockers.push({code:'image_provenance_missing_or_unverified',incomingId:id(n)});continue;}
+      if (d.kind==='new' && (relation==='same_row' || relation==='same_pixels_row')) {
+        blockers.push({code:'same_physical_row_cannot_be_new_ride',incomingId:id(n)});continue;
+      }
+      if (d.kind==='new') {
+        const candidatesNeedingExclusion=candidates.filter(x=>photoRelation(x,n)!=='distinct_rows').map(id).sort();
+        const excluded=Array.isArray(d.excludedExistingIds)?d.excludedExistingIds.map(String).sort():[];
+        if(JSON.stringify(excluded)!==JSON.stringify(candidatesNeedingExclusion) || d.candidatesScope!==candidatesScope(candidates)) {
+          blockers.push({code:'new_ride_requires_all_candidate_exclusions',incomingId:id(n)});continue;
+        }
+      }
+      if (d.kind==='same') {
+        if(relation==='distinct_rows') {blockers.push({code:'distinct_physical_rows_cannot_be_the_same',incomingId:id(n)});continue;}
+        if(completed.has(id(oldMatch))) {blockers.push({code:'completed_ride_immutable',incomingId:id(n)});continue;}
+        if(linkedOld.has(id(oldMatch))) {blockers.push({code:'many_incoming_to_one_prior',incomingId:id(n)});continue;}
+        const conflicting=candidates.filter(x=>id(x)!==id(oldMatch)&&!['distinct_rows'].includes(photoRelation(x,n)));
+        if(conflicting.length){
+          const excluded=Array.isArray(d.excludedExistingIds)?d.excludedExistingIds.map(String):[];
+          const required=conflicting.map(id).sort();
+          if (JSON.stringify(excluded.sort())!==JSON.stringify(required) ||
+              d.candidatesScope!==candidatesScope(candidates)) {
+            blockers.push({code:'other_possible_identity_ambiguous',incomingId:id(n),possibleExistingIds:required});continue;
+          }
+        }
+        // Preserve old uncertainty source context unless explicitly reviewed elsewhere.
+        if(oldMatch.flightTimeUncertain===true &&
+           (txt(oldMatch.flightTime)!==txt(n.flightTime)||flight(oldMatch)!==flight(n)||rideDay(oldMatch)!==rideDay(n))){
+          blockers.push({code:'old_flight_time_uncertainty_requires_separate_review',incomingId:id(n)});continue;
+        }
+        linkedOld.add(id(oldMatch));
+        proposals.push({action:'replace_same',existingId:id(oldMatch),incomingId:id(n),reviewKey:decisionKey,sourceRelation:relation,reason:txt(d.reason)});
+      } else {
+        if(relation==='same_row' || relation==='same_pixels_row') {blockers.push({code:'same_physical_row_cannot_be_new_ride',incomingId:id(n)});continue;}
+        if(oldIds.has(id(n))) {blockers.push({code:'new_ride_id_already_exists',incomingId:id(n)});continue;}
+        proposals.push({action:'insert',incomingId:id(n),reviewKey:decisionKey,sourceRelation:relation,reason:txt(d.reason)});
+      }
+    }
+    const idsInResult=new Set(old.map(id));
+    for(const p of proposals) if(p.action==='insert') {
+      if(idsInResult.has(p.incomingId)) blockers.push({code:'result_id_collision',incomingId:p.incomingId});
+      idsInResult.add(p.incomingId);
+    }
+    for (const d of ds) if (!proposals.some(p=>p.reviewKey===d?.reviewKey)) {
+      // Reject stale decisions that did not actually lead to a justified proposal.
+      blockers.push({code:'unused_or_invalid_decision',incomingId:txt(d?.incomingId)});
+    }
+    return {ok:blockers.length===0,blockers,proposals: blockers.length?[]:proposals,
+      retainedPriorIds:old.map(id),isolatedLegacyIds:isolatedLegacy,wouldWrite:false};
+  }
+  return Object.freeze({provenance,snapshot,binding,maybeSameRide,photoRelation,candidatesScope,evaluate});
+});
+
+/* ATMS PRO P11436-R3 – LOCAL QA PREVIEW/REIMPORT BRIDGE.
+ * No automatic imports. Runtime app.js invokes reviewAndMerge only after its
+ * existing trusted-user authorization and BEFORE any ride/color write.
+ * Persisting is owned by app.js, not this component.
+ */
+(function(root,factory){
+  if(typeof module==='object'&&module.exports)module.exports=factory();
+  else root.ATMSP11436RevisionWorkflow=factory();
+})(typeof globalThis==='object'?globalThis:this,function(){
+  'use strict';
+  const str=v=>String(v??'').trim();
+  const safeId=v=>str(v?.id);
+  const LIB=()=>{
+    const api=globalThis.ATMSPlanRevisionDecision;
+    if(!api||typeof api.evaluate!=='function')throw Error('P11436 R3: Revisions-Prüfmodul fehlt – Import gesperrt.');
+    return api;
+  };
+  const compareInfo=r=>[r?.date||r?.planDate,r?.time||r?.planTime,r?.driver,r?.vehicle,r?.persons,
+    r?.pickup,r?.destination,r?.flightNumber,r?.flightDirection,r?.flightTime,
+    r?.flightTimeUncertain?'?':'',r?.company,r?.price,r?.sourceFile,'Blatt '+(r?.sourceSheetName||'unbekannt'),'Parserzeile '+r?.sourceRow,'Excel-Zeile '+(r?.sourceSheetRow||'nicht gebunden'),
+    str(r?.sourceImageSha256||r?.imageSha256||r?.sourceFileSha256)||'KEIN SHA'].map(str).join(' | ');
+  function requireSourceProof(previous, next, api){
+    // R45: provenance() already enforces source type / calendar / source-row.
+    // No photo SHA is invented for authentic structured files. The default
+    // dialog must independently rehash and display every required local file.
+    const a=api.provenance(previous),b=api.provenance(next);
+    return Boolean(a&&b&&/^[a-f0-9]{64}$/.test(a.hash)&&/^[a-f0-9]{64}$/.test(b.hash));
+  }
+  async function presentDecision(next,possible,files){
+    if(typeof document==='undefined'||!document.body||typeof document.createElement!=='function')
+      throw Error('P11436 R3: sicherer Entscheidungsdialog nicht verfügbar.');
+    // No HTML interpolation: all source content enters via textContent.
+    return new Promise(resolve=>{
+      const cover=document.createElement('div');
+      cover.id='atmsP11436RevisionDialog';
+      cover.style.cssText='position:fixed;inset:0;z-index:2147483600;background:#071820ee;color:#fff;overflow:auto;padding:14px;font:14px system-ui,sans-serif';
+      const panel=document.createElement('div');
+      panel.style.cssText='margin:auto;max-width:720px;background:#102d3e;border:2px solid #ffd166;border-radius:12px;padding:15px';
+      cover.appendChild(panel);
+      const section=(text,tag='p')=>{const n=document.createElement(tag);n.textContent=text;n.style.cssText='margin:8px 0;white-space:pre-wrap';panel.appendChild(n);return n;};
+      section('ATMS – Planversion / Fahrtidentität prüfen','h2');
+      section('Ohne Originalbeleg keine automatische Zusammenführung. ALTE Fahrten bleiben bis zur Entscheidung unverändert.');
+      section('NEUER EINTRAG:\n'+compareInfo(next));
+      const chosen=document.createElement('select');
+      chosen.style.cssText='width:100%;padding:12px;margin:8px 0;background:#f5f5f5;color:#111';
+      const options=[['','Bitte Entscheidung auswählen'],...possible.flatMap(p=>[
+        ['same:'+safeId(p),'Dieselbe Fahrt aktualisieren: '+safeId(p)],
+      ]),['new:'+safeId(possible[0]),'EIGENSTÄNDIGE neue Fahrt – alle genannten Alt-Fahrten bleiben']];
+      for(const [value,label] of options){const o=document.createElement('option');o.value=value;o.textContent=label;chosen.appendChild(o)}
+      panel.appendChild(chosen);
+      section('MÖGLICHE BESTANDSFAHRTEN:\n'+possible.map((p,i)=>`${i+1}) ${compareInfo(p)}`).join('\n\n'));
+      // R45: verify actual BYTES and show the concrete source rows of the
+      // selected new AND prior revisions. Hash/filename/checkbox alone are
+      // never original CELL proof. Multi-sheet Excel has no persisted sheet
+      // identity in this schema and is intentionally not reviewable yet.
+      const supplied=Array.isArray(files)?files:[];
+      const requiredSources=new Map(),verifiedSources=new Map();
+      const objectUrls=[];
+      let pendingVerifications=0,closed=false;
+      for(const ride of [next,...possible]){
+        const p=LIB().provenance(ride);
+        if(!p)throw Error('R45: ungueltige Originalquellenbindung.');
+        if(!requiredSources.has(p.hash))requiredSources.set(p.hash,[]);
+        requiredSources.get(p.hash).push(p);
+      }
+      const sourceStatus=section('Originalquellen fehlen. Bitte passende lokale Dateien mit SHA-256 nachweisen.');
+      const sourcePicker=document.createElement('input');
+      sourcePicker.type='file';
+      sourcePicker.accept='image/png,image/jpeg,image/webp,image/bmp,.xlsx,.xls,.json,.csv,.tsv';
+      sourcePicker.multiple=true;
+      sourcePicker.style.cssText='display:block;width:100%;padding:12px;border:1px solid #aaa;margin:8px 0';
+      panel.appendChild(sourcePicker);
+      section('Auch bei „NEUE Fahrt“ alle moeglichen Originalquellen nachpruefen. Eine Bestaetigung allein ist KEIN Quellbeleg.');
+      const updateSourceStatus=()=>{
+        const missing=[...requiredSources].filter(([sha])=>!verifiedSources.has(sha)).map(([sha,items])=>
+          items.map(p=>p.file+' · Quellzeile '+p.row).join(' / '));
+        sourceStatus.textContent=missing.length
+          ? 'Originalquellen fehlen oder ungeprueft: '+missing.join(' · ')
+          : 'Alle '+requiredSources.size+' unterschiedlichen Originaldatei-Hashes inklusive Quellzeilen angezeigt.';
+      };
+      const showStructuredRow=(file,bytes,proof)=>{
+        let value;
+        if(/\.json$/i.test(proof.file)){
+          const obj=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+          const rows=Array.isArray(obj)?obj:obj?.rides;
+          if(!Array.isArray(rows)||proof.row>rows.length||!rows[proof.row-1]||
+             typeof rows[proof.row-1]!=='object'||Array.isArray(rows[proof.row-1]))
+            throw Error('JSON: Original-Arrayzeile nicht eindeutig vorhanden.');
+          value=rows[proof.row-1];
+        }else if(/\.xlsx?$/i.test(proof.file)){
+          if(!globalThis.XLSX?.read||!globalThis.XLSX?.utils?.sheet_to_json)
+            throw Error('Verifizierte lokale Excel-Bibliothek fehlt.');
+          const workbook=globalThis.XLSX.read(bytes,{type:'array',cellDates:false,raw:true});
+          // R45 intentionally fail-closed when the ride does not persist a
+          // specific worksheet reference; sourceRow alone is not enough.
+          const sourceSheet=String(proof.sheetName||'');
+          if(workbook.SheetNames?.length!==1 && !sourceSheet)
+            throw Error('Excel mit mehreren Arbeitsblaettern: Blatt-Herkunft der alten Fahrt fehlt.');
+          if(sourceSheet && !workbook.SheetNames.includes(sourceSheet))
+            throw Error('Excel: gebundenes Originalarbeitsblatt existiert nicht.');
+          const selectedSheet=sourceSheet||workbook.SheetNames[0];
+          if(!selectedSheet||!workbook.Sheets[selectedSheet])
+            throw Error('Excel: Originalarbeitsblatt kann nicht gelesen werden.');
+          const sheet=workbook.Sheets[selectedSheet];
+          // R46: a caller must not label a non-ride/administrative worksheet as
+          // the source of a ride just because its name and row physically exist.
+          // For multi-sheet revisions require a single, unambiguous table whose
+          // header has the original required time/from/to columns. Older/odd
+          // schemas remain blocked rather than guessing the selected sheet.
+          if(workbook.SheetNames.length>1){
+            const credible=workbook.SheetNames.filter(name=>{
+              const firstRows=globalThis.XLSX.utils.sheet_to_json(workbook.Sheets[name],
+                {header:1,defval:'',raw:true,blankrows:false}).slice(0,12);
+              return firstRows.some(cells=>{
+                if(!Array.isArray(cells))return false;
+                const labels=cells.map(v=>String(v??'').normalize('NFC').trim().toLowerCase());
+                return labels.includes('von') && labels.includes('nach') &&
+                  labels.some(v=>v==='uhrzeit'||v==='zeit');
+              });
+            });
+            if(credible.length!==1||credible[0]!==selectedSheet)
+              throw Error('Excel: gebundenes Blatt ist keine eindeutig belegte Fahrtentabelle.');
+          }
+          const rows=globalThis.XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true,blankrows:false});
+          // Reconstruct exactly the parser->physical worksheet row mapping.
+          const allRows=globalThis.XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true,blankrows:true});
+          const startRow=globalThis.XLSX.utils.decode_range(sheet['!ref']).s.r;
+          const physical=[];let logical=0;
+          for(let i=0;i<allRows.length&&logical<rows.length;i++){
+            if(JSON.stringify(allRows[i])===JSON.stringify(rows[logical])){
+              physical.push(startRow+i+1);logical++;
+            }
+          }
+          if(physical.length!==rows.length)throw Error('Excel: Parser/Originalzeilen nicht eindeutig gebunden.');
+          const actual=physical[proof.row-1];
+          if(proof.sheetRow!=null && proof.sheetRow!==actual)
+            throw Error('Excel: gespeicherte Blattzeile widerspricht Originalbytes.');
+          if(workbook.SheetNames.length>1 && !proof.sheetRow)
+            throw Error('Excel: physische Blattzeile der alten Fahrt fehlt.');
+          if(!Array.isArray(rows)||proof.row>rows.length||!Array.isArray(rows[proof.row-1])||
+             !rows[proof.row-1].some(v=>String(v??'').trim()))
+            throw Error('Excel: Original-Parserzeile fehlt oder ist leer.');
+          value={arbeitsblatt:selectedSheet,parserzeile:proof.row,excelZeile:actual,
+            originalzellen:rows[proof.row-1]};
+        }else if(/\.(?:csv|tsv)$/i.test(proof.file)){
+          const shared=globalThis.ATMSR48DelimitedSource;
+          if(shared?.version!=='R48'||typeof shared.parse!=='function')
+            throw Error('R48: parseridentischer CSV-/TSV-Quellbeleg fehlt.');
+          const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
+          const parsed=shared.parse(text,proof.file);
+          const rows=parsed.matrix;
+          // Row numbering must match the actual import parser. This is NOT
+          // a physical line number and never guessed from split('\n').
+          if(!Array.isArray(rows)||proof.row>rows.length||
+             !Array.isArray(rows[proof.row-1])||
+             !rows[proof.row-1].some(v=>String(v??'').trim()))
+            throw Error('R48: CSV-/TSV-Original-Parserzeile fehlt oder ist leer.');
+          value={format:/\.tsv$/i.test(proof.file)?'TSV':'CSV',
+            parserzeile:proof.row,trennzeichen:parsed.delimiter,
+            originalzellen:rows[proof.row-1]};
+        }else{
+          throw Error('R48: Unbekannter strukturierter Originalquellentyp.');
+        }
+        const details=section('ORIGINALQUELLZEILE: '+proof.file+' · '+proof.row);
+        details.style.fontWeight='bold';
+        const line=section(JSON.stringify(value,null,2).slice(0,3000));
+        line.style.cssText='white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;border:1px solid #8499a7;padding:8px';
+      };
+      const verifySource=async file=>{
+        pendingVerifications++;
+        try{
+          if(!file||typeof file.arrayBuffer!=='function'||!globalThis.crypto?.subtle?.digest)
+            throw Error('Dateibytes oder sicheres SHA-256 fehlen.');
+          if(Number(file.size)>30_000_000)throw Error('Quelldatei fuer Einzelvergleich zu gross.');
+          const buffer=await file.arrayBuffer();
+          if(closed)return;
+          const bytes=new Uint8Array(buffer);
+          const sha=Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256',buffer)),
+            x=>x.toString(16).padStart(2,'0')).join('');
+          if(closed)return;
+          const proofs=requiredSources.get(sha);
+          if(!proofs)throw Error('Dateibytes stimmen mit KEINEM gespeicherten Quellhash ueberein.');
+          const name=str(file.name).toLowerCase();
+          if(proofs.some(p=>p.file!==name))throw Error('Originaldateiname widerspricht gespeichertem Quellbeleg.');
+          if(verifiedSources.has(sha))return;
+          for(const p of proofs){
+            if(p.sourceType==='image'){
+              if(typeof URL==='undefined'||typeof URL.createObjectURL!=='function')
+                throw Error('Originalbild kann nicht angezeigt werden.');
+              const img=document.createElement('img');
+              img.alt='SHA-256-geprueftes Originalbild '+p.file+' Zeile '+p.row;
+              img.style.cssText='max-width:100%;max-height:380px;object-fit:contain;border:1px solid #aaa;margin:6px 0;cursor:zoom-in';
+              img.addEventListener('click',()=>{
+                const zoom=img.dataset?.atmsZoom==='1';
+                if(img.dataset)img.dataset.atmsZoom=zoom?'0':'1';
+                img.style.maxHeight=zoom?'380px':'none';
+              });
+              const url=URL.createObjectURL(file);objectUrls.push(url);img.src=url;
+              section('ORIGINALBILD: '+p.file+' · Zeile '+p.row);panel.appendChild(img);
+            }else showStructuredRow(file,bytes,p);
+          }
+          verifiedSources.set(sha,true);updateSourceStatus();
+        }catch(err){sourceStatus.textContent='Originalquellennachweis BLOCKIERT: '+String(err?.message||err)}
+        finally{pendingVerifications--;}
+      };
+      sourcePicker.addEventListener('change',()=>{
+        for(const file of Array.from(sourcePicker.files||[]))void verifySource(file);
+      });
+      for(const file of supplied){
+        if([...requiredSources.values()].some(items=>items.some(p=>p.file===str(file?.name).toLowerCase())))
+          void verifySource(file);
+      }
+      updateSourceStatus();
+      const reason=document.createElement('textarea');reason.rows=3;reason.placeholder='Welche Originalzellen beweisen die Entscheidung? (mindestens 12 Zeichen)';
+      reason.style.cssText='width:100%;box-sizing:border-box;padding:10px;margin:8px 0';panel.appendChild(reason);
+      const uncertainCheck=document.createElement('input');uncertainCheck.type='checkbox';
+      if(possible.some(p=>p?.flightTimeUncertain===true)) {
+        const flabel=document.createElement('label');flabel.style.cssText='display:block;margin:8px 0';
+        flabel.appendChild(uncertainCheck);flabel.appendChild(document.createTextNode(' Bei Auswahl „dieselbe Fahrt“: Unsicheres Original-Flugzeitzeichen ? wurde getrennt geprüft und wird weiterhin als UNSICHER behandelt.'));
+        panel.appendChild(flabel);
+      }
+      const check=document.createElement('input');check.type='checkbox';
+      const label=document.createElement('label');label.style.cssText='display:block;margin:8px 0';label.appendChild(check);
+      label.appendChild(document.createTextNode(' Ich habe die angezeigten Originalquellzeilen beider Planversionen verglichen.'));panel.appendChild(label);
+      const status=section('Fehlende Nachweise oder Unsicherheit: ABBRECHEN und Bestand erhalten.');
+      const actions=document.createElement('div');actions.style.cssText='display:flex;gap:10px';panel.appendChild(actions);
+      const finish=value=>{closed=true;for(const url of objectUrls)try{URL.revokeObjectURL(url)}catch(_){};cover.remove();resolve(value)};
+      const button=(name,handler)=>{const b=document.createElement('button');b.type='button';b.textContent=name;b.style.cssText='flex:1;padding:12px;min-height:48px';b.addEventListener('click',handler);actions.appendChild(b)};
+      button('Abbrechen – keine Änderung',()=>finish(null));
+      button('Quellentscheidung bestätigen',()=>{
+        if(pendingVerifications||[...requiredSources].some(([h])=>!verifiedSources.has(h))){
+          status.textContent='Import BLOCKIERT: Alle neuen und alten Originalquellen muessen SHA-256-geprueft mit ihren Zeilen angezeigt werden.';return;
+        }
+        if(!chosen.value||str(reason.value).length<12||!check.checked){status.textContent='Entscheidung, nachvollziehbare Begründung und Originalvergleich fehlen.';return;}
+        const [kind,existingId]=chosen.value.split(':');
+        finish({kind,existingId,reason:str(reason.value),uncertaintyConfirmed:kind==='same'&&uncertainCheck.checked});
+      });
+      document.body.appendChild(cover);
+    });
+  }
+  async function reviewAndMerge(current,incoming,completed=[],adapters={}){
+    const api=LIB(),old=Array.isArray(current)?current:[],fresh=Array.isArray(incoming)?incoming:[];
+    const done=new Set(Array.from(completed, String));
+    const sourceSnap=JSON.stringify(old),incomingSnap=JSON.stringify(fresh),doneSnap=JSON.stringify([...done].sort());
+    const show=adapters.showDecision||presentDecision;
+    const decisions=[];
+    const pre=api.evaluate(old,fresh,decisions,[...done]);
+    const actionable=pre.blockers.filter(x=>x.code==='revision_decision_missing_or_multiple');
+    if(pre.blockers.length!==actionable.length)
+      throw Error('P11436 R3: unsichere Herkunft oder Datenkollision: '+pre.blockers.map(x=>x.code).join(', '));
+    for(const missing of actionable){
+      const next=fresh.find(x=>safeId(x)===missing.incomingId);
+      const possibles=old.filter(x=>missing.possibleExistingIds.includes(safeId(x)));
+      if(!next||!possibles.length||!possibles.every(o=>requireSourceProof(o,next,api)))
+        throw Error('R45: Originaldatei-SHA oder gebundene Quellzeile fehlt – keine Identitaetsfreigabe.');
+      const d=await show(next,possibles,adapters.files||[]);
+      if(!d)throw Error('P11436 R3: Prüfung abgebrochen; Bestand unverändert.');
+      const matched=possibles.find(x=>safeId(x)===str(d.existingId));
+      if(!matched||!['same','new'].includes(d.kind)||str(d.reason).length<12)
+        throw Error('P11436 R3: ungültige Quellentscheidung.');
+      if(d.kind==='same' && (matched.flightTimeUncertain===true||str(matched.flightTimeRawSource).includes('?')) && d.uncertaintyConfirmed!==true)
+        throw Error('P11436 R3: ursprüngliche Flugzeitunsicherheit benötigt gesonderte Nutzerprüfung.');
+      const excluding=possibles.filter(x=>d.kind==='new'||safeId(x)!==safeId(matched))
+        .filter(x=>api.photoRelation(x,next)!=='distinct_rows').map(x=>safeId(x)).sort();
+      decisions.push({kind:d.kind,existingId:safeId(matched),incomingId:safeId(next),
+        reviewKey:api.binding(matched,next),candidatesScope:api.candidatesScope(possibles),
+        excludedExistingIds:excluding,reason:str(d.reason),
+        confirmation:'user_compared_original_source_cells',uncertaintyConfirmed:d.uncertaintyConfirmed===true});
+    }
+    // Re-evaluate original snapshots before any state mutation. No stale decisions.
+    if(JSON.stringify(old)!==sourceSnap||JSON.stringify(fresh)!==incomingSnap||
+       JSON.stringify([...done].sort())!==doneSnap)
+      throw Error('P11436 R3: Datensatz hat sich während Quellenvergleich geändert.');
+    if(typeof adapters.revalidate==='function' && !adapters.revalidate())
+      throw Error('P11436 R3: Bestandsdaten während Quellenprüfung verändert.');
+    const check=api.evaluate(old,fresh,decisions,[...done]);
+    if(!check.ok)throw Error('P11436 R3: Revisionsentscheidung BLOCKIERT: '+check.blockers.map(x=>x.code).join(', '));
+    const result=old.map(x=>({...x})),byId=new Map(result.map((x,i)=>[safeId(x),i]));
+    if(byId.size!==old.length)throw Error('P11436 R3: doppelte Bestands-ID.');
+    let matched=0;const replaced=new Set(),touched=new Set();
+    for(const proposal of check.proposals){
+      const newer=fresh.find(x=>safeId(x)===proposal.incomingId);
+      if(!newer)throw Error('P11436 R3: nicht zugeordneter Neueingang.');
+      if(proposal.action==='insert'){
+        if(byId.has(safeId(newer)))throw Error('P11436 R3: neue Fahrt-ID bereits vorhanden.');
+        result.push({...newer,_planCarryover:false,_planMissingFromLatest:false,
+          ...(proposal.reviewKey?{_p11436RevisionAudit:{sourceRelation:proposal.sourceRelation,reason:proposal.reason,reviewKey:proposal.reviewKey,at:new Date().toISOString(),action:'new'}}:{})});
+        byId.set(safeId(newer),result.length-1);touched.add(safeId(newer));
+      } else if(proposal.action==='replace_same'){
+        if(!byId.has(proposal.existingId)||done.has(proposal.existingId))throw Error('P11436 R3: ungültiger Ersatz einer Fahrt.');
+        const idx=byId.get(proposal.existingId),prior=result[idx];
+        const make=adapters.preserveSame;
+        if(typeof make!=='function')throw Error('P11436 R3: Original-Metadatenschutz nicht verfügbar.');
+        result[idx]={...make(prior,newer),id:prior.id,_planCarryover:false,_planMissingFromLatest:false,
+          _p11436RevisionAudit:{sourceRelation:proposal.sourceRelation,priorSource:api.provenance(prior),newSource:api.provenance(newer),
+            reason:proposal.reason,reviewKey:proposal.reviewKey,at:new Date().toISOString()}};
+        if(prior.flightTimeUncertain===true||str(prior.flightTimeRawSource).includes('?')){
+          const signed=decisions.find(d=>d.reviewKey===proposal.reviewKey);
+          if(!signed||signed.uncertaintyConfirmed!==true)throw Error('P11436 R3: Original-Flugzeit noch nicht separat bestätigt.');
+          result[idx].flightTimeUncertain=true;
+          result[idx].flightTimeUncertaintyReview='confirmed_source';
+          result[idx].flightTimeUncertaintyReviewedAt=new Date().toISOString();
+        }
+        replaced.add(safeId(prior));touched.add(safeId(prior));matched++;
+      } else throw Error('P11436 R3: unbekannte Aktion.');
+    }
+    // Unmatched OPEN historic rides remain visible but explicitly carry over.
+    for(const prior of old){
+      const i=byId.get(safeId(prior));
+      if(i!==undefined&&!replaced.has(safeId(prior))&&!done.has(safeId(prior))){
+        result[i]={...result[i],_planCarryover:true,_planMissingFromLatest:true};
+      }
+    }
+    // App import validation ran before the merge; new warning flags must be
+    // blocked AGAIN before app.js persists any ride.
+    if(result.some(r=>touched.has(safeId(r))&&
+      (r.flightTimeUncertain===true||str(r.flightTimeRawSource).includes('?'))&&
+      r.flightTimeUncertaintyReview!=='confirmed_source'))
+      throw Error('P11436 R3: ungeprüftes Flugzeit-Fragezeichen nach Reimport – Import gesperrt.');
+    const seen=new Set();for(const ride of result){if(!safeId(ride)||seen.has(safeId(ride)))throw Error('P11436 R3: doppelte/falsche Ergebnis-ID.');seen.add(safeId(ride))}
+    if(old.some(x=>!seen.has(safeId(x))))throw Error('P11436 R3: Bestandsfahrt verloren.');
+    const finalDone=new Set([...done].filter(id=>seen.has(id)));
+    if(finalDone.size!==done.size)throw Error('P11436 R3: Erledigt-Status verloren.');
+    return {rides:result,matched,carryover:old.length-matched,deduped:0,incomingCount:fresh.length,
+      revisionAudit:decisions.map(d=>({...d})),authorizedSourceReview:decisions.length};
+  }
+  return Object.freeze({reviewAndMerge,presentDecision});
+});
+
 function mergePlanImportByIdentity(current,incoming){
   const exactBuckets=new Map(),stableBuckets=new Map(),sourceRowBuckets=new Map(),legacyCoreBuckets=new Map();
   (current||[]).forEach(r=>{
@@ -4562,6 +5536,7 @@ function mergePlanImportByIdentity(current,incoming){
     const exact=planImportRideIdentity(r),stable=planImportStableRideIdentity(r),sourceRow=planImportSourceRowIdentity(r);
     const sourceCandidates=sourceRow?(sourceRowBuckets.get(sourceRow)||[]).filter(x=>!used.has(String(x.id))):[];
     if(sourceCandidates.length){
+      if (sourceCandidates.length !== 1) throw Error('P11436: mehrdeutige Bestandsfahrten zur selben Quellzeile – kein automatischer Reimport.');
       const preferred=sourceCandidates.find(x=>done.has(String(x.id)))
         || sourceCandidates.find(x=>planImportRideIdentity(x)===exact&&!x?._planCarryover&&!x?._planMissingFromLatest)
         || sourceCandidates.find(x=>planImportRideIdentity(x)===exact)
@@ -4575,38 +5550,23 @@ function mergePlanImportByIdentity(current,incoming){
       return;
     }
     const exactCandidates=(exactBuckets.get(exact)||[]).filter(x=>!used.has(String(x.id)));
-    if(exactCandidates.length===1){
-      const preferred=exactCandidates[0];
-      const sameStable=(stableBuckets.get(stable)||[]).filter(x=>!used.has(String(x.id)));
-      // P0: an identical pickup/route/time does not prove the SAME ride if the
-      // driver/stable identity differs. Never swallow a new parallel ride just
-      // because a previously completed ride has the same weak exact key.
-      if(done.has(String(preferred.id)) && !sameStable.some(x=>String(x.id)===String(preferred.id))){
-        merged.push(r);
+    if(exactCandidates.length){
+      if(exactCandidates.every(x=>atmsP11436DifferentPhysicalRowInSameSource(x,r))){
+        merged.push(r); // distinct physical rows of same original photo
         return;
       }
-      if(sameStable.some(x=>String(x.id)===String(preferred.id))){
-        sameStable.forEach(x=>used.add(String(x.id)));
-        deduped+=Math.max(0,sameStable.length-1);
-      }else used.add(String(preferred.id));
-      merged.push(keepCompleted(preferred,planImportPreserveMetadata(preferred,r)));
-      matched++;
-      return;
+      // Changed driver, passengers or vehicle may signal a PLAN REVISION.
+      // Ambiguous identity across different photos must not silently create
+      // a duplicate or overwrite an independent ride (GE67 negative test).
+      throw Error('P11436: gleicher Fahrtschlüssel aus anderer Bildquelle – Änderung, Parallelfahrt oder Dublette unklar. Import gesperrt.');
     }
     const stableCandidates=(stableBuckets.get(stable)||[]).filter(x=>!used.has(String(x.id)));
     if(stableCandidates.length){
-      const incomingFlightTime=String(listedFlightTimeOf(r)||'').trim();
-      const preferred=stableCandidates.find(x=>String(listedFlightTimeOf(x)||'').trim()===incomingFlightTime)
-        || stableCandidates.find(x=>!x?._planCarryover&&!x?._planMissingFromLatest)
-        || stableCandidates[0];
-      // Alle weiteren Alt-Duplikate derselben stabilen realen Fahrt gelten als durch
-      // diese aktuelle Planzeile ersetzt und dürfen nicht erneut als Carryover auftauchen.
-      stableCandidates.forEach(x=>used.add(String(x.id)));
-      deduped+=Math.max(0,stableCandidates.length-1);
-      const sameExact=planImportRideIdentity(preferred)===exact;
-      merged.push(keepCompleted(preferred,sameExact?planImportPreserveMetadata(preferred,r):planImportPreserveStableId(preferred,r)));
-      matched++;
-      return;
+      if(stableCandidates.every(x=>atmsP11436DifferentPhysicalRowInSameSource(x,r))){
+        merged.push(r); // distinct physical rows remain independent
+        return;
+      }
+      throw Error('P11436: stabiler Fahrtschlüssel aus anderer Bildquelle – Zeit-/Fahreränderung ohne Identitätsbeleg. Import gesperrt.');
     }
     merged.push(r);
   });
@@ -4716,7 +5676,7 @@ function startPlanDataFreshFromNow(){
     return false;
   }
   rides=[];done.clear();
-  [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,PLAN_KEEP_PINNED,PLAN_KEEP_CLEANUP_PREFLIGHT,PLAN_KEEP_CLEANUP_LAST,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,LIVE_LOG,'atms_import_previous_v1','atms_import_recovery_current_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
+  [KEY,DONE,DONE_OPEN,PLAN_IMPORT_HISTORY,PLAN_IMPORT_CURRENT,PLAN_KEEP_PINNED,PLAN_KEEP_CLEANUP_PREFLIGHT,PLAN_KEEP_CLEANUP_LAST,RIDE_OVERRIDE_KEY,FLIGHT_CACHE,FLIGHT_CACHE_BACKUP,FLIGHT_CACHE_BACKUP_V2,FLIGHT_CACHE_V2_OVERFLOW,LIVE_LOG,'atms_import_previous_v1','atms_import_recovery_current_v1','atms_flight_check_last_status_v1'].forEach(k=>{try{localStorage.removeItem(k)}catch(_){}});
   // P102: Ein bewusster kompletter Plan-Neustart setzt auch alle Behalten-Markierungen explizit leer,
   // damit Safety/Durable-Shadow keine veralteten Pins wiederherstellen können.
   safePersistentSetItem(PLAN_KEEP_PINNED,'[]','plan-clean-start-p102-pins');
@@ -5010,18 +5970,172 @@ function ensurePlanImportHistoryPanel(){
 }
 window.ATMSRenderPlanImportHistory=renderPlanImportHistoryPanel;
 
+// R7: The existing ride/Done/colour copies are one recoverable pre-image.
+// The journal is NEVER cleared by a rejected review or a failed rollback.
+const ATMS_R7_PENDING_IMPORT='atms_import_pending_v1';
+let atmsR7ImportBusy=false;
+const ATMS_R7_UNDO='atms_import_previous_v1';
+const ATMS_R7_CURRENT_RECOVERY='atms_import_recovery_current_v1';
+const ATMS_R7_COLOUR_KEYS=[DRIVER_COLOR_KEY,DRIVER_PLAN_COLOR_KEY,DRIVER_COLOR_MANUAL_KEY];
+// R16: read-only diagnosis of an interrupted import/restore. This deliberately
+// uses only ALREADY LOADED IndexedDB shadows, not indexedDB.open() (which may
+// create an empty database). It cannot authorize a rollback, clear a journal,
+// write ride data or disclose the contents of individual customer rides.
+function atmsR16PendingJournalDiagnosis(){
+  const raw=localStorage.getItem(ATMS_R7_PENDING_IMPORT);
+  if(raw===null)return {pending:false,blocked:false,operation:'none',action:'none'};
+  const keys=[KEY,DONE,...ATMS_R7_COLOUR_KEYS,ATMS_R7_UNDO,ATMS_R7_CURRENT_RECOVERY];
+  const result={pending:true,blocked:true,operation:'unknown',action:'manual-source-review-required',
+    autoRestoreAllowed:false,autoJournalClearAllowed:false,
+    dataSource:'loaded-memory-shadows-not-fresh-independent-indexeddb-read',
+    journalValid:false,preimageValid:false,localStateValid:false,
+    localVsPreimage:'unknown',durableVsPreimage:'unknown',durableVsLocal:'unknown',
+    v2VsPreimage:'unknown',v2VsLocal:'unknown',safetyVsPreimage:'unknown',
+    rideCount:{preimage:null,local:null,durable:null},
+    doneCount:{preimage:null,local:null,durable:null},classification:'unresolved'};
+  let journal;
+  try{journal=JSON.parse(raw)}catch(_){result.classification='invalid-journal-json';return result}
+  if(!journal||typeof journal!=='object'||Array.isArray(journal)||
+     !['import','restore'].includes(journal.type)||!journal.preimage||
+     typeof journal.preimage!=='object'||Array.isArray(journal.preimage)){
+    result.classification='invalid-journal-schema';return result;
+  }
+  result.operation=journal.type;
+  result.journalValid=true;
+  const pre=journal.preimage;
+  result.preimageValid=keys.every(k=>Object.prototype.hasOwnProperty.call(pre,k)&&
+      (pre[k]===null||typeof pre[k]==='string'));
+  if(!result.preimageValid){result.classification='incomplete-preimage';return result}
+  const local={};for(const k of keys)local[k]=localStorage.getItem(k);
+  const compare=(left,right,subset)=>subset.every(k=>left?.[k]===right?.[k]);
+  const pair=[KEY,DONE];
+  const inspect=(obj,tag)=>{
+    try{
+      const rides=obj[KEY]===null?[]:JSON.parse(obj[KEY]);
+      const done=obj[DONE]===null?[]:JSON.parse(obj[DONE]);
+      if(!Array.isArray(rides)||!Array.isArray(done))return false;
+      const ids=new Set();for(const ride of rides){
+        const id=String(ride?.id||'');if(!id||ids.has(id))return false;ids.add(id);
+      }
+      if(done.some(id=>!ids.has(String(id))))return false;
+      result.rideCount[tag]=rides.length;result.doneCount[tag]=done.length;return true;
+    }catch(_){return false}
+  };
+  result.preimageValid=inspect(pre,'preimage');
+  result.localStateValid=inspect(local,'local');
+  result.localVsPreimage=compare(local,pre,keys)?'exact':'different';
+  const durable=persistenceDurableShadow?.storage;
+  if(durable&&pair.every(k=>typeof durable[k]==='string')){
+    result.durableStateValid=inspect(durable,'durable');
+    result.durableVsPreimage=compare(durable,pre,pair)?'exact':'different';
+    result.durableVsLocal=compare(durable,local,pair)?'exact':'different';
+  }else result.durableStateValid=false;
+  const v2=storageV2State?.latest;
+  if(v2&&typeof v2.ridesRaw==='string'&&typeof v2.doneRaw==='string'){
+    const v2raw={[KEY]:v2.ridesRaw,[DONE]:v2.doneRaw};
+    result.v2VsPreimage=compare(v2raw,pre,pair)?'exact':'different';
+    result.v2VsLocal=compare(v2raw,local,pair)?'exact':'different';
+  }
+  const safety=readPersistenceSafety()?.storage;
+  if(safety&&pair.every(k=>typeof safety[k]==='string'))
+    result.safetyVsPreimage=compare(safety,pre,pair)?'exact':'different';
+  if(!result.preimageValid||!result.localStateValid)result.classification='invalid-or-inconsistent-rides';
+  else if(result.localVsPreimage==='exact'&&result.durableVsPreimage==='exact'&&result.v2VsPreimage==='exact')
+    result.classification='preimage-agrees-with-loaded-copies-still-blocked';
+  // R53 QA candidate: do not call a metadata-only change a possible new
+  // ride commit. The durable/v2 comparisons above cover rides and Done only.
+  else if(compare(local,pre,pair)&&result.durableVsPreimage==='exact'&&result.v2VsPreimage==='exact')
+    result.classification='preimage-rides-agree-metadata-differ-still-blocked';
+  else if(result.localVsPreimage==='different'&&result.durableVsLocal==='exact'&&result.v2VsLocal==='exact')
+    result.classification='possible-new-state-agrees-with-loaded-copies-still-blocked';
+  else result.classification='copies-diverge-or-are-incomplete';
+  return result;
+}
+function atmsR7StoredRidesMatch(persisted,current){
+  if(!Array.isArray(persisted)||!Array.isArray(current)||persisted.length!==current.length)return false;
+  const ids=new Set();
+  for(const ride of persisted){const id=String(ride?.id||'');if(!id||ids.has(id))return false;ids.add(id)}
+  return JSON.stringify(persisted.map((r,i)=>norm(r,i)))===JSON.stringify(current.map((r,i)=>norm(r,i)));
+}
+function atmsR7DoneMatch(stored,current){
+  if(!Array.isArray(stored))return false;
+  const normalize=values=>[...new Set(values.map(x=>String(x)))].sort();
+  return JSON.stringify(normalize(stored))===JSON.stringify(normalize([...current]));
+}
+async function atmsR7VerifyCommittedRides(expectedRides,expectedDone){
+  let localRides,localDone;
+  try{localRides=JSON.parse(localStorage.getItem(KEY)||'[]');localDone=JSON.parse(localStorage.getItem(DONE)||'[]')}
+  catch(_){throw Error('Fahrten/Erledigt im lokalen Speicher unlesbar.')}
+  if(!atmsR7StoredRidesMatch(localRides,expectedRides)||!atmsR7DoneMatch(localDone,expectedDone))
+    throw Error('Fahrten/Erledigt im lokalen Speicher weichen vom bestaetigten Zustand ab.');
+  const durable=await readPersistenceDurableShadow();
+  if(!durable?.storage||!durable.storage[KEY]||!durable.storage[DONE])
+    throw Error('IndexedDB konnte nach dem Speichern nicht unabhängig gelesen werden.');
+  let durableRides,durableDone;
+  try{durableRides=JSON.parse(durable.storage[KEY]);durableDone=JSON.parse(durable.storage[DONE])}
+  catch(_){throw Error('IndexedDB-Fahrten/Erledigt nach dem Speichern unlesbar.')}
+  if(!atmsR7StoredRidesMatch(durableRides,expectedRides)||!atmsR7DoneMatch(durableDone,expectedDone))
+    throw Error('IndexedDB-Sicherung stimmt nicht mit bestaetigtem Fahrten-/Erledigt-Zustand ueberein.');
+  return true;
+}
+function atmsR7ReadPreimage(){
+  const keys=[KEY,DONE,...ATMS_R7_COLOUR_KEYS,ATMS_R7_UNDO,ATMS_R7_CURRENT_RECOVERY];
+  const raw={};for(const key of keys)raw[key]=localStorage.getItem(key);
+  return {raw,rides:JSON.parse(JSON.stringify(rides)),done:[...done],
+    colors:{user:{...driverColorMap},plan:{...driverPlanColorMap},manual:{...driverColorManualMap}}};
+}
+function atmsR7ExactWrite(key,value){
+  if(value===null||value===undefined){localStorage.removeItem(key);if(localStorage.getItem(key)!==null)throw Error('Speicher konnte '+key+' nicht entfernen');}
+  else{localStorage.setItem(key,String(value));if(localStorage.getItem(key)!==String(value))throw Error('Speicher-Ruecklesung fehlgeschlagen: '+key);}
+}
+async function atmsR7Rollback(before,reason){
+  let localOK=true,durableOK=false,storageV2OK=false;
+  try{
+    for(const key of [KEY,DONE,...ATMS_R7_COLOUR_KEYS,ATMS_R7_UNDO,ATMS_R7_CURRENT_RECOVERY])atmsR7ExactWrite(key,before.raw[key]);
+    rides=before.rides;done=new Set(before.done);
+    driverColorMap={...before.colors.user};driverPlanColorMap={...before.colors.plan};driverColorManualMap={...before.colors.manual};
+    localOK=Object.keys(before.raw).every(key=>localStorage.getItem(key)===before.raw[key]);
+  }catch(e){localOK=false;persistAudit('r7_rollback_local_failed',{reason,message:String(e?.message||e)})}
+  // Even a partial local rollback needs an explicit failure, never a success toast.
+  if(localOK){
+    try{durableOK=Boolean(await syncPersistenceDurableShadow('r7-rollback:'+reason))}catch(_){durableOK=false}
+    try{storageV2OK=Boolean((await syncStorageV2Phase1('r7-rollback:'+reason))?.ok)}catch(_){storageV2OK=false}
+    try{if(!await atmsR7VerifyCommittedRides(before.rides,before.done))durableOK=false}catch(_){durableOK=false}
+  }
+  if(localOK&&durableOK&&storageV2OK){
+    try{atmsR7ExactWrite(ATMS_R7_PENDING_IMPORT,null)}catch(_){localOK=false}
+  }
+  persistAudit('r7_rollback',{reason,localOK,durableOK,storageV2OK});
+  return localOK&&durableOK&&storageV2OK;
+}
+function atmsR7EnsureNoPendingJournal(){
+  // A crash or failed rollback must not let another import bury the pre-image.
+  if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null)
+    throw Error('Import gesperrt: Eine unaufgeloeste R7-Sicherungsphase besteht. Bitte Sicherungsdiagnose pruefen; nichts ueberschreiben.');
+}
+function atmsR7VerifyDriverColors(){
+  const maps=[[DRIVER_COLOR_KEY,driverColorMap],[DRIVER_PLAN_COLOR_KEY,driverPlanColorMap],[DRIVER_COLOR_MANUAL_KEY,driverColorManualMap]];
+  for(const [key,expected] of maps){
+    const raw=localStorage.getItem(key);
+    if(raw===null){if(Object.keys(expected).length)throw Error('Fahrerfarben nicht gespeichert: '+key);continue}
+    let actual;try{actual=JSON.parse(raw)}catch(_){throw Error('Fahrerfarben unlesbar: '+key)}
+    if(JSON.stringify(actual)!==JSON.stringify(expected))throw Error('Fahrerfarben inkonsistent: '+key);
+  }
+  return true;
+}
 function readPreviousPlanImportSnapshot(){
   try{
-    const raw=JSON.parse(localStorage.getItem('atms_import_previous_v1')||'null');
+    const raw=JSON.parse(localStorage.getItem(ATMS_R7_UNDO)||'null');
     if(!raw||!Array.isArray(raw.rides)||!raw.rides.length)return null;
     return raw;
   }catch(_){return null}
 }
-function restorePreviousPlanImport(){
+async function restorePreviousPlanImport(){
   const previous=readPreviousPlanImportSnapshot();
-  if(!previous){
-    showToast('Kein vorheriger Planimport-Zustand gefunden','warn');
-    return false;
+  if(!previous){showToast('Kein vorheriger Planimport-Zustand gefunden','warn');return false}
+  // Old rides-only snapshots cannot reconstruct the historical done state.
+  if(!Array.isArray(previous.done)){
+    showToast('Alter Sicherungspunkt ohne Erledigt-Status: sichere Wiederherstellung gesperrt. Bitte Backup pruefen.','warn');return false;
   }
   const stamp=previous.savedAt?new Date(previous.savedAt).toLocaleString('de-DE'):'unbekannter Zeitpunkt';
   if(!confirm(`Letzten Zustand VOR dem Planimport wiederherstellen?
@@ -5029,29 +6143,46 @@ function restorePreviousPlanImport(){
 Gespeichert: ${stamp}
 Fahrten: ${previous.rides.length}
 
-Der aktuelle Zustand wird vorher zusätzlich lokal gesichert.`))return false;
-
+Der aktuelle Zustand wird vorher zusaetzlich lokal gesichert.`))return false;
+  if(atmsR7ImportBusy){showToast('Import oder Wiederherstellung laeuft bereits – bitte erst abschliessen.','warn');return false}
+  atmsR7ImportBusy=true;
+  let before;
   try{
-    localStorage.setItem('atms_import_recovery_current_v1',JSON.stringify({
-      savedAt:new Date().toISOString(),
-      rides:Array.isArray(rides)?rides:[],
-      done:[...done]
-    }));
-  }catch(_){}
-
-  rides=previous.rides.map((r,i)=>norm(r,i));
-  done=new Set([...done].filter(id=>rides.some(r=>String(r.id)===String(id))));
-  save();
-  capturePersistenceSafety('manual-restore-previous-plan-import');
-  syncPersistenceDurableShadow('manual-restore-previous-plan-import');
-  persistAudit('previous_plan_import_restored',{
-    snapshotSavedAt:String(previous.savedAt||''),
-    rides:rides.length
-  });
-  render();
-  updateBackupUI();
-  showToast(`${rides.length} Fahrten aus Zustand vor letztem Planimport wiederhergestellt`,'ok');
-  return true;
+    atmsR7EnsureNoPendingJournal();
+    before=atmsR7ReadPreimage();
+    const local=before.raw[KEY];
+    if(!atmsR7StoredRidesMatch(JSON.parse(local||'[]'),before.rides)||
+        !atmsR7DoneMatch(JSON.parse(before.raw[DONE]||'[]'),before.done))
+      throw Error('Wiederherstellung gesperrt: Fahrten oder Erledigt-Status im Speicher weichen ab.');
+    const historicIds=new Set();
+    for(const ride of previous.rides){const id=String(ride?.id||'');if(!id||historicIds.has(id))throw Error('Wiederherstellung gesperrt: doppelte/fehlende historische Fahrt-ID.');historicIds.add(id)}
+    if(previous.done.some(id=>!historicIds.has(String(id))))throw Error('Wiederherstellung gesperrt: historischer Erledigt-Status passt nicht zum Fahrtbestand.');
+    atmsR7ExactWrite(ATMS_R7_PENDING_IMPORT,JSON.stringify({type:'restore',savedAt:new Date().toISOString(),preimage:before.raw}));
+    atmsR7ExactWrite(ATMS_R7_CURRENT_RECOVERY,JSON.stringify({savedAt:new Date().toISOString(),rides:before.rides,done:before.done,colors:before.colors}));
+    rides=previous.rides.map((r,i)=>norm(r,i));done=new Set(previous.done.map(String));
+    if(previous.colors){
+      for(const [key,k] of [[DRIVER_COLOR_KEY,'user'],[DRIVER_PLAN_COLOR_KEY,'plan'],[DRIVER_COLOR_MANUAL_KEY,'manual']]){
+        const val=previous.colors[k];if(!val||typeof val!=='object'||Array.isArray(val))throw Error('Wiederherstellung gesperrt: Fahrerfarben-Snapshot unvollstaendig.');
+        atmsR7ExactWrite(key,JSON.stringify(val));
+      }
+      driverColorMap={...previous.colors.user};driverPlanColorMap={...previous.colors.plan};driverColorManualMap={...previous.colors.manual};
+    }else throw Error('Wiederherstellung gesperrt: historischer Fahrerfarben-Snapshot fehlt.');
+    if(!save({silent:true,deferDurable:true,skipRideOverrides:true}))throw Error('Fahrten/Status konnten nicht gespeichert werden.');
+    if(!await syncPersistenceDurableShadow('r7-manual-restore'))throw Error('IndexedDB-Wiederherstellung nicht bestaetigt.');
+    await atmsR7VerifyCommittedRides(rides,done);
+    if(!(await syncStorageV2Phase1('r7-manual-restore'))?.ok)throw Error('Storage-V2-Wiederherstellung nicht bestaetigt.');
+    atmsR7VerifyDriverColors();
+    atmsR7ExactWrite(ATMS_R7_PENDING_IMPORT,null);
+    capturePersistenceSafety('r7-manual-restore-success',false);
+    persistAudit('previous_plan_import_restored',{snapshotSavedAt:String(previous.savedAt||''),rides:rides.length});
+    render();updateBackupUI();showToast(`${rides.length} Fahrten sicher wiederhergestellt`,'ok');
+    return true;
+  }catch(e){
+    const rollback=before?await atmsR7Rollback(before,'manual-restore'):false;
+    persistAudit('r7_manual_restore_blocked',{message:String(e?.message||e),rollback});
+    showToast(rollback?'Wiederherstellung abgebrochen; alter Zustand bestaetigt.':'Wiederherstellung gesperrt. Daten-/Sicherungszustand pruefen!','warn');
+    return false;
+  }finally{atmsR7ImportBusy=false}
 }
 
 function importChoice(newRides){
@@ -5074,8 +6205,50 @@ function mergeImportedRides(current,incoming){
   incoming.forEach(r=>map.set(String(r.id),r));
   return [...map.values()];
 }
+// P11436-H2: terminal check for stale per-ID overrides. This is *not* a
+// duplicate detector: it proves no post-revision transformation changed
+// source-approved fields. Fails before applying any ride or driver colour.
+function atmsP11436PostMergeIntegrity(before,after,phase){
+  if(!Array.isArray(before)||!Array.isArray(after)||before.length!==after.length)
+    throw Error('P11436-H2: '+phase+' veränderte die Fahrtenanzahl – Import gesperrt.');
+  const stableFields=[
+    'sourceFile','sourceRow','sourceSheetName','sourceSheetRow','sourceImageSha256','imageSha256','sourceFileSha256','planDate',
+    'date','time','planTime','driver','vehicle','persons','pickup',
+    'destination','company','customer','partner','price','flightNumber',
+    'arrivalFlight','departureFlight','flightDirection','flightTime',
+    'flightTimeUncertain','flightTimeRawSource','flightTimeUncertaintyReview',
+    'importIntegrityStatus'
+  ];
+  // An existing ride correction must not override the original plan flight
+  // location either; a verified flight cache remains separately permitted to
+  // enrich the location, IATA and independently checked confidence.
+  if(phase==='ride_override')stableFields.push('flightLocation','iata');
+  const prior=new Map();
+  for(const r of before){
+    const id=String(r?.id||'');
+    if(!id||prior.has(id))throw Error('P11436-H2: ungültige vorläufige Fahrt-ID – Import gesperrt.');
+    prior.set(id,r);
+  }
+  const found=new Set();
+  for(const r of after){
+    const id=String(r?.id||'');
+    if(!id||found.has(id)||!prior.has(id))
+      throw Error('P11436-H2: Fahrt-ID verändert/dupliziert – Import gesperrt.');
+    found.add(id);
+    const old=prior.get(id);
+    for(const field of stableFields){
+      if(JSON.stringify(r?.[field]??null)!==JSON.stringify(old?.[field]??null))
+        throw Error('P11436-H2: '+phase+' veränderte bestätigtes Feld '+field+' der Fahrt '+id+' – Import gesperrt.');
+    }
+  }
+  return true;
+}
+
 async function applyImportedRides(newRides){
   if(!Array.isArray(newRides)||!newRides.length) throw Error('Keine Fahrten gefunden');
+  if(atmsR7ImportBusy)throw Error('Import gesperrt: Ein anderer Planimport oder eine Wiederherstellung laeuft bereits.');
+  atmsR7ImportBusy=true;
+  try{
 
   const importAuthorization=consumePlanImportAuthorization();
   if(!importAuthorization.ok){
@@ -5105,28 +6278,27 @@ async function applyImportedRides(newRides){
     source:importAuthorization.source,
     incomingCount:newRides.length
   });
+  atmsR7EnsureNoPendingJournal();
   const beforeRides=rides.map(r=>({...r}));
   const beforeDone=new Set(done);
-  // Nur bei nachweislich erfolgreich geschriebener VORHER-Version beginnen.
+  const r7Before=atmsR7ReadPreimage();
   let persistedBefore=[];
-  try{persistedBefore=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(_){ }
-  if(!Array.isArray(persistedBefore)||persistedBefore.length!==beforeRides.length)
-    throw Error('Import blockiert: Der vorherige Fahrtenbestand ist nicht vollstaendig im lokalen Speicher. Bitte Sicherung pruefen.');
+  try{persistedBefore=JSON.parse(r7Before.raw[KEY]||'[]')}catch(_){ }
+  if(!atmsR7StoredRidesMatch(persistedBefore,beforeRides)||
+     !atmsR7DoneMatch(JSON.parse(r7Before.raw[DONE]||'[]'),beforeDone))
+    throw Error('Import blockiert: Lokaler Fahrten-/Erledigt-Bestand widerspricht dem Arbeitsspeicher (Inhalt/IDs, nicht nur Anzahl).');
+  // A stale IndexedDB copy must not be silently overwritten to make the gate green.
+  const verifiedShadow=await readPersistenceDurableShadow();
+  if(verifiedShadow?.storage?.[KEY]){
+    let historic;try{historic=JSON.parse(verifiedShadow.storage[KEY])}catch(_){throw Error('Import blockiert: IndexedDB-Fahrten unlesbar.')}
+    if(!atmsR7StoredRidesMatch(historic,beforeRides))throw Error('Import blockiert: IndexedDB und aktuelle Fahrten widersprechen sich.');
+    let shadowDone;try{shadowDone=JSON.parse(verifiedShadow.storage[DONE]||'[]')}catch(_){throw Error('Import blockiert: IndexedDB-Erledigt-Status unlesbar.')}
+    if(!atmsR7DoneMatch(shadowDone,beforeDone))throw Error('Import blockiert: IndexedDB-Erledigt-Status widerspricht dem Arbeitsspeicher.');
+  }
   const durableBefore=await syncPersistenceDurableShadow('before-plan-import-verified');
   if(!durableBefore)throw Error('Import blockiert: Die bestehende Fahrten-Sicherung in IndexedDB konnte nicht bestaetigt werden.');
-
-  // CORE-005V: vor Import Snapshot; falls ein fremder Importpfad kritische atms_-Keys entfernt hat,
-  // nur fehlende kritische Daten aus dem Snapshot zurückholen. Vorhandene Werte bleiben unberührt.
-  restoreMissingCriticalPersistence('before-plan-import');
-  syncPersistenceDurableShadow('before-plan-import');
-  capturePersistenceSafety('before-plan-import');
-
-  try{
-    localStorage.setItem('atms_import_previous_v1',JSON.stringify({
-      savedAt:new Date().toISOString(),
-      rides
-    }));
-  }catch(_){}
+  // All evidence gates and the user decision run BEFORE writes to ride/colour/undo.
+  capturePersistenceSafety('before-plan-import',false);
 
   // CORE-005Q1: Ein Plan ohne eigenes Datum bekommt beim Import einmalig den
   // konkreten Plantag (Europe/Berlin). Dadurch kann der Flug-Cache sicher mit
@@ -5147,56 +6319,130 @@ async function applyImportedRides(newRides){
   const normalizedCurrent=p93NormalizeSiblingRouteArtifacts(rides);
   // P75: Fahrerfarben aus farbigen Bild-/WhatsApp-Planlisten nur als UI-Metadaten übernehmen.
   // Manuell in P74 gewählte/gesperrte Farben haben Vorrang; Fahrtdaten bleiben unverändert.
-  applyImportedDriverPlanColors(normalizedIncoming);
+  // P11436: no driver-colour writes before ride-identity verification.
   // P32: gleiche reale, noch offene Fahrt aus einer neuen Planversion behält ihre stabile ID
   // und bereits bestätigte Flug-/LIVE-Metadaten. Nicht sicher gematchte offene Alt-Fahrten
   // werden nicht blind gelöscht, sondern als Carryover markiert.
-  const planMerge=mergePlanImportByIdentity(normalizedCurrent,normalizedIncoming);
-  rides=planMerge.rides;
-  const corrected=applyRideOverrides(rides);
-  rides=corrected.rides;
-  // CORE-005Q: Flugpruefungen des EXAKT gleichen konkreten Fluges werden direkt
-  // beim Neuimport wieder angewendet. Match: Flugnummer + Datum + Richtung + Flugzeit.
-  // Andere Plantage oder nur aehnliche Flugnummern werden niemals uebernommen.
-  const restored=applyFlightCacheToRides(rides);
-  rides=restored.rides;
-  done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
-  const stored=save({deferDurable:true,silent:true});
-  if(!stored){
-    rides=beforeRides;done=beforeDone;
-    if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'local-write'});
-    throw Error('Import abgebrochen: Neue Fahrten konnten nicht dauerhaft gespeichert werden. Alter Bestand bleibt erhalten.');
+  // P11436-R3: Decision before ANY ride or driver colour mutation.
+  // No background auto-authorization. Existing source identity + source hashes
+  // and a user-confirmed row decision are required on ambiguous revisions.
+  const r3IncomingIds=new Set();
+  for(const item of normalizedIncoming){
+    const incomingId=String(item?.id||'');
+    if(!incomingId||r3IncomingIds.has(incomingId))
+      throw Error('P11436 R3: fehlende oder doppelte Eingangs-Fahrt-ID – Import gesperrt.');
+    r3IncomingIds.add(incomingId);
   }
-  const durableAfter=await syncPersistenceDurableShadow('after-plan-import-verified');
-  if(!durableAfter){
-    rides=beforeRides;done=beforeDone;
-    if(!save({silent:true}))persistAudit('plan_import_rollback_failed',{phase:'durable-write'});
-    throw Error('Import abgebrochen: IndexedDB-Sicherung fehlgeschlagen. Vorheriger Bestand wurde erneut gespeichert; bitte Backup pruefen.');
+  // R36: the first import must run through the same provenance/duplicate
+  // evaluator. There is no special zero-ride bypass.
+  const planMerge=await window.ATMSP11436RevisionWorkflow.reviewAndMerge(normalizedCurrent,normalizedIncoming,[...done],{
+    files:typeof window.ATMSP11436CurrentImportFiles==='function'?window.ATMSP11436CurrentImportFiles():[],
+    revalidate:()=>JSON.stringify(rides)===JSON.stringify(beforeRides) &&
+      JSON.stringify([...done].sort())===JSON.stringify([...beforeDone].sort()),
+    preserveSame:(prior,next)=>planImportRideIdentity(prior)===planImportRideIdentity(next)
+      ? planImportPreserveMetadata(prior,next)
+      : planImportPreserveStableId(prior,next)
+  });
+  const survivingIds=new Set(planMerge.rides.map(r=>String(r?.id||'')));
+  const missingPrior=normalizedCurrent.filter(r=>!survivingIds.has(String(r?.id||'')));
+  if(missingPrior.length){
+    throw Error('P11436: '+missingPrior.length+' bisherige Fahrt-ID(s) würden beim Zusammenführen verschwinden – Import gesperrt.');
   }
-  // AP-01.04: Still NOT a commit gate or source-of-truth; await the mirror
-  // result so the UI cannot claim fully synchronized storage prematurely.
-  // Storage V2 remains a non-gating mirror. A stalled IndexedDB request
-  // must not strand the UI after the primary+durable writes have committed.
-  const v2Mirror=await Promise.race([
-    syncStorageV2Phase1('after-plan-import-verified'),
-    new Promise(resolve=>setTimeout(()=>resolve({ok:false,pending:true}),5000))
-  ]);
-  const v2Verified=Boolean(v2Mirror?.ok && storageV2Diagnosis().exactMatch);
-  capturePersistenceSafety('after-plan-import');
+  // P11436-H2: check the ACTUAL post-merge transformations before driver
+  // colours, ride state or durable storage can be mutated. Old ride-ID based
+  // price/flight overrides may NEVER silently supersede a reviewed photo.
+  const corrected=applyRideOverrides(planMerge.rides);
+  atmsP11436PostMergeIntegrity(planMerge.rides,corrected.rides,'ride_override');
+  // CORE-005Q: separately dated/source-bound flight cache may enrich flight
+  // location and confidence; it is not authorized to modify ride identity.
+  const restored=applyFlightCacheToRides(corrected.rides);
+  atmsP11436PostMergeIntegrity(corrected.rides,restored.rides,'flight_cache');
+  // R8: a review can outlive an unrelated IndexedDB writer. Compare the
+  // actual durable pre-image again BEFORE writing the R7 journal or rides.
+  const r8ShadowAfterReview=await readPersistenceDurableShadow();
+  if(!r8ShadowAfterReview?.storage ||
+     !Object.prototype.hasOwnProperty.call(r8ShadowAfterReview.storage,KEY) ||
+     !Object.prototype.hasOwnProperty.call(r8ShadowAfterReview.storage,DONE))
+    throw Error('Import gesperrt: IndexedDB-Vorbestand nach Quellpruefung nicht lesbar.');
+  let r8ShadowRides,r8ShadowDone;
+  try{
+    r8ShadowRides=JSON.parse(r8ShadowAfterReview.storage[KEY]);
+    r8ShadowDone=JSON.parse(r8ShadowAfterReview.storage[DONE]);
+  }catch(_){throw Error('Import gesperrt: IndexedDB-Vorbestand nach Quellpruefung unlesbar.');}
+  if(!atmsR7StoredRidesMatch(r8ShadowRides,r7Before.rides)||
+     !atmsR7DoneMatch(r8ShadowDone,r7Before.done))
+    throw Error('Import gesperrt: IndexedDB wurde waehrend der Quellpruefung veraendert.');
+  // The last await above may also let a local writer run. Recheck ALL local state.
+  if(!atmsR7StoredRidesMatch(rides,beforeRides)||!atmsR7DoneMatch([...done],beforeDone)||
+     Object.entries(r7Before.raw).some(([key,value])=>localStorage.getItem(key)!==value)||
+     JSON.stringify(driverColorMap)!==JSON.stringify(r7Before.colors.user)||
+     JSON.stringify(driverPlanColorMap)!==JSON.stringify(r7Before.colors.plan)||
+     JSON.stringify(driverColorManualMap)!==JSON.stringify(r7Before.colors.manual))
+    throw Error('Import gesperrt: Fahrten, Erledigt-Status oder Metadaten haben sich waehrend der Pruefung geaendert.');
+  // R7: Journal old state before any ride or colour mutation; Undo stays untouched
+  // until the new plan has committed. A cancelled review above creates no journal.
+  atmsR7ExactWrite(ATMS_R7_PENDING_IMPORT,JSON.stringify({type:'import',savedAt:new Date().toISOString(),preimage:r7Before.raw}));
+  let r7Committed=false;
+  try{
+    rides=restored.rides;
+    done=new Set([...done].filter(id=>rides.some(r=>r.id===id)));
+    if(!save({deferDurable:true,silent:true,skipRideOverrides:true}))
+      throw Error('Fahrten/Erledigt-Status konnten nicht gespeichert werden.');
+    if(!await syncPersistenceDurableShadow('after-plan-import-verified'))
+      throw Error('IndexedDB-Fahrten-Sicherung fehlgeschlagen.');
+    await atmsR7VerifyCommittedRides(rides,done);
+    // Once primary+durable data are consistent, update colour metadata.
+    applyImportedDriverPlanColors(normalizedIncoming);
+    atmsR7VerifyDriverColors();
+    // This is an explicit commit gate; no success if metadata or history fails.
+    if(!(await syncStorageV2Phase1('r7-after-plan-import'))?.ok)
+      throw Error('Storage-V2-Sicherung des neuen Plans fehlgeschlagen.');
+    const previousSnapshot={savedAt:new Date().toISOString(),rides:r7Before.rides,
+      done:r7Before.done,colors:r7Before.colors};
+    atmsR7ExactWrite(ATMS_R7_UNDO,JSON.stringify(previousSnapshot));
+    // Journal cleanup failure blocks future import (fail-closed), not a false rollback.
+    atmsR7ExactWrite(ATMS_R7_PENDING_IMPORT,null);
+    r7Committed=true;
+  }catch(e){
+    const rollback=await atmsR7Rollback(r7Before,'plan-import');
+    if(!rollback)throw Error('Import gesperrt: Ruecksetzen nicht vollstaendig bestaetigt. Kein weiterer Import bis zur Sicherungspruefung. '+String(e?.message||e));
+    throw Error('Import sicher abgebrochen und alter Zustand wiederhergestellt: '+String(e?.message||e));
+  }
+  if(!r7Committed)throw Error('R7: Importabschluss nicht bestaetigt.');
+  // R8: the rides have ALREADY committed above. Do not return a false
+  // import-error after a history/UI failure: callers may otherwise retry.
+  // Every failure after this point must be reported as committed + warning.
+  const r8Warnings=[];
+  function r8Warn(phase,e){
+    const message=String(e?.message||e||'not confirmed');
+    r8Warnings.push({phase,message});
+    try{persistAudit('r8_postcommit_warning',{phase,message})}catch(_){}
+  }
+  let r8StorageV2={exactMatch:false,status:'unknown'};
+  try{r8StorageV2=storageV2Diagnosis()||r8StorageV2}catch(e){r8Warn('storage-v2-diagnosis',e)}
+  const v2Verified=r8StorageV2.exactMatch===true;
+  try{if(capturePersistenceSafety('after-plan-import')===null)r8Warn('safety-snapshot','not stored')}
+  catch(e){r8Warn('safety-snapshot',e)}
   let addressCandidateResult={changed:false,added:0,open:0};
-  try{addressCandidateResult=collectAddressBookCandidates(normalizedIncoming,'address-candidates-plan-import')}
-  catch(e){persistAudit('address_candidates_collect_failed',{phase:'plan-import',message:String(e?.message||e)})}
-  const importSession=beginPlanImportSession(normalizedIncoming,planMerge);
-  renderPlanImportHistoryPanel();
-  resetCurrentImportCheckDisplay();
-  updateLiveFlightPanelContext();
-
+  try{addressCandidateResult=collectAddressBookCandidates(normalizedIncoming,'address-candidates-plan-import')||addressCandidateResult}
+  catch(e){r8Warn('address-candidates',e)}
+  let importSession={id:null,historySaved:false,currentSaved:false};
+  try{importSession=beginPlanImportSession(normalizedIncoming,planMerge)||importSession}
+  catch(e){r8Warn('plan-history',e)}
+  for(const [phase,display] of [
+    ['plan-history-panel',()=>renderPlanImportHistoryPanel()],
+    ['import-check-panel',()=>resetCurrentImportCheckDisplay()],
+    ['flight-panel',()=>updateLiveFlightPanelContext()]
+  ]){try{display()}catch(e){r8Warn(phase,e)}}
+  // Any post-commit uncertainty downgrades the UI to a warning (not a failure).
+  const r8HistoryAndFinalizersOK=Boolean(importSession.historySaved&&importSession.currentSaved&&!r8Warnings.length);
   return {
     cancelled:false,
     mode:'merge',
     count:rides.length,
     importSessionId:importSession.id,
-    historySaved:Boolean(importSession.historySaved&&importSession.currentSaved),
+    historySaved:r8HistoryAndFinalizersOK,
+    postCommitWarnings:r8Warnings,
     matchedRides:planMerge.matched,
     carryoverRides:planMerge.carryover,
     restoredFlightChecks:restored.changed,
@@ -5204,11 +6450,12 @@ async function applyImportedRides(newRides){
     restoredManualChecks:restored.manualRestored,
     newAddressCandidates:addressCandidateResult.added,
     storageV2Synced:v2Verified,
-    storageV2Status:v2Mirror?.pending===true?'pending':storageV2Diagnosis().status,
+    storageV2Status:r8StorageV2.status||'unknown',
     pendingFlightChecks:normalizedIncoming.filter(r=>r?.flightNeedsManualCheck===true ||
       (r?.flightNumber && !['verified','high'].includes(String(r?.flightCheckConfidence||'').toLowerCase()))).length,
     openAddressCandidates:addressCandidateResult.open
   };
+  }finally{atmsR7ImportBusy=false}
 }
 
 
@@ -6685,6 +7932,10 @@ function initApp(){
   try{
     // CORE-005T 08.09.2026: verifizierte Flight-Cache-Eintraege redundant schuetzen und ggf. wiederherstellen.
     restoreMissingCriticalPersistence('startup');
+    if(localStorage.getItem(ATMS_R7_PENDING_IMPORT)!==null){
+      persistAudit('r7_startup_pending_import',{blocked:true});
+      showToast('WARNUNG: Unvollstaendiger Import-Sicherungsjournal vorhanden. Vor weiterem Import bitte Datenbestand pruefen.','warn');
+    }
     recoverVerifiedFlightCache();
     capturePersistenceSafety('startup');
     initPersistenceDurableShadow();
@@ -6789,7 +8040,7 @@ window.addEventListener('unhandledrejection',e=>showAppError(e.reason));
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initApp);else initApp();
 
 window.ATMSAddressBook={get:getAddressBook,render:renderAddressBook,find:findAddressBookEntry,candidates:getAddressCandidates,collectCandidates:collectAddressBookCandidates};
-window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSStorageV2Diagnosis=storageV2Diagnosis;window.ATMSStorageV2Check=checkStorageV2Phase1;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.ATMSP77LegacyDedupeStatus=p77LegacyDedupeStatus;window.ATMSP77LegacyDedupeRollback=p77LegacyDedupeRollback;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
+window.ATMSR16PendingJournalDiagnosis=atmsR16PendingJournalDiagnosis;window.ATMSPersistenceDiagnosis=persistenceDiagnosis;window.ATMSStorageV2Diagnosis=storageV2Diagnosis;window.ATMSStorageV2Check=checkStorageV2Phase1;window.ATMSPersistenceSnapshot=capturePersistenceSafety;window.ATMSRestorePreviousPlanImport=restorePreviousPlanImport;window.ATMSP77LegacyDedupeStatus=p77LegacyDedupeStatus;window.ATMSP77LegacyDedupeRollback=p77LegacyDedupeRollback;window.applyImportedRides=applyImportedRides;window.showToast=showToast;window.render=render;
 
 window.buildGeminiFlightPrompt=buildGeminiFlightPrompt;window.copyGeminiFlightPrompt=copyGeminiFlightPrompt;window.applyGeminiFlightResult=applyGeminiFlightResult;
 window.buildLiveFlightPrompt=buildLiveFlightPrompt;window.copyLiveFlightPrompt=copyLiveFlightPrompt;window.applyLiveFlightResult=applyLiveFlightResult;

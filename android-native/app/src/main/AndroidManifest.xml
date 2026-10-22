@@ -7,7 +7,7 @@
         android:allowBackup="true"
         android:icon="@drawable/ic_atms_pro_launcher_v2"
         android:roundIcon="@drawable/ic_atms_pro_launcher_v2"
-        android:label="ATMS PRO"
+        android:label="ATMS PRO TEST"
         android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.ATMSPRO">

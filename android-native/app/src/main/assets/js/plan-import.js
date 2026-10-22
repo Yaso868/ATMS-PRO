@@ -1850,8 +1850,9 @@
       flightTime: listedFlightTime,
       // P114.26: keep machine-parseable HH:MM distinct from the user's
       // original question-mark uncertainty; do not silently claim confirmed.
-      flightTimeRawSource: options.imageOcr && /\?\s*$/.test(rawListedFlightTime) ? rawListedFlightTime : '',
-      flightTimeUncertain: Boolean(options.imageOcr && /\?\s*$/.test(rawListedFlightTime)),
+      flightTimeRawSource: options.imageOcr && rawListedFlightTime.includes('?') ? rawListedFlightTime : '',
+      flightTimeUncertain: Boolean(options.imageOcr && rawListedFlightTime.includes('?')),
+      flightTimeUncertaintyReview: '',
       timeSemanticSource: 'dispo+mirror+listed-flight-time',
       pickup,
       destination,
@@ -2032,6 +2033,10 @@
         issues.push({level:'error',row,text:`Ungueltige DISPO-Zeit „${cellText(ride.dispoTime)}“`});
       if(ride.flightTime&&timeToMinutes(ride.flightTime)===null)
         issues.push({level:'error',row,text:`Ungueltige Flugzeit „${cellText(ride.flightTime)}“`});
+      if (ride.flightTimeSourceGlyphAmbiguity) issues.push({
+        level: 'error', kind: 'flight_time_source_glyph', row,
+        text: `Flugzeitzelle "${cellText(ride.flightTimeSourceGlyphAmbiguity)}" enthält ein unklar angehängtes OCR-Zeichen – Zeit nicht automatisch bestätigen; Originalbild erneut sicher prüfen`
+      });
       if (ride.flightTimeOcrConflict) {
         issues.push({
           level: 'error',
@@ -2044,6 +2049,10 @@
       if(ride.flightTimeBorderAutoCorrected)issues.push({level:'info',kind:'ocr_recovery',row,text:`OCR-Tabellenkante aus Flugzeit „${cellText(ride.flightTimeBorderOriginal)}“ entfernt; eindeutig ${cellText(ride.flightTime)} erkannt`});
       if (ride.flightTimeUncertain) issues.push({ level: 'warning', kind: 'flight_time_uncertain', row,
         text: `Flugzeit „${cellText(ride.flightTimeRawSource) || (cellText(ride.flightTime) + '?')}“ trägt im Original ein Fragezeichen – ${cellText(ride.flightTime)} ist nicht als bestätigte Flugzeit zu behandeln` });
+      if (ride.flightTimeUncertain && ride.flightTimeUncertaintyReview !== 'confirmed_source') issues.push({
+        level: 'error', kind: 'flight_time_uncertain_review', row, rideId: ride.id,
+        text: 'Originalzelle mit möglichem ? prüfen und diese Fahrt einzeln bestätigen. Flugzeit wird NICHT als verifiziert markiert.'
+      });
       if(ride.flightTimeRecoveredFromExactImageCell)issues.push({level:'info',kind:'ocr_recovery',row,text:`Flugzeit ${cellText(ride.flightTime)} aus exakt zugeordneter geometrischer Flugzeitzelle wiederhergestellt`});
       const integrityConflicts = Array.isArray(ride.importIntegrityConflicts) ? ride.importIntegrityConflicts : [];
       integrityConflicts.forEach(conflict => issues.push({
@@ -2232,7 +2241,9 @@
             level: 'error',
             kind: 'text_ocr',
             row,
-            text: `${label} „${current || '–'}“ widerspricht der unabhängigen Text-Nach-OCR${candidate ? ` („${candidate}“)` : ''}${exactViews ? ` · Zellprüfung: ${exactViews}` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
+            text: ride[`${field}OcrConflictFromListConsensus`] === true
+              ? `${label} „${current || '–'}“ aus vollständiger Originalzelle widerspricht der wiederholten Listenvariante${candidate ? ` („${candidate}“)` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
+              : `${label} „${current || '–'}“ widerspricht der unabhängigen Text-Nach-OCR${candidate ? ` („${candidate}“)` : ''}${exactViews ? ` · Zellprüfung: ${exactViews}` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
           });
         } else if (ride[`${field}OcrAutoCorrected`]) {
           const correctionSource = cellText(ride[`${field}OcrCorrectionSource`]);
@@ -2481,27 +2492,63 @@
   }
 
   function parseDelimited(text, delimiter) {
-    const matrix = [];
-    let row = [], cell = '', quoted = false;
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i], next = text[i + 1];
-      if (char === '"') {
-        if (quoted && next === '"') { cell += '"'; i++; } else quoted = !quoted;
-      } else if (char === delimiter && !quoted) {
-        row.push(cell); cell = '';
-      } else if ((char === '\n' || char === '\r') && !quoted) {
-        if (char === '\r' && next === '\n') i++;
-        row.push(cell);
-        if (row.some(value => cellText(value))) matrix.push(row);
-        row = []; cell = '';
-      } else cell += char;
+    // R49: Fail closed on malformed quote boundaries. Import and source review
+    // share this exact parser, so ambiguity must NEVER silently move fields.
+    const src=String(text||'').replace(/^\uFEFF/, '');
+    const matrix=[];
+    let row=[],cell='',mode='start'; // start | bare | quoted | after_quote
+    const finishCell=()=>{row.push(cell);cell='';mode='start';};
+    const finishRow=()=>{
+      finishCell();
+      if(row.some(value=>cellText(value)))matrix.push(row);
+      row=[];
+    };
+    for(let i=0;i<src.length;i++){
+      const ch=src[i],next=src[i+1];
+      if(mode==='quoted'){
+        if(ch==='"' && next==='"'){cell+='"';i++;}
+        else if(ch==='"')mode='after_quote';
+        else cell+=ch;
+        continue;
+      }
+      if(ch==='"'){
+        if(mode==='start'){mode='quoted';continue;}
+        throw Error('R49: CSV/TSV ungueltige Anfuehrungszeichen-Position – Import gesperrt.');
+      }
+      if(ch===delimiter){finishCell();continue;}
+      if(ch==='\n'||ch==='\r'){
+        if(ch==='\r'&&next==='\n')i++;
+        finishRow();continue;
+      }
+      if(mode==='after_quote' && ch!==' '&&ch!=='\t')
+        throw Error('R49: CSV/TSV unerlaubte Zeichen nach Schluss-Anfuehrungszeichen – Import gesperrt.');
+      cell+=ch;
+      if(mode==='start')mode='bare';
     }
-    row.push(cell);
-    if (row.some(value => cellText(value))) matrix.push(row);
+    if(mode==='quoted')throw Error('R48: CSV/TSV enthaelt ein nicht geschlossenes Anfuehrungszeichen – Import gesperrt.');
+    // A trailing separator produces a legitimate trailing empty cell.
+    if(cell.length||row.length||mode!=='start')finishRow();
     return matrix;
   }
 
-
+  // R48: One shared, byte-decoded CSV/TSV matrix contract. Revision evidence
+  // must use the SAME delimiter detection and logical row numbering as import.
+  // The returned row number indexes the nonempty parser matrix, NOT a physical
+  // text line (quoted cells may contain CR/LF, empty physical lines may drop).
+  function atmsR48DelimitedMatrix(text,fileName){
+    const ext=String(fileName||'').trim().toLowerCase().split('.').pop();
+    if(ext!=='csv'&&ext!=='tsv') throw Error('R48: Keine CSV-/TSV-Quelldatei.');
+    if(typeof text!=='string') throw Error('R48: Original-Textbytes fehlen.');
+    const firstLine=text.split(/\r?\n/,1)[0]||'';
+    const delimiter=ext==='tsv'?'\t':
+      ((firstLine.match(/;/g)||[]).length>(firstLine.match(/,/g)||[]).length?';':',');
+    return {matrix:parseDelimited(text,delimiter),delimiter};
+  }
+  // Read-only parser available to the app.js SHA-verified revision dialog.
+  // The file bytes are independently rehashed and UTF-8-decoded there.
+  try { Object.defineProperty(window,'ATMSR48DelimitedSource',{
+    value:Object.freeze({version:'R48',parse:atmsR48DelimitedMatrix}),
+    configurable:false,writable:false,enumerable:false}); } catch (_) {}
 
   function isImageFile(file) {
     return /^image\//i.test(file.type || '') || /\.(jpe?g|png|webp)$/i.test(file.name || '');
@@ -9258,6 +9305,18 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         ride.priceTargetedOcrDecision = 'no_valid_decimal_candidate';
         continue;
       }
+      // R10: multiple plausible prices from the SAME bounded source cell
+      // are contradictory evidence, even when one candidate has more OCR
+      // votes. Correlated crops are not independent proof of source truth.
+      // Include multi-price views that were intentionally excluded from votes.
+      const plausibleReadings = new Set(attempts.flatMap(values =>
+        (Array.isArray(values) ? values : []).filter(value => Number.isFinite(Number(value)))
+          .map(value => Number(value).toFixed(2))));
+      if (plausibleReadings.size > 1) {
+        ride.priceTargetedOcrDecision = 'conflicting_plausible_price_candidates';
+        ride.priceTargetedOcrConflictingCandidates = [...plausibleReadings].map(Number);
+        continue;
+      }
       if (ranked[0][1] < 2) {
         ride.priceTargetedOcrDecision = 'fewer_than_two_matching_votes';
         continue;
@@ -9375,7 +9434,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
             if (typeof worker?.setParameters === 'function') {
               await p109PerfWorkerSetParameters(worker, 'missing_flight_time_targeted_ocr', {
                 tessedit_pageseg_mode: spec.psm,
-                tessedit_char_whitelist: '0123456789:.'
+                tessedit_char_whitelist: '0123456789:.?'
               }, { sourceRow: Number(ride.sourceRow || 0), mode: spec.name });
             }
             const crop = cropCanvasRegion(
@@ -9388,7 +9447,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
             );
             const result = await p109PerfWorkerRecognize(worker, 'missing_flight_time_targeted_ocr', crop, { sourceRow: Number(ride.sourceRow || 0), mode: spec.name });
             const candidates = rideTimeCandidatesFromOcrResult(result).map(normalizeTime).filter(value => timeToMinutes(value) !== null);
-            attempts.push({ mode: spec.name, candidates: [...new Set(candidates)] });
+            const sourceText = cellText(result?.data?.text).slice(0, 160);
+            attempts.push({ mode: spec.name, candidates: [...new Set(candidates)],
+              rawOcr: sourceText, uncertaintyMarker: sourceText.includes('?') });
           }
         });
       } catch (_) {
@@ -9408,6 +9469,11 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       }
       ride.flightTimeOcrInitial = cellText(ride.flightTime);
       ride.flightTime = first;
+      if (attempts.some(attempt => attempt.uncertaintyMarker)) {
+        ride.flightTimeUncertain = true;
+        ride.flightTimeRawSource = attempts.filter(a => a.uncertaintyMarker).map(a => a.rawOcr).join(' | ');
+        ride.flightTimeUncertaintyReview = '';
+      }
       ride.flightTimeRecoveredFromTargetedOcr = true;
       ride.flightTimeRecoverySource = 'dual_tight_cell_consensus';
     }
@@ -11315,6 +11381,27 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     });
     return out;
   }
+  // R11 local: same-plan OCR readings are correlated, not independent ground truth.
+  // A genuinely complete, source-row/column-bound PRIMARY cell must not be
+  // overwritten simply because another spelling occurs elsewhere in the plan.
+  function strongOriginalCellForListConsensus(ride, field, original) {
+    const evidence = ride?.imageCellEvidence?.[field];
+    const birth = evidence?.primarySourceEvidence;
+    if (!birth || birth.verificationSource !== 'primary_full_image_cell_assignment' ||
+        birth.geometryConfidence !== 'high' ||
+        ride?.sourceRow == null || !Number.isInteger(Number(ride.sourceRow)) || Number(ride.sourceRow) < 1 ||
+        evidence?.sourceColumn == null || birth.sourceRow == null || birth.sourceColumn == null ||
+        !Number.isInteger(Number(evidence.sourceColumn)) || Number(evidence.sourceColumn) < 0 ||
+        Number(birth.sourceRow) !== Number(ride.sourceRow) ||
+        Number(birth.sourceColumn) !== Number(evidence.sourceColumn) ||
+        birth.confidence == null || !Number.isFinite(Number(birth.confidence)) ||
+        Number(birth.confidence) < 80 ||
+        cellText(birth.rawOcr).normalize('NFC').trim() !== cellText(original).normalize('NFC').trim()) return false;
+    const q = birth.cropQuality || {};
+    return q.fullCellIncluded === true && q.leftEdgeClipped === false &&
+      q.rightEdgeClipped === false && q.neighborColumnIncluded === false;
+  }
+
   function applyRepeatedTextConsistency(rides) {
     if (!Array.isArray(rides) || rides.length < 3) return rides;
 
@@ -11348,6 +11435,17 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
 
         entries.forEach(entry => {
           if (entry.raw === winner[0]) return;
+          if (strongOriginalCellForListConsensus(out[entry.index], field, entry.raw)) {
+            // Preserve a verified original even when a correlated list majority disagrees.
+            // Route/company resolution must be source-bound, not silent text voting.
+            const ride = out[entry.index];
+            if (!ride[`${field}OcrConflict`]) {
+              ride[`${field}OcrConflict`] = true;
+              ride[`${field}OcrConflictCandidate`] = winner[0];
+              ride[`${field}OcrConflictFromListConsensus`] = true;
+            }
+            return;
+          }
           // Durch die gemeinsame Signature sind nur Separator-/Case-Varianten erlaubt.
           out[entry.index][field] = winner[0];
           out[entry.index].repeatedTextConsistency = {
@@ -11371,6 +11469,18 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         const peers = out.filter((_, peerIndex) => peerIndex !== index).map(peer => cellText(peer?.company)).filter(Boolean);
         const suggestion = ocrIntegrityCore.suggestShortCodeConsensus(original, peers);
         if (!suggestion?.candidate || suggestion.candidate === original) return;
+        // R12: The independent short-code promotion runs AFTER the general
+        // repeated-text gate. It must honor the SAME immutable original-cell
+        // protection instead of bypassing it for 2–4-letter company codes.
+        // Peer rows are correlated OCR observations, never another source.
+        if (strongOriginalCellForListConsensus(ride, 'company', original)) {
+          if (!ride.companyOcrConflict) {
+            ride.companyOcrConflict = true;
+            ride.companyOcrConflictCandidate = suggestion.candidate;
+            ride.companyOcrConflictFromListConsensus = true;
+          }
+          return;
+        }
         ride.company = suggestion.candidate;
         ride.repeatedTextConsistency = {
           ...(ride.repeatedTextConsistency || {}),
@@ -11435,7 +11545,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         // und bleiben offen. Kompakte/links abgeschnittene Varianten benoetigen
         // mindestens drei identische Listenbelege; links abgeschnittene Varianten
         // zusaetzlich zwei Belege mit demselben Gegenpunkt der Route.
-        if (!safeMajority || !autoFixKind) {
+        if (!safeMajority || !autoFixKind || strongOriginalCellForListConsensus(out[index], field, raw)) {
           out[index].routeTextConsistencyNeedsReview = {
             ...(out[index].routeTextConsistencyNeedsReview || {}),
             [field]: { value: raw, candidates: candidates.map(item => ({ value: item.candidate, count: item.count, kind: item.kind })) }
@@ -11499,17 +11609,26 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       .trim();
   }
 
+  // R9: an extra OCR glyph immediately after HH:MM is never a verified clock.
+  // This is evidence of a malformed source token, NOT proof of a '?' character.
+  function flightTimeSourceHasAttachedGlyph(value) {
+    const raw = cellText(value);
+    return /(?:^|[^0-9A-Za-z])(?:[01]?\d|2[0-3])[:.][0-5]\d[0-9A-Za-z]/u.test(raw);
+  }
+
   function uniqueClockCandidateFromCell(value) {
     const raw = cellText(value);
-    if (!raw) return '';
-    const direct = normalizeTime(raw);
-    if (timeToMinutes(direct) !== null) return direct;
+    if (!raw || flightTimeSourceHasAttachedGlyph(raw)) return '';
+    // Independently count all *complete* tokens before normalizeTime, since
+    // normalizeTime accepts the first one and otherwise hides ambiguity.
     const found = new Set();
-    const matches = raw.match(/[|¦│\[\]=~]*\s*[0-2]?\d[:.]\d{2}\s*[|¦│\[\]=~]*/gu) || [];
+    const matches = raw.match(/(?:^|[^0-9A-Za-z])(?:[01]?\d|2[0-3])[:.][0-5]\d(?![0-9A-Za-z])/gu) || [];
     matches.forEach(token => {
       const normalized = normalizeTime(token);
       if (timeToMinutes(normalized) !== null) found.add(normalized);
     });
+    const direct = normalizeTime(raw);
+    if (timeToMinutes(direct) !== null) found.add(direct);
     return found.size === 1 ? [...found][0] : '';
   }
 
@@ -11586,6 +11705,22 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     out.forEach(ride => {
       const evidence = imageCellEvidenceForRide(ride, imageMeta, mapping);
       ride.imageCellEvidence = evidence;
+      // P11436: inspect the original geometric flight-time cell, not only the
+      // confidence-filtered row text. A stray punctuation mark remains UNVERIFIED
+      // until the user confirms this specific source row; do not guess its owner.
+      const originalFlightTimeCell = cellText(evidence?.flightTime?.rawOcr);
+      // R9: a malformed attached glyph (e.g. source OCR "13:307") must
+      // remain unresolved even if a later targeted view reads plain "13:30".
+      // Never infer that the glyph *is* '?' or treat two correlated views as
+      // independent proof of an unqualified flight time.
+      if (flightTimeSourceHasAttachedGlyph(originalFlightTimeCell)) {
+        ride.flightTimeSourceGlyphAmbiguity = originalFlightTimeCell;
+      }
+      if (originalFlightTimeCell.includes('?')) {
+        ride.flightTimeUncertain = true;
+        ride.flightTimeRawSource = originalFlightTimeCell;
+        ride.flightTimeUncertaintyReview = '';
+      }
 
       ['pickup', 'destination'].forEach(field => {
         const decision = primaryRouteRawEdgeRecovery(
@@ -12786,6 +12921,29 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     };
   }
 
+  // R37: JSON is parsed as a new selected FILE, not as a trusted original
+  // photo or an invisible restore. Bind each JSON-array index to that selected
+  // File; reject embedded foreign (historical) sources instead of rewriting
+  // their provenance. Real JSON File bytes are SHA-verified at import boundary.
+  function atmsR37BindJsonSourceRows(rows,fileName){
+    const source=String(fileName||'').trim();
+    if(!/\.json$/i.test(source)||!Array.isArray(rows))
+      throw Error('R37: JSON-Quelldatei und Zeilenformat nicht eindeutig.');
+    return rows.map((ride,index)=>{
+      if(!ride||typeof ride!=='object'||Array.isArray(ride))
+        throw Error('R37: JSON-Zeile kein eindeutiger Fahrt-Datensatz.');
+      const existing=String(ride.sourceFile||'').trim();
+      if(existing && existing.toLowerCase()!==source.toLowerCase())
+        throw Error('R37: JSON enthält historische Fremdquelle – kein stiller Neuimport, Originalzuordnung separat prüfen.');
+      if(ride.sourceRow!=null && ride.sourceRow!=='' && Number(ride.sourceRow)!==index+1)
+        throw Error('R37: JSON-Quellzeile widerspricht tatsächlicher Arrayposition.');
+      if(ride.sourceImageSha256||ride.imageSha256)
+        throw Error('R37: JSON-Datei darf sich nicht als Originalbild ausgeben.');
+      if(ride.sourceSheetName||ride.sourceSheetRow)throw Error('R47: JSON darf sich keine Excel-Arbeitsblatt-Herkunft geben.');
+      return {...ride,sourceFile:source,sourceRow:index+1};
+    });
+  }
+
   async function readFile(file) {
     if (isImageFile(file)) return readImagePlan(file);
     const extension = file.name.toLowerCase().split('.').pop();
@@ -12794,21 +12952,35 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       return { kind: 'json', rows: Array.isArray(object) ? object : (object.rides || []) };
     }
     if (extension === 'csv' || extension === 'tsv') {
-      const text = await file.text();
-      const firstLine = text.split(/\r?\n/, 1)[0] || '';
-      const delimiter = extension === 'tsv' ? '\t' : ((firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',');
-      return { kind: 'matrix', matrix: parseDelimited(text, delimiter), sheetName: 'CSV' };
+      const text=await file.text();
+      const parsed=atmsR48DelimitedMatrix(text,file.name);
+      return {kind:'matrix',matrix:parsed.matrix,sheetName:extension.toUpperCase()};
     }
     if (extension === 'xlsx' || extension === 'xls') {
-      if (!window.XLSX) throw new Error('Excel-Modul konnte nicht geladen werden. Bitte App einmal mit Internet öffnen und danach erneut versuchen.');
+      if (!window.XLSX) throw new Error('Excel-Modul (lokal/offline) fehlt oder ist beschädigt. Import gesperrt; keine Fahrten übernommen.');
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: false, raw: true });
       const sheetName = workbook.SheetNames.find(name => {
         const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '', raw: true });
         return detectHeader(matrix).score >= 3;
       }) || workbook.SheetNames[0];
       if (!sheetName) throw new Error('Keine Tabelle in der Excel-Datei gefunden.');
-      const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: true, blankrows: false });
-      return { kind: 'matrix', matrix, sheetName };
+      const sheet=workbook.Sheets[sheetName];
+      const matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true, blankrows: false });
+      // R47: row positions in the parser matrix are NOT necessarily worksheet
+      // row numbers (blankrows:false removes physical blank rows). Build the
+      // positional mapping from a second, unfiltered read of the same cells.
+      const allRows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:true,blankrows:true});
+      const startRow=XLSX.utils.decode_range(sheet['!ref']).s.r;
+      const physicalRows=[];let logical=0;
+      for(let i=0;i<allRows.length&&logical<matrix.length;i++){
+        if(JSON.stringify(allRows[i])===JSON.stringify(matrix[logical])){
+          physicalRows.push(startRow+i+1);logical++;
+        }
+      }
+      if(logical!==matrix.length||physicalRows.length!==matrix.length)
+        throw Error('R47: Excel-Zeilennummern lassen sich nicht verlustfrei zuordnen.');
+      return { kind: 'matrix', matrix, sheetName, sourceSheetName: sheetName,
+        sourceSheetNames: workbook.SheetNames.slice(), sourcePhysicalRows:physicalRows };
     }
     throw new Error('Dateiformat nicht unterstützt. Bitte Bild, Excel, CSV, TSV oder JSON verwenden.');
   }
@@ -13621,6 +13793,12 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         else ride.driverManualOcrCorrection={from:changes.find(c=>c.field==='driver').from,to:ride.driver,confirmed:true,at:new Date().toISOString()};
       }
       if (updates.includes('price')) state.priceDecisions[String(ride.id||ride.sourceRow)]= 'manual';
+      if (updates.includes('flightTime')) {
+        // Manual changes never rewrite the immutable original question mark.
+        // Stale confirmation does not authorize a new flight-time context.
+        ride.flightTimeUncertaintyReview = '';
+        ride.flightTimeSourceContextChanged = true;
+      }
       if (updates.some(key=>AP01_FLIGHT_CONTEXT.has(key))) {
         // Even deleting a flight number needs separate source review. Invalidate ALL
         // stale status channels, not just the confidence label in the preview.
@@ -13678,6 +13856,12 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       incomingKeys.add(key);
     }
     if (!state.ap01ReviewConfirmed) return ['Vorschau noch nicht ausdrücklich bestätigt'];
+    if (state.rides.some(ride=>cellText(ride.flightTimeSourceGlyphAmbiguity)))
+      return ['Flugzeit mit unklarem OCR-Zeichen – erneute eindeutige Originalbild-Evidenz erforderlich'];
+    if (state.rides.some(ride=>ride.flightTimeUncertain===true &&
+        (ride.flightTimeUncertaintyReview!=='confirmed_source' ||
+         !cellText(ride.flightTimeRawSource).includes('?'))))
+      return ['Unsichere Flugzeit benötigt eine separate Originalzellen-Bestätigung'];
     if (state.rides.some(ride=>ride.ap01FlightRecheckRequired)) return ['Nach Bearbeitung Flug-/Routen-Neuverifikation erforderlich'];
     if (state.rides.some(ride => ride.ap01FlightRecheckEvidence &&
         ride.ap01FlightRecheckEvidence.contextKey !== ap01FlightContextKey(ride)))
@@ -13741,6 +13925,14 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
                 <button type="button" class="date-boundary-btn" data-date-action="next_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">✓ ${escapeHtml(String(issue.count))} Fahrt(en) → ${escapeHtml(formatPlanDate(issue.nextDate))}</button>
                 <button type="button" class="date-boundary-btn" data-date-action="same_day" style="flex:1;min-width:170px;padding:10px;border-radius:10px;font-weight:800">Alle bleiben ${escapeHtml(formatPlanDate(issue.baseDate))}</button>
               </div>
+            </div>`;
+          }
+
+          if (issue.kind === 'flight_time_uncertain_review') {
+            return `<div class="plan-issue error" style="padding-bottom:12px">
+              <div><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>
+              <div style="font-size:12px;opacity:.82;margin-top:7px">Flugzeit ${escapeHtml(cellText(state.rides.find(r=>String(r.id)===String(issue.rideId))?.flightTime)||'–')} · Originalbild und ? kontrollieren. Die Flugprüfung bleibt unabhängig OFFEN.</div>
+              <button type="button" class="flight-time-uncertainty-review-btn" data-ride-id="${escapeHtml(String(issue.rideId))}" style="width:100%;margin-top:9px;padding:10px;border-radius:10px;font-weight:800">Originalzelle geprüft: ? als Unsicherheit bestätigen</button>
             </div>`;
           }
 
@@ -14208,6 +14400,19 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       });
     });
 
+    $('planIssues').querySelectorAll('.flight-time-uncertainty-review-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const ride=state.rides.find(r=>String(r.id)===String(button.dataset.rideId));
+        if (!ride || ride.flightTimeUncertain !== true ||
+            !cellText(ride.flightTimeRawSource).includes('?')) return;
+        ride.flightTimeUncertaintyReview = 'confirmed_source';
+        ride.flightTimeUncertaintyReviewedAt = new Date().toISOString();
+        state.ap01ReviewConfirmed = false;
+        state.issues = validate(state.rides);
+        render();
+      });
+    });
+
     $('planIssues').querySelectorAll('.driver-ocr-review-btn').forEach(button => {
       button.addEventListener('click', () => {
         const input = Array.from($('planIssues').querySelectorAll('.driver-ocr-manual-input'))
@@ -14345,13 +14550,14 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       const result = await p54MeasureAsync('read_file_total', () => readSelectedFiles());
       if (generation !== state.pipelineGeneration) return;
       if (result.kind === 'json') {
-        const detectedJsonDate = detectPlanDateFromJsonRows(result.rows);
+        const jsonRows=atmsR37BindJsonSourceRows(result.rows,state.file?.name);
+        const detectedJsonDate = detectPlanDateFromJsonRows(jsonRows);
         if (detectedJsonDate) setDetectedPlanDate(detectedJsonDate, 'JSON');
         const planDate = currentPlanDate();
         state.cancelledRows = [];
         state.ocrCellDiagnostics = [];
         state.ocrDiagnosticSelfCheck = null;
-        state.rides = result.rows.map((ride, index) => {
+        state.rides = jsonRows.map((ride, index) => {
           const withDate = { ...ride, planDate: cellText(ride?.planDate) || planDate, date: cellText(ride?.date) || planDate };
           return window.norm ? window.norm(withDate, index) : withDate;
         });
@@ -14465,7 +14671,17 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           }
         }
 
-        rides.push(makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: Boolean(result.imageOcr) }));
+        const parsedRide=makeRide(row, sourceRow, mappingInfo.mapping, state.file.name, { imageOcr: Boolean(result.imageOcr) });
+        if(/\.xlsx?$/i.test(String(state.file?.name||''))) {
+          if(!result.sourceSheetName||!result.sourceSheetNames?.includes(result.sourceSheetName))
+            throw Error('R46: Excel-Arbeitsblatt nicht eindeutig aus Originaldatei bestimmt.');
+          parsedRide.sourceSheetName=result.sourceSheetName;
+          const physical=Number(result.sourcePhysicalRows?.[sourceRow-1]);
+          if(!Number.isInteger(physical)||physical<1)
+            throw Error('R47: echte Excel-Blattzeile der Fahrt nicht nachweisbar.');
+          parsedRide.sourceSheetRow=physical;
+        }
+        rides.push(parsedRide);
       });
       state.cancelledRows = cancelledRows;
       if (!rides.length) throw new Error(cancelledRows.length
@@ -14758,6 +14974,49 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     }
   }
 
+  // P11436-R3: Hash the ACTUAL local source photo bytes, not its name.
+  // No network, no inferred hash, no automatic promotion of older rows.
+  async function atmsP11436StampImageHashes(rideList){
+    const selected=(Array.isArray(state.files)&&state.files.length ? state.files : [state.file]).filter(Boolean);
+    const hashByFile=new Map();
+    for(const file of selected){
+      if(!file||!file.name||typeof file.arrayBuffer!=='function')continue;
+      if(!/\.(?:png|jpe?g|webp|bmp|xlsx|xls|json|csv|tsv)$/i.test(String(file.name)))continue;
+      if(!globalThis.crypto?.subtle?.digest)
+        throw Error('R37: WebCrypto SHA-256 nicht verfügbar – Import gesperrt.');
+      const raw=await file.arrayBuffer();
+      const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',raw));
+      const sha=Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
+      if(!/^[a-f0-9]{64}$/.test(sha))throw Error('P11436 R3: Originalfoto-Hash unbrauchbar');
+      const name=String(file.name).trim().toLowerCase();
+      if(hashByFile.has(name)&&hashByFile.get(name)!==sha)
+        throw Error('R37: gleicher Dateiname, unterschiedliche Originaldateibytes – Import gesperrt.');
+      hashByFile.set(name,sha);
+    }
+    return rideList.map(ride=>{
+      const source=String(ride?.sourceFile||'').trim().toLowerCase();
+      const hash=hashByFile.get(source);
+      // R36: never accept a user-supplied SHA from an unselected photo. The
+      // actual File bytes must be present, read and independently SHA-matched.
+      const image=/\.(?:png|jpe?g|webp|bmp)$/i.test(source);
+      const structured=/\.(?:xlsx|xls|json|csv|tsv)$/i.test(source);
+      if(!image&&!structured)throw Error('R37: unbekannte Quelldatei der Fahrt – Import gesperrt.');
+      if(!hash)throw Error('R37: tatsächlich ausgewählte Originaldateibytes fehlen – Import gesperrt.');
+      if(image){
+        if(ride.sourceFileSha256)throw Error('R37: Foto-/Dateihash-Typ widerspricht Quelle.');
+        const a=String(ride.sourceImageSha256||'').trim().toLowerCase();
+        const b=String(ride.imageSha256||'').trim().toLowerCase();
+        if((a&&a!==hash)||(b&&b!==hash))throw Error('P11436 R3: Bildhash widerspricht Quelle – Import gesperrt.');
+        return {...ride,sourceImageSha256:hash};
+      }
+      if(ride.sourceImageSha256||ride.imageSha256)throw Error('R37: strukturierte Quelldatei ist kein Originalfoto.');
+      const prior=String(ride.sourceFileSha256||'').trim().toLowerCase();
+      if(prior&&prior!==hash)throw Error('R37: Dateihash widerspricht ausgewählten Originalbytes – Import gesperrt.');
+      return {...ride,sourceFileSha256:hash};
+    });
+  }
+  window.ATMSP11436CurrentImportFiles=()=>Array.isArray(state.files)&&state.files.length?state.files.slice():[state.file].filter(Boolean);
+
   async function importRides(options = {}) {
     // H13 additional entrypoint veto: displaying/reviewing a missing physical
     // row can NEVER authorize a partial or automatic import.
@@ -14800,7 +15059,8 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       if (typeof window.applyImportedRides !== 'function') throw new Error('ATMS-Importfunktion ist nicht verfügbar.');
       // P96/S1: NIEMALS Bestandsfahrten/Erledigt-Status vor dem
       // nachweislich erfolgreichen Zwei-Speicher-Import loeschen.
-      const result = await window.applyImportedRides(normalized);
+      const hashedOriginals=await atmsP11436StampImageHashes(normalized);
+      const result = await window.applyImportedRides(hashedOriginals);
       if (result.cancelled) { $('importStatus').textContent = 'Import abgebrochen.'; return; }
       if(!result.historySaved){
         $('importStatus').textContent='Fahrten gesichert, aber Planlistenhistorie nicht gespeichert. Bitte sofort ein Backup erstellen.';
@@ -14824,6 +15084,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           ? `${result.count} Fahrten importiert`
           : 'Fahrten lokal übernommen – offene Flug-/Speicherprüfung beachten',
         result.storageV2Synced===true && !flightPending ? 'ok' : 'warn');
+      if (typeof window.ATMSDailyAdoptImportedDay === 'function') window.ATMSDailyAdoptImportedDay(hashedOriginals);
       if (typeof window.render === 'function') window.render();
       return true;
     } catch (error) {

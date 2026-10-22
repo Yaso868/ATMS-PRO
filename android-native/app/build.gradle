@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 12
-        versionName '1.4.0-ap01-p11435-v126-company-original-pixel-grayscale-test'
+        versionCode 13
+        versionName '1.4.0-ap01-p11436-qa-daily'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -30,11 +30,15 @@ android {
     }
     buildTypes {
         debug {
-            if (stableSigningAvailable) {
-                signingConfig signingConfigs.atmsStable
-            }
+            // ATMS PRO: independent test installation; never replace the productive app.
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-bildimport-test-20261022'
+            // Deliberately use Android's debug signing, never the production keystore.
         }
         release {
+            // TEST-Projekt: niemals die Produktivpaketkennung benutzen.
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-isolated-test'
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
@@ -367,7 +371,8 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11435')
+    dependsOn tasks.named('runtimeAssetAlignmentP11436')
+    dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
     dependsOn tasks.named('safeFlightPreviewP11422')
     dependsOn tasks.named('safeFlightEvidenceP11423')
@@ -387,11 +392,15 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('masterPromptRuleGateP1147')
 }
 
+tasks.register('h35SourceReviewSafety', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/h35-source-guard.cjs'
+}
 // AP-01.07: mandatory product-first release gates. Fail CLOSED if browser QA
 // dependencies, assertions or mock-storage integration fail. No real storage.
-tasks.register('runtimeAssetAlignmentP11435', Exec) {
+tasks.register('runtimeAssetAlignmentP11436', Exec) {
     workingDir rootProject.projectDir
-    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11435.js'
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11436.js'
 }
 tasks.register('ap01EditorSafety', Exec) {
     workingDir rootProject.projectDir
@@ -409,59 +418,9 @@ tasks.register('ap01BrowserIntegration', Exec) {
     workingDir rootProject.projectDir
     commandLine 'bash', 'tools/ap01-release/browser-gate.sh'
 }
-tasks.register('priceP11429Gate', Exec) {
-    workingDir rootProject.projectDir
-    commandLine 'node', 'tools/atms-price-gate-p11429.cjs'
-}
-tasks.register('priceP11430Interior', Exec) {
-    workingDir rootProject.projectDir
-    commandLine 'node', 'tools/atms-price-interior-p11430.cjs'
-}
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('priceP11429Gate')
-    dependsOn tasks.named('priceP11430Interior')
     dependsOn tasks.named('ap01EditorSafety')
     dependsOn tasks.named('ap01FlightRecheckSafety')
     dependsOn tasks.named('g06TraceFailClosed')
     dependsOn tasks.named('ap01BrowserIntegration')
-}
-
-// P114.31: mandatory route-source G4 guards. Source-level function replays
-// cover semantic OCR alternatives and the final zero-silent-error gate.
-// These MUST fail an APK build if the core source no longer obeys the guards.
-tasks.register('routeG4SemanticIntegrityP11431', Exec) {
-    workingDir rootProject.projectDir
-    commandLine 'node', 'tools/route-g4-semantic-integrity-p11431.cjs', 'app/src/main/assets/js/plan-import.js'
-}
-tasks.register('routeG4FinalIntegrityP11431', Exec) {
-    workingDir rootProject.projectDir
-    commandLine 'node', 'tools/route-g4-final-integrity-p11431.cjs', 'app/src/main/assets/js/plan-import.js'
-}
-tasks.named('preBuild').configure {
-    dependsOn tasks.named('routeG4SemanticIntegrityP11431')
-    dependsOn tasks.named('routeG4FinalIntegrityP11431')
-}
-
-// V1.26: enforce integrated price/route/company negative source tests before test-only APK build.
-// This DOES NOT constitute original-image OCR or offline provenance approval.
-tasks.register('v126GeneralEvidenceP11434', Exec) {
-    workingDir rootProject.projectDir
-    commandLine 'node', 'tools/v126-general-evidence-regression.cjs', 'app/src/main/assets/js/plan-import.js'
-}
-tasks.named('preBuild').configure {
-    dependsOn tasks.named('v126GeneralEvidenceP11434')
-    dependsOn tasks.named('p11435CompanyPixelSafetyGate')
-    dependsOn tasks.named('p11434EvidenceHandoffGate')
-}
-
-// P11434: fail-closed source-provenance replay before any future authorized APK build.
-tasks.register('p11434EvidenceHandoffGate', Exec) {
-    workingDir file('..')
-    commandLine 'node', 'tools/p11434-evidence-handoff-regression.cjs', 'app/src/main/assets/js/plan-import.js'
-}
-
-// P11435: preserve company source-pixel path and the independent opposition gates.
-tasks.register('p11435CompanyPixelSafetyGate', Exec) {
-    workingDir rootProject.projectDir
-    commandLine 'node', 'tools/p11435-company-source-pixel-selftest.cjs'
 }

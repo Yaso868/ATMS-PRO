@@ -162,6 +162,7 @@ async function runTextIntegrityRuntimeSmoke() {
 async function runAnalyzeControlRuntimeSmoke() {
   const functionSource = extractNamedFunction('analyze');
   const resetDiagnosticSource = extractNamedFunction('resetPreviewFlightDiagnostic');
+  const sourceBinder = extractNamedFunction('atmsR37BindJsonSourceRows');
   const syncDiagnosticSource = extractNamedFunction('syncPreviewFlightCheckControl');
   const elements = new Map();
   const element = id => {
@@ -227,7 +228,7 @@ async function runAnalyzeControlRuntimeSmoke() {
   };
 
   vm.createContext(sandbox);
-  vm.runInContext(`${syncDiagnosticSource}\n${resetDiagnosticSource}\n${functionSource}\nthis.__analyze = analyze;`, sandbox, { filename: 'plan-import-runtime-smoke:analyze' });
+  vm.runInContext(`${syncDiagnosticSource}\n${resetDiagnosticSource}\n${sourceBinder}\n${functionSource}\nthis.__analyze = analyze;`, sandbox, { filename: 'plan-import-runtime-smoke:analyze' });
 
   try {
     await sandbox.__analyze();
