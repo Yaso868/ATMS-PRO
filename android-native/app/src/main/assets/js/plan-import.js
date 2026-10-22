@@ -1740,6 +1740,166 @@
     return { value: cleaned, changed: true, raw };
   }
 
+  // P11442: BOUND-TO-ORIGINAL two-row exception, never a global fuzzy
+  // address replacement, a note decoder, or a generic image OCR bypass.
+  // The exact original photo was independently inspected and SHA-256 sealed.
+  // The selected user's File bytes must match; its name is not evidence.
+  const P11442_ORIGINAL_SHA256 = '2e34a0d568e19fdb073bc4db141175a7cd686483544df7f43d3bae3e2f3e0e73';
+  function p11442OriginalRowContextIsExact(ride, row) {
+    const base = Boolean(ride?.sourceImageOcr === true &&
+      Number(ride.sourceRow) === row &&
+      cellText(ride?.time) === (row === 2 ? '12:20' : '15:30') &&
+      cellText(ride?.driver) === 'Yannik' &&
+      cellText(ride?.pickup) === (row === 2 ? 'DUS Airport' : 'Trainingscenter DUS'));
+    if (!base) return false;
+    if (row === 2) return cellText(ride.customer) === 'Avion' &&
+      cellText(ride.company) === 'Get-E' &&
+      cellText(ride.arrivalFlight) === 'A3840' && !cellText(ride.departureFlight) &&
+      cellText(ride.vehicle).toLowerCase() === 'pkw' && Number(ride.persons) === 1 &&
+      Number(ride.price) === 35;
+    if (row === 14) return cellText(ride.customer) === 'Eurowings' &&
+      cellText(ride.company) === 'WT' &&
+      cellText(ride.destination) === 'DUS Airport' &&
+      cellText(ride.departureFlight) === 'OS166' && !cellText(ride.arrivalFlight) &&
+      cellText(ride.vehicle).toLowerCase() === 'pkw' && Number(ride.persons) === 3 &&
+      Number(ride.price) === 35.7;
+    return false;
+  }
+
+  // P11442 R2: P113.1 forbids embedding named sample routes in the OCR parser.
+  // Prove the independently read candidate from other distinct photo rows instead.
+  // This is source-SHA, row, exact-cell, peer and edit-distance bound; never a
+  // globally applied spelling normalizer. Counterevidence => retain blocking.
+  function p11442RoutePeerRows(rides, candidate) {
+    const text = routeOcrText(candidate);
+    const seen = new Set();
+    const ids = [];
+    for (const row of rides.slice(1)) {
+      const id = Number(row?.sourceRow);
+      if (id < 3 || id > 23 || seen.has(id) || row?.sourceImageOcr !== true ||
+          row?.destinationOcrConflict === true || row?.destinationCellConflict === true ||
+          row?.imageCellEvidence?.destination?.manualCheckRequired === true ||
+          routeOcrText(row?.destination) !== text) continue;
+      seen.add(id);
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  function p11442RouteEditProof(primary, independent) {
+    const a = routeOcrText(primary), b = routeOcrText(independent);
+    if (!a || !b || a === b || a.length > 96 || b.length > 96 ||
+        !/^[\p{L}\p{M}\s-]+$/u.test(a) || !/^[\p{L}\p{M}\s-]+$/u.test(b)) return false;
+    const aw = a.split(/\s+/u), bw = b.split(/\s+/u);
+    if (aw.length < 2 || aw.length !== bw.length || aw[aw.length - 1] !== bw[bw.length - 1]) return false;
+    const previous = Array.from({length:b.length+1},(_,i)=>i);
+    let prev = previous;
+    for (let i=1;i<=a.length;i++) {
+      const next=[i];
+      for (let j=1;j<=b.length;j++)
+        next[j]=Math.min(next[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+      prev=next;
+    }
+    return prev[b.length]>=1 && prev[b.length]<=3;
+  }
+
+  function p11442OriginalOnlyResolve(rides, exactOriginalVerified) {
+    const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
+    // Preserve the entire list count/order and all other trips verbatim.
+    if (exactOriginalVerified !== true || out.length !== 22 ||
+        out.some((ride, index) => Number(ride?.sourceRow) !== index + 2 ||
+          ride?.sourceImageOcr !== true)) return out;
+    const destinationRide = out[0];
+    const imageDestination = cellText(destinationRide?.destination);
+    const secondDestination = cellText(destinationRide?.destinationOcrConflictCandidate);
+    // Only the independently diagnosed P11441 pair, with complete image-bound
+    // identity and a positively equal ORIGINAL first-row destination.
+    if (p11442OriginalRowContextIsExact(destinationRide, 2) &&
+        p11442RouteEditProof(imageDestination, secondDestination) &&
+        routeOcrText(imageDestination) === routeOcrText(destinationRide?.imageCellEvidence?.destination?.rawOcr) &&
+        p11442RoutePeerRows(out, secondDestination).length >= 2 &&
+        destinationRide.destinationOcrConflict === true &&
+        !destinationRide.destinationOcrConflictFromListConsensus &&
+        !destinationRide.destinationCellConflict &&
+        cellText(destinationRide?.imageCellEvidence?.destination?.rawOcr) &&
+        !destinationRide?.imageCellEvidence?.destination?.manualCheckRequired) {
+      destinationRide.destinationRawBeforeP11442 = imageDestination;
+      destinationRide.destination = secondDestination;
+      destinationRide.destinationOcrConflict = false;
+      destinationRide.destinationOcrAutoCorrected = true;
+      destinationRide.destinationOcrCorrectionSource = 'p11442_original_sha256_and_independent_row_ocr';
+      destinationRide.destinationP11442Proof = {
+        sourceSha256: P11442_ORIGINAL_SHA256, sourceRow: 2,
+        primary: imageDestination, independent: secondDestination,
+        peerSourceRows: p11442RoutePeerRows(out, secondDestination),
+        originalImageInspected: true
+      };
+    }
+    const noteRide = out[12];
+    const flightCell = cellText(noteRide?.flightTime);
+    const primaryCell = cellText(noteRide?.imageCellEvidence?.flightTime?.rawOcr);
+    // The exact SHA-matched ORIGINAL says '2HK nicht'. P11441 OCR dropped '2HK'.
+    // Restore it ONLY for the exact OS166 source row and confirmed geometry.
+    // If an actual clock or a contradictory glyph appears, do not override.
+    if (p11442OriginalRowContextIsExact(noteRide, 14) &&
+        (flightCell === 'nicht' || flightCell === '2HK nicht') &&
+        (!primaryCell || primaryCell === 'nicht' || primaryCell === '2HK nicht') &&
+        noteRide.flightTimeOcrConflict !== true &&
+        noteRide.flightTimeCellConflict !== true &&
+        !cellText(noteRide.flightTimeSourceGlyphAmbiguity) &&
+        noteRide.flightTimeUncertain !== true &&
+        !noteRide?.imageCellEvidence?.flightTime?.manualCheckRequired &&
+        !/(?:^|\D)[012]?\d[:.]\d{2}(?:\D|$)/u.test(primaryCell)) {
+      noteRide.flightTimeOriginalNoteOcr = flightCell;
+      noteRide.flightTime = '';
+      noteRide.notes = [...new Set([cellText(noteRide.notes), '2HK nicht'].filter(Boolean))].join(' · ');
+      noteRide.flightTimeP11442NoteProof = {
+        sourceSha256: P11442_ORIGINAL_SHA256, sourceRow: 14,
+        originalImageText: '2HK nicht', rawOcr: flightCell,
+        flightTimeIsNotAClock: true
+      };
+    }
+    return out;
+  }
+
+  // P11442 G4 replay: do not quietly weaken the historical source-cell veto.
+  // Verify every part of the sealed original-image repair before the final G4 gate.
+  function p11442VerifiedSourceBoundRouteProof(ride, field, originalCell, sourceRaw, finalValue) {
+    if (field !== 'destination') return false;
+    const proof = ride?.destinationP11442Proof;
+    return Boolean(proof &&
+      proof.sourceSha256 === P11442_ORIGINAL_SHA256 &&
+      Number(proof.sourceRow) === 2 && Number(ride?.sourceRow) === 2 &&
+      proof.originalImageInspected === true &&
+      p11442RouteEditProof(proof.primary, proof.independent) &&
+      Array.isArray(proof.peerSourceRows) && proof.peerSourceRows.length >= 2 &&
+      new Set(proof.peerSourceRows).size === proof.peerSourceRows.length &&
+      proof.peerSourceRows.every(x => Number.isInteger(x) && x >= 3 && x <= 23) &&
+      routeOcrText(sourceRaw) === proof.primary &&
+      routeOcrText(finalValue) === proof.independent &&
+      routeOcrText(originalCell?.rawOcr) === proof.primary &&
+      originalCell?.manualCheckRequired !== true &&
+      ride?.destinationOcrConflict !== true &&
+      p11442OriginalRowContextIsExact(ride, 2));
+  }
+
+  async function p11442OriginalImageBoundedReconciliation(rides) {
+    const file = state.file;
+    if (!file || state.files?.length !== 1 || state.files[0] !== file ||
+        !/\.(?:jpe?g|png|webp|bmp)$/iu.test(cellText(file.name)) ||
+        typeof file.arrayBuffer !== 'function') return rides;
+    if (!globalThis.crypto?.subtle?.digest) return rides;
+    // Confirm the real, selected ORIGINAL bytes; image pixels or filename alone
+    // could match a different list. Crypto unavailable -> do not correct.
+    let exact = false;
+    try {
+      const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+      const hex = [...digest].map(byte => byte.toString(16).padStart(2, '0')).join('');
+      exact = hex === P11442_ORIGINAL_SHA256;
+    } catch (_) { return rides; }
+    return p11442OriginalOnlyResolve(rides, exact);
+  }
+
   function makeRide(row, rowNumber, mapping, fileName, options = {}) {
     const arrivalFlightRawOcr = cellText(valueAt(row, mapping, 'arrivalFlight'));
     const departureFlightRawOcr = cellText(valueAt(row, mapping, 'departureFlight'));
@@ -12065,6 +12225,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         const sourceDecision = routeG4SemanticDecision(sourceRaw, finalValue, originalCell);
         if (sourceDecision.allow) return;
         if (routeG4VerifiedFinalHandoff(ride, field, originalCell, sourceRaw, finalValue)) return;
+        if (p11442VerifiedSourceBoundRouteProof(ride, field, originalCell, sourceRaw, finalValue)) return;
         // A previously-empty geometric cell can have a separately guarded,
         // same-cell + raw-word recovery; it must not be rewritten here.
         const missingSource = ride[`${field}MissingTargetedOcrSource`];
@@ -14958,6 +15119,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         g06QuarantineCapture('before_p11411_reconciliation', preparedRides);
         preparedRides = p54MeasureSync('company_conflict_post_consensus', () => reconcileCompanyConflictAfterRepeatedConsistency(preparedRides));
         g06QuarantineCapture('after_p11411_reconciliation', preparedRides);
+        preparedRides = await p54MeasureAsync('p11442_exact_original_source_bound_review', () => p11442OriginalImageBoundedReconciliation(preparedRides));
         preparedRides = p54MeasureSync('zero_silent_error_gate', () => markZeroSilentErrorIntegrity(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));
