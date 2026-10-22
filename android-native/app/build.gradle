@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 14
-        versionName '1.4.0-ap01-p11437-qa-ocr404'
+        versionCode 15
+        versionName '1.4.0-ap01-p11438-qa2-signed-ocr404'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -31,13 +31,19 @@ android {
     buildTypes {
         debug {
             // ATMS PRO: independent test installation; never replace the productive app.
-            applicationIdSuffix '.qa'
+            applicationIdSuffix '.qa2'
             versionNameSuffix '-bildimport-test-20261022'
-            // Deliberately use Android's debug signing, never the production keystore.
+            // QA2 is its own Android package. Reuse ONLY the protected persistent
+            // ATMS_SIGNING_* GitHub credentials for this signed test variant.
+            // This signs no production package and creates no signing material in ZIP.
+            if (!stableSigningAvailable) {
+                throw new GradleException('P11438 QA2 requires persistent signing credentials; refusing ephemeral debug certificate')
+            }
+            signingConfig signingConfigs.atmsStable
         }
         release {
             // TEST-Projekt: niemals die Produktivpaketkennung benutzen.
-            applicationIdSuffix '.qa'
+            applicationIdSuffix '.qa2'
             versionNameSuffix '-isolated-test'
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
@@ -371,7 +377,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11437')
+    dependsOn tasks.named('runtimeAssetAlignmentP11438')
     dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
@@ -443,4 +449,25 @@ tasks.register('verifyPackagedOcrLanguageAssetsP11437', Exec) {
 }
 tasks.matching { it.name == 'assembleDebug' }.configureEach {
     finalizedBy tasks.named('verifyPackagedOcrLanguageAssetsP11437')
+}
+
+// P11438: new isolated Android package and durable signed test APK.
+// No key is checked into source or ZIP, the GitHub secret remains on the runner.
+tasks.register('runtimeAssetAlignmentP11438', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11438.js'
+}
+tasks.register('qa2SigningSourceSafetyP11438', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/qa2-signing-guard-p11438.cjs'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('qa2SigningSourceSafetyP11438')
+}
+tasks.register('verifyQa2SignedApkP11438', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'tools/verify-qa2-signed-apk-p11438.py', 'app/build/outputs/apk/debug/app-debug.apk'
+}
+tasks.matching { it.name == 'assembleDebug' }.configureEach {
+    finalizedBy tasks.named('verifyQa2SignedApkP11438')
 }

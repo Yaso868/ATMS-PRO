@@ -26,7 +26,16 @@ def check(apk_file):
         html = zipf.read(index).decode('utf-8')
         if not re.search(r'\bgzip\s*:\s*false\s*,',js): refuse('Tesseract gzip:false not configured in packaged wrapper')
         if not re.search(r'langPath:\s*prefix\s*\+\s*[\'\"]vendor/tessdata/4.0.0_best_int[\'\"]',js): refuse('unexpected language path')
-        if 'CORE-007D8A1F1D8P11437</div>' not in html: refuse('wrong APK core version')
+        # P11437 introduced the safety gate; newer isolated test versions must
+        # retain it. Match the packaged version to the real Gradle source rather
+        # than hardcoding the old P11437 label (which rejects valid P11438).
+        gradle_path = Path(__file__).resolve().parents[1] / 'app/build.gradle'
+        gradle = gradle_path.read_text(encoding='utf-8')
+        version_matches = re.findall(r"(?m)^\s*versionName\s+'[^']*p([0-9]+)-", gradle)
+        if len(version_matches) != 1 or int(version_matches[0]) < 11437:
+            refuse('Gradle OCR safety version missing or too old')
+        expected = 'CORE-007D8A1F1D8P' + version_matches[0] + '</div>'
+        if html.count(expected) != 1: refuse('wrong APK core version for Gradle versionName')
         if './js/atms-offline-tesseract.js?v=P11437' not in html: refuse('APK references stale OCR wrapper')
         for lang in ('eng','deu'):
             name = 'assets/vendor/tessdata/4.0.0_best_int/' + lang + '.traineddata'

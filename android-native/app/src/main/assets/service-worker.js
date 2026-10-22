@@ -30,7 +30,7 @@
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
 // R59 QUELLSICHERHEITS-KANDIDAT; LOKALER QA-STAND, NICHT ZUR AUSLIEFERUNG.
-const CACHE_NAME = "atms-pro-pwa-2026-10-22-p11437-daily-ui-r1-qa-only-h35-modules-integrated";
+const CACHE_NAME = "atms-pro-pwa-2026-10-22-p11438-daily-ui-r1-qa2-only-h35-modules-integrated";
 const CACHE_PREFIX = "atms-pro-pwa-";
 const APP_SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/main.css",
