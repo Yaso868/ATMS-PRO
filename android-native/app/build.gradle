@@ -11,7 +11,7 @@ android {
         minSdk 26
         targetSdk 35
         versionCode 19
-        versionName '1.4.0-ap01-p11442-qa2-safe-source-bound'
+        versionName '1.4.0-ap01-p11443-qa2-source-cell'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -377,7 +377,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11442')
+    dependsOn tasks.named('runtimeAssetAlignmentP11443')
     dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
@@ -462,7 +462,7 @@ tasks.register('qa2SigningSourceSafetyP11438', Exec) {
     commandLine 'node', 'tools/qa2-signing-guard-p11438.cjs'
 }
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('qa2SigningSourceSafetyP11442')
+    dependsOn tasks.named('qa2SigningSourceSafetyP11443')
 }
 tasks.register('verifyQa2SignedApkP11438', Exec) {
     workingDir rootProject.projectDir
@@ -486,7 +486,7 @@ tasks.register('rowRecoveryDiagnosticP11439', Exec) {
     commandLine 'node', 'tools/row-recovery-diagnostic-selftest-p11439.cjs'
 }
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('sourceBoundOcrSafetyP11442')
+    dependsOn tasks.named('sourceBoundCompanyP11443')
 }
 
 // P11440: bounded read-only multi-position OCR evidence. NO OCR acceptance changes.
@@ -529,4 +529,18 @@ tasks.register('qa2SigningSourceSafetyP11442', Exec) {
 tasks.register('sourceBoundOcrSafetyP11442', Exec) {
     workingDir projectDir.parentFile
     commandLine 'node', 'tools/source-bound-ocr-safety-p11442.cjs'
+}
+
+// P11443: exact-photo one-cell Get-E source preservation, no global company alias.
+tasks.register('runtimeAssetAlignmentP11443', Exec) {
+    workingDir projectDir.parentFile
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11443.js'
+}
+tasks.register('qa2SigningSourceSafetyP11443', Exec) {
+    workingDir projectDir.parentFile
+    commandLine 'node', 'tools/qa2-signing-guard-p11443.cjs'
+}
+tasks.register('sourceBoundCompanyP11443', Exec) {
+    workingDir projectDir.parentFile
+    commandLine 'node', 'tools/source-bound-company-cell-p11443.cjs'
 }

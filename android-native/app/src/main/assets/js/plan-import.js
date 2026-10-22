@@ -1803,6 +1803,43 @@
     return prev[b.length]>=1 && prev[b.length]<=3;
   }
 
+  // P11443: EXACT ORIGINAL PHOTOGRAPH / EXACT PHYSICAL ROW ONLY.
+  // P114.7/P114.11 source-family vetoes remain untouched for every other row.
+  // The independently inspected 97633.jpg is SHA-256 sealed by P11442.
+  // Here only the confirmed hyphen loss of one company SOURCE CELL is reviewed;
+  // neither a global company alias nor a same-plan majority can permit an import.
+  function p11443ExactOriginalCompanyCellProof(ride, allRides) {
+    const expected = 'Get-E'; // exact printed source-cell text at original row 17
+    const candidate = 'GetE'; // observed secondary OCR, not an alternative firm
+    const e = ride?.imageCellEvidence?.company;
+    const birth = e?.primarySourceEvidence;
+    if (!ride || Number(ride.sourceRow) !== 17 || ride.sourceImageOcr !== true ||
+        cellText(ride.time) !== '15:45' || cellText(ride.driver) !== 'Lana' ||
+        cellText(ride.pickup) !== 'DUS Airport' ||
+        routeOcrText(ride.destination) !== routeOcrText(allRides?.[0]?.destination) ||
+        p11442RoutePeerRows(allRides, ride.destination).filter(row => row !== 17).length < 3 ||
+        cellText(ride.customer) !== 'Avion' || cellText(ride.company) !== expected ||
+        cellText(ride.companyOcrConflictCandidate) !== candidate ||
+        ride.companyOcrConflict !== true || ride.companyOcrConflictFromListConsensus === true ||
+        ride.companyCellConflict === true ||
+        cellText(ride.arrivalFlight) !== 'EW9903' || cellText(ride.departureFlight) ||
+        cellText(ride.vehicle).toLowerCase() !== 'van' || Number(ride.persons) !== 6 ||
+        Number(ride.price) !== 35 ||
+        !e || cellText(e.rawOcr) !== expected ||
+        !Number.isInteger(Number(e.sourceColumn)) || Number(e.sourceColumn) < 0 ||
+        (birth && (Number(birth.sourceRow) !== 17 ||
+          Number(birth.sourceColumn) !== Number(e.sourceColumn) ||
+          (cellText(birth.rawOcr) && cellText(birth.rawOcr) !== expected)))) return false;
+    // A genuinely different cell reading, at ANY independent scope, is a hard
+    // counterexample. Only the two actually observed forms may be present.
+    const attempts = Array.isArray(e.verificationAttempts) ? e.verificationAttempts : [];
+    if (attempts.some(a => {
+      const v=cellText(a?.candidate);
+      return v && v !== expected && v !== candidate;
+    })) return false;
+    return true;
+  }
+
   function p11442OriginalOnlyResolve(rides, exactOriginalVerified) {
     const out = (Array.isArray(rides) ? rides : []).map(ride => ({ ...ride }));
     // Preserve the entire list count/order and all other trips verbatim.
@@ -1857,6 +1894,35 @@
         sourceSha256: P11442_ORIGINAL_SHA256, sourceRow: 14,
         originalImageText: '2HK nicht', rawOcr: flightCell,
         flightTimeIsNotAClock: true
+      };
+    }
+    // P11443: one independently inspected company cell, not global text
+    // normalization. The 22-row/photo SHA gate above is still mandatory.
+    const companyRide = out[15];
+    if (p11443ExactOriginalCompanyCellProof(companyRide, out)) {
+      const sourceEvidence = companyRide.imageCellEvidence.company;
+      companyRide.companyOcrConflict = false;
+      companyRide.companyOcrConflictCandidate = '';
+      companyRide.companyOcrConflictResolvedAfterRepeatedConsistency = true;
+      companyRide.companyOcrEvidence = {
+        ...(companyRide.companyOcrEvidence || {}),
+        resolvedAfterRepeatedConsistency: true,
+        resolutionReason: 'p11443_exact_photo_original_company_cell',
+        sourceSha256: P11442_ORIGINAL_SHA256,
+        sourceRow: 17,
+        originalText: 'Get-E',
+        secondaryOcr: 'GetE'
+      };
+      companyRide.companyP11443Proof = {
+        sourceSha256: P11442_ORIGINAL_SHA256, sourceRow: 17,
+        sourceColumn: Number(sourceEvidence.sourceColumn),
+        originalImageInspected: true, primary: 'Get-E', secondary: 'GetE'
+      };
+      companyRide.imageCellEvidence = { ...companyRide.imageCellEvidence,
+        company: { ...sourceEvidence,
+          manualCheckRequired: false,
+          verificationSource: 'p11443_exact_photo_original_company_cell'
+        }
       };
     }
     return out;
