@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 13
-        versionName '1.4.0-ap01-p11436-qa-daily'
+        versionCode 14
+        versionName '1.4.0-ap01-p11437-qa-ocr404'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -371,7 +371,8 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11436')
+    dependsOn tasks.named('runtimeAssetAlignmentP11437')
+    dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
     dependsOn tasks.named('safeFlightPreviewP11422')
@@ -423,4 +424,23 @@ tasks.named('preBuild').configure {
     dependsOn tasks.named('ap01FlightRecheckSafety')
     dependsOn tasks.named('g06TraceFailClosed')
     dependsOn tasks.named('ap01BrowserIntegration')
+}
+
+// P11437: OCR language 404 prevention. Fail-closed source test AND actual APK
+// asset-path/content validation. Android aapt2 inflates .traineddata.gz to
+// .traineddata, so Tesseract must use gzip:false. Neither gate may be skipped.
+tasks.register('runtimeAssetAlignmentP11437', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11437.js'
+}
+tasks.register('ocrLanguageOptionsP11437', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/ocr-language-options-p11437.cjs'
+}
+tasks.register('verifyPackagedOcrLanguageAssetsP11437', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'python3', 'tools/verify-apk-ocr-languages-p11437.py', 'app/build/outputs/apk/debug/app-debug.apk'
+}
+tasks.matching { it.name == 'assembleDebug' }.configureEach {
+    finalizedBy tasks.named('verifyPackagedOcrLanguageAssetsP11437')
 }

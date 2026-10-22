@@ -7,6 +7,7 @@
     workerPath: prefix + 'vendor/tesseract/5.1.1/worker.min.js',
     corePath: prefix + 'vendor/tesseract-core/5.1.1',
     langPath: prefix + 'vendor/tessdata/4.0.0_best_int',
+    gzip: false,
     workerBlobURL: false
   });
   function ensureEnvironment() {
