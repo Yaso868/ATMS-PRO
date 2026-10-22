@@ -5211,6 +5211,41 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     return matrix;
   }
 
+  // P11441: A tiny FIELD-SPECIFIC canonical form for the *synthetic* 1x/2x
+  // same-image OCR comparison. Never normalize route, driver, flight NUMBER,
+  // customer, persons or free text. Do not invent a missing cell or infer rows.
+  // The only business-specific tail artifacts admitted are the two Get-E shapes
+  // actually observed in Samsung P11440; GetE, other firms and ambiguous tails
+  // remain different values. Canonical cells are ALSO used in the output row.
+  function canonicalSyntheticRecoveryCell(value, semantic, column) {
+    const raw = cellText(value);
+    if (!raw || !semantic || !Number.isInteger(column)) return raw;
+    if (column === semantic.rideTime) {
+      // Anchored boundary parser; |12:45 and 12:45 are one safe clock, but
+      // 12:45/12:46, 12:45 text or competing clocks NEVER become equivalent.
+      const boundary = clockBoundaryNoiseInfo(raw);
+      if (boundary?.changed && boundary.value) return boundary.value;
+      return raw;
+    }
+    if (column === semantic.price) {
+      // Whitespace ONLY between a complete two-decimal EUR amount and €.
+      // Do not drop decimal/thousand separators or accept unmatched text.
+      const amount = raw.match(/^([1-9]\d*(?:\.\d{3})*,\d{2})\s*€$/u);
+      return amount ? `${amount[1]} €` : raw;
+    }
+    if (column === semantic.company) {
+      // These two literal image-boundary artifacts have been compared against
+      // the original 22-row plan; NOT a blanket punctuation-strip rule.
+      return /^Get-E(?:\s+(?:=|~~))?$/u.test(raw) ? 'Get-E' : raw;
+    }
+    if (column === semantic.arrivalFlight || column === semantic.departureFlight) {
+      // A cell consisting only of isolated dash/tilde punctuation contains NO
+      // flight number. An actual flight (e.g. EW9883) is never changed here.
+      return /^[-–—~]+$/u.test(raw) ? '' : raw;
+    }
+    return raw;
+  }
+
   async function recoverSyntheticImageRowsTargeted(matrix, imageCanvas, imageMeta) {
     if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) {
       if (imageMeta?.rowMetaByMatrixIndex) {
@@ -5288,21 +5323,26 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
             candidate[rideTimeIndex] = rideTimeNormalized;
           }
 
-          const nonEmpty = candidate.filter(Boolean).length;
+          // Preserve RAW readbacks for visible P11440 evidence, including "|".
+          // Validate and ultimately output only the conservatively canonical
+          // candidate. A false row is never accepted just to bridge a gap.
+          observedViews.push(candidate.slice());
+          observedScales.push(scale);
+          const canonicalCandidate = candidate.map((value, column) =>
+            canonicalSyntheticRecoveryCell(value, semantic, column));
+          const nonEmpty = canonicalCandidate.filter(Boolean).length;
           const routeScore = [semantic.pickup, semantic.destination]
             .filter(index => index !== undefined)
-            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+            .reduce((sum,index)=>sum+(cellText(canonicalCandidate[index])?1:0),0);
           const identityScore = [semantic.customer, semantic.company, semantic.driver]
             .filter(index => index !== undefined)
-            .reduce((sum,index)=>sum+(cellText(candidate[index])?1:0),0);
+            .reduce((sum,index)=>sum+(cellText(canonicalCandidate[index])?1:0),0);
           const score = nonEmpty + (rideTimeValid ? 8 : 0) + routeScore * 2 + identityScore;
 
-          observedViews.push(candidate);
-          observedScales.push(scale);
-          if (syntheticRowHasRequiredCore(candidate, semantic)) {
+          if (syntheticRowHasRequiredCore(canonicalCandidate, semantic)) {
             if (score > bestScore) {
               bestScore = score;
-              bestRow = candidate;
+              bestRow = canonicalCandidate;
             }
           }
           // H5: Always evaluate the second view, even when the first is complete.
@@ -5360,7 +5400,11 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           view.length !== reference.length || view.some((value, index) => {
             const a = cellText(value);
             const b = cellText(reference[index]);
-            return Boolean(a && b && a !== b);
+            // Compare only proven field-specific equivalence; unknown fields
+            // retain exact-string fail-closed semantics.
+            return Boolean(a && b &&
+              canonicalSyntheticRecoveryCell(a, semanticForEvidence, index) !==
+              canonicalSyntheticRecoveryCell(b, semanticForEvidence, index));
           })
         );
         if (conflict) {
