@@ -5154,24 +5154,64 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     const meta = matrix?._atmsImageMeta;
     if (!meta) return matrix;
     const rowMeta = meta.rowMetaByMatrixIndex || {};
-    const unresolved = Object.keys(rowMeta).filter(key =>
-      Number(key) >= 1 && rowMeta[key]?.syntheticGap && !rowMeta[key]?.syntheticGapRecovered
-    );
+    // P11439 (local diagnostic only): retain the proven fail-closed gate and
+    // expose which reconstructed image-MATRIX positions could not be validated.
+    // Positions are not asserted to be absolute original-sheet row numbers.
+    const unresolved = Object.keys(rowMeta)
+      .map(Number)
+      .filter(key => Number.isInteger(key) && key >= 1 && rowMeta[key]?.syntheticGap && !rowMeta[key]?.syntheticGapRecovered)
+      .sort((a, b) => a - b);
+    const unresolvedRows = unresolved.map(matrixIndex => ({
+      matrixIndex,
+      reason: cellText(rowMeta[matrixIndex]?.syntheticGapFailureReason) || 'recovery_not_confirmed',
+      conflict: Boolean(rowMeta[matrixIndex]?.syntheticGapConflict),
+      imageBand: [Number(rowMeta[matrixIndex]?.y0), Number(rowMeta[matrixIndex]?.y1)]
+        .map(value => Number.isFinite(value) ? Math.round(value) : null)
+    }));
     meta.syntheticRowRecoveryGate = {
-      version: 'H4_LOCAL_ONLY', accepted: unresolved.length === 0,
-      unresolvedCount: unresolved.length, noImportOnFailure: true
+      version: 'P11439_LOCAL_DIAGNOSTIC', accepted: unresolvedRows.length === 0,
+      unresolvedCount: unresolvedRows.length, unresolvedRows,
+      originalRowIdentityVerified: false, noImportOnFailure: true
     };
-    if (unresolved.length) {
-      throw new Error('Mindestens eine physische Tabellenzeile konnte nicht vollstaendig und sicher wiederhergestellt werden. Kein Import.');
+    if (unresolvedRows.length) {
+      const first = unresolvedRows[0];
+      const extra = unresolvedRows.length > 1 ? ` (+${unresolvedRows.length - 1} weitere)` : '';
+      const reasonLabel = {
+        missing_runtime_or_geometry: 'Bild-/OCR-Nachlesung nicht verfuegbar',
+        missing_row_geometry: 'Zeilen-/Spaltengeometrie nicht sicher',
+        no_complete_ocr_view: 'keine vollstaendige sichere OCR-Nachlesung',
+        conflicting_ocr_views: 'widerspruechliche OCR-Nachlesungen',
+        recovery_not_confirmed: 'Wiederherstellung nicht bestaetigt'
+      }[first.reason] || 'Wiederherstellung nicht bestaetigt';
+      const issue = new Error(`Tabellenzeile bei Pruefposition ${first.matrixIndex}${extra} nicht sicher erkannt (${reasonLabel}). Kein Import.`);
+      issue.atmsRowIntegrityReview = Object.freeze({
+        version: 'P11439_LOCAL_DIAGNOSTIC', unresolvedRows,
+        noImportOnFailure: true, mayImport: false, noMutation: true
+      });
+      throw issue;
     }
     return matrix;
   }
 
   async function recoverSyntheticImageRowsTargeted(matrix, imageCanvas, imageMeta) {
-    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) return matrix;
+    if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) {
+      if (imageMeta?.rowMetaByMatrixIndex) {
+        Object.values(imageMeta.rowMetaByMatrixIndex).forEach(meta => {
+          if (meta?.syntheticGap && !meta.syntheticGapRecovered)
+            meta.syntheticGapFailureReason = 'missing_runtime_or_geometry';
+        });
+      }
+      return matrix;
+    }
     const boundaries = imageMeta.boundaries || [];
     const metaByIndex = imageMeta.rowMetaByMatrixIndex || {};
-    if (boundaries.length < 2) return matrix;
+    if (boundaries.length < 2) {
+      Object.values(imageMeta.rowMetaByMatrixIndex || {}).forEach(meta => {
+        if (meta?.syntheticGap && !meta.syntheticGapRecovered)
+          meta.syntheticGapFailureReason = 'missing_row_geometry';
+      });
+      return matrix;
+    }
 
     const out = matrix.map(row => Array.isArray(row) ? row.slice() : row);
     const status = $('importStatus');
@@ -5181,12 +5221,17 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       if (!meta?.syntheticGap) continue;
       // Keine alte Wiederherstellungs-Markierung ohne aktuelle Zellpruefung vertrauen.
       meta.syntheticGapRecovered = false;
+      meta.syntheticGapConflict = false;
+      meta.syntheticGapFailureReason = 'recovery_not_confirmed';
 
       const x0 = Number(boundaries[0]);
       const x1 = Number(boundaries[boundaries.length - 1]);
       const y0 = Number(meta.y0);
       const y1 = Number(meta.y1);
-      if (![x0, x1, y0, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) continue;
+      if (![x0, x1, y0, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) {
+        meta.syntheticGapFailureReason = 'missing_row_geometry';
+        continue;
+      }
 
       if (status) status.textContent = `Fehlende Tabellenzeile ${matrixIndex + 1} wird lokal nachgelesen …`;
 
@@ -5246,7 +5291,10 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         }
       }
 
-      if (!bestRow) continue;
+      if (!bestRow) {
+        meta.syntheticGapFailureReason = 'no_complete_ocr_view';
+        continue;
+      }
       // These are two transformations of ONE image, not independent sources.
       // A partial OCR view can contradict a complete view, too: compare every
       // overlapping nonempty cell. Missing cells are NOT silently filled.
@@ -5261,6 +5309,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         );
         if (conflict) {
           meta.syntheticGapConflict = true;
+          meta.syntheticGapFailureReason = 'conflicting_ocr_views';
           continue;
         }
       }
@@ -5275,6 +5324,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         bestRow[rideTimeIndex] = rideTime;
         out[matrixIndex] = bestRow;
         meta.syntheticGapRecovered = true;
+        meta.syntheticGapFailureReason = '';
       }
     }
 

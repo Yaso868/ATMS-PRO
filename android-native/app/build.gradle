@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 15
-        versionName '1.4.0-ap01-p11438-qa2-signed-ocr404'
+        versionCode 16
+        versionName '1.4.0-ap01-p11439-qa2-signed-ocr404-diagnostic'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -377,7 +377,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11438')
+    dependsOn tasks.named('runtimeAssetAlignmentP11439')
     dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
@@ -462,7 +462,7 @@ tasks.register('qa2SigningSourceSafetyP11438', Exec) {
     commandLine 'node', 'tools/qa2-signing-guard-p11438.cjs'
 }
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('qa2SigningSourceSafetyP11438')
+    dependsOn tasks.named('qa2SigningSourceSafetyP11439')
 }
 tasks.register('verifyQa2SignedApkP11438', Exec) {
     workingDir rootProject.projectDir
@@ -470,4 +470,21 @@ tasks.register('verifyQa2SignedApkP11438', Exec) {
 }
 tasks.matching { it.name == 'assembleDebug' }.configureEach {
     finalizedBy tasks.named('verifyQa2SignedApkP11438')
+}
+
+// P11439 - narrow diagnostic update. Keep P11438 APK signer, OCR language and all historical gates.
+tasks.register('runtimeAssetAlignmentP11439', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11439.js'
+}
+tasks.register('qa2SigningSourceSafetyP11439', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/qa2-signing-guard-p11439.cjs'
+}
+tasks.register('rowRecoveryDiagnosticP11439', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/row-recovery-diagnostic-selftest-p11439.cjs'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('rowRecoveryDiagnosticP11439')
 }
