@@ -3396,6 +3396,21 @@
     return canvas;
   }
 
+  // P11449: attach the observed original source-canvas HEIGHT to the OCR matrix
+  // metadata. The matrix already binds WIDTH and original-cell coordinates.
+  // Never invent a height or accept mismatched preprocessed/source dimensions.
+  // The P11448 per-cell, row, field, crop, hash and no-duplicate vetoes remain.
+  function p11449BindOriginalImageHeight(meta, ocrCanvas) {
+    const original=ocrCanvas?.__atmsSourceTruthCanvas;
+    if (!meta || !original ||
+        !Number.isSafeInteger(original.width) || !Number.isSafeInteger(original.height) ||
+        original.width <= 0 || original.height <= 0 ||
+        original.width !== ocrCanvas.width || original.height !== ocrCanvas.height ||
+        Number(meta.width) !== original.width) return meta;
+    meta.height=original.height;
+    return meta;
+  }
+
   // ATMS Bildimport – Spalten werden aus der sichtbaren Kopfzeile erkannt.
   // Es gibt KEINE feste flexible Spalten-Annahme mehr.
   // Die wiederholte Uhrzeit-Spalte ist optional; Spalten dürfen verschoben werden.
@@ -13708,7 +13723,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       imageOcr: true,
       imageCanvas: canvas,
       imageSourceCanvas: canvas.__atmsSourceTruthCanvas || null,
-      imageMeta: matrix._atmsImageMeta || null
+      imageMeta: p11449BindOriginalImageHeight(matrix._atmsImageMeta || null, canvas)
     };
   }
 

@@ -30,13 +30,13 @@
 // CORE-007D8A1F1D8P110 · 06.10.2026: cache refresh for Golden Error Pack bundled OCR/boundary fixes; production semantics remain fail-closed.
 // CORE-007D8A1F1D8P1094 · 06.10.2026: cache refresh for the proven OCR image-pipeline transport fix; recognition/import semantics unchanged.
 // R59 QUELLSICHERHEITS-KANDIDAT; LOKALER QA-STAND, NICHT ZUR AUSLIEFERUNG.
-const CACHE_NAME = "atms-pro-pwa-2026-10-23-p11448-manual-cell-review-qa2-h35-modules-integrated";
+const CACHE_NAME = "atms-pro-pwa-2026-10-23-p11449-original-cell-height-qa2-h35-modules-integrated";
 const CACHE_PREFIX = "atms-pro-pwa-";
 const APP_SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/main.css",
   "./js/app.js?v=P1121", "./js/atms-daily-plan.js?v=P11436D1", "./js/flight-engine.js?v=CORE-004C",
   "./js/ocr-integrity-core.js?v=P11436",
-  "./js/plan-import.js?v=P11448", "./js/pwa.js?v=P11448",
+  "./js/plan-import.js?v=P11449", "./js/pwa.js?v=P11449",
   "./js/h17-geometry-candidates.js?v=P11436H35",
   "./js/h26-source-band-audit.js?v=P11436H35",
   "./js/h27-source-cell-focus.js?v=P11436H35",
