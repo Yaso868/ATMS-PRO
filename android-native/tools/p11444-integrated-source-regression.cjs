@@ -29,6 +29,15 @@ function reads(ride,field,text){return ['source-truth-full-cell-psm6','source-tr
 function exampleRoute(){return {sourceRow:2,sourceImageOcr:true,time:'12:20',driver:'Yannik',destination:'Mariott Seestem DUS',destinationOcrConflict:true,destinationOcrConflictCandidate:'Marriott Seestern DUS',destinationCellConflict:false,imageCellEvidence:{destination:evidence('destination',2,'Mariott Seestem DUS')}};}
 function exampleNote(){return {sourceRow:14,sourceImageOcr:true,time:'15:30',departureFlight:'OS166',flightTime:'nicht',notes:'',imageCellEvidence:{flightTime:evidence('flightTime',14,'nicht')}};}
 const ctx={cellText,normalizeTime,timeToMinutes,routeOcrText,window:{Tesseract:true}};
+// P11447: the real reconciler requires an explicitly parameterizable worker.
+// Keep the historical independent full-cell readings and unchanged veto cases.
+let proofWorkerCreated=0, proofWorkerTerminated=0;
+const mockProofWorker={
+ async setParameters(params) {assert(params && typeof params==='object');},
+ async recognize() {throw new Error('historical regression must use its controlled source-cell OCR stub');}
+};
+ctx.p109PerfCreateWorker=async ()=>{proofWorkerCreated++;return mockProofWorker;};
+ctx.p109PerfWorkerTerminate=async worker=>{assert.equal(worker,mockProofWorker);proofWorkerTerminated++;};
 vm.createContext(ctx);
 vm.runInContext(realRoute+'\n'+code+`\nthis.fns={p11444ResolveOneSourceCell,p11444QualifiedCellReadings,p11444VerifiedSourceBoundRouteProof,p11444ReconcileSourceCells,p11444SafeNote,p11444HasMixedFlightTimeRaw};`,ctx,{timeout:1000});
 const f=ctx.fns;
@@ -134,7 +143,8 @@ const prior=twentyTwo.map(x=>JSON.stringify(x));
 const sourceTruthCanvas={width:1000,height:1000,pixelOrigin:'unmodified_source'};
 const processedCanvas={width:1000,height:1000,pixelOrigin:'processed'};
 let sourceOcrCalls=0;
-ctx.sourceTruthFullCellTextOcr=async (source,processed,_descriptor,_meta,row,field)=>{
+ctx.sourceTruthFullCellTextOcr=async (source,processed,_descriptor,_meta,row,field,worker)=>{
+ assert.equal(worker,mockProofWorker,'historical cell readings require the proof worker');tick();
  assert.equal(source,sourceTruthCanvas,'OCR must read original source pixels');tick();
  assert.equal(processed,processedCanvas,'second canvas must stay processed');tick();
  sourceOcrCalls++;
@@ -197,6 +207,9 @@ const imageMeta={width:1000,height:1000,boundaries,rowMetaByMatrixIndex:Array.fr
  assert.equal(vetoedOut[0].destination,'Marriott Seestern DUS');tick();
  assert.equal(vetoedOut[0].flightTime,'nicht');tick();
  assert.equal(vetoedOut[0].notes,'');tick();negatives++;
+ assert(proofWorkerCreated>0,'parameterized worker must actually be invoked');tick();
+ assert.equal(proofWorkerTerminated,proofWorkerCreated,'all review workers must terminate');tick();
+ assert.equal(sourceOcrCalls,6,'original independent review-call count retained');tick();
 
  console.log(`P11444 ISOLATED LOGIC: PASS | checks ${checks} | negative ${negatives} | 22 rides intact`);
 })().catch(e=>{console.error(e);process.exit(1)});

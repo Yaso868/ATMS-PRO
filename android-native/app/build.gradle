@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 22
-        versionName '1.4.0-ap01-p11446-qa2-scaled-grid'
+        versionCode 23
+        versionName '1.4.0-ap01-p11447-qa2-ocr-evidence'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -377,7 +377,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11446')
+    dependsOn tasks.named('runtimeAssetAlignmentP11447')
     dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
@@ -462,7 +462,7 @@ tasks.register('qa2SigningSourceSafetyP11438', Exec) {
     commandLine 'node', 'tools/qa2-signing-guard-p11438.cjs'
 }
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('qa2SigningSourceSafetyP11446')
+    dependsOn tasks.named('qa2SigningSourceSafetyP11447')
 }
 tasks.register('verifyQa2SignedApkP11438', Exec) {
     workingDir rootProject.projectDir
@@ -606,4 +606,36 @@ tasks.register('runtimeAssetAlignmentP11446', Exec) {
 tasks.register('qa2SigningSourceSafetyP11446', Exec) {
     workingDir rootProject.projectDir
     commandLine 'node', 'tools/qa2-signing-guard-p11446.cjs'
+}
+
+// P11447 LOCAL_ONLY, preBuild-required on any future expressly authorized build.
+// The patch does not itself trigger GitHub, Gradle or APK packaging.
+tasks.register('p11447OcrSourceEvidenceRegression', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/p11447-ocr-evidence-regression.cjs'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('p11447OcrSourceEvidenceRegression')
+}
+
+// P11447 current-generation isolated Android TEST 2 identity and asset safety.
+// Supersedes only version-specific P11446 alignment/identity gates; all functional
+// P11446/P11445 regression dependencies remain mandatory and unchanged.
+tasks.register('runtimeAssetAlignmentP11447', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11447.js'
+}
+tasks.register('qa2SigningSourceSafetyP11447', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/qa2-signing-guard-p11447.cjs'
+}
+
+// P11447-R2: historical H35 source review remains mandatory, additionally
+// enforce bounded current version (including wrong-version negative controls).
+tasks.register('p11447H35VersionRegression', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/p11447-h35-version-regression.cjs'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('p11447H35VersionRegression')
 }

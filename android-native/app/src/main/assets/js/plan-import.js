@@ -590,7 +590,14 @@
     const op = { type: 'setParameters', phase: cellText(phase) || record?.phase || 'unknown', detail: { ...(detail || {}) }, events: [], _startedAt: startedAt };
     if (record) { record.operations.push(op); record._activeOperation = op; }
     try {
-      await worker.setParameters(params);
+      // P11447: pooled Tesseract workers retain parameters between phases.
+      // Explicitly clear code-only whitelists for human-text review. Never
+      // weaken the intentionally restricted numeric/flight phases.
+      const freeTextPhase = ['text_integrity_ocr', 'route_deu_column_ocr'].includes(phase);
+      const scopedParams = freeTextPhase && !Object.prototype.hasOwnProperty.call(params || {}, 'tessedit_char_whitelist')
+        ? { ...(params || {}), tessedit_char_whitelist: '' }
+        : params;
+      await worker.setParameters(scopedParams);
       op.ok = true;
     } catch (error) {
       op.error = cellText(error?.message) || String(error || 'set_parameters_failed');
@@ -2053,6 +2060,8 @@
   }
 
   async function p11444ReconcileSourceCells(rides, sourceTruthCanvas, imageCanvas, imageMeta, mapping) {
+    // P11447: transient diagnostics only, also reset on an early fail-closed gate.
+    window.ATMSP11447RouteReviewDiagnostics = [];
     // P11444-R2: only the distinct, pixel-faithful scaled SOURCE image qualifies.
     // A processed image fallback is NOT equivalent evidence for resolving a conflict.
     if (!Array.isArray(rides) || !sourceTruthCanvas || !imageCanvas ||
@@ -2064,7 +2073,27 @@
         (imageMeta.width != null && Number(imageMeta.width) !== sourceWidth) ||
         (imageMeta.height != null && Number(imageMeta.height) !== sourceHeight)) return rides;
     const out = rides.map(ride => ({ ...ride }));
+    // Diagnostic is transient and never added to a ride or persisted.
     const boundaries = imageMeta.boundaries || [];
+    // P11447 root cause: P11444 passed a null worker to the two source-cell
+    // passes, so Tesseract.js v5 one-shot treated PSM as creation options,
+    // NOT independent OCR settings. A new explicitly parameterized worker is
+    // mandatory for trusted dual-PSM proof; never invent two-source consensus
+    // from default-PSM one-shot results.
+    const hasReview = out.some(ride => ride?.sourceImageOcr === true && (
+      ride.destinationOcrConflict === true ||
+      (p11444Text(ride.flightTime) && timeToMinutes(normalizeTime(ride.flightTime)) === null)
+    ));
+    if (!hasReview) return out;
+    let proofWorker = null;
+    try {
+      proofWorker = await p109PerfCreateWorker('p11447_full_source_cell_ocr','deu',{ mode:'full-source-dual-psm' });
+      if (typeof proofWorker?.setParameters !== 'function' || typeof proofWorker?.recognize !== 'function') {
+        try { await p109PerfWorkerTerminate(proofWorker,'p11447_full_source_cell_ocr'); } catch (_) {}
+        return out; // fail closed if the OCR worker cannot accept true PSM settings
+      }
+    } catch (_) { return out; }
+    try {
     for (let i=0; i<out.length; i++) {
       const ride = out[i];
       if (ride?.sourceImageOcr !== true) continue;
@@ -2083,13 +2112,33 @@
         const descriptor = { column, left, right, cellWidth: right-left };
         let readings=[];
         try {
-          readings = await sourceTruthFullCellTextOcr(sourceTruthCanvas, imageCanvas, descriptor, meta, row, field, null);
+          readings = await sourceTruthFullCellTextOcr(sourceTruthCanvas, imageCanvas, descriptor, meta, row, field, proofWorker);
         } catch (_) { continue; }
+        // P11447 diagnostic-only: reveal which source-evidence gate prevents
+        // route correction, without changing any approval/denial decision.
+        const before = out[i];
+        const proof = field === 'destination' ? p11444QualifiedCellReadings(before, field, readings) : null;
         // R5: Read the CURRENT accumulated row, not the pre-loop snapshot.
         // Two independently proven cell fixes on one physical row must compose.
         out[i] = p11444ResolveOneSourceCell(out[i], field, readings);
+        if (field === 'destination' && out[i]?.destinationOcrConflict === true) {
+          const evidence = before?.imageCellEvidence?.destination || {};
+          window.ATMSP11447RouteReviewDiagnostics.push({
+            result: 'BLOCKED', sourceRow: row, sourceColumn: column,
+            fullCellModes: readings.map(r => ({ mode: cellText(r.mode), candidate: cellText(r.candidate) })),
+            sourceCellProofQualified: Boolean(proof),
+            originalEqualsPrimary: Boolean(proof && p11444Text(before.destination) === proof.originalRaw),
+            candidateEqualsProven: Boolean(proof && p11444Text(before.destinationOcrConflictCandidate) === proof.candidate),
+            manualCheckRequired: evidence.manualCheckRequired === true,
+            cellConflict: before.destinationCellConflict === true,
+            consensusConflict: before.destinationOcrConflictFromListConsensus === true,
+            editProofQualified: Boolean(proof && p11442RouteEditProof(before.destination, proof.candidate)),
+            approval: 'never_from_diagnostics'
+          });
+        }
       }
     }
+    } finally { try { await p109PerfWorkerTerminate(proofWorker,'p11447_full_source_cell_ocr'); } catch (_) {} }
     return out;
   }
 
@@ -2634,7 +2683,9 @@
             row,
             text: ride[`${field}OcrConflictFromListConsensus`] === true
               ? `${label} „${current || '–'}“ aus vollständiger Originalzelle widerspricht der wiederholten Listenvariante${candidate ? ` („${candidate}“)` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
-              : `${label} „${current || '–'}“ widerspricht der unabhängigen Text-Nach-OCR${candidate ? ` („${candidate}“)` : ''}${exactViews ? ` · Zellprüfung: ${exactViews}` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
+              : current && candidate && current === candidate
+                ? `${label} „${current}“: die angezeigte Nach-OCR ist identisch, aber unabhängige Zellbelege bzw. ein älterer Konfliktstatus sind noch ungeklärt${exactViews ? ` · Zellprüfung: ${exactViews}` : ''} – keine automatische Freigabe; Original-Planliste prüfen`
+                : `${label} „${current || '–'}“ widerspricht der unabhängigen Text-Nach-OCR${candidate ? ` („${candidate}“)` : ''}${exactViews ? ` · Zellprüfung: ${exactViews}` : ''} – Original-Planliste prüfen; Import bis zur Klärung blockiert`
           });
         } else if (ride[`${field}OcrAutoCorrected`]) {
           const correctionSource = cellText(ride[`${field}OcrCorrectionSource`]);
@@ -8791,6 +8842,28 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     return { left, right, top, bottom, source: matched ? 'primary_word_bbox' : 'single_short_word_bbox' };
   }
 
+  // P11447: A human-text cell may contain lowercase letters, accents and
+  // punctuation (including internal hyphens). An uppercase code-only whitelist
+  // cannot read that source faithfully. It must also override any sticky worker
+  // whitelist from a previous flight/number phase; use empty = unrestricted.
+  function p11447TextCellOcrParameters(field, psm) {
+    const mode = String(psm);
+    if (['company', 'customer', 'flightLocation', 'pickup', 'destination'].includes(field))
+      return { tessedit_pageseg_mode: mode, tessedit_char_whitelist: '' };
+    if (['arrivalFlight', 'departureFlight'].includes(field))
+      return { tessedit_pageseg_mode: mode, tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' };
+    if (field === 'persons')
+      return { tessedit_pageseg_mode: mode, tessedit_char_whitelist: '0123456789' };
+    return { tessedit_pageseg_mode: mode, tessedit_char_whitelist: '' }; // unknown fields are never promoted by this helper
+  }
+
+  function p11447ExactTextCellEligible(field, rawValue) {
+    const value = cellText(rawValue).replace(/\s+/gu, '').normalize('NFC');
+    if (field === 'company' && /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)+$/u.test(value))
+      return value.length >= 2 && value.length <= 12;
+    return /^[\p{L}\p{N}]{2,6}$/u.test(value);
+  }
+
   async function exactCellMultiViewOcr(sourceTruthCanvas, processedCanvas, descriptor, rowMeta, sourceRow, field, worker, contentRegion = null) {
     if (!descriptor || !rowMeta || !processedCanvas || !window.Tesseract) return [];
     const source = sourceTruthCanvas || processedCanvas;
@@ -8831,7 +8904,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         const bounds = variant.region || { left, right, top, bottom };
         const exactCrop = cropCanvasRegion(variant.source, bounds.left, bounds.top, bounds.right, bounds.bottom, variant.scale);
         const view = exactCellEvidenceTransform(exactCrop, variant.transform);
-        const params = { tessedit_pageseg_mode: variant.psm, tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' };
+        const params = p11447TextCellOcrParameters(field, variant.psm);
         let result;
         if (worker && typeof worker.recognize === 'function') {
           if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', params, { mode: variant.mode, sourceRow });
@@ -8906,7 +8979,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
           ? cropCompanySourceEvidenceGrayscale(source, left, top, right, bottom)
           : cropCanvasRegion(source, left, top, right, bottom, 1);
         let result;
-        const params = { tessedit_pageseg_mode: variant.psm };
+        const params = p11447TextCellOcrParameters(field, variant.psm);
         if (worker && typeof worker.recognize === 'function') {
           if (typeof worker.setParameters === 'function') await p109PerfWorkerSetParameters(worker, 'text_integrity_ocr', params, { mode: variant.mode, sourceRow });
           result = await p109PerfWorkerRecognize(worker, 'text_integrity_ocr', crop, { mode: variant.mode, sourceRow });
@@ -8942,7 +9015,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       let candidate='';
       try {
         const crop=cropCanvasRegion(source,left,top,right,bottom,1);
-        const params={tessedit_pageseg_mode:variant.psm};
+        const params=p11447TextCellOcrParameters(field, variant.psm);
         let result;
         if (worker && typeof worker.recognize==='function') {
           if (typeof worker.setParameters==='function') await p109PerfWorkerSetParameters(worker,'text_integrity_ocr',params,{mode:variant.mode,sourceRow});
@@ -9350,7 +9423,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         // P113.3 no longer depends on one particular batch path and avoids unbounded OCR loops.
         const attemptLogByRow = attemptLogByField.get(descriptor.field);
         const currentLog = attemptLogByRow.get(item.sourceRow) || [];
-        const shortCode = /^[A-Za-z0-9]{2,6}$/.test(item.original.replace(/\s+/g, ''));
+        const shortCode = p11447ExactTextCellEligible(descriptor.field, item.original);
 
         // P113.3 GPT-VISION CELL REPLAY: do not require one particular batch path.
         // Any already-triggered short-code review (independent alternative OR low
@@ -9414,7 +9487,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
                   attempt.scale
                 );
                 let result;
-                const params = { tessedit_pageseg_mode: attempt.psm, tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' };
+                const params = p11447TextCellOcrParameters(descriptor.field, attempt.psm);
                 if (shortCodeWorker && typeof shortCodeWorker.recognize === 'function') {
                   if (typeof shortCodeWorker.setParameters === 'function') await p109PerfWorkerSetParameters(shortCodeWorker, 'text_integrity_ocr', params, { mode: attempt.name, sourceRow: item.sourceRow });
                   result = await p109PerfWorkerRecognize(shortCodeWorker, 'text_integrity_ocr', crop, { mode: attempt.name, sourceRow: item.sourceRow });
