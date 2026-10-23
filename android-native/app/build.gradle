@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 21
-        versionName '1.4.0-ap01-p11445-qa2-row-fence'
+        versionCode 22
+        versionName '1.4.0-ap01-p11446-qa2-scaled-grid'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -377,7 +377,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11445')
+    dependsOn tasks.named('runtimeAssetAlignmentP11446')
     dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
@@ -462,7 +462,7 @@ tasks.register('qa2SigningSourceSafetyP11438', Exec) {
     commandLine 'node', 'tools/qa2-signing-guard-p11438.cjs'
 }
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('qa2SigningSourceSafetyP11445')
+    dependsOn tasks.named('qa2SigningSourceSafetyP11446')
 }
 tasks.register('verifyQa2SignedApkP11438', Exec) {
     workingDir rootProject.projectDir
@@ -585,4 +585,25 @@ tasks.register('p11445PhysicalSourceGridRegression', Exec) {
 }
 tasks.named('preBuild').configure {
     dependsOn tasks.named('p11445PhysicalSourceGridRegression')
+}
+
+// P11446: permanent regression for both genuine Samsung OCR image scales.
+// The fixture is synthesized only from table line/colour geometry, not names,
+// fares, routes or private user image pixels. Fail closed before APK builds.
+tasks.register('p11446ScaledSourceRowRegression', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/p11446-scaled-grid-regression.cjs'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('p11446ScaledSourceRowRegression')
+}
+
+// P11446 QA2 current generation tests (older P11445 physical geometry tests stay mandatory).
+tasks.register('runtimeAssetAlignmentP11446', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11446.js'
+}
+tasks.register('qa2SigningSourceSafetyP11446', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/qa2-signing-guard-p11446.cjs'
 }

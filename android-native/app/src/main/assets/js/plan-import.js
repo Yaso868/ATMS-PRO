@@ -1,4 +1,4 @@
-// CORE-007D8A1F1D8P11445 – P11445 physical source row fencing; no synthetic price inference.
+// CORE-007D8A1F1D8P11446 – P11445 physical source row fencing; no synthetic price inference.
 // CORE-007D8A1F1D8P11444 – P11444 dual original source-cell OCR; fail-closed note and route proof.
 // CORE-007D8A1F1D8P11426 – source-aligned safe OCR reviews, price evidence and uncertainty preservation.
 // CORE-007D8A1F1D8P11424 – importfreie Anzeige der offiziellen Airport-Erstquellen-Fehlercodes, keine Flug-/Fahrtdatenmutation.
@@ -5641,59 +5641,112 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
   // P11445 physical source row fencing: only pixels from the current original
   // photograph may prove a missing synthetic row's boundaries. No fixed date,
   // route, fare, number of rides, OCR string or colour substitution is allowed.
+  // P11446: physical boundaries are derived from actual runtime-scale pixels.
+  // Some rows have visible neutral rules; others are separated only by a true
+  // full-width background colour transition. Neither class supplies any cell
+  // values. Crucially a row pitch must be measured, NOT guessed as 27..35px:
+  // the runtime often preprocesses a 1536px image at 3200px (~2.083x).
   function p11445DetectPhysicalRowGrid(sourceCanvas, imageMeta) {
-    const refuse = reason => ({ accepted:false, reason, ruleCenters:[] });
-    if (!sourceCanvas || !imageMeta?.standardAtms || imageMeta?.headerlessAtms) return refuse('schema_not_safe');
-    const boundaries = imageMeta.boundaries || [];
-    if (!Array.isArray(boundaries) || boundaries.length < 9) return refuse('columns_unproven');
-    const width=Number(sourceCanvas.width), height=Number(sourceCanvas.height);
-    const left=Number(boundaries[0]), right=Number(boundaries[boundaries.length-1]);
-    if (![width,height,left,right].every(Number.isFinite) || width < 600 || height < 180 ||
-        right-left < width*0.67) return refuse('source_dimensions_unproven');
+    const refuse=reason=>({accepted:false,reason,ruleCenters:[]});
+    if(!sourceCanvas||!imageMeta?.standardAtms||imageMeta?.headerlessAtms)return refuse('schema_not_safe');
+    const boundaries=imageMeta.boundaries||[];
+    if(!Array.isArray(boundaries)||boundaries.length<9)return refuse('columns_unproven');
+    const width=Number(sourceCanvas.width),height=Number(sourceCanvas.height);
+    const left=Number(boundaries[0]),right=Number(boundaries[boundaries.length-1]);
+    if(![width,height,left,right].every(Number.isFinite)||width<600||height<180||right-left<width*.67)
+      return refuse('source_dimensions_unproven');
     let pixels;
-    try { pixels=sourceCanvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,width,height).data; }
-    catch (_) { return refuse('source_pixels_unavailable'); }
-    const xStart=Math.max(0,Math.floor(left+(right-left)*0.02));
-    const xEnd=Math.min(width,Math.ceil(right-(right-left)*0.02));
-    const stepX=Math.max(1,Math.floor((xEnd-xStart)/600));
-    const hits=[];
-    for (let y=0;y<height;y++) {
-      let neutral=0, total=0;
-      for (let x=xStart;x<xEnd;x+=stepX) {
+    try{pixels=sourceCanvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,width,height).data;}
+    catch(_){return refuse('source_pixels_unavailable');}
+    const xStart=Math.max(0,Math.floor(left+(right-left)*.02));
+    const xEnd=Math.min(width,Math.ceil(right-(right-left)*.02));
+    const stepX=Math.max(1,Math.ceil((xEnd-xStart)/145));
+    const neutrals=[],rowColors=[];
+    for(let y=0;y<height;y++){
+      const rs=[],gs=[],bs=[];let neutral=0,total=0;
+      for(let x=xStart;x<xEnd;x+=stepX){
         const i=(y*width+x)*4,r=pixels[i],g=pixels[i+1],b=pixels[i+2];
-        if (![r,g,b].every(Number.isFinite)) return refuse('source_pixel_invalid');
-        const chroma=Math.max(r,g,b)-Math.min(r,g,b);
-        const lum=.299*r+.587*g+.114*b;
+        if(![r,g,b].every(Number.isFinite))return refuse('source_pixel_invalid');
+        rs.push(r);gs.push(g);bs.push(b);
+        const chroma=Math.max(r,g,b)-Math.min(r,g,b),lum=.299*r+.587*g+.114*b;
+        if(chroma<=52&&lum<=208)neutral++;
         total++;
-        if (chroma<=52 && lum<=208) neutral++;
       }
-      if (total && neutral/total>=.52) hits.push({y,coverage:neutral/total});
+      if(total&&neutral/total>=.52)neutrals.push({y,coverage:neutral/total});
+      rs.sort((a,b)=>a-b);gs.sort((a,b)=>a-b);bs.sort((a,b)=>a-b);
+      const mid=Math.floor(total/2);
+      rowColors.push([rs[mid],gs[mid],bs[mid]]);
     }
-    const groups=[];
-    for(const v of hits){const p=groups[groups.length-1];if(!p||v.y-p[p.length-1].y>2)groups.push([v]);else p.push(v);}
-    const rules=groups.map(g=>g.slice().sort((a,b)=>b.coverage-a.coverage||a.y-b.y)[0].y)
+    const ruleGroups=[];
+    for(const item of neutrals){
+      let last=ruleGroups[ruleGroups.length-1];
+      if(!last||item.y-last[last.length-1].y>2)ruleGroups.push([item]);
+      else last.push(item);
+    }
+    const rules=ruleGroups.map(g=>g.slice().sort((a,b)=>b.coverage-a.coverage||a.y-b.y)[0].y)
       .filter(Number.isFinite).sort((a,b)=>a-b);
-    if(rules.length<6) return refuse('insufficient_visible_source_rules');
-    // Fit only a regular physical grid; unrelated horizontal marks must not
-    // authorise a crop. At least six observed, distinct rules spanning >= 6 rows.
+    if(rules.length<4)return refuse('source_ruler_anchors_insufficient');
+
+    // Stable, full-width colour boundaries supplement missing grey dividers.
+    // Work only with representative lane medians: text pixels, labels and
+    // single-cell highlights cannot create a full-width colour boundary.
+    const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+    const colourHits=[];
+    const stableInset=Math.max(5,Math.min(11,Math.round(height*.008)));
+    for(let y=stableInset;y<height-stableInset-1;y++){
+      const adjacent=dist(rowColors[y],rowColors[y+1]);
+      const outer=dist(rowColors[y-stableInset],rowColors[y+stableInset]);
+      if(adjacent>=Math.max(14,height*.011)&&outer>=48) colourHits.push({y,score:adjacent});
+    }
+    const colourGroups=[];
+    for(const item of colourHits){
+      const last=colourGroups[colourGroups.length-1];
+      if(!last||item.y-last[last.length-1].y>Math.max(2,Math.ceil(height*.003)))colourGroups.push([item]);
+      else last.push(item);
+    }
+    const colours=colourGroups.map(g=>g.slice().sort((a,b)=>b.score-a.score||a.y-b.y)[0].y+1);
+    const candidates=[...rules.map(y=>({y,kind:'rule'})),...colours.map(y=>({y,kind:'colour'}))]
+      .sort((a,b)=>a.y-b.y);
+    const merged=[];
+    const tolerance=Math.max(2,Math.round(height*.0035));
+    for(const c of candidates){
+      const last=merged[merged.length-1];
+      if(last&&c.y-last.last<=tolerance){last.last=c.y;last.parts.push(c);}
+      else merged.push({last:c.y,parts:[c]});
+    }
+    const boundariesFound=merged.map(x=>{
+      // prefer a measured neutral divider when it is present
+      const n=x.parts.filter(v=>v.kind==='rule');
+      return n.length?n[Math.floor(n.length/2)].y:Math.round(x.parts.reduce((z,v)=>z+v.y,0)/x.parts.length);
+    });
+    if(boundariesFound.length<6)return refuse('source_boundaries_insufficient');
+    const diffs=boundariesFound.slice(1).map((v,i)=>v-boundariesFound[i]);
+    const plausible=diffs.filter(v=>v>=height*.022&&v<=height*.105).sort((a,b)=>a-b);
+    if(plausible.length<4)return refuse('source_physical_pitch_unproven');
+    // The median of the lower consecutive intervals selects the fundamental
+    // (visible adjacent rows), not a half-period of the Android-scale grid.
+    const core=plausible.slice(0,Math.max(3,Math.ceil(plausible.length*.7)));
+    const pitch=core[Math.floor(core.length/2)];
+    if(!Number.isFinite(pitch)||pitch<height*.02)return refuse('source_physical_pitch_unproven');
     let best=null;
-    for(let period=27;period<=35.0001;period+=.125){
-      for(const base of rules){
-        const supported=rules.filter(y=>{
+    const lower=Math.max(12,pitch*.88),upper=pitch*1.12;
+    for(let period=lower;period<=upper+.001;period+=.125){
+      for(const base of boundariesFound){
+        const supported=boundariesFound.filter(y=>{
           const n=Math.round((y-base)/period);
-          return Math.abs(y-(base+n*period))<=2.6;
+          return Math.abs(y-(base+n*period))<=Math.max(3,period*.14);
         });
-        const span=supported.length?supported[supported.length-1]-supported[0]:0;
-        if(supported.length<6||span<period*5.8)continue;
+        if(supported.length<6||supported[supported.length-1]-supported[0]<period*5.8)continue;
         const residual=supported.reduce((v,y)=>v+Math.abs(y-(base+Math.round((y-base)/period)*period)),0);
         const rank=supported.length*100-residual;
         if(!best||rank>best.rank)best={period,base,supported,rank,residual};
       }
     }
-    if(!best || best.supported.length/Math.max(6,rules.length)<.66)
-      return refuse('horizontal_rules_not_coherent');
-    return {accepted:true,reason:'source_horizontal_rules_verified',period:best.period,
+    if(!best||best.supported.length/Math.max(6,boundariesFound.length)<.66)
+      return refuse('physical_grid_not_coherent');
+    return {accepted:true,reason:'source_physical_rule_and_colour_grid_verified',period:best.period,
       ruleCenters:best.supported.slice(),totalObservedRules:rules.length,
+      totalObservedColourBoundaries:colours.length,totalObservedSourceBoundaries:boundariesFound.length,
       sourceWidth:width,sourceHeight:height,independentSources:false,sourcePixelsOnly:true};
   }
 
