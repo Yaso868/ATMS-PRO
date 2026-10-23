@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 19
-        versionName '1.4.0-ap01-p11443-qa2-source-cell'
+        versionCode 20
+        versionName '1.4.0-ap01-p11444-qa2-source-cell'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -32,7 +32,7 @@ android {
         debug {
             // ATMS PRO: independent test installation; never replace the productive app.
             applicationIdSuffix '.qa2'
-            versionNameSuffix '-bildimport-test-20261022'
+            versionNameSuffix '-bildimport-test-20261023'
             // QA2 is its own Android package. Reuse ONLY the protected persistent
             // ATMS_SIGNING_* GitHub credentials for this signed test variant.
             // This signs no production package and creates no signing material in ZIP.
@@ -377,7 +377,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11443')
+    dependsOn tasks.named('runtimeAssetAlignmentP11444')
     dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
@@ -462,7 +462,7 @@ tasks.register('qa2SigningSourceSafetyP11438', Exec) {
     commandLine 'node', 'tools/qa2-signing-guard-p11438.cjs'
 }
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('qa2SigningSourceSafetyP11443')
+    dependsOn tasks.named('qa2SigningSourceSafetyP11444')
 }
 tasks.register('verifyQa2SignedApkP11438', Exec) {
     workingDir rootProject.projectDir
@@ -543,4 +543,28 @@ tasks.register('qa2SigningSourceSafetyP11443', Exec) {
 tasks.register('sourceBoundCompanyP11443', Exec) {
     workingDir projectDir.parentFile
     commandLine 'node', 'tools/source-bound-company-cell-p11443.cjs'
+}
+
+
+// P11444: mandatory fresh source-cell and build-generation regressions.
+// Historical source-bound protections remain registered and required.
+tasks.register('runtimeAssetAlignmentP11444', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11444.js'
+}
+tasks.register('qa2SigningSourceSafetyP11444', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/qa2-signing-guard-p11444.cjs'
+}
+tasks.register('p11444IntegratedSourceRegression', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/p11444-integrated-source-regression.cjs'
+}
+tasks.register('p11444SourceIntegrationGate', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/p11444-source-integration-gate.cjs'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('p11444IntegratedSourceRegression')
+    dependsOn tasks.named('p11444SourceIntegrationGate')
 }

@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11444 – P11444 dual original source-cell OCR; fail-closed note and route proof.
 // CORE-007D8A1F1D8P11426 – source-aligned safe OCR reviews, price evidence and uncertainty preservation.
 // CORE-007D8A1F1D8P11424 – importfreie Anzeige der offiziellen Airport-Erstquellen-Fehlercodes, keine Flug-/Fahrtdatenmutation.
 // CORE-007D8A1F1D8P11422 · 09.10.2026: Native flight verification in import-free preview, isolated diagnostics and generation/identity staleness guards; no writes to staged or persistent rides.
@@ -1924,6 +1925,169 @@
           verificationSource: 'p11443_exact_photo_original_company_cell'
         }
       };
+    }
+    return out;
+  }
+
+  // P11444: Source-cell generic, SHA-INDEPENDENT candidate. No global aliases.
+  // This stage is deliberately narrower than spelling normalization: it accepts
+  // only two exact, geometry-bound, independently configured full-cell OCR passes.
+  const p11444TrustedRouteProofObjects = new WeakSet(); // unforgeable through JSON import
+  function p11444Text(v) { return cellText(v).normalize('NFC').replace(/\s+/gu, ' ').trim(); }
+  function p11444QualifiedCellReadings(ride, field, readings) {
+    const e = ride?.imageCellEvidence?.[field];
+    const birth = e?.primarySourceEvidence;
+    const row = Number(ride?.sourceRow), col = Number(e?.sourceColumn);
+    const q = e?.cropQuality || {};
+    if (!ride?.sourceImageOcr || !e || !birth || !Number.isInteger(row) || row < 2 ||
+        !Number.isInteger(col) || col < 0 || Number(e.sourceRow) !== row ||
+        birth.verificationSource !== 'primary_full_image_cell_assignment' ||
+        Number(birth.sourceRow) !== row || Number(birth.sourceColumn) !== col ||
+        p11444Text(birth.rawOcr) !== p11444Text(e.rawOcr) ||
+        q.fullCellIncluded !== true || q.leftEdgeClipped !== false ||
+        q.rightEdgeClipped !== false || q.neighborColumnIncluded !== false) return null;
+    if (!Array.isArray(readings) || readings.length !== 2) return null;
+    const modes = new Set(), candidates = new Set();
+    for (const a of readings) {
+      const aq = a?.cropQuality || {};
+      if (a?.scope !== 'source_truth_full_cell' || a.field !== field ||
+          Number(a.sourceRow) !== row || Number(a.sourceColumn) !== col ||
+          aq.fullCellIncluded !== true || aq.targetCellGeometryConfirmed !== true ||
+          aq.leftEdgeClipped !== false || aq.rightEdgeClipped !== false ||
+          aq.neighborColumnIncluded !== false) return null;
+      const mode = p11444Text(a.mode), candidate = p11444Text(a.candidate);
+      if (!['source-truth-full-cell-psm6','source-truth-full-cell-psm7'].includes(mode) ||
+          !candidate || candidate.length > 80) return null;
+      modes.add(mode); candidates.add(candidate);
+    }
+    if (modes.size !== 2 || candidates.size !== 1) return null;
+    const candidate = [...candidates][0];
+    // Trusted contradictory full-cell evidence is never discarded.
+    const previous = Array.isArray(e.verificationAttempts) ? e.verificationAttempts : [];
+    if (previous.some(a => {
+      const aq = a?.cropQuality || {};
+      return ['source_truth_full_cell','source_truth_adaptive_company','source_truth_edge_expanded'].includes(a?.scope) &&
+        aq.fullCellIncluded === true && aq.targetCellGeometryConfirmed === true &&
+        aq.neighborColumnIncluded === false && aq.leftEdgeClipped === false && aq.rightEdgeClipped === false &&
+        p11444Text(a?.candidate) && p11444Text(a?.candidate) !== candidate;
+    })) return null;
+    return { candidate, sourceRow: row, sourceColumn: col, originalRaw: p11444Text(birth.rawOcr),
+      modes: [...modes].sort(), geometry: 'full_cell_unclipped' };
+  }
+
+  // P11444-R3: block mixed time/note cells even with table delimiters glued
+  // directly to the clock. Existing ?/malformed-clock gates stay in place.
+  function p11444HasMixedFlightTimeRaw(value) {
+    const raw = p11444Text(value);
+    const clocks = raw.match(/(?:[01]?\d|2[0-3])[:.][0-5]\d/gu) || [];
+    if (!clocks.length) return false;
+    if (clocks.length !== 1) return true; // two clock tokens are ambiguous
+    const residue = raw.replace(/(?:[01]?\d|2[0-3])[:.][0-5]\d/gu, ' ')
+      .replace(/[|¦│~?!.,;:()[\]{}\-–—\/\\+*=_]/gu, ' ').trim();
+    return /[\p{L}\p{N}]/u.test(residue);
+  }
+
+  function p11444SafeNote(value) {
+    const s = p11444Text(value);
+    // R4: A supposed source note must contain NO clock or clock-like value,
+    // including delimiter-glued forms such as 2HK/15:30 nicht and 2HK/1530 nicht.
+    // Do not infer 2HK when the only OCR reading is "nicht".
+    if (s.length < 2 || s.length > 80 || s.split(' ').length < 2 || /[?:!?]/u.test(s) ||
+        /(?:[01]?\d|2[0-3])[:.][0-5]\d/u.test(s) ||
+        /\d{3,}/u.test(s) || // R6: also forbid glued 2HK1530 or EW9031 tokens
+        !/\p{L}/u.test(s) || !/^[\p{L}\p{N}\p{M}\s._\/-]+$/u.test(s)) return '';
+    return s;
+  }
+
+  function p11444ResolveOneSourceCell(ride, field, readings) {
+    const proof = p11444QualifiedCellReadings(ride, field, readings);
+    if (!proof) return ride;
+    const out = { ...ride };
+    if (field === 'destination') {
+      const initial = p11444Text(out.destination);
+      const secondary = p11444Text(out.destinationOcrConflictCandidate);
+      if (!out.destinationOcrConflict || out.destinationOcrConflictFromListConsensus ||
+          out.destinationCellConflict || out.imageCellEvidence.destination.manualCheckRequired === true ||
+          !initial || initial !== proof.originalRaw || !secondary ||
+          secondary !== proof.candidate ||
+          !p11442RouteEditProof(initial, secondary)) return ride;
+      out.destination = secondary;
+      out.destinationOcrConflict = false;
+      out.destinationOcrAutoCorrected = true;
+      out.destinationOcrCorrectionSource = 'p11444_dual_full_source_cell';
+      out.destinationP11444Proof = { ...proof, finalValue: secondary };
+      p11444TrustedRouteProofObjects.add(out.destinationP11444Proof);
+    } else if (field === 'flightTime') {
+      const before = p11444Text(out.flightTime);
+      const source = proof.originalRaw;
+      const note = p11444SafeNote(proof.candidate);
+      if (!note || !before || timeToMinutes(normalizeTime(before)) !== null ||
+          out.flightTimeUncertain === true || out.flightTimeCellConflict === true ||
+          out.flightTimeOcrConflict === true || out.flightTimeSourceGlyphAmbiguity ||
+          out.imageCellEvidence.flightTime.manualCheckRequired === true ||
+          (source !== before && source !== note) ||
+          (before !== note && !note.endsWith(' ' + before))) return ride;
+      out.flightTimeOriginalNoteOcr = before;
+      out.flightTime = '';
+      out.notes = [...new Set([p11444Text(out.notes), note].filter(Boolean))].join(' · ');
+      out.flightTimeP11444NoteProof = { ...proof, note, flightTimeIsNotAClock: true };
+    } else return ride;
+    return out;
+  }
+
+  function p11444VerifiedSourceBoundRouteProof(ride, field, originalCell, sourceRaw, finalValue) {
+    if (field !== 'destination' || ride?.destinationOcrConflict === true ||
+        ride?.destinationCellConflict === true || originalCell?.manualCheckRequired === true) return false;
+    const proof = ride?.destinationP11444Proof;
+    return Boolean(proof && p11444TrustedRouteProofObjects.has(proof) && proof.geometry === 'full_cell_unclipped' &&
+      Array.isArray(proof.modes) && proof.modes.length === 2 &&
+      proof.modes[0] === 'source-truth-full-cell-psm6' &&
+      proof.modes[1] === 'source-truth-full-cell-psm7' &&
+      Number(proof.sourceRow) === Number(ride.sourceRow) &&
+      Number(proof.sourceColumn) === Number(originalCell?.sourceColumn) &&
+      p11444Text(proof.originalRaw) === p11444Text(sourceRaw) &&
+      p11444Text(originalCell?.rawOcr) === p11444Text(sourceRaw) &&
+      p11444Text(proof.finalValue) === p11444Text(finalValue) &&
+      p11442RouteEditProof(sourceRaw, finalValue));
+  }
+
+  async function p11444ReconcileSourceCells(rides, sourceTruthCanvas, imageCanvas, imageMeta, mapping) {
+    // P11444-R2: only the distinct, pixel-faithful scaled SOURCE image qualifies.
+    // A processed image fallback is NOT equivalent evidence for resolving a conflict.
+    if (!Array.isArray(rides) || !sourceTruthCanvas || !imageCanvas ||
+        sourceTruthCanvas === imageCanvas || !imageMeta || !mapping || !window.Tesseract) return rides;
+    const sourceWidth = Number(sourceTruthCanvas.width), sourceHeight = Number(sourceTruthCanvas.height);
+    if (!Number.isInteger(sourceWidth) || !Number.isInteger(sourceHeight) ||
+        sourceWidth <= 0 || sourceHeight <= 0 ||
+        sourceWidth !== Number(imageCanvas.width) || sourceHeight !== Number(imageCanvas.height) ||
+        (imageMeta.width != null && Number(imageMeta.width) !== sourceWidth) ||
+        (imageMeta.height != null && Number(imageMeta.height) !== sourceHeight)) return rides;
+    const out = rides.map(ride => ({ ...ride }));
+    const boundaries = imageMeta.boundaries || [];
+    for (let i=0; i<out.length; i++) {
+      const ride = out[i];
+      if (ride?.sourceImageOcr !== true) continue;
+      for (const field of ['destination','flightTime']) {
+        const needed = field === 'destination'
+          ? ride.destinationOcrConflict === true
+          : Boolean(p11444Text(ride.flightTime) && timeToMinutes(normalizeTime(ride.flightTime)) === null);
+        if (!needed) continue;
+        const column = Number(mapping[field]);
+        const row = Number(ride.sourceRow);
+        const meta = imageMeta.rowMetaByMatrixIndex?.[row-1];
+        const left=Number(boundaries[column]), right=Number(boundaries[column+1]);
+        if (!Number.isInteger(column) || !meta || !Number.isFinite(left) ||
+            !Number.isFinite(right) || right <= left ||
+            Number(ride?.imageCellEvidence?.[field]?.sourceColumn) !== column) continue;
+        const descriptor = { column, left, right, cellWidth: right-left };
+        let readings=[];
+        try {
+          readings = await sourceTruthFullCellTextOcr(sourceTruthCanvas, imageCanvas, descriptor, meta, row, field, null);
+        } catch (_) { continue; }
+        // R5: Read the CURRENT accumulated row, not the pre-loop snapshot.
+        // Two independently proven cell fixes on one physical row must compose.
+        out[i] = p11444ResolveOneSourceCell(out[i], field, readings);
+      }
     }
     return out;
   }
@@ -12062,7 +12226,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       // P114.8: The independent text-OCR stage mutates verificationSource.
       // Preserve *this cell's* original primary reading before any such review.
       // Later disagreements are still evaluated separately and can veto import.
-      if (field === 'company') {
+      if (['company','destination','flightTime'].includes(field)) {
         evidence[field].primarySourceEvidence = Object.freeze({
           rawOcr: text,
           confidence: evidence[field].confidence,
@@ -12249,6 +12413,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         }
       }
 
+      const p11444RawFlightTimeCell = cellEvidenceRawValue(evidence, 'flightTime');
+      if (p11444HasMixedFlightTimeRaw(p11444RawFlightTimeCell))
+        add('p11444_mixed_flight_time_source', 'Flugzeitzelle enthält Uhrzeit und Zusatztext oder mehrere Uhrzeiten – Quelle einzeln prüfen, nicht stillschweigend übernehmen');
       if (cellEvidenceRawValue(evidence, 'company') && !cellText(ride.company)) {
         add('company_lost', `Firma „${cellEvidenceRawValue(evidence, 'company')}“ wurde in der Firmenzelle erkannt, ist im finalen Datensatz aber leer`);
       }
@@ -12292,6 +12459,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         if (sourceDecision.allow) return;
         if (routeG4VerifiedFinalHandoff(ride, field, originalCell, sourceRaw, finalValue)) return;
         if (p11442VerifiedSourceBoundRouteProof(ride, field, originalCell, sourceRaw, finalValue)) return;
+        if (p11444VerifiedSourceBoundRouteProof(ride, field, originalCell, sourceRaw, finalValue)) return;
         // A previously-empty geometric cell can have a separately guarded,
         // same-cell + raw-word recovery; it must not be rewritten here.
         const missingSource = ride[`${field}MissingTargetedOcrSource`];
@@ -15186,6 +15354,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         preparedRides = p54MeasureSync('company_conflict_post_consensus', () => reconcileCompanyConflictAfterRepeatedConsistency(preparedRides));
         g06QuarantineCapture('after_p11411_reconciliation', preparedRides);
         preparedRides = await p54MeasureAsync('p11442_exact_original_source_bound_review', () => p11442OriginalImageBoundedReconciliation(preparedRides));
+        preparedRides = await p54MeasureAsync('p11444_dual_source_cell_review', () => p11444ReconcileSourceCells(preparedRides, result.imageSourceCanvas || null, result.imageCanvas, result.imageMeta, mappingInfo.mapping));
         preparedRides = p54MeasureSync('zero_silent_error_gate', () => markZeroSilentErrorIntegrity(preparedRides));
         preparedRides = p54MeasureSync('attach_plan_row_colors', () => applyImageRowColorsToRides(preparedRides, result.imageMeta));
         preparedRides = p54MeasureSync('driver_color_integrity', () => markImageDriverColorIntegrity(preparedRides));
