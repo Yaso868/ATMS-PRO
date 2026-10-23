@@ -10,8 +10,8 @@ android {
         applicationId 'de.atmspro.app'
         minSdk 26
         targetSdk 35
-        versionCode 20
-        versionName '1.4.0-ap01-p11444-qa2-source-cell'
+        versionCode 21
+        versionName '1.4.0-ap01-p11445-qa2-row-fence'
     }
     def stableKeystore = System.getenv('ATMS_SIGNING_STORE_FILE')
     def stableStorePassword = System.getenv('ATMS_SIGNING_STORE_PASSWORD')
@@ -377,7 +377,7 @@ tasks.named('preBuild').configure {
     // Keep the P114.6 functional conflict regression above; it is not a version marker gate.
     dependsOn tasks.named('companyPrimaryAlreadyCorrectP1147')
     dependsOn tasks.named('accuracyRegressionsP11426')
-    dependsOn tasks.named('runtimeAssetAlignmentP11444')
+    dependsOn tasks.named('runtimeAssetAlignmentP11445')
     dependsOn tasks.named('ocrLanguageOptionsP11437')
     dependsOn tasks.named('h35SourceReviewSafety')
     dependsOn tasks.named('airportFirstSourceReasonsP11424')
@@ -462,7 +462,7 @@ tasks.register('qa2SigningSourceSafetyP11438', Exec) {
     commandLine 'node', 'tools/qa2-signing-guard-p11438.cjs'
 }
 tasks.named('preBuild').configure {
-    dependsOn tasks.named('qa2SigningSourceSafetyP11444')
+    dependsOn tasks.named('qa2SigningSourceSafetyP11445')
 }
 tasks.register('verifyQa2SignedApkP11438', Exec) {
     workingDir rootProject.projectDir
@@ -567,4 +567,22 @@ tasks.register('p11444SourceIntegrationGate', Exec) {
 tasks.named('preBuild').configure {
     dependsOn tasks.named('p11444IntegratedSourceRegression')
     dependsOn tasks.named('p11444SourceIntegrationGate')
+}
+
+// P11445: physical photo-grid row fence. Version-bound asset/signing
+// guards and fresh source-row negative cases are mandatory for the APK.
+tasks.register('runtimeAssetAlignmentP11445', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/runtime-asset-alignment-selftest-p11445.js'
+}
+tasks.register('qa2SigningSourceSafetyP11445', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/qa2-signing-guard-p11445.cjs'
+}
+tasks.register('p11445PhysicalSourceGridRegression', Exec) {
+    workingDir rootProject.projectDir
+    commandLine 'node', 'tools/p11445-physical-grid-selftest.cjs'
+}
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('p11445PhysicalSourceGridRegression')
 }

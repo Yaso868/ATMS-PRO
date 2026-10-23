@@ -1,3 +1,4 @@
+// CORE-007D8A1F1D8P11445 – P11445 physical source row fencing; no synthetic price inference.
 // CORE-007D8A1F1D8P11444 – P11444 dual original source-cell OCR; fail-closed note and route proof.
 // CORE-007D8A1F1D8P11426 – source-aligned safe OCR reviews, price evidence and uncertainty preservation.
 // CORE-007D8A1F1D8P11424 – importfreie Anzeige der offiziellen Airport-Erstquellen-Fehlercodes, keine Flug-/Fahrtdatenmutation.
@@ -5636,6 +5637,94 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     return raw;
   }
 
+
+  // P11445 physical source row fencing: only pixels from the current original
+  // photograph may prove a missing synthetic row's boundaries. No fixed date,
+  // route, fare, number of rides, OCR string or colour substitution is allowed.
+  function p11445DetectPhysicalRowGrid(sourceCanvas, imageMeta) {
+    const refuse = reason => ({ accepted:false, reason, ruleCenters:[] });
+    if (!sourceCanvas || !imageMeta?.standardAtms || imageMeta?.headerlessAtms) return refuse('schema_not_safe');
+    const boundaries = imageMeta.boundaries || [];
+    if (!Array.isArray(boundaries) || boundaries.length < 9) return refuse('columns_unproven');
+    const width=Number(sourceCanvas.width), height=Number(sourceCanvas.height);
+    const left=Number(boundaries[0]), right=Number(boundaries[boundaries.length-1]);
+    if (![width,height,left,right].every(Number.isFinite) || width < 600 || height < 180 ||
+        right-left < width*0.67) return refuse('source_dimensions_unproven');
+    let pixels;
+    try { pixels=sourceCanvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,width,height).data; }
+    catch (_) { return refuse('source_pixels_unavailable'); }
+    const xStart=Math.max(0,Math.floor(left+(right-left)*0.02));
+    const xEnd=Math.min(width,Math.ceil(right-(right-left)*0.02));
+    const stepX=Math.max(1,Math.floor((xEnd-xStart)/600));
+    const hits=[];
+    for (let y=0;y<height;y++) {
+      let neutral=0, total=0;
+      for (let x=xStart;x<xEnd;x+=stepX) {
+        const i=(y*width+x)*4,r=pixels[i],g=pixels[i+1],b=pixels[i+2];
+        if (![r,g,b].every(Number.isFinite)) return refuse('source_pixel_invalid');
+        const chroma=Math.max(r,g,b)-Math.min(r,g,b);
+        const lum=.299*r+.587*g+.114*b;
+        total++;
+        if (chroma<=52 && lum<=208) neutral++;
+      }
+      if (total && neutral/total>=.52) hits.push({y,coverage:neutral/total});
+    }
+    const groups=[];
+    for(const v of hits){const p=groups[groups.length-1];if(!p||v.y-p[p.length-1].y>2)groups.push([v]);else p.push(v);}
+    const rules=groups.map(g=>g.slice().sort((a,b)=>b.coverage-a.coverage||a.y-b.y)[0].y)
+      .filter(Number.isFinite).sort((a,b)=>a-b);
+    if(rules.length<6) return refuse('insufficient_visible_source_rules');
+    // Fit only a regular physical grid; unrelated horizontal marks must not
+    // authorise a crop. At least six observed, distinct rules spanning >= 6 rows.
+    let best=null;
+    for(let period=27;period<=35.0001;period+=.125){
+      for(const base of rules){
+        const supported=rules.filter(y=>{
+          const n=Math.round((y-base)/period);
+          return Math.abs(y-(base+n*period))<=2.6;
+        });
+        const span=supported.length?supported[supported.length-1]-supported[0]:0;
+        if(supported.length<6||span<period*5.8)continue;
+        const residual=supported.reduce((v,y)=>v+Math.abs(y-(base+Math.round((y-base)/period)*period)),0);
+        const rank=supported.length*100-residual;
+        if(!best||rank>best.rank)best={period,base,supported,rank,residual};
+      }
+    }
+    if(!best || best.supported.length/Math.max(6,rules.length)<.66)
+      return refuse('horizontal_rules_not_coherent');
+    return {accepted:true,reason:'source_horizontal_rules_verified',period:best.period,
+      ruleCenters:best.supported.slice(),totalObservedRules:rules.length,
+      sourceWidth:width,sourceHeight:height,independentSources:false,sourcePixelsOnly:true};
+  }
+
+  function p11445FenceSyntheticRow(meta, grid, previous, following) {
+    const refuse=reason=>({accepted:false,reason});
+    if(!meta?.syntheticGap||meta.compactGridBand||!grid?.accepted) return refuse('not_applicable');
+    const cy=Number(meta.cy), rules=grid.ruleCenters || [], period=Number(grid.period);
+    if(!Number.isFinite(cy)||!Number.isFinite(period)||period<18) return refuse('synthetic_geometry_unproven');
+    if(![Number(meta.y0),Number(meta.y1)].every(Number.isFinite) || Number(meta.y1)<=Number(meta.y0) ||
+        cy<Number(meta.y0)-1 || cy>Number(meta.y1)+1) return refuse('synthetic_center_outside_source_band');
+    const eligible=[];
+    for(let i=1;i<rules.length;i++){
+      const lo=Number(rules[i-1]), hi=Number(rules[i]);
+      if(hi-lo<period*.77||hi-lo>period*1.25)continue;
+      const mid=(lo+hi)/2;
+      if(Math.abs(mid-cy)>period*.39)continue;
+      if([previous,following].some(neighbour=>neighbour && Number.isFinite(Number(neighbour.cy)) &&
+          Number(neighbour.cy)>lo+1 && Number(neighbour.cy)<hi-1))continue;
+      eligible.push({lo,hi,mid,delta:Math.abs(mid-cy)});
+    }
+    if(eligible.length!==1)return refuse('source_row_not_unique_or_adjacent_collision');
+    const row=eligible[0], inset=Math.max(2,Math.min(4,(row.hi-row.lo)*.08));
+    const y0=row.lo+inset,y1=row.hi-inset;
+    if(y1-y0<12)return refuse('source_cell_band_too_short');
+    return {accepted:true,reason:'single_physical_row_proven',y0,y1,
+      cy:row.mid,sourceFenceTop:row.lo,sourceFenceBottom:row.hi,
+      originalY0:Number(meta.y0),originalY1:Number(meta.y1),
+      changed:y0>Number(meta.y0)+1 || y1<Number(meta.y1)-1,
+      sourcePixelsOnly:true,independentSources:false};
+  }
+
   async function recoverSyntheticImageRowsTargeted(matrix, imageCanvas, imageMeta) {
     if (!Array.isArray(matrix) || !imageCanvas || !imageMeta || !window.Tesseract) {
       if (imageMeta?.rowMetaByMatrixIndex) {
@@ -5676,6 +5765,22 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
         continue;
       }
 
+      // P11445: A broad estimated OCR band is never allowed to straddle a
+      // verified horizontal source line. For a strongly detected physical grid,
+      // accept only the uniquely corresponding real, adjacent-rule row.
+      let boundedY0=y0, boundedY1=y1, p11445Fence=null;
+      if (imageMeta.p11445PhysicalRowGrid?.accepted && !meta.compactGridBand) {
+        p11445Fence=p11445FenceSyntheticRow(meta,imageMeta.p11445PhysicalRowGrid,
+          metaByIndex[matrixIndex-1],metaByIndex[matrixIndex+1]);
+        meta.p11445PhysicalProof=p11445Fence;
+        if(!p11445Fence.accepted){
+          meta.syntheticGapFailureReason='p11445_physical_source_row_unproven';
+          continue;
+        }
+        boundedY0=p11445Fence.y0;
+        boundedY1=p11445Fence.y1;
+      }
+
       if (status) status.textContent = `Fehlende Tabellenzeile ${matrixIndex + 1} wird lokal nachgelesen …`;
 
       let bestRow = null;
@@ -5687,7 +5792,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       for (const scale of [1, 2]) {
         try {
           const sx = Math.max(0, Math.floor(x0));
-          const crop = cropCanvasRegion(imageCanvas, x0, y0, x1, y1, scale);
+          const crop = cropCanvasRegion(imageCanvas, x0, boundedY0, x1, boundedY1, scale);
           const second = await Tesseract.recognize(crop, 'eng');
           const cells = Array(boundaries.length - 1).fill('').map(() => []);
 
@@ -5813,6 +5918,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       if (syntheticRowHasRequiredCore(bestRow, semantic)) {
         bestRow[rideTimeIndex] = rideTime;
         out[matrixIndex] = bestRow;
+        if(p11445Fence?.accepted){
+          meta.y0=boundedY0; meta.y1=boundedY1; meta.cy=p11445Fence.cy;
+        }
         meta.syntheticGapRecovered = true;
         meta.syntheticGapFailureReason = '';
       }
@@ -13419,6 +13527,18 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       throw issue;
     }
     if (matrix._atmsImageMeta) {
+      // P11445: read the ORIGINAL photo once; a confirmed horizontal grid is
+      // evidence for CROPPING ONLY and cannot generate any cell/ride/price.
+      if(Object.values(matrix._atmsImageMeta.rowMetaByMatrixIndex || {})
+          .some(m=>m?.syntheticGap && !m.compactGridBand)) {
+        try {
+          const source=await buildSourceColorCanvas(file,canvas.width,canvas.height);
+          matrix._atmsImageMeta.p11445PhysicalRowGrid=
+            p11445DetectPhysicalRowGrid(source,matrix._atmsImageMeta);
+        } catch (_) {
+          matrix._atmsImageMeta.p11445PhysicalRowGrid={accepted:false,reason:'source_image_not_available',ruleCenters:[]};
+        }
+      }
       matrix = await measureAsync('synthetic_row_recovery', () => recoverSyntheticImageRowsTargeted(matrix, canvas, matrix._atmsImageMeta));
       if (matrix._atmsImageMeta?.headerlessAtms) {
         matrix = await measureAsync('headerless_cell_recovery', () => recoverHeaderlessCellsTargeted(matrix, canvas, matrix._atmsImageMeta));
