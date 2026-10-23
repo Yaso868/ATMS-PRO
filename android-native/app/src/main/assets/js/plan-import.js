@@ -14493,6 +14493,216 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     }
     return true;
   };
+
+  // P11448 LOCAL ONLY. Manual review of an actual original-image cell is NOT
+  // automatic OCR proof. Only the clicked field/row may be released, and only
+  // after an explicit visual review, provenance check and fresh source hash.
+  // Never grant a generic import override; ALL other validations still apply.
+  const p11448Tokens = new WeakMap();
+  const P11448_FIELDS = Object.freeze(['company', 'destination']);
+  let p11448Source = null;
+  function p11448SourceCell(ride, field) {
+    if (!ride || !P11448_FIELDS.includes(field) || !state.rides.includes(ride) ||
+        state.previewOnlyAnalysis ||
+        !ride.sourceImageOcr || !state.file || !isImageFile(state.file) ||
+        !Array.isArray(state.files) || state.files.length !== 1 ||
+        !p11448Source || p11448Source.file !== state.file ||
+        p11448Source.generation !== state.pipelineGeneration ||
+        cellText(ride.sourceFile) !== cellText(state.file.name)) return null;
+    const c = ride.imageCellEvidence?.[field];
+    const source = p11448Source.canvas;
+    const m = p11448Source.meta;
+    const row = Number(ride.sourceRow), col = Number(state.mapping?.[field]);
+    const b = c?.cellBounds;
+    const values = b && [b.left,b.top,b.right,b.bottom];
+    if (!source || !m || !Number.isInteger(row) || row <= 0 ||
+        !Number.isInteger(col) || col < 0 ||
+        Number(c?.sourceRow) !== row || Number(c?.sourceColumn) !== col ||
+        !values || !values.every(Number.isFinite) ||
+        b.left < 0 || b.top < 0 || b.right <= b.left || b.bottom <= b.top ||
+        b.right > Number(source.width) || b.bottom > Number(source.height) ||
+        Number(m.width) !== Number(source.width) || Number(m.height) !== Number(source.height) ||
+        c?.cropQuality?.fullCellIncluded !== true ||
+        c?.cropQuality?.leftEdgeClipped === true ||
+        c?.cropQuality?.rightEdgeClipped === true ||
+        c?.cropQuality?.neighborColumnIncluded === true) return null;
+    const rowMeta = m.rowMetaByMatrixIndex?.[row-1];
+    if (!rowMeta || Math.abs(Number(rowMeta.y0)-b.top)>0.5 ||
+        Math.abs(Number(rowMeta.y1)-b.bottom)>0.5 ||
+        Math.abs(Number(m.boundaries?.[col])-b.left)>0.5 ||
+        Math.abs(Number(m.boundaries?.[col+1])-b.right)>0.5) return null;
+    return {ride,field,row,col,b,cell:c,canvas:source,generation:state.pipelineGeneration};
+  }
+  function p11448HasUnresolvedField(ride, field) {
+    const codes = new Set(field === 'company'
+      ? ['cell_evidence_unresolved_company']
+      : ['route_semantic_unverified_destination','cell_evidence_unresolved_destination']);
+    return Boolean(ride?.[`${field}OcrConflict`] ||
+      (field === 'destination' && ride.destinationCellConflict) ||
+      ride?.imageCellEvidence?.[field]?.manualCheckRequired === true ||
+      (Array.isArray(ride?.importIntegrityConflicts) &&
+        ride.importIntegrityConflicts.some(c => codes.has(cellText(c?.code)))));
+  }
+  function p11448Eligible(ride, field) {
+    return Boolean(p11448SourceCell(ride, field) && p11448HasUnresolvedField(ride, field));
+  }
+  function p11448PresentCell(ride, field) {
+    const box=$('ap01OriginalCellReview');
+    const selected=p11448SourceCell(ride,field);
+    const eligible=Boolean(selected && p11448HasUnresolvedField(ride,field));
+    if (!box) return false;
+    if (!eligible) {box.hidden=true;return false;}
+    box.hidden=false;
+    const canvas=$('ap01OriginalCellCanvas'),caption=$('ap01OriginalCellCaption');
+    const check=$('ap01OriginalCellApproved'),btn=$('ap01OriginalCellConfirm');
+    if (!canvas || !caption || !check || !btn) return false;
+    check.checked=false;
+    const {b}=selected;
+    // Crop entirely inside the exact original, unprocessed source-image cell.
+    const sx=Math.ceil(b.left),sy=Math.ceil(b.top);
+    const ex=Math.floor(b.right),ey=Math.floor(b.bottom);
+    if (ex<=sx || ey<=sy) {box.hidden=true;return false;}
+    const width=ex-sx,height=ey-sy;
+    const scale=Math.min(4,Math.max(1,Math.floor(980/width)));
+    canvas.width=width*scale;canvas.height=height*scale;
+    const g=canvas.getContext('2d');
+    if (!g) {box.hidden=true;return false;}
+    g.imageSmoothingEnabled=false;
+    g.clearRect(0,0,canvas.width,canvas.height);
+    g.drawImage(selected.canvas,sx,sy,width,height,0,0,canvas.width,canvas.height);
+    box.dataset.field=field;
+    caption.textContent=`Originalbild · Zeile ${selected.row} · ${field==='company'?'Firma':'Nach (Ziel)'} · Spalte ${selected.col+1} · aktueller Wert: ${cellText(ride[field])}`;
+    btn.disabled=false;
+    return true;
+  }
+  function p11448ReceiptValid(ride, field, receipt) {
+    const s=p11448SourceCell(ride,field);
+    if (!s || !receipt || !/^[a-f0-9]{64}$/.test(receipt.hash) ||
+        receipt.field !== field || receipt.sourceRow !== s.row ||
+        receipt.sourceColumn !== s.col || receipt.generation !== s.generation ||
+        receipt.file !== state.file || receipt.ride !== ride ||
+        receipt.value !== cellText(ride[field]) ||
+        receipt.originalRaw !== cellText(s.cell.primarySourceEvidence?.rawOcr ?? s.cell.rawOcr) ||
+        receipt.planDate !== cellText(ride.planDate || ride.date) ||
+        receipt.rideDate !== cellText(ride.date) ||
+        receipt.pickup !== cellText(ride.pickup) ||
+        receipt.pickupTime !== cellText(ride.time) ||
+        receipt.bounds !== JSON.stringify(s.b) ||
+        !Array.isArray(ride.ap01ManualCellReviews) ||
+        !ride.ap01ManualCellReviews.some(x=>x.field===field && x.value===receipt.value &&
+          x.sourceRow===receipt.sourceRow && x.sourceColumn===receipt.sourceColumn &&
+          x.selectedImageSha256===receipt.hash)) return false;
+    return true;
+  }
+  function p11448Guard() {
+    for (const ride of state.rides) {
+      const documented=Array.isArray(ride.ap01ManualCellReviews) ? ride.ap01ManualCellReviews : [];
+      const live=p11448Tokens.get(ride);
+      if (documented.length !== (live?.size||0)) return 'Manuelle Zellbestätigung ohne gültigen Sitzungsnachweis';
+      for (const receipt of live?.values() || []) {
+        if (!p11448ReceiptValid(ride,receipt.field,receipt))
+          return 'Manuelle Zellbestätigung passt nicht mehr zu Originalbild, Zeile oder Feld';
+        if (ride[`${receipt.field}OcrConflict`] ||
+            (receipt.field==='destination' && ride.destinationCellConflict) ||
+            ride.imageCellEvidence?.[receipt.field]?.manualCheckRequired === true)
+          return 'Manuell bestätigtes Feld ist weiterhin OCR-seitig blockiert';
+        if (ride.importIntegrityStatus==='blocked' && !ride.importIntegrityConflicts?.length)
+          return 'Widersprüchlicher Importstatus nach manueller Prüfung';
+      }
+    }
+    return '';
+  }
+  async function p11448HashSelectedImage() {
+    if (!state.file || !globalThis.crypto?.subtle?.digest) throw Error('Originalbild-Hash nicht verfügbar');
+    const b=await state.file.arrayBuffer();
+    const h=await crypto.subtle.digest('SHA-256',b);
+    return Array.from(new Uint8Array(h),x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  async function p11448ConfirmOriginalCell() {
+    const id=state.ap01EditorOpenId,ride=ap01RideById(id);
+    const box=$('ap01OriginalCellReview');
+    const field=cellText(box?.dataset.field);
+    const check=$('ap01OriginalCellApproved');
+    const fail=message=>{$('ap01EditorError').textContent=message;return false;};
+    if (!ride || state.analysisRunInProgress || state.autoPipelineInProgress ||
+        !P11448_FIELDS.includes(field) || !p11448Eligible(ride,field) ||
+        !box || box.hidden || check?.checked !== true || !$('ap01OriginalCellCanvas')?.width)
+      return fail('Originalzelle und ausdrückliche Einzelbestätigung erforderlich.');
+    const inputs=$('ap01EditorFields')?.querySelectorAll('.ap01-field');
+    if (!inputs?.length) return fail('Bearbeitungsfelder fehlen.');
+    const draft={};inputs.forEach(el=>draft[el.dataset.field]=el.value);
+    // One click may change ONLY the exact visible source cell, never flight, fare,
+    // date, driver or another field through the ordinary editor inputs.
+    if (AP01_KEYS.some(key=>key!==field && cellText(draft[key])!==cellText(ride[key])))
+      return fail('Andere Felder bitte getrennt bearbeiten und prüfen.');
+    const value=cellText(draft[field]);
+    if (!value || value.length>120 || /[\u0000-\u001f\u007f<>]/u.test(value) ||
+        !/[A-Za-zÀ-ÿ]/u.test(value) || /^\d{1,2}[:.]\d{2}$/.test(value))
+      return fail('Bitte den vollständigen Text aus genau dieser Originalzelle eingeben.');
+    const checked=p11448SourceCell(ride,field);
+    if (!checked) return fail('Originalbild-/Zellgeometrie stimmt nicht mehr.');
+    const generation=state.pipelineGeneration;
+    const btn=$('ap01OriginalCellConfirm');
+    if (btn) btn.disabled=true;
+    let hash;
+    try {hash=await p11448HashSelectedImage();}
+    catch(e) {if(btn)btn.disabled=false;return fail('Originalbild kann nicht bestätigt werden: '+String(e?.message||e));}
+    if (btn)btn.disabled=false;
+    // No asynchronous intervening reanalysis, file selection, ride replacement,
+    // changed crop or dialog navigation may authorize this click.
+    if (state.analysisRunInProgress || state.autoPipelineInProgress ||
+        generation!==state.pipelineGeneration || state.ap01EditorOpenId!==id ||
+        ap01RideById(id)!==ride || !p11448Eligible(ride,field) ||
+        cellText(box.dataset.field)!==field ||
+        $('ap01OriginalCellApproved')?.checked!==true ||
+        cellText($('ap01EditorFields')?.querySelector(`.ap01-field[data-field="${field}"]`)?.value)!==value)
+      return fail('Bild oder Eingabe hat sich verändert. Bitte erneut prüfen.');
+    const before=cellText(ride[field]);
+    const conflicts=JSON.parse(JSON.stringify(ride.importIntegrityConflicts||[]));
+    const activeCodes=new Set(field==='company'
+      ? ['cell_evidence_unresolved_company']
+      : ['route_semantic_unverified_destination','cell_evidence_unresolved_destination']);
+    ride[field]=value;
+    ride[`${field}OcrConflict`]=false;
+    if (field==='destination') {
+      ride.destinationCellConflict=false;
+      ride.rideType=classifyRide(ride.pickup,ride.destination,ride.arrivalFlight,ride.departureFlight);
+    }
+    // Only those exact conflict codes for the *same* field may be cleared.
+    ride.importIntegrityConflicts=conflicts.filter(item=>!activeCodes.has(cellText(item?.code)));
+    ride.importIntegrityStatus=ride.importIntegrityConflicts.length?'blocked':'ok';
+    ride.imageCellEvidence[field].manualCheckRequired=false;
+    const receipt={ride,file:state.file,field,sourceRow:checked.row,sourceColumn:checked.col,
+      originalRaw:cellText(checked.cell.primarySourceEvidence?.rawOcr ?? checked.cell.rawOcr),
+      generation,hash,planDate:cellText(ride.planDate||ride.date),
+      rideDate:cellText(ride.date),pickup:cellText(ride.pickup),
+      pickupTime:cellText(ride.time),bounds:JSON.stringify(checked.b),value};
+    const proofs=p11448Tokens.get(ride)||new Map();proofs.set(field,receipt);p11448Tokens.set(ride,proofs);
+    const entry={field,sourceRow:checked.row,sourceColumn:checked.col,
+      value,originalOcr:receipt.originalRaw,previousValue:before,
+      selectedImageSha256:hash,originalCellBounds:{...checked.b},
+      decision:'user_confirmed_original_image_cell',at:new Date().toISOString(),
+      originalConflictEvidence:conflicts.filter(item=>activeCodes.has(cellText(item.code)))};
+    ride.ap01ManualCellReviews=Array.isArray(ride.ap01ManualCellReviews)
+      ? ride.ap01ManualCellReviews.filter(item=>item.field!==field) : [];
+    ride.ap01ManualCellReviews.push(entry);
+    state.issues=validate(state.rides);
+    state.ap01ReviewConfirmed=false;
+    writeCurrentAnalysisJsonPreview(state.rides);
+    ap01CloseEditor();
+    return true;
+  }
+  async function p11448PreImportVerify() {
+    if (state.analysisRunInProgress || state.autoPipelineInProgress || state.previewOnlyAnalysis)
+      throw Error('Import gesperrt: Analyse-/Testmodus nicht abgeschlossen.');
+    if (p11448Guard()) throw Error(p11448Guard());
+    const proofs=state.rides.flatMap(ride=>Array.from(p11448Tokens.get(ride)?.values()||[]));
+    if (!proofs.length) return;
+    const hash=await p11448HashSelectedImage();
+    if (proofs.some(proof=>proof.hash!==hash) || p11448Guard())
+      throw Error('Originalbild-/Zellnachweis vor Übernahme ungültig – Import gesperrt.');
+  }
+
   function ap01ConflictEvidenceList(ride) {
     const found = Array.isArray(ride?.importIntegrityConflicts)
       ? ride.importIntegrityConflicts.map(item => ({code:cellText(item?.code),text:cellText(item?.text)})) : [];
@@ -14502,6 +14712,8 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     }
     if (ride?.flightTimeCellConflict === true) found.push({code:'flight_time_cell_conflict',
       text:`Flugzeit: ${cellText(ride.flightTime)} ↔ ${cellText(ride.flightTimeCellConflictCandidate)} (geometrische Originalzelle)`});
+    if (ride?.destinationOcrConflict === true || ride?.destinationCellConflict === true)
+      found.push({code:'destination_ocr_opposition',text:`Nach: ${cellText(ride.destination)} ↔ ${cellText(ride.destinationOcrConflictCandidate)} (Originalzelle)`});
     return found;
   }
   function ap01OpenEditor(id) {
@@ -14518,6 +14730,13 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     const conflicts = ap01ConflictEvidenceList(ride);
     $('ap01EditorHeading').textContent = `Fahrt Zeile ${ride.sourceRow ?? '–'} bearbeiten`;
     $('ap01EditorFields').innerHTML = inputHtml;
+    const manual = P11448_FIELDS.filter(field=>p11448Eligible(ride,field));
+    const review=$('ap01OriginalCellReview');
+    if (review) review.hidden = manual.length===0;
+    const selector=$('ap01OriginalCellField');
+    if (selector) {selector.innerHTML=manual.map(field=>`<option value="${field}">${field==='company'?'Firma':'Nach (Ziel)'}</option>`).join('');
+      if(manual.length) p11448PresentCell(ride,manual[0]);}
+
     // Read the original OCR opposition visibly, rather than showing only its count.
     // TextContent prevents original-image strings from becoming executable markup.
     const conflictLines = conflicts.map(item => `${cellText(item?.code) || 'Quellkonflikt'}: ${cellText(item?.text) || 'Originalzelle gegen sekundäre OCR prüfen'}`);
@@ -14543,6 +14762,11 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     const validated=ap01ValidateDraft(draft);
     if (!validated.ok) {$('ap01EditorError').textContent=validated.error;return false;}
     const updates=AP01_KEYS.filter(key=>String(ride[key] ?? '')!==String(validated.values[key]));
+    const approved=p11448Tokens.get(ride);
+    if (approved && updates.some(key=>approved.has(key))) {
+      $('ap01EditorError').textContent='Bereits bestätigte OCR-Zelle darf nicht durch den normalen Editor verändert werden. Originalbild neu analysieren.';
+      return false;
+    }
     if (updates.length) {
       if (!ride.ap01OriginalOcr) ride.ap01OriginalOcr = {
         fields:Object.fromEntries(AP01_KEYS.map(key=>[key,ride[key]??''])),
@@ -14646,6 +14870,8 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       if (incomingKeys.has(key)) return ['Doppelte Quellzeile in der Planliste – Original prüfen'];
       incomingKeys.add(key);
     }
+    const proofBlock=p11448Guard();
+    if (proofBlock) return [proofBlock];
     if (!state.ap01ReviewConfirmed) return ['Vorschau noch nicht ausdrücklich bestätigt'];
     if (state.rides.some(ride=>cellText(ride.flightTimeSourceGlyphAmbiguity)))
       return ['Flugzeit mit unklarem OCR-Zeichen – erneute eindeutige Originalbild-Evidenz erforderlich'];
@@ -14774,6 +15000,11 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
             </div>`;
           }
 
+          const target=rides.find(r=>Number(r.sourceRow)===Number(issue.row));
+          if (target && issue.level==='error' &&
+              ['text_ocr','import_integrity'].includes(issue.kind) &&
+              P11448_FIELDS.some(field=>p11448Eligible(target,field)))
+            return `<div class="plan-issue ${issue.level}"><b>${rowLabel}</b> · ${escapeHtml(issue.text)}<button type="button" class="p11448-open-original" data-ride-id="${escapeHtml(String(target.id))}" style="width:100%;min-height:44px;margin-top:8px">Originalzelle vergrößert prüfen und bestätigen</button></div>`;
           return `<div class="plan-issue ${issue.level}"><b>${rowLabel}</b> · ${escapeHtml(issue.text)}</div>`;
         }).join('')
       : '<div class="plan-issue ok">✓ OCR-Analyse sauber: Keine ungelösten OCR-Hinweise.</div>';
@@ -15169,6 +15400,9 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     $('p42CurrentSchemaTimeDiagBtn')?.addEventListener('click', runP42CurrentSchemaTimeDiagnostic);
     $('p43FlickArrivalTimeDiagBtn')?.addEventListener('click', runP43FlickArrivalTimeDiagnostic);
 
+    $('planIssues').querySelectorAll('.p11448-open-original').forEach(button => {
+      button.addEventListener('click',()=>ap01OpenEditor(button.dataset.rideId));
+    });
     $('planIssues').querySelectorAll('.date-boundary-btn').forEach(button => {
       button.addEventListener('click', () => {
         resolveDateBoundary(button.dataset.dateAction);
@@ -15297,6 +15531,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     state.h13BlockedRowReviewPending = false;
     try { window.ATMSH13Review?.clear(); } catch (_) {}
     state.ap01ReviewConfirmed=false;
+    p11448Source=null;
     if (!state.file || state.analysisRunInProgress || state.autoPipelineInProgress) return;
     // Explicit click handlers set previewOnlyAnalysis; the analysis call never grants import permission.
     if (state.previewOnlyAnalysis) {
@@ -15647,6 +15882,11 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       state.rides = assignRideDates(preparedRides);
       state.rides = window.ATMSFlight ? window.ATMSFlight.prepareRides(state.rides) : state.rides;
       state.mapping = mappingInfo.mapping;
+      // Preserve only a private in-memory source-canvas reference. Nothing stored.
+      p11448Source = result.imageOcr && result.imageSourceCanvas && result.imageMeta &&
+        Array.isArray(state.files) && state.files.length===1
+        ? {file:state.file,canvas:result.imageSourceCanvas,meta:result.imageMeta,generation:state.pipelineGeneration}
+        : null;
       state.meta = { sheetName: result.sheetName, headerRow: headerDetection.index + 1, profile: mappingInfo.profile };
       state.issues = validate(state.rides);
       g06QuarantineCapture('after_final_validation', state.rides, state.issues);
@@ -15699,6 +15939,7 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     state.ocrCellDiagnostics = [];
     state.ocrDiagnosticSelfCheck = null;
     state.ocrPerformanceDiagnostic = null;
+    p11448Source=null;
     state.issues = [];
     state.meta = {};
     state.pipelineGeneration += 1;
@@ -15828,6 +16069,10 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       return false;
     }
     if (!state.rides.length) return false;
+    try {await p11448PreImportVerify();} catch(error) {
+      if ($('importStatus')) $('importStatus').textContent='Import blockiert: '+String(error.message||error);
+      return false;
+    }
     // PRICE-GATE: do not rely on button state, stale state.issues or warning level.
     // Recheck EVERY staged ride at the real import entrypoint, including 0-EUR rides.
     if (state.rides.some(ride => priceReviewStatus(ride).pending)) {
@@ -15845,6 +16090,19 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       const normalized = state.rides.map((ride, index) => window.norm ? window.norm(ride, index) : ride);
       // The app's generic normalizer is NOT allowed to silently change a checked
       // price between the staged review and the storage call.
+      // P11448: normalization may not mutate a manually approved value.
+      if (normalized.some((item,index) => {
+        const before=state.rides[index];
+        if(!before) return true;
+        const reviews=p11448Tokens.get(before);
+        return reviews && Array.from(reviews.values()).some(proof=>
+          cellText(item[proof.field])!==proof.value ||
+          cellText(item.sourceFile)!==cellText(before.sourceFile) ||
+          Number(item.sourceRow)!==proof.sourceRow ||
+          cellText(item.date)!==proof.rideDate ||
+          cellText(item.pickup)!==proof.pickup ||
+          cellText(item.time)!==proof.pickupTime);
+      })) throw Error('Import blockiert: Normalisierung veränderte eine bestätigte Originalzelle.');
       if (normalized.some((ride, index) => !Number.isFinite(Number(ride?.price))
           || Number(ride.price) !== Number(state.rides[index]?.price))) {
         throw new Error('Import blockiert: Preis wurde bei der Normalisierung verändert – bitte Original erneut prüfen.');
@@ -19252,6 +19510,11 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
       window.ATMSAP01HandleBack();
     }, true);
     $('ap01ConflictRecord')?.addEventListener('click', ap01RecordConflictReview);
+    $('ap01OriginalCellField')?.addEventListener('change',event=>{
+      const ride=ap01RideById(state.ap01EditorOpenId);
+      if(ride) p11448PresentCell(ride,cellText(event.target.value));
+    });
+    $('ap01OriginalCellConfirm')?.addEventListener('click',()=>{void p11448ConfirmOriginalCell();});
     $('copyFlightCheckBtn')?.addEventListener('click', runAutomaticFlightCheck);
     $('copyFlightCheckFallbackBtn')?.addEventListener('click', copyFlightCheckPrompt);
     if (drop) {
@@ -19308,6 +19571,13 @@ function h10CompareMatrixRows(grid,rowCenters,scaleY=1) {
     ...(window.__ATMS_AP01_REGRESSION__ === true ? {assessNativeProof:ap01AssessIndependentFlightRecheck,
       contextKey:ap01FlightContextKey} : {})
   }); } catch (_) {}
+
+  if (window.__ATMS_P11448_LOCAL_REGRESSION__ === true) {
+    window.ATMSP11448LocalTest=Object.freeze({sourceCell:p11448SourceCell,
+      guard:p11448Guard,eligible:p11448Eligible,receiptValid:p11448ReceiptValid,
+      confirm:p11448ConfirmOriginalCell,verify:p11448PreImportVerify,readState:()=>state,
+      setSource:value=>{p11448Source=value;}});
+  }
 
   // P114.21 test hooks, no import/storage side effects from hook exposure.
   try { window.ATMSP11421PreviewRegression = Object.freeze({

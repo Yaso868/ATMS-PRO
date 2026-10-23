@@ -60,6 +60,19 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
       <h3 id="ap01EditorHeading">Fahrt bearbeiten</h3>
       <p id="ap01EditorEvidence" style="font-size:13px;white-space:pre-line;max-height:190px;overflow-y:auto"></p>
       <div id="ap01EditorFields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px"></div>
+      <div id="ap01OriginalCellReview" hidden style="margin-top:14px;padding:12px;border:1px solid #74b7e6;border-radius:10px;background:#112030">
+        <strong>Manuelle OCR-Einzelzelle – Originalbild</strong>
+        <p style="font-size:12px">Nur das sichtbare Feld wird bestätigt. Keine allgemeine Fehlerfreigabe.</p>
+        <label for="ap01OriginalCellField">Betroffene Originalzelle auswählen</label>
+        <select id="ap01OriginalCellField" style="width:100%;min-height:45px;margin:6px 0"></select>
+        <p id="ap01OriginalCellCaption" style="font-size:12px"></p>
+        <div style="max-width:100%;overflow-x:auto;background:white;padding:6px;border-radius:8px">
+          <canvas id="ap01OriginalCellCanvas" role="img" aria-label="Vergrößerte Originalzelle" style="display:block;max-width:none;height:auto"></canvas>
+        </div>
+        <p style="font-size:12px">Den Wert oben im zugehörigen Bearbeitungsfeld exakt nach dem Originalbild eingeben. Danach ausschließlich diese Zelle bestätigen.</p>
+        <label style="display:flex;align-items:center;gap:8px"><input id="ap01OriginalCellApproved" type="checkbox" style="width:22px;height:22px">Originalzelle persönlich geprüft</label>
+        <button type="button" id="ap01OriginalCellConfirm" style="min-height:48px;width:100%;margin-top:10px;font-weight:700">Nur diese Originalzelle bestätigen</button>
+      </div>
       <div id="ap01ConflictReview" hidden style="border-top:1px solid #688;margin-top:14px;padding-top:14px">
         <label for="ap01ConflictReason">OCR-Konfliktentscheidung dokumentieren – keine Importfreigabe</label>
         <textarea id="ap01ConflictReason" rows="3" maxlength="1000" style="box-sizing:border-box;width:100%;padding:10px;border-radius:8px"></textarea>
@@ -160,7 +173,7 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
   <div class="info-slogan">Smart Dispatch. Simple Workflow.</div>
 </div>
 <div class="info-details">
-  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11447</div></div></div>
+  <div class="info-detail"><div class="info-detail-icon">🏷</div><div><div class="info-detail-label">Version</div><div class="info-detail-value">CORE-007D8A1F1D8P11448</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">&lt;/&gt;</div><div><div class="info-detail-label">Build</div><div class="info-detail-value">GE67-H1 OFFLINE QA · NUR LOKALER TESTQUELLSTAND</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">♙</div><div><div class="info-detail-label">Entwickelt von</div><div class="info-detail-value">Yaser Tatli</div></div></div>
   <div class="info-detail"><div class="info-detail-icon">✓</div><div><div class="info-detail-label">Status</div><div class="info-detail-value status">● Testvariante (nicht produktiv)</div></div></div>
@@ -181,8 +194,8 @@ Ohne Google-Routen-API erfolgt die Prognose nur anhand vorhandener Planzeiten, F
 <script src="./js/h19-pixel-review.js?v=P11436H35" defer></script>
 <script src="./js/h15-ride-drafts.js?v=P11436H35" defer></script>
 <script src="./js/h13-review-only.js?v=P11436H35" defer></script>
-<script src="./js/plan-import.js?v=P11447" defer></script>
+<script src="./js/plan-import.js?v=P11448" defer></script>
 <script src="./js/atms-daily-plan.js?v=P11436D1" defer></script>
 <script src="./js/app.js?v=P1121" defer></script>
-<script src="./js/pwa.js?v=P11447" defer></script>
+<script src="./js/pwa.js?v=P11448" defer></script>
 </body></html>
