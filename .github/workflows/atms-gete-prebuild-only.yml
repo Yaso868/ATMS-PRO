@@ -1,0 +1,79 @@
+name: ATMS PRO Get-E isolated Gradle preBuild ONLY
+
+on:
+  push:
+    branches:
+      - atms-price-p11429-test-only
+    paths:
+      - .github/workflows/atms-gete-prebuild-only.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atms-gete-isolated-prebuild-only
+  cancel-in-progress: false
+
+jobs:
+  gete-prebuild-only:
+    if: github.repository == 'Yaso868/ATMS-PRO' && github.ref == 'refs/heads/atms-price-p11429-test-only'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source without push credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.9 (no assemble tasks)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Android SDK command-line tools
+        uses: android-actions/setup-android@v3
+      - name: Install required SDK platform 35
+        shell: bash
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Restore existing QA2 signing configuration (do not sign or create an APK)
+        shell: bash
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.ATMS_SIGNING_KEYSTORE_B64 }}
+          SIGNING_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$SIGNING_KEYSTORE_B64" || -z "$SIGNING_PASSWORD" ]]; then
+            echo 'FAIL-CLOSED: existing QA2 signing secrets unavailable' >&2
+            exit 4
+          fi
+          printf '%s' "$SIGNING_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/atmspro-existing-signing.p12"
+          chmod 600 "$RUNNER_TEMP/atmspro-existing-signing.p12"
+          test -s "$RUNNER_TEMP/atmspro-existing-signing.p12"
+      - name: Verify historical SHA, stage R4 in temp dir, dry-run and execute ONLY :app:preBuild
+        shell: bash
+        env:
+          ATMS_SIGNING_STORE_FILE: ${{ runner.temp }}/atmspro-existing-signing.p12
+          ATMS_SIGNING_STORE_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_ALIAS: atmspro
+          ATMS_SIGNING_KEY_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python3 .github/atms-gete-qa-data/driver.py
+      - name: Remove temporary signing file
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/atmspro-existing-signing.p12"
+      - name: Upload QA-only evidence (never an APK)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATMS-GETE-P11450-R4-GRADLE-PREBUILD-ONLY
+          path: ${{ runner.temp }}/atms-gete-prebuild-evidence.json
+          if-no-files-found: ignore
+          retention-days: 7
