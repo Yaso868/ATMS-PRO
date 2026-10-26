@@ -1,0 +1,519 @@
+name: ATMS V1.32 Bildnaht+Plantag TEST2 final checkout fix (once)
+
+# Explicitly limited to one addition on the TEST BRANCH. This intentionally
+# does not use workflow_dispatch: such events require a default-branch workflow.
+on:
+  push:
+    branches:
+      - atms-price-p11429-test-only
+    paths:
+      - .github/workflows/atms-v132-seam-plantag-full-history-qa2-once.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atms-v132-seam-plantag-full-history-qa2-once-20261026
+  cancel-in-progress: false
+
+jobs:
+  qa2-single-apk:
+    if: >-
+      github.repository == 'Yaso868/ATMS-PRO' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/atms-price-p11429-test-only' &&
+      github.run_attempt == 1 &&
+      github.event.before == 'e68453a934061df7b307094d45a56521b417e0aa'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout read-only without persisted GitHub credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Load small pinned SHA256 patch archive in temporary runner only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/atms-v132-qa2-overlay.b64" <<'ATMS_OVERLAY_B64'
+          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
+          eGrbZ6e45JhA+YKG5RNc5RX6jokEjwZRwpQCLxfR/TRvxNQS0Os6guWSKyRwYDfV1EoXLVERSDs7LpA225X+172r4Ul2L7BhFSy5ltnQvBzRGH
+          XalDc+4X0LwcycZzWvvqCurA+1W2i6XiN/Eg7o0c24kXL6SajKDHKGpI6ot0Hp1y+JL+KnpyeqUsvsGTIpRmiO5FNJCPPFBUMhJXmesPkyXYz+
+          A9J5QAZ0fBlY4W+mzdNL1xubffE+5S89QP1/tArDcIXRwb+jK6zq+q9ZYuXWr6ZSYi4Y9GPV09LpgFp95Hhx1nJeabiwuqXTJFkL3IsinmtzKS
+          ouko7/u1g/DP939zpL97/KtZTRUwH9P0XFdC37P1juyXTNKvOeFZvbp4jxgj1NYyYFV3ibyL3Ho+PHtxbXX796zGJsr49edmTNjwWdi39P4/0b
+          DAzTKxikrqnw4/2PqMz7UpeuVfJ59SbztJYW34y65mRZEpM/y1Bc8nO4rrkj7z49r4VL+czBWZOt4c23AUbZhDqnoXkot5jV5zOntBt58+bVPw
+          FQSwECFAMUAAAACAAAAFpdr+dQH9sKAABqHAAAQQAAAAAAAAAAAAAApIEAAAAAYW5kcm9pZC1uYXRpdmUvYXBwL3NyYy9tYWluL2Fzc2V0cy9q
+          cy9hdG1zLXYxMzItc291cmNlLXByZXZpZXcuanNQSwECFAMUAAAACAAAAFpdBNOK8+AGAACbDwAAOQAAAAAAAAAAAAAApIE6CwAAYW5kcm9pZC
+          1uYXRpdmUvdG9vbHMvdjEzMi1pbWFnZS1zZWFtLXBsYW50YWctc2VsZnRlc3QuY2pzUEsBAhQDFAAAAAgAAABaXVxaRGMqBgAAMA8AADQAAAAA
+          AAAAAAAAAKSBcRIAAGFuZHJvaWQtbmF0aXZlL3Rvb2xzL3YxMzItcWEyLXN5bnRoZXRpYy1zZWxmdGVzdC5janNQSwECFAMUAAAACAAAAFpdfa
+          KhBHEUAADVOgAADQAAAAAAAAAAAAAApIHtGAAAb3ZlcmxheS5wYXRjaFBLAQIUAxQAAAAIAAAAWl12GgRStQoAABMdAAAKAAAAAAAAAAAAAACk
+          gYktAABzZWFtLnBhdGNoUEsFBgAAAAAFAAUAqwEAAGY4AAAAAA==
+          ATMS_OVERLAY_B64
+
+      - name: Verify frozen branch, one-file commit, apply SHA-pinned patch and run private-data-free synthetic QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/atms-v132-stage-runner.py" <<'ATMS_STAGE_RUNNER_PY'
+          #!/usr/bin/env python3
+          """V1.32 QA2 read-only isolated reconstruction; CI only with a one-file GitHub push.
+          This file is EMBEDDED in the eventual single workflow, never uploaded separately.
+          """
+          import base64
+          import hashlib
+          import io
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          import stat
+          import subprocess
+          import sys
+          import zipfile
+          
+          BASE_SHA='948a2f0fcb9e6cdcadbb8a54b709f98f4d5df547'
+          PARENT_SHA='e68453a934061df7b307094d45a56521b417e0aa'
+          WORKFLOW='.github/workflows/atms-v132-seam-plantag-full-history-qa2-once.yml'
+          # Populated by the local generator; not computed from any GitHub secrets.
+          PAYLOAD_SHA='020784950fcc3f257281399f5188bdbc9ac13bb65580bfdfe4224087ca69d170'
+          BASE_HASHES={'android-native/app/src/main/assets/js/plan-import.js': '5f0bb740a4732b4208f371dc2d897646ab43eb9cfaf9c997486936ca46b3fac9', 'android-native/app/src/main/assets/index.html': '025adb0da8117907129819f52d8b2656ca5a6ccd40348699495747a56978e621', 'android-native/app/src/main/assets/js/atms-v132-source-preview.js': 'ABSENT', 'android-native/tools/v132-qa2-synthetic-selftest.cjs': 'ABSENT'}
+          TARGET_HASHES={'android-native/app/src/main/assets/js/plan-import.js': 'c85be2036a6985f4401448375b41e2aafc1a70a125456c967983b8aed0507730', 'android-native/app/src/main/assets/index.html': '9982d8b49b5a683fedf6dab13e175b24a560329ca13d9214713dbe20d0c69b3d', 'android-native/app/src/main/assets/js/atms-v132-source-preview.js': '881ebee61ef5732544b43abde4b33b25a943cd5bc609a47f2d223789e1dabe20', 'android-native/tools/v132-qa2-synthetic-selftest.cjs': '36a5898d9a3f79e2d07b4dbc30593785a13882b020d5a43e8ff9f8820d696f0a'}
+          PATCH_SHA="9ff3768288cb923e55916f9c4bb3226d5594ccbe666b034f6e071ca946964a6f"
+          PRE_SEAM_PLAN_HASH='be7c2461212af4418c1dc64a356c35689464a716b8cdb5689151cda51b22c74a'
+          SEAM_PATCH_SHA='4786d476a20fed3e676e507d7efff4d01064af64d83193eb0038133301161256'
+          SEAM_TEST_SHA='65b1d84bc8f93dc0d37d8b13edc5ec83d7b89994a63c4e59c307f60878519841'
+          PATCHED=["android-native/app/src/main/assets/js/plan-import.js","android-native/app/src/main/assets/index.html"]
+          ADDED=["android-native/app/src/main/assets/js/atms-v132-source-preview.js","android-native/tools/v132-qa2-synthetic-selftest.cjs","android-native/tools/v132-image-seam-plantag-selftest.cjs"]
+          ALLOWED=set(ADDED+["overlay.patch","seam.patch"])
+          
+          
+          def fail(message):
+              raise SystemExit('FAIL-CLOSED ATMS V132 QA2: '+message)
+          
+          
+          def sha(data):
+              return hashlib.sha256(data).hexdigest()
+          
+          
+          def run(*args,cwd=None):
+              q=subprocess.run(args,cwd=cwd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=30)
+              if q.returncode: fail('git command failed: '+str(args)+' '+q.stderr[-500:])
+              return q.stdout.strip()
+          
+          
+          def verify_git_checkout(repo):
+              if os.environ.get('GITHUB_ACTIONS')!='true': fail('Only CI runner can use live mode')
+              if os.environ.get('GITHUB_EVENT_NAME')!='push': fail('Unexpected event')
+              if os.environ.get('GITHUB_REF')!='refs/heads/atms-price-p11429-test-only': fail('Wrong branch')
+              if os.environ.get('GITHUB_REPOSITORY')!='Yaso868/ATMS-PRO': fail('Wrong repository')
+              if os.environ.get('GITHUB_RUN_ATTEMPT')!='1': fail('Not the first workflow attempt')
+              evt=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
+              if evt.get('before')!=PARENT_SHA: fail('Unexpected before commit')
+              head=run('git','rev-parse','HEAD',cwd=repo)
+              if head!=evt.get('after') or head!=os.environ.get('GITHUB_SHA'): fail('Wrong event head')
+              if run('git','rev-parse','HEAD^',cwd=repo)!=PARENT_SHA: fail('Source parent SHA drift')
+              changed=run('git','diff-tree','--no-commit-id','--name-only','-r','HEAD',cwd=repo).splitlines()
+              if changed!=[WORKFLOW]: fail('Exactly one safe workflow file must be added; changed='+str(changed))
+              if run('git','status','--porcelain','--untracked-files=all',cwd=repo):fail('CI checkout not clean')
+              present=subprocess.run(['git','cat-file','-e','HEAD^:'+WORKFLOW],cwd=repo,capture_output=True)
+              if present.returncode==0:fail('Workflow must be newly added exactly once')
+              # Ensure no Android source changed in the commit itself; all overlay changes are ephemeral.
+              if run('git','diff','--name-only',BASE_SHA,'HEAD','--','android-native',cwd=repo):fail('Dangerous Android source mutation in GitHub')
+          
+          
+          def stage():
+              repo=Path(os.environ['ATMS_QA2_REPO']).resolve()
+              work=Path(os.environ['ATMS_QA2_WORK']).resolve()
+              local=os.environ.get('ATMS_QA2_VERIFY_LOCAL')=='1'
+              if not local:verify_git_checkout(repo)
+              if not (repo/'android-native/app/build.gradle').is_file():fail('Baseline Android source missing')
+              raw_b64=Path(os.environ['ATMS_QA2_PAYLOAD_B64_FILE']).read_text('ascii'); raw_b64=''.join(raw_b64.split())
+              try: archive=base64.b64decode(raw_b64,validate=True)
+              except Exception as e:fail('Invalid embedded archive base64: '+str(e))
+              if sha(archive)!=PAYLOAD_SHA:fail('Tampered embedded patch archive')
+              if work.exists():fail('Refusing existing work directory')
+              work.mkdir(parents=True)
+              try:
+                  with zipfile.ZipFile(io.BytesIO(archive)) as z:
+                      names=z.namelist()
+                      if len(names)!=5 or set(names)!=ALLOWED or len(names)!=len(set(names)):
+                          fail('Overlay contains additional, missing or duplicated paths')
+                      files={}
+                      for info in z.infolist():
+                          if info.is_dir() or info.file_size>500_000 or info.file_size<=0:
+                              fail('Non-file/oversized overlay member')
+                          if ((info.external_attr>>16)&0o170000) not in (0,stat.S_IFREG):
+                              fail('Overlay member is not a regular file')
+                          path=Path(info.filename)
+                          if path.is_absolute() or '..' in path.parts or '\\' in info.filename:
+                              fail('Overlay path traversal')
+                          data=z.read(info)
+                          expected=(PATCH_SHA if info.filename=='overlay.patch' else
+                                    SEAM_PATCH_SHA if info.filename=='seam.patch' else
+                                    SEAM_TEST_SHA if info.filename=='android-native/tools/v132-image-seam-plantag-selftest.cjs' else
+                                    PRE_SEAM_PLAN_HASH if info.filename=='android-native/app/src/main/assets/js/plan-import.js' else
+                                    TARGET_HASHES[info.filename])
+                          if sha(data)!=expected: fail('Overlay member digest mismatch '+info.filename)
+                          files[info.filename]=data
+                  seam_patch=files.pop('seam.patch')
+                  patch=files.pop('overlay.patch')
+                  headers=re.findall(rb'^--- a/([^\n]+)\n\+\+\+ b/([^\n]+)\n',patch,re.M)
+                  if len(headers)!=2 or [a.decode() for a,b in headers]!=PATCHED or any(a!=b for a,b in headers):
+                      fail('Diff modifies unapproved paths')
+                  seam_headers=re.findall(rb'^--- a/([^\n]+)\n\+\+\+ b/([^\n]+)\n',seam_patch,re.M)
+                  if seam_headers!=[(b'android-native/app/src/main/assets/js/plan-import.js',b'android-native/app/src/main/assets/js/plan-import.js')]:
+                      fail('Seam patch may only change plan-import.js')
+                  baseline=repo/'android-native'
+                  for rel,expected in BASE_HASHES.items():
+                      p=repo/rel
+                      if expected=='ABSENT':
+                          if p.exists() or p.is_symlink():fail('New file unexpectedly exists '+rel)
+                      elif not p.is_file() or p.is_symlink() or sha(p.read_bytes())!=expected:
+                          fail('Original source digest mismatch '+rel)
+                  shutil.copytree(baseline,work/'android-native',symlinks=True)
+                  for rel,data in files.items():
+                      if rel not in ADDED:fail('Unexpected added file')
+                      p=work/rel
+                      if not str(p.resolve()).startswith(str((work/'android-native').resolve())+'/'):
+                          fail('Outside Android staging')
+                      p.parent.mkdir(parents=True,exist_ok=True)
+                      if p.exists() or p.is_symlink():fail('Added file unexpectedly exists')
+                      p.write_bytes(data)
+                  for args in (['git','apply','--check','--whitespace=error'],['git','apply','--whitespace=error']):
+                      proc=subprocess.run(args,input=patch,cwd=work,capture_output=True,timeout=30)
+                      if proc.returncode:fail('Diff apply failed: '+proc.stderr.decode(errors='replace')[-300:])
+                  # Verify the signed V1.32 stage-1 source BEFORE the small seam patch.
+                  current_plan=work/'android-native/app/src/main/assets/js/plan-import.js'
+                  if sha(current_plan.read_bytes())!=PRE_SEAM_PLAN_HASH:
+                      fail('Signed TEST2 baseline not reconstructed')
+                  # Apply ONLY the approved image-seam / confirmed-Plantag fix.
+                  for args in (['git','apply','--check','--whitespace=error'],['git','apply','--whitespace=error']):
+                      proc=subprocess.run(args,input=seam_patch,cwd=work,capture_output=True,timeout=30)
+                      if proc.returncode:fail('Seam patch apply failed: '+proc.stderr.decode(errors='replace')[-300:])
+                  for rel,expected in TARGET_HASHES.items():
+                      p=work/rel
+                      if not p.is_file() or p.is_symlink() or sha(p.read_bytes())!=expected:
+                          fail('Final TEST2 source hash differs '+rel)
+                  g=(work/'android-native/app/build.gradle').read_text()
+                  main=(work/'android-native/app/src/main/AndroidManifest.xml').read_text()
+                  debug=(work/'android-native/app/src/debug/AndroidManifest.xml').read_text()
+                  assert_=(
+                      g.count("applicationIdSuffix '.qa2'")==2 and
+                      "applicationId 'de.atmspro.app'" in g and
+                      'signingConfig signingConfigs.atmsStable' in g and
+                      'refusing ephemeral debug certificate' in g and
+                      'finalizedBy tasks.named(\'verifyQa2SignedApkP11438\')' in g and
+                      'android:label="ATMS PRO TEST 2"' in main and
+                      'android:label="ATMS PRO TEST 2"' in debug
+                  )
+                  if not assert_:fail('QA2 package, label or stable signing guard drift')
+                  # Do NOT stage original photos or the private 30-ride reference fixture.
+                  if any(Path(p).name.startswith(('98853','98854')) for p in files): fail('Private photo in payload')
+                  if any('reference_rows' in p for p in files): fail('Private reference data in payload')
+                  report={'status':'LOCAL_STAGING_VERIFIED_NOT_BUILT','source_commit':BASE_SHA,
+                          'payload_sha256':PAYLOAD_SHA,'target_hashes':TARGET_HASHES,
+                          'qa2_package':'de.atmspro.app.qa2','staged_file_count':len(TARGET_HASHES),
+                          'no_ride_data_or_photos_uploaded':True,'github_writes':False,'apk_built':False}
+                  report_path=work/'ATMS_V132_QA2_LOCAL_STAGING_EVIDENCE.json'
+                  report_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+                  print('ATMS_V132_QA2_LOCAL_STAGING_PASS',len(TARGET_HASHES),PAYLOAD_SHA,flush=True)
+              except BaseException:
+                  shutil.rmtree(work,ignore_errors=True)
+                  raise
+          
+          
+          if __name__=='__main__':
+              stage()
+          
+          ATMS_STAGE_RUNNER_PY
+          export ATMS_QA2_REPO="$GITHUB_WORKSPACE"
+          export ATMS_QA2_WORK="$RUNNER_TEMP/atms-v132-qa2-isolated"
+          export ATMS_QA2_PAYLOAD_B64_FILE="$RUNNER_TEMP/atms-v132-qa2-overlay.b64"
+          python3 "$RUNNER_TEMP/atms-v132-stage-runner.py"
+          node "$ATMS_QA2_WORK/android-native/tools/v132-qa2-synthetic-selftest.cjs"
+          node "$ATMS_QA2_WORK/android-native/tools/v132-image-seam-plantag-selftest.cjs"
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verify SDK 35 and existing source-protected APK graph (dry-run only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -f "$SDK/platforms/android-35/android.jar" || { echo 'FAIL-CLOSED SDK 35 missing'; exit 5; }
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          cd "$RUNNER_TEMP/atms-v132-qa2-isolated/android-native"
+          # Pass dummy-but-present signer values only for a NO-BUILD task graph check;
+          # Gradle never reads/signs a keystore during --dry-run.
+          export ATMS_SIGNING_STORE_FILE="$RUNNER_TEMP/nonexistent-dry-run-only.p12"
+          export ATMS_SIGNING_STORE_PASSWORD=DRY_RUN_NOT_A_SECRET
+          export ATMS_SIGNING_KEY_ALIAS=atmspro
+          export ATMS_SIGNING_KEY_PASSWORD=DRY_RUN_NOT_A_SECRET
+          gradle --no-daemon --no-build-cache --no-configuration-cache :app:assembleDebug --dry-run > "$RUNNER_TEMP/v132-qa2-dryrun.log"
+          for task in ':app:preBuild' ':app:ap01BrowserIntegration' ':app:ap01EditorSafety' ':app:qa2SigningSourceSafetyP11449' ':app:p11449ImageHeightRegression' ':app:verifyQa2SignedApkP11438'; do
+            grep -Fq "$task " "$RUNNER_TEMP/v132-qa2-dryrun.log" || { echo "FAIL-CLOSED mandatory Gradle gate missing: $task"; exit 6; }
+          done
+          echo 'GRADLE_TASK_GRAPH_PASS (no APK build performed by dry-run)'
+
+      - name: Recover existing protected signing key in temporary runner memory only
+        shell: bash
+        env:
+          ATMS_SIGNING_KEYSTORE_B64: ${{ secrets.ATMS_SIGNING_KEYSTORE_B64 }}
+          ATMS_SIGNING_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ATMS_SIGNING_KEYSTORE_B64" && test -n "$ATMS_SIGNING_PASSWORD" || { echo 'FAIL-CLOSED protected signer missing'; exit 7; }
+          umask 077
+          printf '%s' "$ATMS_SIGNING_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/atms-v132-existing-signer.p12"
+          test -s "$RUNNER_TEMP/atms-v132-existing-signer.p12" || { echo 'FAIL-CLOSED signer empty'; exit 8; }
+
+      - name: Execute all original preBuild / browser / signing gates and ONE QA2 APK build
+        shell: bash
+        env:
+          ATMS_SIGNING_STORE_FILE: ${{ runner.temp }}/atms-v132-existing-signer.p12
+          ATMS_SIGNING_STORE_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_ALIAS: atmspro
+          ATMS_SIGNING_KEY_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -s "$ATMS_SIGNING_STORE_FILE" || { echo 'FAIL-CLOSED no persistent signer'; exit 9; }
+          cd "$RUNNER_TEMP/atms-v132-qa2-isolated/android-native"
+          # The original Gradle preBuild and post-build P11438 verifier remain UNMODIFIED.
+          # Exactly one non-dry-run invocation; any failure blocks artifact publication.
+          env -u GITHUB_TOKEN -u GH_TOKEN -u GH_ENTERPRISE_TOKEN gradle --no-daemon --no-build-cache --no-configuration-cache :app:assembleDebug
+          python3 - <<'PY_VERIFY_APK'
+          import hashlib,json,os,pathlib,subprocess,re,shutil,zipfile
+          tmp=pathlib.Path(os.environ['RUNNER_TEMP'])
+          w=tmp/'atms-v132-qa2-isolated'/'android-native'
+          apks=list(w.rglob('*.apk'))
+          expected=w/'app/build/outputs/apk/debug/app-debug.apk'
+          if len(apks)!=1 or apks[0].resolve()!=expected.resolve():
+              raise SystemExit('FAIL-CLOSED exactly ONE QA2 APK required: '+str(apks))
+          buildtools=pathlib.Path(os.environ['ANDROID_SDK_ROOT'])/'build-tools'
+          signers=sorted(buildtools.glob('*/apksigner'))
+          aapts=sorted(buildtools.glob('*/aapt'))
+          if not signers or not aapts:raise SystemExit('FAIL-CLOSED Android signing/badging verification tools missing')
+          signed=subprocess.run([str(signers[-1]),'verify','--verbose','--print-certs',str(expected)],capture_output=True,text=True,check=True).stdout
+          if not re.search(r'Verified using v2 scheme.*:\s*true',signed):
+              raise SystemExit('FAIL-CLOSED APK not APK-v2 verified')
+          badging=subprocess.run([str(aapts[-1]),'dump','badging',str(expected)],capture_output=True,text=True,check=True).stdout
+          if not re.search(r"package: name='de\.atmspro\.app\.qa2'",badging):
+              raise SystemExit('FAIL-CLOSED package ID differs from TEST2')
+          if "application-label:'ATMS PRO TEST 2'" not in badging:
+              raise SystemExit('FAIL-CLOSED launcher label differs from TEST2')
+          with zipfile.ZipFile(expected) as z:
+              for asset in ['assets/js/plan-import.js','assets/js/atms-v132-source-preview.js','assets/index.html']:
+                  target=w/'app/src/main'/asset
+                  if asset not in z.namelist() or hashlib.sha256(z.read(asset)).digest()!=hashlib.sha256(target.read_bytes()).digest():
+                      raise SystemExit('FAIL-CLOSED APK asset mismatch: '+asset)
+          outfile=tmp/'ATMS_PRO_V132_SEAM_PLANTAG_TEST2_SIGNED.apk'
+          if outfile.exists():raise SystemExit('FAIL-CLOSED refusing second APK output')
+          shutil.copy2(expected,outfile)
+          evidence=json.loads((tmp/'atms-v132-qa2-isolated'/'ATMS_V132_QA2_LOCAL_STAGING_EVIDENCE.json').read_text())
+          evidence.update({'status':'SIGNED_TEST2_QA_APK_VERIFIED_NOT_SAMSUNG_TESTED',
+                           'apk_sha256':hashlib.sha256(outfile.read_bytes()).hexdigest(),
+                           'apk_name':outfile.name,'apk_count':1,'signed_v2':True,
+                           'package':'de.atmspro.app.qa2','original_gradle_gates_unchanged':True,
+                           'github_write_permission':False,'real_photo_ocr_passed':False})
+          (tmp/'ATMS_PRO_V132_SEAM_PLANTAG_TEST2_VERIFICATION.json').write_text(json.dumps(evidence,indent=2,ensure_ascii=False)+'\n')
+          print('QA2 ONE SIGNED APK: verified, original-photo OCR NOT tested')
+          PY_VERIFY_APK
+
+      - name: Destroy temporary signing key even when build fails
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/atms-v132-existing-signer.p12"
+
+      - name: Publish exactly one signed QA2 APK and non-personal verification report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATMS-V132-SEAM-PLANTAG-TEST2-ONE-APK
+          path: |
+            ${{ runner.temp }}/ATMS_PRO_V132_SEAM_PLANTAG_TEST2_SIGNED.apk
+            ${{ runner.temp }}/ATMS_PRO_V132_SEAM_PLANTAG_TEST2_VERIFICATION.json
+          if-no-files-found: error
+          retention-days: 1
