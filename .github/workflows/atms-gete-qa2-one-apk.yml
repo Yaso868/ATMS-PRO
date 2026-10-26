@@ -1,0 +1,89 @@
+name: ATMS PRO Get-E P11450-R4 one signed QA2 APK
+
+on:
+  push:
+    branches:
+      - atms-price-p11429-test-only
+    paths:
+      - .github/workflows/atms-gete-qa2-one-apk.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atms-gete-one-signed-qa2-apk-20261026
+  cancel-in-progress: false
+
+jobs:
+  qa2-one-apk:
+    if: github.repository == 'Yaso868/ATMS-PRO' && github.ref == 'refs/heads/atms-price-p11429-test-only'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout read-only source without GitHub push credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify runner Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -f "$SDK/platforms/android-35/android.jar" || { echo 'FAIL-CLOSED: SDK 35 not present'; exit 5; }
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+      - name: Install pinned AP01 read-only browser test dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV="$RUNNER_TEMP/atms-gete-ap01-qa-venv"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --disable-pip-version-check --quiet 'playwright==1.57.0'
+          "$VENV/bin/python" -m playwright install --with-deps chromium
+          echo "ATMS_QA_PYTHON=$VENV/bin/python" >> "$GITHUB_ENV"
+      - name: Restore existing protected signing key only
+        shell: bash
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.ATMS_SIGNING_KEYSTORE_B64 }}
+          SIGNING_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEYSTORE_B64" && test -n "$SIGNING_PASSWORD" || { echo 'FAIL-CLOSED: stable signing credentials missing'; exit 4; }
+          printf '%s' "$SIGNING_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/atmspro-existing-signing.p12"
+          chmod 600 "$RUNNER_TEMP/atmspro-existing-signing.p12"
+          test -s "$RUNNER_TEMP/atmspro-existing-signing.p12"
+      - name: Verify frozen R4, QA2 package, all preBuild gates, build exactly one signed APK
+        shell: bash
+        env:
+          ATMS_SIGNING_STORE_FILE: ${{ runner.temp }}/atmspro-existing-signing.p12
+          ATMS_SIGNING_STORE_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_ALIAS: atmspro
+          ATMS_SIGNING_KEY_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          python3 .github/atms-gete-qa-data/qa2-once-driver.py
+      - name: Destroy temporary signing keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/atmspro-existing-signing.p12"
+      - name: Upload exactly one QA2 APK and its verification evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATMS-P11450-R4-GETE-QA2-SIGNED-ONE-APK
+          path: |
+            ${{ runner.temp }}/ATMS_PRO_P11450_R4_GETE_QA2_SIGNED.apk
+            ${{ runner.temp }}/ATMS_PRO_P11450_R4_GETE_QA2_VERIFICATION.json
+          if-no-files-found: error
+          retention-days: 7
