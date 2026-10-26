@@ -43,6 +43,15 @@ jobs:
           SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
           test -f "$SDK/platforms/android-35/android.jar" || { echo 'FAIL-CLOSED Android SDK 35 missing' >&2; exit 5; }
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+      - name: Install pinned AP01 browser integration dependencies in ephemeral QA venv
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV="$RUNNER_TEMP/atms-gete-ap01-qa-venv"
+          python3 -m venv "$VENV"
+          "$VENV/bin/python" -m pip install --disable-pip-version-check --quiet 'playwright==1.57.0'
+          "$VENV/bin/python" -m playwright install --with-deps chromium
+          echo "ATMS_QA_PYTHON=$VENV/bin/python" >> "$GITHUB_ENV"
       - name: Restore existing QA2 signing configuration (do not sign or create an APK)
         shell: bash
         env:
@@ -79,4 +88,3 @@ jobs:
           path: ${{ runner.temp }}/atms-gete-prebuild-evidence.json
           if-no-files-found: ignore
           retention-days: 7
-# QA-only: preBuild safety-gate false positive narrowed; execution denylist remains mandatory.
