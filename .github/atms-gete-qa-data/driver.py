@@ -66,6 +66,24 @@ def main():
     out.writestr('android-native/qa-frozen-p11449/'+rel,b)
    for n in sorted(qfiles):out.writestr(n,qamini.read(n))
   # Existing preBuild-only policy remains mandatory; runtime reconstructed QA ZIP is ephemeral.
+  # The original static gate over-matches harmless historical ``assembleDebug``
+  # comments and pre-existing finalizer declarations. Require an exact allowlist,
+  # then trust the real Gradle task graph denylist before any execution.
+  with zipfile.ZipFile(qa) as checkqa:
+   gtext=checkqa.read('android-native/app/build.gradle').decode()
+  mentions=[line.strip() for line in gtext.splitlines() if 'assembleDebug' in line]
+  allowed_mentions={
+   '// P107.1: deterministic OCR-integrity gate. GitHub Actions assembleDebug must fail',
+   "tasks.matching { it.name == 'assembleDebug' }.configureEach {",
+  }
+  if len(mentions)!=3 or any(line not in allowed_mentions for line in mentions):
+   die('Unknown assembleDebug mention in the pinned QA taskgraph')
+  runner=t/'atms_gete_isolated_prebuild.py'
+  txt=runner.read_text()
+  original="if 'assembleDebug' in s or 'git push' in s:die('Unzulässiger APK-/GitHub-Befehl im QA Gradle')"
+  strict="if 'git push' in s or re.search(r'(?m)^\\s*(?:commandLine|exec|dependsOn).*assembleDebug',s):die('Unzulässiger APK-/GitHub-Befehl im QA Gradle')"
+  if txt.count(original)!=1:die('Runner safety guard drift')
+  runner.write_text(txt.replace(original,strict))
   spec=importlib.util.spec_from_file_location('atms_only',t/'atms_gete_isolated_prebuild.py')
   # The original script anchors relative assets beside itself.
   (t/'ATMS_PRO_P11450_R4_GETE_CONSENSUS_GUARD_LOCAL_UNBUILT_2026-10-23.zip').write_bytes((t/'R4_ORIGINAL.zip').read_bytes())
