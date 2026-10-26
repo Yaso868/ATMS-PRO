@@ -79,3 +79,4 @@ jobs:
           path: ${{ runner.temp }}/atms-gete-prebuild-evidence.json
           if-no-files-found: ignore
           retention-days: 7
+# QA-only: preBuild safety-gate false positive narrowed; execution denylist remains mandatory.
