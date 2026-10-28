@@ -19,7 +19,7 @@ jobs:
       github.ref == 'refs/heads/atms-price-p11429-test-only' &&
       github.event_name == 'push' &&
       github.run_attempt == 1 &&
-      github.event.before == '0d1c689eaf0a517506e6aec4c3bcc6824e46663d'
+      github.event.before == '9ee300a9dcd312f8c696b1f5ac0ffc6e3c437c46'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     permissions:
@@ -173,18 +173,36 @@ jobs:
           tools=versions[0]
           signed=subprocess.run([str(tools/'apksigner'),'verify','--print-certs','--verbose',str(apk)],capture_output=True,text=True,check=True).stdout
           assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in signed, 'FAIL-CLOSED APK v2 signer'
-          # QA2_CERT_PIN_CHECK_BEGIN: tested verbatim by independent local fixtures.
+          # QA2_CERT_PIN_CHECK_BEGIN: fail-closed on any signer or certificate ambiguity.
           import re
           EXPECTED_QA2_CERT_SHA256='B54AC60FA9E4530530CFB65479B5B1E50D8D5EC261ECB6A05BAA95D223D0B5BA'
-          # Parse only complete signer certificate fields, fail closed on extras or omissions.
-          signer_ids=set(re.findall(r'^Signer #([0-9]+) certificate ',signed,re.MULTILINE))
-          sha256_claims=re.findall(r'^Signer #([0-9]+) certificate SHA-256 digest: ([0-9A-Fa-f]{64})\s*$',signed,re.MULTILINE)
-          signer_count_lines=re.findall(r'^Number of signers: ([0-9]+)\s*$',signed,re.MULTILINE)
-          if (signer_ids!={'1'} or len(sha256_claims)!=1 or sha256_claims[0][0]!='1'
-              or (signer_count_lines and signer_count_lines!=['1'])):
-            raise RuntimeError('FAIL-CLOSED APK signer count/certificate fields')
-          if sha256_claims[0][1].upper()!=EXPECTED_QA2_CERT_SHA256:
-            raise RuntimeError('FAIL-CLOSED APK certificate SHA-256 differs from existing TEST-2')
+          def verify_qa2_signer_fields(signed):
+            lines=signed.splitlines()
+            # Report only counts/presence, never certificate material or secret values.
+            v2='Verified using v2 scheme (APK Signature Scheme v2): true'
+            v2_count=sum(line.strip()==v2 for line in lines)
+            signer_fields=[line for line in lines if re.match(r'^\s*Signer\s*#',line)]
+            signer_ids=[]
+            for line in signer_fields:
+              match=re.fullmatch(r'Signer #([1-9][0-9]*) (.+)',line)
+              if match is None:
+                raise RuntimeError('FAIL-CLOSED malformed signer field')
+              signer_ids.append(match.group(1))
+            count_fields=[line for line in lines if re.match(r'^\s*Number of signers\s*:',line)]
+            count_ok=(not count_fields or count_fields==['Number of signers: 1'])
+            sha_fields=[re.fullmatch(r'Signer #1 certificate SHA-256 digest: ([0-9A-Fa-f]{64})',line) for line in signer_fields]
+            sha_fields=[match.group(1) for match in sha_fields if match]
+            if (v2_count!=1 or not signer_ids or set(signer_ids)!={'1'}
+                or not count_ok or len(sha_fields)!=1):
+              print('QA2_CERT_DIAGNOSTIC v2_count='+str(v2_count)
+                    +' signer_field_count='+str(len(signer_fields))
+                    +' unique_signer_count='+str(len(set(signer_ids)))
+                    +' count_field_count='+str(len(count_fields))
+                    +' digest_field_count='+str(len(sha_fields)))
+              raise RuntimeError('FAIL-CLOSED APK signer count/certificate fields')
+            if sha_fields[0].upper()!=EXPECTED_QA2_CERT_SHA256:
+              raise RuntimeError('FAIL-CLOSED APK certificate SHA-256 differs from existing TEST-2')
+          verify_qa2_signer_fields(signed)
           # QA2_CERT_PIN_CHECK_END
           badging=subprocess.run([str(tools/'aapt'),'dump','badging',str(apk)],capture_output=True,text=True,check=True).stdout
           assert "package: name='de.atmspro.app.qa2'" in badging, 'FAIL-CLOSED incorrect package'
