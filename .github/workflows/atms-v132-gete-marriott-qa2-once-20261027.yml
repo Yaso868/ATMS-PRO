@@ -1,0 +1,216 @@
+name: ATMS V1.32 Get-E Marriott QA2 one signed APK, pinned
+
+on:
+  push:
+    branches: [atms-price-p11429-test-only]
+    paths: [.github/workflows/atms-v132-gete-marriott-qa2-once-20261027.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atms-v132-gete-marriott-qa2-once-20261027
+  cancel-in-progress: false
+
+jobs:
+  qa2-once:
+    if: >-
+      github.repository == 'Yaso868/ATMS-PRO' &&
+      github.ref == 'refs/heads/atms-price-p11429-test-only' &&
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      github.event.before == '0d1c689eaf0a517506e6aec4c3bcc6824e46663d'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Fail-closed validate staged payload and read-only provenance
+        shell: bash
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum .github/qa2-v132-gete-marriott/payload.zip | cut -d ' ' -f 1)" = '995d6aec486ddede7d54b246fec5d5093d2ae6de9984f2d7910d799f25bda24e'
+          mkdir -p "$RUNNER_TEMP/atms-v132-gete-marriott"
+          python3 - <<'PY_VERIFY'
+          import hashlib,zipfile,pathlib
+          p=pathlib.Path('.github/qa2-v132-gete-marriott/payload.zip')
+          allowed={'android-native/app/src/main/assets/js/plan-import.js': '1581b1bf454fa06c91815380b59201b9e44601ceff16318dc1a1a2c2b632040d', 'android-native/app/src/main/assets/js/atms-v132-source-preview.js': '1590651f756d06a612ab9a86e926d8fa28dbe0250632a4b66caa0a675a79c1f9', 'harness/adapter-vm-inject.js': '3f8fb88499136b93a418e5ed322e75cce25d27718944fcaa8476e7301ab92f76', 'harness/qa2-p11447-prebuild.init.gradle': '833c0d5e2285d1df97297e975d98cd004a4ad71fb218614bc9cef3ee793c06a9', 'harness/preflight.py': '8fb5879fb5d48a85643324a7ce2bb73e240f09797a57a6ff771a58152da7d07f'}
+          with zipfile.ZipFile(p) as z:
+            info=z.infolist()
+            assert set(z.namelist())==set(allowed) and len(info)==len(allowed),'FAIL-CLOSED incorrect ZIP members'
+            assert all(x.file_size<2_000_000 and not x.is_dir() and '..' not in x.filename.split('/') for x in info),'FAIL-CLOSED invalid ZIP geometry'
+            for x in info:
+              assert hashlib.sha256(z.read(x)).hexdigest()==allowed[x.filename], 'FAIL-CLOSED payload content hash mismatch'
+            z.extractall(pathlib.Path(__import__('os').environ['RUNNER_TEMP'])/'atms-v132-gete-marriott')
+          PY_VERIFY
+          python3 "$RUNNER_TEMP/atms-v132-gete-marriott/harness/preflight.py" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/atms-v132-gete-marriott"
+          echo "ATMS_QA2_HARNESS_ADAPTER=$RUNNER_TEMP/atms-v132-gete-marriott/harness/adapter-vm-inject.js" >> "$GITHUB_ENV"
+          echo "ATMS_QA2_HARNESS_SOURCE=$GITHUB_WORKSPACE/android-native/app/src/main/assets/js/plan-import.js" >> "$GITHUB_ENV"
+
+      - name: Configure JDK 17 and Gradle 8.9
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Require pinned Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          test -f "$SDK/platforms/android-35/android.jar"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
+      - name: Configure read-only browser QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/atms-ap01-qa-venv"
+          "$RUNNER_TEMP/atms-ap01-qa-venv/bin/python" -m pip install --quiet --disable-pip-version-check 'playwright==1.57.0'
+          "$RUNNER_TEMP/atms-ap01-qa-venv/bin/python" -m playwright install --with-deps chromium
+          echo "ATMS_QA_PYTHON=$RUNNER_TEMP/atms-ap01-qa-venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Historical original test FAIL remains visible; adapted P11447 must PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android-native
+          test "$(sha256sum tools/p11447-ocr-evidence-regression.cjs | cut -d ' ' -f 1)" = '7466c463dfb8c723b5865eff2423a99d0c2b32be5bab638288f7a1cf3b9f227a'
+          set +e
+          node tools/p11447-ocr-evidence-regression.cjs > "$RUNNER_TEMP/P11447_HISTORICAL_ORIGINAL.log" 2>&1
+          ORIGINAL_CODE=$?
+          set -e
+          test "$ORIGINAL_CODE" = 1
+          grep -q 'p11444CompanyDelimiterProbe is not defined' "$RUNNER_TEMP/P11447_HISTORICAL_ORIGINAL.log"
+          ATMS_HARNESS_SOURCE="$ATMS_QA2_HARNESS_SOURCE" ATMS_HARNESS_TARGET=P11447 \
+             node --require "$ATMS_QA2_HARNESS_ADAPTER" tools/p11447-ocr-evidence-regression.cjs \
+             > "$RUNNER_TEMP/P11447_SEPARATE_ADAPTER.log" 2>&1
+          grep -q 'P11447 LOCAL OCR EVIDENCE regression: PASS 39 positive / 12 negative' "$RUNNER_TEMP/P11447_SEPARATE_ADAPTER.log"
+          grep -q 'HARNESS-ONLY ADAPTER P11447: 6 injection(s)' "$RUNNER_TEMP/P11447_SEPARATE_ADAPTER.log"
+          echo 'PASS adapted 51 assertions; ORIGINAL HISTORICAL FAIL remains unchanged'
+
+      - name: Restore only existing protected QA2 signer
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ATMS_SIGNING_KEYSTORE_B64 }}
+          SIGNING_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" && test -n "$SIGNING_PASSWORD"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/atms-qa2-existing-signer.p12"
+          chmod 600 "$RUNNER_TEMP/atms-qa2-existing-signer.p12"
+          test -s "$RUNNER_TEMP/atms-qa2-existing-signer.p12"
+
+      - name: Fail-closed pin protected QA2 keystore certificate BEFORE build
+        shell: bash
+        env:
+          ATMS_QA2_CERT_STOREPASS: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ATMS_QA2_CERT_STOREPASS"
+          test -s "$RUNNER_TEMP/atms-qa2-existing-signer.p12"
+          # keytool emits the original DER certificate, not a PEM/text representation.
+          # Never echo keystore material, passwords, or certificate bytes.
+          ACTUAL_CERT_SHA256="$(keytool -exportcert \
+            -keystore "$RUNNER_TEMP/atms-qa2-existing-signer.p12" \
+            -storetype PKCS12 -alias atmspro \
+            -storepass:env ATMS_QA2_CERT_STOREPASS \
+            | sha256sum | cut -d ' ' -f 1)"
+          test "${#ACTUAL_CERT_SHA256}" -eq 64
+          test "${ACTUAL_CERT_SHA256^^}" = 'B54AC60FA9E4530530CFB65479B5B1E50D8D5EC261ECB6A05BAA95D223D0B5BA'
+          echo 'PASS protected QA2 signer matches pinned reference APK certificate'
+
+      - name: Execute all original mandatory preBuild gates and build one signed QA2 APK
+        shell: bash
+        env:
+          ATMS_SIGNING_STORE_FILE: ${{ runner.temp }}/atms-qa2-existing-signer.p12
+          ATMS_SIGNING_STORE_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_ALIAS: atmspro
+          ATMS_SIGNING_KEY_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd android-native
+          # Runtime-only init script changes P11447 invocation, NEVER historical test bytes.
+          gradle --no-daemon --no-build-cache --no-configuration-cache \
+            -I "$RUNNER_TEMP/atms-v132-gete-marriott/harness/qa2-p11447-prebuild.init.gradle" \
+            :app:assembleDebug
+          python3 tools/verify-qa2-signed-apk-p11438.py app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Verify exactly one APK, its package, certificate and embedded source SHAs
+        shell: bash
+        env:
+          ATMS_SIGNING_STORE_FILE: ${{ runner.temp }}/atms-qa2-existing-signer.p12
+          ATMS_SIGNING_STORE_PASSWORD: ${{ secrets.ATMS_SIGNING_PASSWORD }}
+          ATMS_SIGNING_KEY_ALIAS: atmspro
+        run: |
+          set -euo pipefail
+          cd android-native
+          python3 - <<'PY_FINAL'
+          import pathlib,zipfile,hashlib,json,glob,subprocess,os
+          root=pathlib.Path('.')
+          all_apks=list((root/'app/build/outputs/apk').rglob('*.apk'))
+          assert len(all_apks)==1,'FAIL-CLOSED: expected one, not '+str(len(all_apks))
+          apk=all_apks[0]
+          assert apk.name=='app-debug.apk','FAIL-CLOSED wrong APK variant'
+          with zipfile.ZipFile(apk) as z:
+            targets={'assets/js/plan-import.js':'1581b1bf454fa06c91815380b59201b9e44601ceff16318dc1a1a2c2b632040d',
+                     'assets/js/atms-v132-source-preview.js':'1590651f756d06a612ab9a86e926d8fa28dbe0250632a4b66caa0a675a79c1f9'}
+            for path,digest in targets.items():
+              assert path in z.namelist() and hashlib.sha256(z.read(path)).hexdigest()==digest, 'FAIL-CLOSED APK asset '+path
+          sdk=pathlib.Path(os.environ['ANDROID_SDK_ROOT'])/'build-tools'
+          versions=sorted((p for p in sdk.iterdir() if (p/'apksigner').is_file() and (p/'aapt').is_file()),reverse=True)
+          assert versions,'FAIL-CLOSED android build-tools verifier unavailable'
+          tools=versions[0]
+          signed=subprocess.run([str(tools/'apksigner'),'verify','--print-certs','--verbose',str(apk)],capture_output=True,text=True,check=True).stdout
+          assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in signed, 'FAIL-CLOSED APK v2 signer'
+          # QA2_CERT_PIN_CHECK_BEGIN: tested verbatim by independent local fixtures.
+          import re
+          EXPECTED_QA2_CERT_SHA256='B54AC60FA9E4530530CFB65479B5B1E50D8D5EC261ECB6A05BAA95D223D0B5BA'
+          # Parse only complete signer certificate fields, fail closed on extras or omissions.
+          signer_ids=set(re.findall(r'^Signer #([0-9]+) certificate ',signed,re.MULTILINE))
+          sha256_claims=re.findall(r'^Signer #([0-9]+) certificate SHA-256 digest: ([0-9A-Fa-f]{64})\s*$',signed,re.MULTILINE)
+          signer_count_lines=re.findall(r'^Number of signers: ([0-9]+)\s*$',signed,re.MULTILINE)
+          if (signer_ids!={'1'} or len(sha256_claims)!=1 or sha256_claims[0][0]!='1'
+              or (signer_count_lines and signer_count_lines!=['1'])):
+            raise RuntimeError('FAIL-CLOSED APK signer count/certificate fields')
+          if sha256_claims[0][1].upper()!=EXPECTED_QA2_CERT_SHA256:
+            raise RuntimeError('FAIL-CLOSED APK certificate SHA-256 differs from existing TEST-2')
+          # QA2_CERT_PIN_CHECK_END
+          badging=subprocess.run([str(tools/'aapt'),'dump','badging',str(apk)],capture_output=True,text=True,check=True).stdout
+          assert "package: name='de.atmspro.app.qa2'" in badging, 'FAIL-CLOSED incorrect package'
+          # No app/device installation and no GitHub writes; artifact only.
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'ATMS_PRO_V132_GETE_MARRIOTT_QA2_SIGNED.apk'
+          out.write_bytes(apk.read_bytes())
+          report={'apk_sha256':hashlib.sha256(out.read_bytes()).hexdigest(),'package':'de.atmspro.app.qa2',
+                  'source_sha256':targets,'signed_v2':True,'count':1,
+                  'signing_certificate_sha256':EXPECTED_QA2_CERT_SHA256,'certificate_pin_verified':True,
+                  'pending_samsung_verification':True}
+          (out.parent/'ATMS_PRO_V132_GETE_MARRIOTT_QA2_VERIFY.json').write_text(json.dumps(report,indent=2))
+          print('PASS exactly one separate signed QA2 artifact; Samsung untested')
+          PY_FINAL
+
+      - name: Erase signer from ephemeral runner, including on failure
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/atms-qa2-existing-signer.p12"
+
+      - name: Publish exactly one QA2 artifact, never deploy to phone
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATMS-V132-GETE-MARRIOTT-QA2-ONE-SIGNED-APK
+          path: |
+            ${{ runner.temp }}/ATMS_PRO_V132_GETE_MARRIOTT_QA2_SIGNED.apk
+            ${{ runner.temp }}/ATMS_PRO_V132_GETE_MARRIOTT_QA2_VERIFY.json
+          if-no-files-found: error
+          retention-days: 7
